@@ -157,11 +157,12 @@ export class Conductor {
             break;
           case protocol.MessageType.CANCEL:
             const cancelMsg = baseMsg as protocol.CancelRequest;
+            const cancelIds = cancelMsg.workflow_ids ?? [cancelMsg.workflow_id];
             let cancelSuccess = true;
             try {
-              await this.dbosExec.cancelWorkflow(cancelMsg.workflow_id);
+              await this.dbosExec.systemDatabase.cancelWorkflows(cancelIds);
             } catch (e) {
-              errorMsg = `Exception encountered when cancelling workflow ${cancelMsg.workflow_id}: ${(e as Error).message}`;
+              errorMsg = `Exception encountered when cancelling workflow(s) ${String(cancelIds)}: ${(e as Error).message}`;
               this.dbosExec.logger.error(errorMsg);
               cancelSuccess = false;
             }
@@ -170,11 +171,12 @@ export class Conductor {
             break;
           case protocol.MessageType.DELETE:
             const deleteMsg = baseMsg as protocol.DeleteRequest;
+            const deleteIds = deleteMsg.workflow_ids ?? [deleteMsg.workflow_id];
             let deleteSuccess = true;
             try {
-              await this.dbosExec.deleteWorkflow(deleteMsg.workflow_id, deleteMsg.delete_children ?? false);
+              await this.dbosExec.systemDatabase.deleteWorkflows(deleteIds, deleteMsg.delete_children ?? false);
             } catch (e) {
-              errorMsg = `Exception encountered when deleting workflow ${deleteMsg.workflow_id}: ${(e as Error).message}`;
+              errorMsg = `Exception encountered when deleting workflow(s) ${String(deleteIds)}: ${(e as Error).message}`;
               this.dbosExec.logger.error(errorMsg);
               deleteSuccess = false;
             }
@@ -183,11 +185,12 @@ export class Conductor {
             break;
           case protocol.MessageType.RESUME:
             const resumeMsg = baseMsg as protocol.ResumeRequest;
+            const resumeIds = resumeMsg.workflow_ids ?? [resumeMsg.workflow_id];
             let resumeSuccess = true;
             try {
-              await this.dbosExec.resumeWorkflow(resumeMsg.workflow_id);
+              await this.dbosExec.systemDatabase.resumeWorkflows(resumeIds);
             } catch (e) {
-              errorMsg = `Exception encountered when resuming workflow ${resumeMsg.workflow_id}: ${(e as Error).message}`;
+              errorMsg = `Exception encountered when resuming workflow(s) ${String(resumeIds)}: ${(e as Error).message}`;
               this.dbosExec.logger.error(errorMsg);
               resumeSuccess = false;
             }
@@ -613,6 +616,60 @@ export class Conductor {
               errorMsg,
             );
             currWebsocket.send(JSON.stringify(setVersionResp));
+            break;
+          case protocol.MessageType.GET_WORKFLOW_EVENTS:
+            const eventsMsg = baseMsg as protocol.GetWorkflowEventsRequest;
+            let eventOutputs: protocol.EventOutput[] | undefined = undefined;
+            try {
+              const rawEvents = await this.dbosExec.systemDatabase.getAllEvents(eventsMsg.workflow_id);
+              eventOutputs = Object.entries(rawEvents).map(([key, value]) => ({
+                key,
+                value: inspect(value),
+              }));
+            } catch (e) {
+              errorMsg = `Exception encountered when getting events for workflow ${eventsMsg.workflow_id}: ${(e as Error).message}`;
+              this.dbosExec.logger.error(errorMsg);
+            }
+            const eventsResp = new protocol.GetWorkflowEventsResponse(baseMsg.request_id, eventOutputs, errorMsg);
+            currWebsocket.send(JSON.stringify(eventsResp));
+            break;
+          case protocol.MessageType.GET_WORKFLOW_NOTIFICATIONS:
+            const notifsMsg = baseMsg as protocol.GetWorkflowNotificationsRequest;
+            let notifOutputs: protocol.NotificationOutput[] | undefined = undefined;
+            try {
+              const rawNotifs = await this.dbosExec.systemDatabase.getAllNotifications(notifsMsg.workflow_id);
+              notifOutputs = rawNotifs.map((n) => ({
+                topic: n.topic,
+                message: inspect(n.message),
+                created_at_epoch_ms: n.createdAtEpochMs,
+                consumed: n.consumed,
+              }));
+            } catch (e) {
+              errorMsg = `Exception encountered when getting notifications for workflow ${notifsMsg.workflow_id}: ${(e as Error).message}`;
+              this.dbosExec.logger.error(errorMsg);
+            }
+            const notifsResp = new protocol.GetWorkflowNotificationsResponse(
+              baseMsg.request_id,
+              notifOutputs,
+              errorMsg,
+            );
+            currWebsocket.send(JSON.stringify(notifsResp));
+            break;
+          case protocol.MessageType.GET_WORKFLOW_STREAMS:
+            const streamsMsg = baseMsg as protocol.GetWorkflowStreamsRequest;
+            let streamOutputs: protocol.StreamEntryOutput[] | undefined = undefined;
+            try {
+              const rawStreams = await this.dbosExec.systemDatabase.getAllStreamEntries(streamsMsg.workflow_id);
+              streamOutputs = Object.entries(rawStreams).map(([key, values]) => ({
+                key,
+                values: values.map((v) => inspect(v)),
+              }));
+            } catch (e) {
+              errorMsg = `Exception encountered when getting streams for workflow ${streamsMsg.workflow_id}: ${(e as Error).message}`;
+              this.dbosExec.logger.error(errorMsg);
+            }
+            const streamsResp = new protocol.GetWorkflowStreamsResponse(baseMsg.request_id, streamOutputs, errorMsg);
+            currWebsocket.send(JSON.stringify(streamsResp));
             break;
           default:
             this.dbosExec.logger.warn(`Unknown message type: ${baseMsg.type}`);

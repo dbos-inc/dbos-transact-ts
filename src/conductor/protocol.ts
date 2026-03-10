@@ -28,6 +28,9 @@ export enum MessageType {
   TRIGGER_SCHEDULE = 'trigger_schedule',
   LIST_APPLICATION_VERSIONS = 'list_application_versions',
   SET_LATEST_APPLICATION_VERSION = 'set_latest_application_version',
+  GET_WORKFLOW_EVENTS = 'get_workflow_events',
+  GET_WORKFLOW_NOTIFICATIONS = 'get_workflow_notifications',
+  GET_WORKFLOW_STREAMS = 'get_workflow_streams',
 }
 
 export interface BaseMessage {
@@ -92,6 +95,7 @@ export class CancelRequest implements BaseMessage {
   type = MessageType.CANCEL;
   request_id: string;
   workflow_id: string;
+  workflow_ids?: string[];
   constructor(request_id: string, workflow_id: string) {
     this.request_id = request_id;
     this.workflow_id = workflow_id;
@@ -111,6 +115,7 @@ export class DeleteRequest implements BaseMessage {
   request_id: string;
   workflow_id: string;
   delete_children: boolean;
+  workflow_ids?: string[];
   constructor(request_id: string, workflow_id: string, delete_children: boolean = false) {
     this.request_id = request_id;
     this.workflow_id = workflow_id;
@@ -130,6 +135,7 @@ export class ResumeRequest implements BaseMessage {
   type = MessageType.RESUME;
   request_id: string;
   workflow_id: string;
+  workflow_ids?: string[];
   constructor(request_id: string, workflow_id: string) {
     this.request_id = request_id;
     this.workflow_id = workflow_id;
@@ -676,5 +682,78 @@ export class SetLatestApplicationVersionResponse extends BaseResponse {
   constructor(request_id: string, success: boolean, error_message?: string) {
     super(MessageType.SET_LATEST_APPLICATION_VERSION, request_id, error_message);
     this.success = success;
+  }
+}
+
+// --- Workflow Communications Observability ---
+
+export interface EventOutput {
+  key: string;
+  value: string;
+}
+
+export interface NotificationOutput {
+  topic: string | null;
+  message: string;
+  created_at_epoch_ms: number;
+  consumed: boolean;
+}
+
+export interface StreamEntryOutput {
+  key: string;
+  values: string[];
+}
+
+export class GetWorkflowEventsRequest implements BaseMessage {
+  type = MessageType.GET_WORKFLOW_EVENTS;
+  request_id: string;
+  workflow_id: string;
+  constructor(request_id: string, workflow_id: string) {
+    this.request_id = request_id;
+    this.workflow_id = workflow_id;
+  }
+}
+
+export class GetWorkflowEventsResponse extends BaseResponse {
+  events?: EventOutput[];
+  constructor(request_id: string, events?: EventOutput[], error_message?: string) {
+    super(MessageType.GET_WORKFLOW_EVENTS, request_id, error_message);
+    this.events = events;
+  }
+}
+
+export class GetWorkflowNotificationsRequest implements BaseMessage {
+  type = MessageType.GET_WORKFLOW_NOTIFICATIONS;
+  request_id: string;
+  workflow_id: string;
+  constructor(request_id: string, workflow_id: string) {
+    this.request_id = request_id;
+    this.workflow_id = workflow_id;
+  }
+}
+
+export class GetWorkflowNotificationsResponse extends BaseResponse {
+  notifications?: NotificationOutput[];
+  constructor(request_id: string, notifications?: NotificationOutput[], error_message?: string) {
+    super(MessageType.GET_WORKFLOW_NOTIFICATIONS, request_id, error_message);
+    this.notifications = notifications;
+  }
+}
+
+export class GetWorkflowStreamsRequest implements BaseMessage {
+  type = MessageType.GET_WORKFLOW_STREAMS;
+  request_id: string;
+  workflow_id: string;
+  constructor(request_id: string, workflow_id: string) {
+    this.request_id = request_id;
+    this.workflow_id = workflow_id;
+  }
+}
+
+export class GetWorkflowStreamsResponse extends BaseResponse {
+  streams?: StreamEntryOutput[];
+  constructor(request_id: string, streams?: StreamEntryOutput[], error_message?: string) {
+    super(MessageType.GET_WORKFLOW_STREAMS, request_id, error_message);
+    this.streams = streams;
   }
 }
