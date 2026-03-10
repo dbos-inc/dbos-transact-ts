@@ -522,6 +522,9 @@ export interface ScheduleOutput {
   schedule: string;
   status: string;
   context: string;
+  last_fired_at: string | null;
+  automatic_backfill: boolean;
+  cron_timezone: string | null;
 }
 
 export interface ListSchedulesBody {

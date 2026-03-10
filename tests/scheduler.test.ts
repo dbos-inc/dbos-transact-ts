@@ -1,5 +1,5 @@
 import { DBOS, ConfiguredInstance, DBOSClient } from '../src';
-import { DBOSConfig } from '../src/dbos-executor';
+import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import { generateDBOSTestConfig, setUpDBOSTestSysDb, dropDatabase } from './helpers';
 import { sleepms } from '../src/utils';
 
@@ -38,7 +38,6 @@ describe('dynamic-scheduler-tests', () => {
   const regMyWf = DBOS.registerWorkflow(myWorkflow, { name: 'myWorkflow' });
   const regOtherWf = DBOS.registerWorkflow(otherWorkflow, { name: 'otherWorkflow' });
 
-  // Matches Python test_schedule_crud
   test('schedule-crud', async () => {
     // Create a schedule with context
     await DBOS.createSchedule({
@@ -55,6 +54,10 @@ describe('dynamic-scheduler-tests', () => {
     expect(schedules[0].workflowName).toBe('myWorkflow');
     expect(schedules[0].schedule).toBe('* * * * *');
     expect(schedules[0].context).toEqual({ env: 'test' });
+    // Verify defaults for new fields
+    expect(schedules[0].lastFiredAt).toBeNull();
+    expect(schedules[0].automaticBackfill).toBe(false);
+    expect(schedules[0].cronTimezone).toBeNull();
 
     // Get schedule by name
     const sched = await DBOS.getSchedule('test-schedule');
@@ -64,6 +67,9 @@ describe('dynamic-scheduler-tests', () => {
     expect(sched!.schedule).toBe('* * * * *');
     expect(sched!.scheduleId).toBe(schedules[0].scheduleId);
     expect(sched!.context).toEqual({ env: 'test' });
+    expect(sched!.lastFiredAt).toBeNull();
+    expect(sched!.automaticBackfill).toBe(false);
+    expect(sched!.cronTimezone).toBeNull();
 
     // Get nonexistent schedule
     expect(await DBOS.getSchedule('nonexistent')).toBeNull();
@@ -85,6 +91,30 @@ describe('dynamic-scheduler-tests', () => {
         schedule: '0 0 * * *',
       }),
     ).rejects.toThrow(/already exists/);
+
+    // Create with explicit schedule options
+    await DBOS.createSchedule({
+      scheduleName: 'tz-schedule',
+      workflowFn: regMyWf,
+      schedule: '0 0 * * *',
+      options: { cronTimezone: 'America/New_York', automaticBackfill: true },
+    });
+    const tzSched = await DBOS.getSchedule('tz-schedule');
+    expect(tzSched).not.toBeNull();
+    expect(tzSched!.cronTimezone).toBe('America/New_York');
+    expect(tzSched!.automaticBackfill).toBe(true);
+    expect(tzSched!.lastFiredAt).toBeNull();
+    await DBOS.deleteSchedule('tz-schedule');
+
+    // Reject invalid timezone
+    await expect(
+      DBOS.createSchedule({
+        scheduleName: 'bad-tz',
+        workflowFn: regMyWf,
+        schedule: '0 0 * * *',
+        options: { cronTimezone: 'Not/A/Timezone' },
+      }),
+    ).rejects.toThrow(/Invalid timezone/);
 
     // --- list_schedules filters ---
     await DBOS.createSchedule({
@@ -146,9 +176,8 @@ describe('dynamic-scheduler-tests', () => {
   }
   const regBadApplyWf = DBOS.registerWorkflow(badApplyWorkflow, { name: 'badApplyWorkflow' });
 
-  // Matches Python test_apply_schedules
   test('apply-schedules', async () => {
-    // Apply two schedules at once
+    // Apply two schedules at once, sched-b with options
     await DBOS.applySchedules([
       {
         scheduleName: 'sched-a',
@@ -161,6 +190,8 @@ describe('dynamic-scheduler-tests', () => {
         workflowFn: regOtherWf,
         schedule: '0 0 * * *',
         context: null,
+        automaticBackfill: true,
+        cronTimezone: 'Asia/Tokyo',
       },
     ]);
     let schedules = await DBOS.listSchedules();
@@ -168,8 +199,12 @@ describe('dynamic-scheduler-tests', () => {
     let byName = Object.fromEntries(schedules.map((s) => [s.scheduleName, s]));
     expect(byName['sched-a'].schedule).toBe('* * * * *');
     expect(byName['sched-a'].context).toEqual({ region: 'us' });
+    expect(byName['sched-a'].automaticBackfill).toBe(false);
+    expect(byName['sched-a'].cronTimezone).toBeNull();
     expect(byName['sched-b'].schedule).toBe('0 0 * * *');
     expect(byName['sched-b'].context).toBeNull();
+    expect(byName['sched-b'].automaticBackfill).toBe(true);
+    expect(byName['sched-b'].cronTimezone).toBe('Asia/Tokyo');
 
     // Replace sched-a, add sched-c (sched-b is NOT removed — apply does upsert per schedule)
     await DBOS.applySchedules([
@@ -244,7 +279,6 @@ describe('dynamic-scheduler-tests', () => {
   }
   const regCrudWf = DBOS.registerWorkflow(crudWorkflow, { name: 'crudWorkflow' });
 
-  // Matches Python test_schedule_crud_from_workflow
   test('schedule-crud-from-workflow', async () => {
     const handle = await DBOS.startWorkflow(regCrudWf)();
     await handle.getResult();
@@ -319,6 +353,7 @@ describe('dynamic-scheduler-tests', () => {
       workflowFn: regFiresB,
       schedule: '* * * * * *',
       context: { key: 'beta' },
+      options: { cronTimezone: 'America/New_York' },
     });
 
     await retryUntilSuccess(() => {
@@ -333,6 +368,24 @@ describe('dynamic-scheduler-tests', () => {
     for (const ctx of firesCounterB.contexts) {
       expect(ctx).toEqual({ key: 'beta' });
     }
+
+    // Verify lastFiredAt is set on both schedules as valid UTC timestamps
+    const schedA = await DBOS.getSchedule('fire-a');
+    expect(schedA).not.toBeNull();
+    expect(schedA!.lastFiredAt).not.toBeNull();
+    expect(schedA!.lastFiredAt!).toMatch(/Z$/);
+    const lastFiredA = new Date(schedA!.lastFiredAt!);
+    expect(lastFiredA.getTime()).not.toBeNaN();
+    expect(lastFiredA.getTime()).toBeLessThanOrEqual(Date.now());
+
+    const schedB = await DBOS.getSchedule('fire-b');
+    expect(schedB).not.toBeNull();
+    expect(schedB!.lastFiredAt).not.toBeNull();
+    expect(schedB!.lastFiredAt!).toMatch(/Z$/);
+    const lastFiredB = new Date(schedB!.lastFiredAt!);
+    expect(lastFiredB.getTime()).not.toBeNaN();
+    expect(lastFiredB.getTime()).toBeLessThanOrEqual(Date.now());
+    expect(schedB!.cronTimezone).toBe('America/New_York');
 
     await DBOS.deleteSchedule('fire-a');
     await DBOS.deleteSchedule('fire-b');
@@ -670,6 +723,140 @@ describe('dynamic-scheduler-tests', () => {
   }, 30000);
 
   // ---------------------------------------------------------------------------
+  // Backfill with timezone
+  // ---------------------------------------------------------------------------
+  const backfillTzUtcResults: { dates: Date[] } = { dates: [] };
+  const backfillTzNyResults: { dates: Date[] } = { dates: [] };
+  async function backfillTzUtcWf(scheduledDate: Date, _context: unknown) {
+    backfillTzUtcResults.dates.push(scheduledDate);
+    await Promise.resolve();
+  }
+  async function backfillTzNyWf(scheduledDate: Date, _context: unknown) {
+    backfillTzNyResults.dates.push(scheduledDate);
+    await Promise.resolve();
+  }
+  const regBackfillTzUtc = DBOS.registerWorkflow(backfillTzUtcWf, { name: 'backfillTzUtcWf' });
+  const regBackfillTzNy = DBOS.registerWorkflow(backfillTzNyWf, { name: 'backfillTzNyWf' });
+
+  test('backfill-with-timezone', async () => {
+    backfillTzUtcResults.dates = [];
+    backfillTzNyResults.dates = [];
+
+    // Same cron (midnight daily), different timezones
+    await DBOS.createSchedule({
+      scheduleName: 'tz-utc',
+      workflowFn: regBackfillTzUtc,
+      schedule: '0 0 * * *',
+      options: { cronTimezone: 'UTC' },
+    });
+    await DBOS.createSchedule({
+      scheduleName: 'tz-ny',
+      workflowFn: regBackfillTzNy,
+      schedule: '0 0 * * *',
+      options: { cronTimezone: 'America/New_York' },
+    });
+    // Pause both so the live scheduler doesn't interfere
+    await DBOS.pauseSchedule('tz-utc');
+    await DBOS.pauseSchedule('tz-ny');
+
+    // Backfill a window that contains two UTC midnights and two NY midnights.
+    // In winter, America/New_York is UTC-5.
+    const start = new Date(Date.UTC(2024, 11, 31, 23, 0, 0)); // Dec 31 23:00 UTC
+    const end = new Date(Date.UTC(2025, 0, 3, 0, 0, 0)); // Jan 3 00:00 UTC
+
+    const handlesUtc = await DBOS.backfillSchedule('tz-utc', start, end);
+    const handlesNy = await DBOS.backfillSchedule('tz-ny', start, end);
+
+    for (const h of [...handlesUtc, ...handlesNy]) {
+      await h.getResult();
+    }
+
+    // UTC schedule: midnight UTC on Jan 1 and Jan 2
+    const utcTimes = backfillTzUtcResults.dates.map((d) => d.getTime()).sort((a, b) => a - b);
+    expect(utcTimes.length).toBe(2);
+    const utc0 = new Date(utcTimes[0]);
+    const utc1 = new Date(utcTimes[1]);
+    expect(utc0.getUTCDate()).toBe(1);
+    expect(utc0.getUTCHours()).toBe(0);
+    expect(utc1.getUTCDate()).toBe(2);
+    expect(utc1.getUTCHours()).toBe(0);
+
+    // NY schedule: midnight Eastern = 05:00 UTC (winter), so Jan 1 05:00 UTC and Jan 2 05:00 UTC
+    const nyTimes = backfillTzNyResults.dates.map((d) => d.getTime()).sort((a, b) => a - b);
+    expect(nyTimes.length).toBe(2);
+    const ny0 = new Date(nyTimes[0]);
+    const ny1 = new Date(nyTimes[1]);
+    expect(ny0.getUTCHours()).toBe(5);
+    expect(ny0.getUTCMinutes()).toBe(0);
+    expect(ny1.getUTCHours()).toBe(5);
+    expect(ny1.getUTCMinutes()).toBe(0);
+
+    // The NY fires should be different instants from the UTC fires
+    expect(nyTimes[0]).not.toBe(utcTimes[0]);
+    expect(nyTimes[1]).not.toBe(utcTimes[1]);
+
+    await DBOS.deleteSchedule('tz-utc');
+    await DBOS.deleteSchedule('tz-ny');
+  }, 30000);
+
+  // ---------------------------------------------------------------------------
+  // Automatic backfill on restart
+  // ---------------------------------------------------------------------------
+  const autoBackfillResults: { dates: Date[] } = { dates: [] };
+  async function autoBackfillWf(scheduledDate: Date, _context: unknown) {
+    autoBackfillResults.dates.push(scheduledDate);
+    await Promise.resolve();
+  }
+  const regAutoBackfillWf = DBOS.registerWorkflow(autoBackfillWf, { name: 'autoBackfillWf' });
+
+  test('automatic-backfill-on-restart', async () => {
+    autoBackfillResults.dates = [];
+
+    // Create an hourly schedule with automatic_backfill enabled (won't fire naturally during test)
+    await DBOS.createSchedule({
+      scheduleName: 'backfill-restart',
+      workflowFn: regAutoBackfillWf,
+      schedule: '0 * * * *',
+      options: { automaticBackfill: true },
+    });
+
+    // Set lastFiredAt to 3 hours ago, simulating that the scheduler was down
+    const threeHoursAgo = new Date(Date.now() - 3 * 60 * 60 * 1000);
+    threeHoursAgo.setMinutes(0, 0, 0);
+    await DBOSExecutor.globalInstance!.systemDatabase.updateLastFiredAt(
+      'backfill-restart',
+      threeHoursAgo.toISOString(),
+    );
+
+    // Verify the schedule metadata reflects our changes
+    const sched = await DBOS.getSchedule('backfill-restart');
+    expect(sched).not.toBeNull();
+    expect(sched!.automaticBackfill).toBe(true);
+    expect(sched!.lastFiredAt).not.toBeNull();
+    expect(new Date(sched!.lastFiredAt!).getTime()).toBe(threeHoursAgo.getTime());
+
+    // Shutdown and relaunch — the scheduler should backfill on startup
+    await DBOS.shutdown();
+    await DBOS.launch();
+
+    // Wait for the scheduler polling loop to pick up the schedule and backfill
+    await retryUntilSuccess(() => {
+      expect(autoBackfillResults.dates.length).toBeGreaterThanOrEqual(2);
+    });
+
+    // Verify the backfilled times are hourly slots between lastFiredAt and now
+    const firedTimes = autoBackfillResults.dates.map((d) => d.getTime()).sort((a, b) => a - b);
+    for (const t of firedTimes) {
+      expect(t).toBeGreaterThan(threeHoursAgo.getTime());
+      expect(t).toBeLessThanOrEqual(Date.now());
+      // Hourly cron fires at minute 0
+      expect(new Date(t).getUTCMinutes()).toBe(0);
+    }
+
+    await DBOS.deleteSchedule('backfill-restart');
+  }, 30000);
+
+  // ---------------------------------------------------------------------------
   // Class-based workflows
   // ---------------------------------------------------------------------------
   class ScheduledClass {
@@ -753,6 +940,10 @@ describe('dynamic-scheduler-tests', () => {
       expect(schedules[0].workflowName).toBe('myWorkflow');
       expect(schedules[0].schedule).toBe('* * * * *');
       expect(schedules[0].context).toEqual({ env: 'client' });
+      // Verify defaults for new fields
+      expect(schedules[0].lastFiredAt).toBeNull();
+      expect(schedules[0].automaticBackfill).toBe(false);
+      expect(schedules[0].cronTimezone).toBeNull();
 
       const sched = await client.getSchedule('client-test');
       expect(sched).not.toBeNull();
@@ -779,18 +970,42 @@ describe('dynamic-scheduler-tests', () => {
         }),
       ).rejects.toThrow();
 
+      // Create with explicit schedule options
+      await client.createSchedule({
+        scheduleName: 'client-tz',
+        workflowName: 'myWorkflow',
+        schedule: '0 0 * * *',
+        options: { cronTimezone: 'Europe/London', automaticBackfill: true },
+      });
+      const tzSched = await client.getSchedule('client-tz');
+      expect(tzSched).not.toBeNull();
+      expect(tzSched!.cronTimezone).toBe('Europe/London');
+      expect(tzSched!.automaticBackfill).toBe(true);
+      expect(tzSched!.lastFiredAt).toBeNull();
+
+      // Reject invalid timezone
+      await expect(
+        client.createSchedule({
+          scheduleName: 'bad-tz',
+          workflowName: 'myWorkflow',
+          schedule: '0 0 * * *',
+          options: { cronTimezone: 'Not/A/Timezone' },
+        }),
+      ).rejects.toThrow(/Invalid timezone/);
+
       // List with filters
       await client.createSchedule({
         scheduleName: 'client-other',
         workflowName: 'otherWorkflow',
         schedule: '0 0 * * *',
       });
-      expect((await client.listSchedules({ status: 'ACTIVE' })).length).toBe(2);
-      expect((await client.listSchedules({ workflowName: 'myWorkflow' })).length).toBe(1);
-      expect((await client.listSchedules({ scheduleNamePrefix: 'client-t' })).length).toBe(1);
+      expect((await client.listSchedules({ status: 'ACTIVE' })).length).toBe(3);
+      expect((await client.listSchedules({ workflowName: 'myWorkflow' })).length).toBe(2);
+      expect((await client.listSchedules({ scheduleNamePrefix: 'client-t' })).length).toBe(2);
 
       // Delete
       await client.deleteSchedule('client-test');
+      await client.deleteSchedule('client-tz');
       await client.deleteSchedule('client-other');
       expect((await client.listSchedules()).length).toBe(0);
     } finally {
@@ -803,10 +1018,21 @@ describe('dynamic-scheduler-tests', () => {
     try {
       await client.applySchedules([
         { scheduleName: 'csched-a', workflowName: 'myWorkflow', schedule: '* * * * *', context: { region: 'us' } },
-        { scheduleName: 'csched-b', workflowName: 'otherWorkflow', schedule: '0 0 * * *' },
+        {
+          scheduleName: 'csched-b',
+          workflowName: 'otherWorkflow',
+          schedule: '0 0 * * *',
+          automaticBackfill: true,
+          cronTimezone: 'Europe/Rome',
+        },
       ]);
       let schedules = await client.listSchedules();
       expect(schedules.length).toBe(2);
+      let byName = Object.fromEntries(schedules.map((s) => [s.scheduleName, s]));
+      expect(byName['csched-a'].automaticBackfill).toBe(false);
+      expect(byName['csched-a'].cronTimezone).toBeNull();
+      expect(byName['csched-b'].automaticBackfill).toBe(true);
+      expect(byName['csched-b'].cronTimezone).toBe('Europe/Rome');
 
       // Replace csched-a, add csched-c
       await client.applySchedules([
@@ -815,7 +1041,7 @@ describe('dynamic-scheduler-tests', () => {
       ]);
       schedules = await client.listSchedules();
       expect(schedules.length).toBe(3);
-      const byName = Object.fromEntries(schedules.map((s) => [s.scheduleName, s]));
+      byName = Object.fromEntries(schedules.map((s) => [s.scheduleName, s]));
       expect(byName['csched-a'].schedule).toBe('0 * * * *');
       expect(byName['csched-a'].context).toBeNull();
       expect(byName['csched-c'].context).toEqual([1, 2]);
