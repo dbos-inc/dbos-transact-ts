@@ -135,10 +135,7 @@ export function installTraceContextManager(appName: string = 'dbos'): void {
 export class Tracer {
   readonly applicationID: string;
   readonly executorID: string;
-  constructor(
-    private readonly telemetryCollector: TelemetryCollector,
-    _appName: string = 'dbos',
-  ) {
+  constructor(private readonly telemetryCollector: TelemetryCollector) {
     this.applicationID = globalParams.appID;
     this.executorID = globalParams.executorID;
   }

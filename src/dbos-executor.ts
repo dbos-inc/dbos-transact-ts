@@ -250,7 +250,7 @@ export class DBOSExecutor {
     }
     this.logger = new GlobalLogger(this.telemetryCollector, this.config.telemetry.logs, this.appName);
     this.ctxLogger = new DBOSContextualLogger(this.logger, () => getActiveSpan());
-    this.tracer = new Tracer(this.telemetryCollector, this.appName);
+    this.tracer = new Tracer(this.telemetryCollector);
     this.serializer = config.serializer;
 
     if (systemDatabase) {
