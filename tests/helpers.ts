@@ -25,8 +25,11 @@ export function generateDBOSTestConfig(): DBOSConfig {
     throw new Error('DB_PASSWORD or PGPASSWORD environment variable not set');
   }
   const _silenceLogs = process.env.SILENCE_LOGS === 'true';
-
-  const databaseUrl = `postgresql://postgres:${dbPassword}@localhost:5432/dbostest?sslmode=disable`;
+  const dbHost = process.env.PGHOST || 'localhost';
+  const dbPort = process.env.PGPORT || '5432';
+  const dbUser = process.env.PGUSER || 'postgres';
+  const dbName = process.env.DBOS_TEST_DBNAME || 'dbostest';
+  const databaseUrl = `postgresql://${dbUser}:${dbPassword}@${dbHost}:${dbPort}/${dbName}?sslmode=disable`;
   const systemDatabaseUrl = getSysDatabaseUrlFromUserDb(databaseUrl);
 
   return {

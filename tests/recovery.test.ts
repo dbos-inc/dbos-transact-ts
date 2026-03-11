@@ -13,6 +13,12 @@ import { DBOSAwaitedWorkflowExceededMaxRecoveryAttempts, DBOSMaxRecoveryAttempts
 import { sleepms } from '../src/utils';
 import { runWithTopContext } from '../src/context';
 import assert from 'assert';
+import { randomUUID } from 'node:crypto';
+import { spawn } from 'node:child_process';
+import path from 'node:path';
+import os from 'node:os';
+import { writeFile, rm } from 'node:fs/promises';
+import { globalParams } from '../src/utils';
 
 describe('recovery-tests', () => {
   let config: DBOSConfig;
@@ -198,6 +204,76 @@ describe('recovery-tests', () => {
     expect(LocalRecovery.cnt).toBe(10); // Should run twice.
   });
 
+  test('recv-recovery-with-two-processes-on-local', async () => {
+    const workflowID = randomUUID();
+    const topic = `recovery-topic-${randomUUID()}`;
+    const timeoutSeconds = 30;
+    const barrierPath = path.join(os.tmpdir(), `dbos-recv-recovery-${randomUUID()}`);
+
+    const startWorker = spawnRecvWorker(['start', workflowID, topic, `${timeoutSeconds}`], {
+      ...process.env,
+      DBOS__VMID: 'local',
+      DBOS__APPVERSION: globalParams.appVersion,
+    });
+    await startWorker.waitFor('STARTED');
+    const startResult = await startWorker.done;
+    expect(startResult.code).toBe(0);
+
+    const recoveryWorker1 = spawnRecvWorker(['recover', workflowID, topic, `${timeoutSeconds}`, barrierPath], {
+      ...process.env,
+      DBOS__VMID: 'test-recv-worker-1',
+      DBOS__APPVERSION: globalParams.appVersion,
+    });
+    const recoveryWorker2 = spawnRecvWorker(['recover', workflowID, topic, `${timeoutSeconds}`, barrierPath], {
+      ...process.env,
+      DBOS__VMID: 'test-recv-worker-2',
+      DBOS__APPVERSION: globalParams.appVersion,
+    });
+
+    try {
+      // Two separate processes both attempt to recover the same workflow from the
+      // "local" executor. This is the recovery scenario we want to stress.
+      await Promise.all([recoveryWorker1.waitFor('PREPARED'), recoveryWorker2.waitFor('PREPARED')]);
+      await writeFile(barrierPath, 'go');
+      await Promise.all([recoveryWorker1.waitFor('RECOVERED:'), recoveryWorker2.waitFor('RECOVERED:')]);
+
+      await DBOS.send(workflowID, 'testmsg', topic);
+
+      const [worker1Result, worker2Result] = await Promise.all([recoveryWorker1.done, recoveryWorker2.done]);
+      console.log('worker1 stdout\n', worker1Result.stdout);
+      console.log('worker1 stderr\n', worker1Result.stderr);
+      console.log('worker2 stdout\n', worker2Result.stdout);
+      console.log('worker2 stderr\n', worker2Result.stderr);
+      expect(worker1Result.code).toBe(0);
+      expect(worker2Result.code).toBe(0);
+
+      const recoveredByWorker1 = /RECOVERED:(.*)/.exec(worker1Result.stdout)?.[1] ?? '';
+      const recoveredByWorker2 = /RECOVERED:(.*)/.exec(worker2Result.stdout)?.[1] ?? '';
+      expect([recoveredByWorker1, recoveredByWorker2].some((r) => r.includes(workflowID))).toBe(true);
+
+      const result1 = /RESULT:(.*)/.exec(worker1Result.stdout)?.[1] ?? '';
+      const result2 = /RESULT:(.*)/.exec(worker2Result.stdout)?.[1] ?? '';
+      expect([result1, result2]).toContain('testmsg');
+
+      const handle = DBOS.retrieveWorkflow<string>(workflowID);
+      // Repro output seen while developing this test:
+      // - one recovery worker reported RESULT:testmsg
+      // - the other recovery worker reported RESULT:NULL
+      // - DBOS.retrieveWorkflow(workflowID).getResult() also resolved to "NULL"
+      // - but dbos.operation_outputs still checkpointed function_id 0 (DBOS.recv) as "testmsg"
+      await expect(handle.getResult()).resolves.toBe('testmsg');
+      await expect(handle.getStatus()).resolves.toMatchObject({ status: StatusString.SUCCESS });
+
+      const steps = (await DBOS.listWorkflowSteps(workflowID)) ?? [];
+      const recvSteps = steps.filter((s) => s.name === 'DBOS.recv');
+      expect(recvSteps).toHaveLength(1);
+      expect(recvSteps[0].output).toBe('testmsg');
+      expect(recvSteps[0].error).toBeNull();
+    } finally {
+      await rm(barrierPath, { force: true });
+    }
+  }, 30000);
+
   async function stepOne(): Promise<number | undefined> {
     return Promise.resolve(DBOS.stepID);
   }
@@ -240,3 +316,45 @@ describe('recovery-tests', () => {
     await expect(recoveredChildHandle.getResult()).resolves.toEqual(recoveredChildHandle.workflowID);
   });
 });
+
+function spawnRecvWorker(args: string[], env: NodeJS.ProcessEnv) {
+  const child = spawn('npx', ['ts-node', './tests/recoveryRecvWorker.ts', ...args], {
+    cwd: process.cwd(),
+    env,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+
+  let stdout = '';
+  let stderr = '';
+
+  child.stdout.on('data', (chunk) => {
+    stdout += chunk.toString();
+  });
+  child.stderr.on('data', (chunk) => {
+    stderr += chunk.toString();
+  });
+
+  const waitFor = (needle: string, timeoutMs: number = 10000) =>
+    new Promise<void>((resolve, reject) => {
+      const start = Date.now();
+      const timer = setInterval(() => {
+        if (stdout.includes(needle) || stderr.includes(needle)) {
+          clearInterval(timer);
+          resolve();
+          return;
+        }
+        if (Date.now() - start > timeoutMs) {
+          clearInterval(timer);
+          reject(new Error(`Timed out waiting for "${needle}". stdout=${stdout} stderr=${stderr}`));
+        }
+      }, 25);
+    });
+
+  const done = new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve) => {
+    child.on('close', (code) => {
+      resolve({ code, stdout, stderr });
+    });
+  });
+
+  return { waitFor, done };
+}
