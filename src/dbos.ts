@@ -837,8 +837,11 @@ export class DBOS {
    * Resume a workflow given its ID.
    * @param workflowID - ID of the workflow
    */
-  static async resumeWorkflow<T>(workflowID: string): Promise<WorkflowHandle<Awaited<T>>> {
-    const handles = await this.resumeWorkflows<T>([workflowID]);
+  static async resumeWorkflow<T>(
+    workflowID: string,
+    options?: { queueName?: string },
+  ): Promise<WorkflowHandle<Awaited<T>>> {
+    const handles = await this.resumeWorkflows<T>([workflowID], options);
     return handles[0];
   }
 
@@ -847,10 +850,13 @@ export class DBOS {
    * @param workflowIDs - IDs of the workflows to resume
    * @returns An array of workflow handles
    */
-  static async resumeWorkflows<T>(workflowIDs: string[]): Promise<WorkflowHandle<Awaited<T>>[]> {
+  static async resumeWorkflows<T>(
+    workflowIDs: string[],
+    options?: { queueName?: string },
+  ): Promise<WorkflowHandle<Awaited<T>>[]> {
     ensureDBOSIsLaunched('resumeWorkflows');
     await runInternalStep(async () => {
-      return DBOSExecutor.globalInstance!.systemDatabase.resumeWorkflows(workflowIDs);
+      return DBOSExecutor.globalInstance!.systemDatabase.resumeWorkflows(workflowIDs, options?.queueName);
     }, 'DBOS.resumeWorkflow');
     return workflowIDs.map((wfid) => this.retrieveWorkflow(wfid));
   }
@@ -894,7 +900,13 @@ export class DBOS {
   static async forkWorkflow<T>(
     workflowID: string,
     startStep: number,
-    options?: { newWorkflowID?: string; applicationVersion?: string; timeoutMS?: number },
+    options?: {
+      newWorkflowID?: string;
+      applicationVersion?: string;
+      timeoutMS?: number;
+      queueName?: string;
+      queuePartitionKey?: string;
+    },
   ): Promise<WorkflowHandle<Awaited<T>>> {
     ensureDBOSIsLaunched('forkWorkflow');
     const forkedID = await runInternalStep(async () => {
