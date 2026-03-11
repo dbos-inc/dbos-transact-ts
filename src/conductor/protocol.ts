@@ -136,6 +136,7 @@ export class ResumeRequest implements BaseMessage {
   request_id: string;
   workflow_id: string;
   workflow_ids?: string[];
+  queue_name?: string;
   constructor(request_id: string, workflow_id: string) {
     this.request_id = request_id;
     this.workflow_id = workflow_id;
@@ -382,6 +383,8 @@ export interface ForkWorkflowBody {
   start_step: number;
   application_version?: string;
   new_workflow_id?: string;
+  queue_name?: string;
+  queue_partition_key?: string;
 }
 
 export class ForkWorkflowRequest implements BaseMessage {

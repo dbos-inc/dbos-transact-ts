@@ -372,12 +372,12 @@ export class DBOSClient {
     return this.systemDatabase.cancelWorkflows(workflowIDs);
   }
 
-  resumeWorkflow(workflowID: string): Promise<void> {
-    return this.systemDatabase.resumeWorkflows([workflowID]);
+  resumeWorkflow(workflowID: string, options?: { queueName?: string }): Promise<void> {
+    return this.systemDatabase.resumeWorkflows([workflowID], options?.queueName);
   }
 
-  resumeWorkflows(workflowIDs: string[]): Promise<void> {
-    return this.systemDatabase.resumeWorkflows(workflowIDs);
+  resumeWorkflows(workflowIDs: string[], options?: { queueName?: string }): Promise<void> {
+    return this.systemDatabase.resumeWorkflows(workflowIDs, options?.queueName);
   }
 
   setWorkflowPriority(workflowID: string, priority: number): Promise<void> {
@@ -395,7 +395,13 @@ export class DBOSClient {
   forkWorkflow(
     workflowID: string,
     startStep: number,
-    options?: { newWorkflowID?: string; applicationVersion?: string; timeoutMS?: number },
+    options?: {
+      newWorkflowID?: string;
+      applicationVersion?: string;
+      timeoutMS?: number;
+      queueName?: string;
+      queuePartitionKey?: string;
+    },
   ): Promise<string> {
     return forkWorkflow(this.systemDatabase, workflowID, startStep, options);
   }

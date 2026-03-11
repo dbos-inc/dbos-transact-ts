@@ -188,7 +188,7 @@ export class Conductor {
             const resumeIds = resumeMsg.workflow_ids ?? [resumeMsg.workflow_id];
             let resumeSuccess = true;
             try {
-              await this.dbosExec.systemDatabase.resumeWorkflows(resumeIds);
+              await this.dbosExec.systemDatabase.resumeWorkflows(resumeIds, resumeMsg.queue_name);
             } catch (e) {
               errorMsg = `Exception encountered when resuming workflow(s) ${String(resumeIds)}: ${(e as Error).message}`;
               this.dbosExec.logger.error(errorMsg);
@@ -217,6 +217,8 @@ export class Conductor {
               newWorkflowID = await this.dbosExec.forkWorkflow(forkMsg.body.workflow_id, forkMsg.body.start_step, {
                 newWorkflowID: newWorkflowID,
                 applicationVersion: forkMsg.body.application_version,
+                queueName: forkMsg.body.queue_name,
+                queuePartitionKey: forkMsg.body.queue_partition_key,
               });
             } catch (e) {
               errorMsg = `Exception encountered when forking workflow ${forkMsg.body.workflow_id} to new workflow ${newWorkflowID} on step ${forkMsg.body.start_step}, app version ${forkMsg.body.application_version}: ${(e as Error).message}`;
