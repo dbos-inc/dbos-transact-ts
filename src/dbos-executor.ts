@@ -508,6 +508,7 @@ export class DBOSExecutor {
           internalStatus.workflowName,
           true,
           Date.now(),
+          Date.now(),
           { error: sererr.serializedValue, serialization: sererr.serialization },
         );
       }
@@ -520,6 +521,7 @@ export class DBOSExecutor {
         callerFunctionID,
         internalStatus.workflowName,
         true,
+        Date.now(),
         Date.now(),
         {
           childWorkflowID: workflowID,
@@ -825,7 +827,7 @@ export class DBOSExecutor {
     if (result === dbosNull) {
       // Record the error, then throw it.
       err = err === dbosNull ? new DBOSMaxStepRetriesError(stepFnName, maxAttempts, errors) : err;
-      await this.systemDatabase.recordOperationResult(wfid, funcID, stepFnName, true, startTime, {
+      await this.systemDatabase.recordOperationResult(wfid, funcID, stepFnName, true, startTime, Date.now(), {
         error: this.serializer.stringify(serializeError(err)),
         serialization: this.serializer.name(),
       });
@@ -835,7 +837,7 @@ export class DBOSExecutor {
     } else {
       // Record the execution and return.
       const funcResult = serializeFunctionInputOutput(result, [stepFnName, '<result>'], this.serializer);
-      await this.systemDatabase.recordOperationResult(wfid, funcID, stepFnName, true, startTime, {
+      await this.systemDatabase.recordOperationResult(wfid, funcID, stepFnName, true, startTime, Date.now(), {
         output: funcResult.stringified,
         serialization: funcResult.sername,
       });
@@ -895,16 +897,32 @@ export class DBOSExecutor {
     try {
       const output: T = await callback();
       const funcOutput = serializeFunctionInputOutput(output, [functionName, '<result>'], this.serializer);
-      await this.systemDatabase.recordOperationResult(workflowID, functionID, functionName, true, startTime, {
-        output: funcOutput.stringified,
-        childWorkflowID: childWfId,
-      });
+      await this.systemDatabase.recordOperationResult(
+        workflowID,
+        functionID,
+        functionName,
+        true,
+        startTime,
+        Date.now(),
+        {
+          output: funcOutput.stringified,
+          childWorkflowID: childWfId,
+        },
+      );
       return funcOutput.deserialized;
     } catch (e) {
-      await this.systemDatabase.recordOperationResult(workflowID, functionID, functionName, false, startTime, {
-        error: this.serializer.stringify(serializeError(e)),
-        childWorkflowID: childWfId,
-      });
+      await this.systemDatabase.recordOperationResult(
+        workflowID,
+        functionID,
+        functionName,
+        false,
+        startTime,
+        Date.now(),
+        {
+          error: this.serializer.stringify(serializeError(e)),
+          childWorkflowID: childWfId,
+        },
+      );
 
       throw e;
     }

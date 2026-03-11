@@ -795,6 +795,7 @@ export class SystemDatabase {
     functionName: string,
     checkConflict: boolean,
     startTimeEpochMs: number,
+    endTimeEpochMs: number,
     options: {
       childWorkflowID?: string | null;
       output?: string | null;
@@ -803,7 +804,6 @@ export class SystemDatabase {
     } = {},
   ): Promise<void> {
     const client = await this.pool.connect();
-    const now = Date.now();
     try {
       await this.recordOperationResultInternal(
         client,
@@ -812,7 +812,7 @@ export class SystemDatabase {
         functionName,
         checkConflict,
         startTimeEpochMs,
-        now,
+        endTimeEpochMs,
         options,
       );
     } finally {
@@ -1867,6 +1867,7 @@ export class SystemDatabase {
         DBOS_FUNCNAME_GETEVENT,
         true,
         startTime,
+        Date.now(),
         {
           output: value,
           serialization: valueSer,
@@ -2950,7 +2951,9 @@ export class SystemDatabase {
         `INSERT INTO ${this.schemaName}.operation_outputs
          (workflow_uuid, function_id, output, error, function_name, child_workflow_id, started_at_epoch_ms, completed_at_epoch_ms, serialization)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-         ON CONFLICT DO NOTHING RETURNING completed_at_epoch_ms;`,
+         ON CONFLICT (workflow_uuid, function_id) DO UPDATE
+         SET completed_at_epoch_ms = operation_outputs.completed_at_epoch_ms
+         RETURNING completed_at_epoch_ms;`,
         [
           workflowID,
           functionID,
