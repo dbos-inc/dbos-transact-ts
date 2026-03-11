@@ -795,6 +795,7 @@ export class SystemDatabase {
     functionName: string,
     checkConflict: boolean,
     startTimeEpochMs: number,
+    endTimeEpochMs: number,
     options: {
       childWorkflowID?: string | null;
       output?: string | null;
@@ -803,7 +804,6 @@ export class SystemDatabase {
     } = {},
   ): Promise<void> {
     const client = await this.pool.connect();
-    const now = Date.now();
     try {
       await this.recordOperationResultInternal(
         client,
@@ -812,7 +812,7 @@ export class SystemDatabase {
         functionName,
         checkConflict,
         startTimeEpochMs,
-        now,
+        endTimeEpochMs,
         options,
       );
     } finally {
@@ -1867,6 +1867,7 @@ export class SystemDatabase {
         DBOS_FUNCNAME_GETEVENT,
         true,
         startTime,
+        Date.now(),
         {
           output: value,
           serialization: valueSer,
