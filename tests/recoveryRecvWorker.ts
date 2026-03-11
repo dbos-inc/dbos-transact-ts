@@ -63,7 +63,7 @@ async function main() {
 
     const handle =
       recoveredHandles.find((h) => h.workflowID === workflowID) ?? DBOS.retrieveWorkflow<string>(workflowID);
-    const result = await handle.getResult();
+    const result = (await handle.getResult()) as string;
     console.log(`RESULT:${result}`);
 
     await DBOS.shutdown();
