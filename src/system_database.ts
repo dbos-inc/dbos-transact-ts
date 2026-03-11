@@ -2950,7 +2950,9 @@ export class SystemDatabase {
         `INSERT INTO ${this.schemaName}.operation_outputs
          (workflow_uuid, function_id, output, error, function_name, child_workflow_id, started_at_epoch_ms, completed_at_epoch_ms, serialization)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-         ON CONFLICT DO NOTHING RETURNING completed_at_epoch_ms;`,
+         ON CONFLICT (workflow_uuid, function_id) DO UPDATE
+         SET completed_at_epoch_ms = operation_outputs.completed_at_epoch_ms
+         RETURNING completed_at_epoch_ms;`,
         [
           workflowID,
           functionID,
