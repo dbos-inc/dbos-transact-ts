@@ -53,6 +53,7 @@ export const globalParams = {
   executorID: process.env.DBOS__VMID || 'local', // The one true source of executorID
   appID: process.env.DBOS__APPID || '', // The one true source of appID
   enableOTLP: defaultEnableOTLP(), // Whether OTLP is enabled
+  tracingEnabled: false, // Whether span creation is active (enableOTLP or external TracerProvider)
   dbosVersion: loadDbosVersion(), // The version of the DBOS library
 };
 export const sleepms = (ms: number) => new Promise((r) => setTimeout(r, ms));
