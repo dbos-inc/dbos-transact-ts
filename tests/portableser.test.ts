@@ -341,7 +341,7 @@ describe('portable-serizlization-tests', () => {
     // "undefined" is not valid JSON
     const wfh = await DBOS.startWorkflow(voidPortableWorkflow)();
     const result = await wfh.getResult();
-    expect(result).toBeUndefined();
+    expect(result).toBeNull();
 
     // Verify the workflow completed successfully in the DB
     const dbRow = await systemDBClient.query<workflow_status>(
@@ -372,7 +372,7 @@ describe('portable-serizlization-tests', () => {
 
     const queuedHandle = DBOS.retrieveWorkflow(queuedId);
     const queuedResult = await queuedHandle.getResult();
-    expect(queuedResult).toBeUndefined();
+    expect(queuedResult).toBeNull();
   });
 
   // Related to issue #1208 — null should also round-trip correctly
