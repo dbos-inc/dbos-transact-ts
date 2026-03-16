@@ -308,8 +308,8 @@ export class Conductor {
             try {
               const workflows = await this.dbosExec.listWorkflows({
                 workflowIDs: [getWFMsg.workflow_id],
-                loadInput: getWFMsg.load_input ?? false,
-                loadOutput: getWFMsg.load_output ?? false,
+                loadInput: getWFMsg.load_input ?? true,
+                loadOutput: getWFMsg.load_output ?? true,
               });
               if (workflows.length > 0) {
                 wfOutput = new protocol.WorkflowsOutput(workflows[0]);
@@ -470,7 +470,7 @@ export class Conductor {
             break;
           case protocol.MessageType.LIST_SCHEDULES:
             const listSchedMsg = baseMsg as protocol.ListSchedulesRequest;
-            const loadContextList = listSchedMsg.body.load_context ?? false;
+            const loadContextList = listSchedMsg.body.load_context ?? true;
             let schedOutput: protocol.ScheduleOutput[] = [];
             try {
               const scheds = await this.dbosExec.systemDatabase.listSchedules({
@@ -499,7 +499,7 @@ export class Conductor {
             break;
           case protocol.MessageType.GET_SCHEDULE:
             const getSchedMsg = baseMsg as protocol.GetScheduleRequest;
-            const loadContextGet = getSchedMsg.load_context ?? false;
+            const loadContextGet = getSchedMsg.load_context ?? true;
             let getSchedOutput: protocol.ScheduleOutput | undefined = undefined;
             try {
               const sched = await this.dbosExec.systemDatabase.getSchedule(getSchedMsg.schedule_name);
