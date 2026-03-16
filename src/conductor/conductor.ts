@@ -306,13 +306,13 @@ export class Conductor {
             const getWFMsg = baseMsg as protocol.GetWorkflowRequest;
             let wfOutput: protocol.WorkflowsOutput | undefined = undefined;
             try {
-              const workflow = await this.dbosExec.listWorkflows({
+              const workflows = await this.dbosExec.listWorkflows({
                 workflowIDs: [getWFMsg.workflow_id],
                 loadInput: getWFMsg.load_input ?? true,
                 loadOutput: getWFMsg.load_output ?? true,
               });
-              if (workflow) {
-                wfOutput = new protocol.WorkflowsOutput(workflow[0]);
+              if (workflows.length > 0) {
+                wfOutput = new protocol.WorkflowsOutput(workflows[0]);
               }
             } catch (e) {
               errorMsg = `Exception encountered when getting workflow ${getWFMsg.workflow_id}: ${(e as Error).message}`;
