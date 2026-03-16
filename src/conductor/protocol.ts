@@ -31,6 +31,7 @@ export enum MessageType {
   GET_WORKFLOW_EVENTS = 'get_workflow_events',
   GET_WORKFLOW_NOTIFICATIONS = 'get_workflow_notifications',
   GET_WORKFLOW_STREAMS = 'get_workflow_streams',
+  GET_WORKFLOW_AGGREGATES = 'get_workflow_aggregates',
 }
 
 export interface BaseMessage {
@@ -55,6 +56,7 @@ export class ExecutorInfoResponse extends BaseResponse {
   hostname: string;
   language: string;
   dbos_version: string;
+  executor_metadata?: Record<string, unknown>;
   constructor(
     request_id: string,
     executor_id: string,
@@ -63,6 +65,7 @@ export class ExecutorInfoResponse extends BaseResponse {
     language: string,
     dbos_version: string,
     error_message?: string,
+    executor_metadata?: Record<string, unknown>,
   ) {
     super(MessageType.EXECUTOR_INFO, request_id, error_message);
     this.executor_id = executor_id;
@@ -70,6 +73,7 @@ export class ExecutorInfoResponse extends BaseResponse {
     this.hostname = hostname;
     this.language = language;
     this.dbos_version = dbos_version;
+    this.executor_metadata = executor_metadata;
   }
 }
 
@@ -326,6 +330,8 @@ export class GetWorkflowRequest implements BaseMessage {
   type = MessageType.GET_WORKFLOW;
   request_id: string;
   workflow_id: string;
+  load_input?: boolean;
+  load_output?: boolean;
   constructor(request_id: string, workflow_id: string) {
     this.request_id = request_id;
     this.workflow_id = workflow_id;
@@ -364,6 +370,7 @@ export class ListStepsRequest implements BaseMessage {
   type = MessageType.LIST_STEPS;
   request_id: string;
   workflow_id: string;
+  load_output?: boolean;
   constructor(request_id: string, workflow_id: string) {
     this.request_id = request_id;
     this.workflow_id = workflow_id;
@@ -524,7 +531,7 @@ export interface ScheduleOutput {
   workflow_class_name?: string;
   schedule: string;
   status: string;
-  context: string;
+  context?: string;
   last_fired_at: string | null;
   automatic_backfill: boolean;
   cron_timezone: string | null;
@@ -534,6 +541,7 @@ export interface ListSchedulesBody {
   status?: string | string[];
   workflow_name?: string | string[];
   schedule_name_prefix?: string | string[];
+  load_context?: boolean;
 }
 
 export class ListSchedulesRequest implements BaseMessage {
@@ -558,6 +566,7 @@ export class GetScheduleRequest implements BaseMessage {
   type = MessageType.GET_SCHEDULE;
   request_id: string;
   schedule_name: string;
+  load_context?: boolean;
   constructor(request_id: string, schedule_name: string) {
     this.request_id = request_id;
     this.schedule_name = schedule_name;
@@ -761,5 +770,45 @@ export class GetWorkflowStreamsResponse extends BaseResponse {
   constructor(request_id: string, streams?: StreamEntryOutput[], error_message?: string) {
     super(MessageType.GET_WORKFLOW_STREAMS, request_id, error_message);
     this.streams = streams;
+  }
+}
+
+// --- Workflow Aggregates ---
+
+export interface GetWorkflowAggregatesBody {
+  group_by_status?: boolean;
+  group_by_name?: boolean;
+  group_by_queue_name?: boolean;
+  group_by_executor_id?: boolean;
+  group_by_application_version?: boolean;
+  status?: string[];
+  start_time?: string;
+  end_time?: string;
+  name?: string[];
+  app_version?: string[];
+  executor_id?: string[];
+  queue_name?: string[];
+}
+
+export class GetWorkflowAggregatesRequest implements BaseMessage {
+  type = MessageType.GET_WORKFLOW_AGGREGATES;
+  request_id: string;
+  body: GetWorkflowAggregatesBody;
+  constructor(request_id: string, body: GetWorkflowAggregatesBody) {
+    this.request_id = request_id;
+    this.body = body;
+  }
+}
+
+export interface WorkflowAggregateOutput {
+  group: Record<string, string | null>;
+  count: number;
+}
+
+export class GetWorkflowAggregatesResponse extends BaseResponse {
+  output: WorkflowAggregateOutput[];
+  constructor(request_id: string, output: WorkflowAggregateOutput[], error_message?: string) {
+    super(MessageType.GET_WORKFLOW_AGGREGATES, request_id, error_message);
+    this.output = output;
   }
 }

@@ -86,6 +86,26 @@ export interface VersionInfo {
   createdAt: number;
 }
 
+export interface WorkflowAggregateRow {
+  group: Record<string, string | null>;
+  count: number;
+}
+
+export interface GetWorkflowAggregatesInput {
+  groupByStatus?: boolean;
+  groupByName?: boolean;
+  groupByQueueName?: boolean;
+  groupByExecutorId?: boolean;
+  groupByApplicationVersion?: boolean;
+  status?: string[];
+  startTime?: string;
+  endTime?: string;
+  name?: string[];
+  appVersion?: string[];
+  executorId?: string[];
+  queueName?: string[];
+}
+
 // For internal use, not serialized status.
 export interface WorkflowStatusInternal {
   workflowUUID: string;
@@ -2465,6 +2485,78 @@ export class SystemDatabase {
 
     const result = await this.pool.query<workflow_status>(query, params);
     return result.rows.map(mapWorkflowStatus);
+  }
+
+  async getWorkflowAggregates(input: GetWorkflowAggregatesInput): Promise<WorkflowAggregateRow[]> {
+    const groupByFlags: [string, boolean, string][] = [
+      ['status', input.groupByStatus ?? false, 'status'],
+      ['name', input.groupByName ?? false, 'name'],
+      ['queue_name', input.groupByQueueName ?? false, 'queue_name'],
+      ['executor_id', input.groupByExecutorId ?? false, 'executor_id'],
+      ['application_version', input.groupByApplicationVersion ?? false, 'application_version'],
+    ];
+
+    const groupNames: string[] = [];
+    const groupColumns: string[] = [];
+    for (const [colName, enabled, col] of groupByFlags) {
+      if (enabled) {
+        groupNames.push(colName);
+        groupColumns.push(col);
+      }
+    }
+
+    if (groupColumns.length === 0) {
+      throw new Error('At least one group_by flag must be set to True');
+    }
+
+    const whereClauses: string[] = [];
+    const params: unknown[] = [];
+    let paramIdx = 1;
+
+    const addFilter = (column: string, values: string[] | undefined) => {
+      if (!values || values.length === 0) return;
+      const placeholders = values.map((_, i) => `$${paramIdx + i}`).join(', ');
+      whereClauses.push(`${column} IN (${placeholders})`);
+      params.push(...values);
+      paramIdx += values.length;
+    };
+
+    addFilter('status', input.status);
+    addFilter('name', input.name);
+    addFilter('application_version', input.appVersion);
+    addFilter('executor_id', input.executorId);
+    addFilter('queue_name', input.queueName);
+
+    if (input.startTime) {
+      whereClauses.push(`created_at >= $${paramIdx}`);
+      params.push(new Date(input.startTime).getTime());
+      paramIdx++;
+    }
+    if (input.endTime) {
+      whereClauses.push(`created_at <= $${paramIdx}`);
+      params.push(new Date(input.endTime).getTime());
+      paramIdx++;
+    }
+
+    const whereClause = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+    const groupByClause = groupColumns.join(', ');
+
+    const query = `
+      SELECT ${groupByClause}, COUNT(*) as count
+      FROM "${this.schemaName}".workflow_status
+      ${whereClause}
+      GROUP BY ${groupByClause}
+    `;
+
+    const result = await this.pool.query<Record<string, unknown>>(query, params);
+
+    return result.rows.map((row) => {
+      const group: Record<string, string | null> = {};
+      for (const name of groupNames) {
+        group[name] = row[name] as string | null;
+      }
+      return { group, count: Number(row.count) };
+    });
   }
 
   async garbageCollect(cutoffEpochTimestampMs?: number, rowsThreshold?: number): Promise<void> {

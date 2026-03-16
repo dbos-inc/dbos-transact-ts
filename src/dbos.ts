@@ -133,6 +133,7 @@ export interface DBOSLaunchOptions {
   // For DBOS Conductor
   conductorURL?: string;
   conductorKey?: string;
+  conductorExecutorMetadata?: Record<string, unknown>;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -360,7 +361,21 @@ export class DBOS {
         const dbosDomain = process.env.DBOS_DOMAIN || 'cloud.dbos.dev';
         options.conductorURL = `wss://${dbosDomain}/conductor/v1alpha1`;
       }
-      DBOS.conductor = new Conductor(DBOSExecutor.globalInstance, options.conductorKey, options.conductorURL);
+      const executorMetadata = options.conductorExecutorMetadata ?? DBOS.#dbosConfig?.conductorExecutorMetadata;
+      if (executorMetadata !== undefined) {
+        // Validate that the metadata is JSON-serializable
+        try {
+          JSON.stringify(executorMetadata);
+        } catch (e) {
+          throw new DBOSError(`conductorExecutorMetadata must be JSON-serializable: ${e}`);
+        }
+      }
+      DBOS.conductor = new Conductor(
+        DBOSExecutor.globalInstance,
+        options.conductorKey,
+        options.conductorURL,
+        executorMetadata,
+      );
       DBOS.conductor.dispatchLoop();
     }
 

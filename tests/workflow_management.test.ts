@@ -2396,3 +2396,97 @@ describe('wf-cancel-tests', () => {
     expect(await sysdb.getAllStreamEntries('nonexistent')).toEqual({});
   });
 });
+
+describe('test-workflow-aggregates', () => {
+  let config: DBOSConfig;
+
+  beforeAll(async () => {
+    config = generateDBOSTestConfig();
+    DBOS.setConfig(config);
+  });
+
+  beforeEach(async () => {
+    process.env.DBOS__APPVERSION = 'v0';
+    await setUpDBOSTestSysDb(config);
+    await DBOS.launch();
+  });
+
+  afterEach(async () => {
+    await DBOS.shutdown();
+    process.env.DBOS__APPVERSION = undefined;
+  });
+
+  class AggWorkflows {
+    @DBOS.workflow()
+    static async successWorkflow() {
+      return Promise.resolve('ok');
+    }
+
+    @DBOS.workflow()
+    static async failWorkflow() {
+      throw new Error('fail');
+    }
+  }
+
+  test('test-get-workflow-aggregates', async () => {
+    // Run some successful workflows
+    for (let i = 0; i < 3; i++) {
+      await AggWorkflows.successWorkflow();
+    }
+
+    // Run some failing workflows
+    for (let i = 0; i < 2; i++) {
+      await expect(AggWorkflows.failWorkflow()).rejects.toThrow();
+    }
+
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+
+    // Group by status
+    const byStatus = await sysdb.getWorkflowAggregates({ groupByStatus: true });
+    const statusMap: Record<string, number> = {};
+    for (const r of byStatus) {
+      statusMap[r.group['status']!] = r.count;
+    }
+    expect(statusMap['SUCCESS']).toBe(3);
+    expect(statusMap['ERROR']).toBe(2);
+
+    // Group by name
+    const byName = await sysdb.getWorkflowAggregates({ groupByName: true });
+    const nameMap: Record<string, number> = {};
+    for (const r of byName) {
+      nameMap[r.group['name']!] = r.count;
+    }
+    // Find the workflow names dynamically since class naming may vary
+    const successName = Object.keys(nameMap).find((k) => k.includes('successWorkflow'))!;
+    const failName = Object.keys(nameMap).find((k) => k.includes('failWorkflow'))!;
+    expect(nameMap[successName]).toBe(3);
+    expect(nameMap[failName]).toBe(2);
+
+    // Group by both status and name
+    const byBoth = await sysdb.getWorkflowAggregates({ groupByStatus: true, groupByName: true });
+    const comboMap: Record<string, number> = {};
+    for (const r of byBoth) {
+      comboMap[`${r.group['status']}:${r.group['name']}`] = r.count;
+    }
+    expect(comboMap[`SUCCESS:${successName}`]).toBe(3);
+    expect(comboMap[`ERROR:${failName}`]).toBe(2);
+
+    // Filter by status
+    const successOnly = await sysdb.getWorkflowAggregates({ groupByName: true, status: ['SUCCESS'] });
+    expect(successOnly.length).toBe(1);
+    expect(successOnly[0].group['name']).toBe(successName);
+    expect(successOnly[0].count).toBe(3);
+
+    // Filter by name
+    const failOnly = await sysdb.getWorkflowAggregates({
+      groupByStatus: true,
+      name: [failName],
+    });
+    expect(failOnly.length).toBe(1);
+    expect(failOnly[0].group['status']).toBe('ERROR');
+    expect(failOnly[0].count).toBe(2);
+
+    // No group_by flags should throw
+    await expect(sysdb.getWorkflowAggregates({})).rejects.toThrow('At least one group_by flag must be set');
+  });
+});

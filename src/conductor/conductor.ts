@@ -35,6 +35,7 @@ export class Conductor {
     readonly dbosExec: DBOSExecutor,
     readonly conductorKey: string,
     readonly conductorURL: string,
+    readonly executorMetadata?: Record<string, unknown>,
   ) {
     const appName = dbosExec.appName;
     assert(appName, 'Application name must be set in configuration in order to use DBOS Conductor');
@@ -138,6 +139,8 @@ export class Conductor {
               hostname(),
               'typescript',
               globalParams.dbosVersion,
+              undefined,
+              this.executorMetadata,
             );
             currWebsocket.send(JSON.stringify(infoResp));
             this.dbosExec.logger.info('Connected to DBOS conductor');
@@ -303,9 +306,13 @@ export class Conductor {
             const getWFMsg = baseMsg as protocol.GetWorkflowRequest;
             let wfOutput: protocol.WorkflowsOutput | undefined = undefined;
             try {
-              const workflow = await this.dbosExec.getWorkflowStatus(getWFMsg.workflow_id);
-              if (workflow) {
-                wfOutput = new protocol.WorkflowsOutput(workflow);
+              const workflows = await this.dbosExec.listWorkflows({
+                workflowIDs: [getWFMsg.workflow_id],
+                loadInput: getWFMsg.load_input ?? false,
+                loadOutput: getWFMsg.load_output ?? false,
+              });
+              if (workflows.length > 0) {
+                wfOutput = new protocol.WorkflowsOutput(workflows[0]);
               }
             } catch (e) {
               errorMsg = `Exception encountered when getting workflow ${getWFMsg.workflow_id}: ${(e as Error).message}`;
@@ -338,7 +345,10 @@ export class Conductor {
             const listStepsMessage = baseMsg as protocol.ListStepsRequest;
             let workflowSteps: protocol.WorkflowSteps[] | undefined = undefined;
             try {
-              const stepsInfo = await this.dbosExec.listWorkflowSteps(listStepsMessage.workflow_id);
+              const stepsInfo = await this.dbosExec.listWorkflowSteps(
+                listStepsMessage.workflow_id,
+                listStepsMessage.load_output ?? true,
+              );
               workflowSteps = stepsInfo?.map((i) => new protocol.WorkflowSteps(i));
             } catch (e) {
               errorMsg = `Exception encountered when listing steps ${listStepsMessage.workflow_id}: ${(e as Error).message}`;
@@ -460,6 +470,7 @@ export class Conductor {
             break;
           case protocol.MessageType.LIST_SCHEDULES:
             const listSchedMsg = baseMsg as protocol.ListSchedulesRequest;
+            const loadContextList = listSchedMsg.body.load_context ?? false;
             let schedOutput: protocol.ScheduleOutput[] = [];
             try {
               const scheds = await this.dbosExec.systemDatabase.listSchedules({
@@ -474,7 +485,7 @@ export class Conductor {
                 workflow_class_name: s.workflowClassName || undefined,
                 schedule: s.schedule,
                 status: s.status,
-                context: inspect(this.dbosExec.serializer.parse(s.context)),
+                context: loadContextList ? inspect(this.dbosExec.serializer.parse(s.context)) : undefined,
                 last_fired_at: s.lastFiredAt,
                 automatic_backfill: s.automaticBackfill,
                 cron_timezone: s.cronTimezone,
@@ -488,6 +499,7 @@ export class Conductor {
             break;
           case protocol.MessageType.GET_SCHEDULE:
             const getSchedMsg = baseMsg as protocol.GetScheduleRequest;
+            const loadContextGet = getSchedMsg.load_context ?? false;
             let getSchedOutput: protocol.ScheduleOutput | undefined = undefined;
             try {
               const sched = await this.dbosExec.systemDatabase.getSchedule(getSchedMsg.schedule_name);
@@ -499,7 +511,7 @@ export class Conductor {
                   workflow_class_name: sched.workflowClassName || undefined,
                   schedule: sched.schedule,
                   status: sched.status,
-                  context: inspect(this.dbosExec.serializer.parse(sched.context)),
+                  context: loadContextGet ? inspect(this.dbosExec.serializer.parse(sched.context)) : undefined,
                   last_fired_at: sched.lastFiredAt,
                   automatic_backfill: sched.automaticBackfill,
                   cron_timezone: sched.cronTimezone,
@@ -678,6 +690,32 @@ export class Conductor {
             }
             const streamsResp = new protocol.GetWorkflowStreamsResponse(baseMsg.request_id, streamOutputs, errorMsg);
             currWebsocket.send(JSON.stringify(streamsResp));
+            break;
+          case protocol.MessageType.GET_WORKFLOW_AGGREGATES:
+            const aggMsg = baseMsg as protocol.GetWorkflowAggregatesRequest;
+            const aggBody = aggMsg.body;
+            let aggOutput: protocol.WorkflowAggregateOutput[] = [];
+            try {
+              aggOutput = await this.dbosExec.systemDatabase.getWorkflowAggregates({
+                groupByStatus: aggBody.group_by_status ?? false,
+                groupByName: aggBody.group_by_name ?? false,
+                groupByQueueName: aggBody.group_by_queue_name ?? false,
+                groupByExecutorId: aggBody.group_by_executor_id ?? false,
+                groupByApplicationVersion: aggBody.group_by_application_version ?? false,
+                status: aggBody.status,
+                startTime: aggBody.start_time,
+                endTime: aggBody.end_time,
+                name: aggBody.name,
+                appVersion: aggBody.app_version,
+                executorId: aggBody.executor_id,
+                queueName: aggBody.queue_name,
+              });
+            } catch (e) {
+              errorMsg = `Exception encountered when getting workflow aggregates: ${(e as Error).message}`;
+              this.dbosExec.logger.error(errorMsg);
+            }
+            const aggResp = new protocol.GetWorkflowAggregatesResponse(baseMsg.request_id, aggOutput, errorMsg);
+            currWebsocket.send(JSON.stringify(aggResp));
             break;
           default:
             this.dbosExec.logger.warn(`Unknown message type: ${baseMsg.type}`);

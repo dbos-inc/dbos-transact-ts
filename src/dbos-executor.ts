@@ -120,6 +120,7 @@ export interface DBOSConfig {
   listenQueues?: WorkflowQueue[];
   schedulerPollingIntervalMs?: number;
   useListenNotify?: boolean;
+  conductorExecutorMetadata?: Record<string, unknown>;
 }
 
 export interface DBOSRuntimeConfig {
@@ -948,8 +949,8 @@ export class DBOSExecutor {
     return listQueuedWorkflows(this.systemDatabase, input);
   }
 
-  async listWorkflowSteps(workflowID: string): Promise<StepInfo[] | undefined> {
-    return listWorkflowSteps(this.systemDatabase, workflowID);
+  async listWorkflowSteps(workflowID: string, loadOutput: boolean = true): Promise<StepInfo[] | undefined> {
+    return listWorkflowSteps(this.systemDatabase, workflowID, loadOutput);
   }
 
   /* INTERNAL HELPERS */
