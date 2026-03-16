@@ -269,7 +269,7 @@ export const DBOSPortableJSON: DBOSSerializer = {
     return text === null ? null : JSON.parse(text);
   },
   stringify: (value: unknown): string => {
-    return JSON.stringify(value, portableJsonReplacer);
+    return JSON.stringify(value ?? null, portableJsonReplacer);
   },
 };
 

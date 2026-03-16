@@ -56,8 +56,8 @@ class PortableWorkflow {
   static lastWfid: string | undefined = undefined;
 
   @DBOS.workflow({ serialization: 'portable' })
-  // eslint-disable-next-line @typescript-eslint/require-await
   static async pwfError() {
+    await Promise.resolve();
     PortableWorkflow.lastWfid = DBOS.workflowID;
     expect(DBOS.defaultSerializationType).toBe('portable');
     throw new Error('Failed!');
@@ -69,6 +69,31 @@ const simpleRecv = DBOS.registerWorkflow(
     return await DBOS.recv(topic);
   },
   { name: 'simpleRecv' },
+);
+
+// Portable workflow that returns undefined (void)
+const voidPortableWorkflow = DBOS.registerWorkflow(
+  async () => {
+    // No return value — returns undefined
+  },
+  {
+    name: 'voidPortableWorkflow',
+    className: 'workflows',
+    serialization: 'portable',
+  },
+);
+
+// Portable workflow that explicitly returns null
+const nullPortableWorkflow = DBOS.registerWorkflow(
+  async () => {
+    await Promise.resolve();
+    return null;
+  },
+  {
+    name: 'nullPortableWorkflow',
+    className: 'workflows',
+    serialization: 'portable',
+  },
 );
 
 // Simple portable workflow that doesn't recv (for insert tests)
@@ -307,6 +332,85 @@ describe('portable-serizlization-tests', () => {
       expect((e as PortableWorkflowError).name).toBe('Error');
       expect((e as object).constructor.name).toBe('PortableWorkflowError');
     }
+  });
+
+  // Reproduces https://github.com/dbos-inc/dbos-transact-ts/issues/1208
+  test('test-portable-void-workflow', async () => {
+    // A portable workflow that returns undefined should succeed, not throw
+    // "undefined" is not valid JSON
+    const wfh = await DBOS.startWorkflow(voidPortableWorkflow)();
+    const result = await wfh.getResult();
+    expect(result).toBeNull();
+
+    // Verify the workflow completed successfully in the DB
+    const dbRow = await systemDBClient.query<workflow_status>(
+      'SELECT * FROM dbos.workflow_status WHERE workflow_uuid = $1',
+      [wfh.workflowID],
+    );
+    expect(dbRow.rows[0].status).toBe('SUCCESS');
+    expect(dbRow.rows[0].serialization).toBe(DBOSPortableJSON.name());
+
+    // Also test via queue (simulating enqueue_workflow from pl/pgSQL)
+    const queuedId = randomUUID();
+    await systemDBClient.query(
+      `INSERT INTO dbos.workflow_status(
+        workflow_uuid, name, class_name, queue_name,
+        status, inputs, created_at, serialization
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [
+        queuedId,
+        'voidPortableWorkflow',
+        'workflows',
+        'testq',
+        'ENQUEUED',
+        JSON.stringify({ positionalArgs: [] }),
+        Date.now(),
+        'portable_json',
+      ],
+    );
+
+    const queuedHandle = DBOS.retrieveWorkflow(queuedId);
+    const queuedResult = await queuedHandle.getResult();
+    expect(queuedResult).toBeNull();
+  });
+
+  // Related to issue #1208 — null should also round-trip correctly
+  test('test-portable-null-workflow', async () => {
+    // A portable workflow that returns null should succeed
+    const wfh = await DBOS.startWorkflow(nullPortableWorkflow)();
+    const result = await wfh.getResult();
+    expect(result).toBeNull();
+
+    // Verify the workflow completed successfully in the DB
+    const dbRow = await systemDBClient.query<workflow_status>(
+      'SELECT * FROM dbos.workflow_status WHERE workflow_uuid = $1',
+      [wfh.workflowID],
+    );
+    expect(dbRow.rows[0].status).toBe('SUCCESS');
+    expect(dbRow.rows[0].serialization).toBe(DBOSPortableJSON.name());
+
+    // Also test via queue (simulating enqueue_workflow from pl/pgSQL)
+    const queuedId = randomUUID();
+    await systemDBClient.query(
+      `INSERT INTO dbos.workflow_status(
+        workflow_uuid, name, class_name, queue_name,
+        status, inputs, created_at, serialization
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [
+        queuedId,
+        'nullPortableWorkflow',
+        'workflows',
+        'testq',
+        'ENQUEUED',
+        JSON.stringify({ positionalArgs: [] }),
+        Date.now(),
+        'portable_json',
+      ],
+    );
+
+    const queuedHandle = DBOS.retrieveWorkflow(queuedId);
+    const queuedResult = await queuedHandle.getResult();
+    expect(queuedResult).toBeNull();
   });
 
   test('test-direct-insert', async () => {
