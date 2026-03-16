@@ -1,13 +1,6 @@
 import { InMemorySpanExporter, ReadableSpan, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base';
 import { NodeTracerProvider } from './nodetraceprovider';
 import { DBOS } from '../src';
-
-const memoryExporter = new InMemorySpanExporter();
-const provider = new NodeTracerProvider({
-  spanProcessors: [new SimpleSpanProcessor(memoryExporter)],
-});
-provider.register();
-
 import Koa from 'koa';
 import Router from '@koa/router';
 import { context, trace, SpanStatusCode } from '@opentelemetry/api';
@@ -24,7 +17,7 @@ async function doSomethingTraced_internal() {
   if (span) {
     span.setAttribute('my-lib.didSomething', true);
   }
-  if (globalParams.enableOTLP) {
+  if (globalParams.tracingEnabled) {
     expect(DBOS.span).toBe(trace.getSpan(context.active()));
   }
   await DBOS.runStep(tracedStep, { name: 'tracedStep' });
@@ -33,11 +26,10 @@ async function doSomethingTraced_internal() {
 
 const doSomethingTraced = DBOS.registerWorkflow(doSomethingTraced_internal);
 
-export function createApp() {
+function createApp() {
   const app = new Koa();
   const router = new Router();
 
-  // Tracing middleware (emulates instrumentation or full middleware, which is not working...)
   app.use(async (ctx, next) => {
     const current = trace.getSpan(context.active());
     if (current) {
@@ -64,7 +56,6 @@ export function createApp() {
     }
   });
 
-  // Route
   router.get('/test', async (ctx) => {
     await doSomethingTraced();
     ctx.body = 'OK';
@@ -78,29 +69,32 @@ export function createApp() {
 
 function getParentSpanID(span: ReadableSpan) {
   const ctx = span.parentSpanContext;
-  if (ctx) {
-    return ctx.spanId;
-  } else {
-    return undefined;
-  }
+  return ctx ? ctx.spanId : undefined;
 }
 
-describe('trace spans propagate ', () => {
+describe('trace spans propagate', () => {
+  const memoryExporter = new InMemorySpanExporter();
+
   beforeAll(async () => {
-    memoryExporter.reset();
+    const provider = new NodeTracerProvider({
+      spanProcessors: [new SimpleSpanProcessor(memoryExporter)],
+    });
+    provider.register();
     DBOS.setConfig({ name: 'trace-span-propagate', enableOTLP: true });
     await DBOS.launch();
   });
 
   afterAll(async () => {
     await DBOS.shutdown();
+    trace.disable();
+    context.disable();
   });
 
   test('from-outside-into-DBOS-calls', async () => {
     expect(isTraceContextWorking()).toBe(true);
 
     const app = createApp();
-    const server = app.listen(0); // Koa uses native HTTP
+    const server = app.listen(0);
 
     const { port } = server.address() as AddressInfo;
 
@@ -135,21 +129,28 @@ describe('trace spans propagate ', () => {
 });
 
 describe('disable-otlp', () => {
+  const memoryExporter = new InMemorySpanExporter();
+
   beforeAll(async () => {
-    memoryExporter.reset();
+    const provider = new NodeTracerProvider({
+      spanProcessors: [new SimpleSpanProcessor(memoryExporter)],
+    });
+    provider.register();
     DBOS.setConfig({ name: 'trace-span-propagate' });
     await DBOS.launch();
   });
 
   afterAll(async () => {
     await DBOS.shutdown();
+    trace.disable();
+    context.disable();
   });
 
   test('disable-otlp', async () => {
     expect(isTraceContextWorking()).toBe(false);
 
     const app = createApp();
-    const server = app.listen(0); // Koa uses native HTTP
+    const server = app.listen(0);
 
     const { port } = server.address() as AddressInfo;
 
@@ -161,5 +162,74 @@ describe('disable-otlp', () => {
     // With OTLP disabled, only the HTTP span is present
     const spans = memoryExporter.getFinishedSpans();
     expect(spans.length).toBe(1);
+  });
+});
+
+describe('external-provider-span-propagation', () => {
+  const memoryExporter = new InMemorySpanExporter();
+
+  beforeAll(async () => {
+    const provider = new NodeTracerProvider({
+      spanProcessors: [new SimpleSpanProcessor(memoryExporter)],
+    });
+    provider.register();
+    DBOS.setConfig({ name: 'external-provider-test', tracingEnabled: true });
+    await DBOS.launch();
+  });
+
+  afterAll(async () => {
+    await DBOS.shutdown();
+    trace.disable();
+    context.disable();
+  });
+
+  test('spans-flow-through-external-provider', async () => {
+    expect(isTraceContextWorking()).toBe(true);
+
+    const app = createApp();
+    const server = app.listen(0);
+
+    const { port } = server.address() as AddressInfo;
+
+    const res = await fetch(`http://localhost:${port}/test`);
+
+    expect(res.status).toBe(200);
+    server.close();
+
+    const spans = memoryExporter.getFinishedSpans();
+    const realSpans = spans.filter((s) => s.name !== 'probe');
+    expect(realSpans.length).toBe(3);
+
+    const stepSpan = realSpans[0];
+    const workflowSpan = realSpans[1];
+    const httpSpan = realSpans[2];
+
+    expect(getParentSpanID(stepSpan)).toBe(workflowSpan?.spanContext().spanId);
+    expect(stepSpan?.spanContext().traceId).toBe(workflowSpan?.spanContext().traceId);
+    expect(getParentSpanID(workflowSpan)).toBe(httpSpan?.spanContext().spanId);
+    expect(workflowSpan?.spanContext().traceId).toBe(httpSpan?.spanContext().traceId);
+  });
+});
+
+describe('dbos-standalone-tracing', () => {
+  beforeAll(async () => {
+    // No external provider — DBOS sets up its own BasicTracerProvider and context manager
+    DBOS.setConfig({ name: 'standalone-tracing-test', enableOTLP: true });
+    await DBOS.launch();
+  });
+
+  afterAll(async () => {
+    await DBOS.shutdown();
+    trace.disable();
+    context.disable();
+  });
+
+  test('context-propagation-works', () => {
+    expect(isTraceContextWorking()).toBe(true);
+  });
+
+  test('workflows-produce-real-spans', async () => {
+    const result = await doSomethingTraced();
+    expect(result).toBe('Done');
   });
 });
