@@ -56,8 +56,8 @@ class PortableWorkflow {
   static lastWfid: string | undefined = undefined;
 
   @DBOS.workflow({ serialization: 'portable' })
-  // eslint-disable-next-line @typescript-eslint/require-await
   static async pwfError() {
+    await Promise.resolve();
     PortableWorkflow.lastWfid = DBOS.workflowID;
     expect(DBOS.defaultSerializationType).toBe('portable');
     throw new Error('Failed!');
@@ -71,9 +71,8 @@ const simpleRecv = DBOS.registerWorkflow(
   { name: 'simpleRecv' },
 );
 
-// Portable workflow that returns undefined (void) - reproduces issue #1208
+// Portable workflow that returns undefined (void)
 const voidPortableWorkflow = DBOS.registerWorkflow(
-  // eslint-disable-next-line @typescript-eslint/require-await
   async () => {
     // No return value — returns undefined
   },
@@ -84,10 +83,10 @@ const voidPortableWorkflow = DBOS.registerWorkflow(
   },
 );
 
-// Portable workflow that explicitly returns null - related to issue #1208
+// Portable workflow that explicitly returns null
 const nullPortableWorkflow = DBOS.registerWorkflow(
-  // eslint-disable-next-line @typescript-eslint/require-await
   async () => {
+    await Promise.resolve();
     return null;
   },
   {
