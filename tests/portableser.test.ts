@@ -71,6 +71,32 @@ const simpleRecv = DBOS.registerWorkflow(
   { name: 'simpleRecv' },
 );
 
+// Portable workflow that returns undefined (void) - reproduces issue #1208
+const voidPortableWorkflow = DBOS.registerWorkflow(
+  // eslint-disable-next-line @typescript-eslint/require-await
+  async () => {
+    // No return value — returns undefined
+  },
+  {
+    name: 'voidPortableWorkflow',
+    className: 'workflows',
+    serialization: 'portable',
+  },
+);
+
+// Portable workflow that explicitly returns null - related to issue #1208
+const nullPortableWorkflow = DBOS.registerWorkflow(
+  // eslint-disable-next-line @typescript-eslint/require-await
+  async () => {
+    return null;
+  },
+  {
+    name: 'nullPortableWorkflow',
+    className: 'workflows',
+    serialization: 'portable',
+  },
+);
+
 // Simple portable workflow that doesn't recv (for insert tests)
 const _simplePortWorkflow = DBOS.registerWorkflow(
   async (s: string, x: number, o: { k: string; v: string[] }) => {
@@ -307,6 +333,85 @@ describe('portable-serizlization-tests', () => {
       expect((e as PortableWorkflowError).name).toBe('Error');
       expect((e as object).constructor.name).toBe('PortableWorkflowError');
     }
+  });
+
+  // Reproduces https://github.com/dbos-inc/dbos-transact-ts/issues/1208
+  test('test-portable-void-workflow', async () => {
+    // A portable workflow that returns undefined should succeed, not throw
+    // "undefined" is not valid JSON
+    const wfh = await DBOS.startWorkflow(voidPortableWorkflow)();
+    const result = await wfh.getResult();
+    expect(result).toBeUndefined();
+
+    // Verify the workflow completed successfully in the DB
+    const dbRow = await systemDBClient.query<workflow_status>(
+      'SELECT * FROM dbos.workflow_status WHERE workflow_uuid = $1',
+      [wfh.workflowID],
+    );
+    expect(dbRow.rows[0].status).toBe('SUCCESS');
+    expect(dbRow.rows[0].serialization).toBe(DBOSPortableJSON.name());
+
+    // Also test via queue (simulating enqueue_workflow from pl/pgSQL)
+    const queuedId = randomUUID();
+    await systemDBClient.query(
+      `INSERT INTO dbos.workflow_status(
+        workflow_uuid, name, class_name, queue_name,
+        status, inputs, created_at, serialization
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [
+        queuedId,
+        'voidPortableWorkflow',
+        'workflows',
+        'testq',
+        'ENQUEUED',
+        JSON.stringify({ positionalArgs: [] }),
+        Date.now(),
+        'portable_json',
+      ],
+    );
+
+    const queuedHandle = DBOS.retrieveWorkflow(queuedId);
+    const queuedResult = await queuedHandle.getResult();
+    expect(queuedResult).toBeUndefined();
+  });
+
+  // Related to issue #1208 — null should also round-trip correctly
+  test('test-portable-null-workflow', async () => {
+    // A portable workflow that returns null should succeed
+    const wfh = await DBOS.startWorkflow(nullPortableWorkflow)();
+    const result = await wfh.getResult();
+    expect(result).toBeNull();
+
+    // Verify the workflow completed successfully in the DB
+    const dbRow = await systemDBClient.query<workflow_status>(
+      'SELECT * FROM dbos.workflow_status WHERE workflow_uuid = $1',
+      [wfh.workflowID],
+    );
+    expect(dbRow.rows[0].status).toBe('SUCCESS');
+    expect(dbRow.rows[0].serialization).toBe(DBOSPortableJSON.name());
+
+    // Also test via queue (simulating enqueue_workflow from pl/pgSQL)
+    const queuedId = randomUUID();
+    await systemDBClient.query(
+      `INSERT INTO dbos.workflow_status(
+        workflow_uuid, name, class_name, queue_name,
+        status, inputs, created_at, serialization
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [
+        queuedId,
+        'nullPortableWorkflow',
+        'workflows',
+        'testq',
+        'ENQUEUED',
+        JSON.stringify({ positionalArgs: [] }),
+        Date.now(),
+        'portable_json',
+      ],
+    );
+
+    const queuedHandle = DBOS.retrieveWorkflow(queuedId);
+    const queuedResult = await queuedHandle.getResult();
+    expect(queuedResult).toBeNull();
   });
 
   test('test-direct-insert', async () => {
