@@ -120,7 +120,6 @@ export interface DBOSConfig {
   listenQueues?: WorkflowQueue[];
   schedulerPollingIntervalMs?: number;
   useListenNotify?: boolean;
-  conductorExecutorMetadata?: Record<string, unknown>;
 }
 
 export interface DBOSRuntimeConfig {

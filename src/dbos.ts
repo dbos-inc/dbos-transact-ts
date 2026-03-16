@@ -361,13 +361,13 @@ export class DBOS {
         const dbosDomain = process.env.DBOS_DOMAIN || 'cloud.dbos.dev';
         options.conductorURL = `wss://${dbosDomain}/conductor/v1alpha1`;
       }
-      const executorMetadata = options.conductorExecutorMetadata ?? DBOS.#dbosConfig?.conductorExecutorMetadata;
+      const executorMetadata = options.conductorExecutorMetadata;
       if (executorMetadata !== undefined) {
         // Validate that the metadata is JSON-serializable
         try {
           JSON.stringify(executorMetadata);
         } catch (e) {
-          throw new DBOSError(`conductorExecutorMetadata must be JSON-serializable: ${e}`);
+          throw new DBOSError(`conductorExecutorMetadata must be JSON-serializable: ${(e as Error).message}`);
         }
       }
       DBOS.conductor = new Conductor(

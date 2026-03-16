@@ -2400,7 +2400,7 @@ describe('wf-cancel-tests', () => {
 describe('test-workflow-aggregates', () => {
   let config: DBOSConfig;
 
-  beforeAll(async () => {
+  beforeAll(() => {
     config = generateDBOSTestConfig();
     DBOS.setConfig(config);
   });
@@ -2419,11 +2419,12 @@ describe('test-workflow-aggregates', () => {
   class AggWorkflows {
     @DBOS.workflow()
     static async successWorkflow() {
-      return Promise.resolve('ok');
+      return await Promise.resolve('ok');
     }
 
     @DBOS.workflow()
     static async failWorkflow() {
+      await Promise.resolve();
       throw new Error('fail');
     }
   }
