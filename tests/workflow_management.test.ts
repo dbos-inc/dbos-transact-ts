@@ -2396,3 +2396,313 @@ describe('wf-cancel-tests', () => {
     expect(await sysdb.getAllStreamEntries('nonexistent')).toEqual({});
   });
 });
+
+describe('test-workflow-aggregates', () => {
+  let config: DBOSConfig;
+
+  beforeAll(() => {
+    config = generateDBOSTestConfig();
+    DBOS.setConfig(config);
+  });
+
+  beforeEach(async () => {
+    process.env.DBOS__APPVERSION = 'v0';
+    await setUpDBOSTestSysDb(config);
+    await DBOS.launch();
+  });
+
+  afterEach(async () => {
+    await DBOS.shutdown();
+    process.env.DBOS__APPVERSION = undefined;
+  });
+
+  const _aggQueue = new WorkflowQueue('agg-test-queue');
+
+  class AggWorkflows {
+    @DBOS.workflow()
+    static async successWorkflow() {
+      return await Promise.resolve('ok');
+    }
+
+    @DBOS.workflow()
+    static async failWorkflow() {
+      await Promise.resolve();
+      throw new Error('fail');
+    }
+
+    @DBOS.workflow()
+    static async queuedWorkflow() {
+      return await Promise.resolve('queued');
+    }
+  }
+
+  // Helper to build a lookup map from aggregate results
+  function toMap(results: { group: Record<string, string | null>; count: number }[]): Record<string, number> {
+    const map: Record<string, number> = {};
+    for (const r of results) {
+      const key = Object.values(r.group).join(':');
+      map[key] = r.count;
+    }
+    return map;
+  }
+
+  test('group-by-status', async () => {
+    for (let i = 0; i < 3; i++) await AggWorkflows.successWorkflow();
+    for (let i = 0; i < 2; i++) await expect(AggWorkflows.failWorkflow()).rejects.toThrow();
+
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    const results = await sysdb.getWorkflowAggregates({ groupByStatus: true });
+    const map = toMap(results);
+    expect(map['SUCCESS']).toBe(3);
+    expect(map['ERROR']).toBe(2);
+  });
+
+  test('group-by-name', async () => {
+    for (let i = 0; i < 3; i++) await AggWorkflows.successWorkflow();
+    for (let i = 0; i < 2; i++) await expect(AggWorkflows.failWorkflow()).rejects.toThrow();
+
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    const results = await sysdb.getWorkflowAggregates({ groupByName: true });
+    const nameMap: Record<string, number> = {};
+    for (const r of results) {
+      nameMap[r.group['name']!] = r.count;
+    }
+    const successName = Object.keys(nameMap).find((k) => k.includes('successWorkflow'))!;
+    const failName = Object.keys(nameMap).find((k) => k.includes('failWorkflow'))!;
+    expect(nameMap[successName]).toBe(3);
+    expect(nameMap[failName]).toBe(2);
+  });
+
+  test('group-by-status-and-name', async () => {
+    for (let i = 0; i < 3; i++) await AggWorkflows.successWorkflow();
+    for (let i = 0; i < 2; i++) await expect(AggWorkflows.failWorkflow()).rejects.toThrow();
+
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    const results = await sysdb.getWorkflowAggregates({ groupByStatus: true, groupByName: true });
+    expect(results.length).toBe(2);
+
+    const comboMap: Record<string, number> = {};
+    for (const r of results) {
+      comboMap[`${r.group['status']}:${r.group['name']}`] = r.count;
+    }
+    const successKey = Object.keys(comboMap).find((k) => k.startsWith('SUCCESS:'))!;
+    const errorKey = Object.keys(comboMap).find((k) => k.startsWith('ERROR:'))!;
+    expect(comboMap[successKey]).toBe(3);
+    expect(comboMap[errorKey]).toBe(2);
+
+    // Verify each row has both group keys
+    for (const r of results) {
+      expect(r.group).toHaveProperty('status');
+      expect(r.group).toHaveProperty('name');
+    }
+  });
+
+  test('group-by-application-version', async () => {
+    await AggWorkflows.successWorkflow();
+
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    const results = await sysdb.getWorkflowAggregates({ groupByApplicationVersion: true });
+    expect(results.length).toBeGreaterThanOrEqual(1);
+    const row = results.find((r) => r.group['application_version'] === 'v0');
+    expect(row).toBeDefined();
+    expect(row!.count).toBeGreaterThanOrEqual(1);
+  });
+
+  test('group-by-executor-id', async () => {
+    await AggWorkflows.successWorkflow();
+
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    const results = await sysdb.getWorkflowAggregates({ groupByExecutorId: true });
+    expect(results.length).toBeGreaterThanOrEqual(1);
+    for (const r of results) {
+      expect(r.group).toHaveProperty('executor_id');
+      expect(r.count).toBeGreaterThanOrEqual(1);
+    }
+  });
+
+  test('group-by-queue-name', async () => {
+    // Run a queued workflow and a non-queued one
+    const handle = await DBOS.startWorkflow(AggWorkflows, { queueName: 'agg-test-queue' }).queuedWorkflow();
+    await handle.getResult();
+    await AggWorkflows.successWorkflow();
+
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    const results = await sysdb.getWorkflowAggregates({ groupByQueueName: true });
+    const map: Record<string, number> = {};
+    for (const r of results) {
+      map[r.group['queue_name'] ?? 'null'] = r.count;
+    }
+    expect(map['agg-test-queue']).toBe(1);
+    expect(map['null']).toBe(1);
+  });
+
+  test('triple-group-by-status-name-version', async () => {
+    for (let i = 0; i < 2; i++) await AggWorkflows.successWorkflow();
+    await expect(AggWorkflows.failWorkflow()).rejects.toThrow();
+
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    const results = await sysdb.getWorkflowAggregates({
+      groupByStatus: true,
+      groupByName: true,
+      groupByApplicationVersion: true,
+    });
+    expect(results.length).toBe(2);
+    for (const r of results) {
+      expect(r.group).toHaveProperty('status');
+      expect(r.group).toHaveProperty('name');
+      expect(r.group).toHaveProperty('application_version');
+      expect(r.group['application_version']).toBe('v0');
+    }
+    const successRow = results.find((r) => r.group['status'] === 'SUCCESS')!;
+    const errorRow = results.find((r) => r.group['status'] === 'ERROR')!;
+    expect(successRow.count).toBe(2);
+    expect(errorRow.count).toBe(1);
+  });
+
+  test('filter-by-status', async () => {
+    for (let i = 0; i < 3; i++) await AggWorkflows.successWorkflow();
+    for (let i = 0; i < 2; i++) await expect(AggWorkflows.failWorkflow()).rejects.toThrow();
+
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    const results = await sysdb.getWorkflowAggregates({ groupByName: true, status: ['SUCCESS'] });
+    expect(results.length).toBe(1);
+    expect(results[0].count).toBe(3);
+  });
+
+  test('filter-by-name', async () => {
+    for (let i = 0; i < 3; i++) await AggWorkflows.successWorkflow();
+    for (let i = 0; i < 2; i++) await expect(AggWorkflows.failWorkflow()).rejects.toThrow();
+
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    // First find the registered fail name
+    const all = await sysdb.getWorkflowAggregates({ groupByName: true });
+    const failName = all.find((r) => r.group['name']!.includes('failWorkflow'))!.group['name']!;
+
+    const results = await sysdb.getWorkflowAggregates({ groupByStatus: true, name: [failName] });
+    expect(results.length).toBe(1);
+    expect(results[0].group['status']).toBe('ERROR');
+    expect(results[0].count).toBe(2);
+  });
+
+  test('filter-by-multiple-statuses', async () => {
+    for (let i = 0; i < 3; i++) await AggWorkflows.successWorkflow();
+    for (let i = 0; i < 2; i++) await expect(AggWorkflows.failWorkflow()).rejects.toThrow();
+
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    const results = await sysdb.getWorkflowAggregates({ groupByStatus: true, status: ['SUCCESS', 'ERROR'] });
+    const map = toMap(results);
+    expect(map['SUCCESS']).toBe(3);
+    expect(map['ERROR']).toBe(2);
+  });
+
+  test('filter-by-app-version', async () => {
+    for (let i = 0; i < 2; i++) await AggWorkflows.successWorkflow();
+
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    const results = await sysdb.getWorkflowAggregates({ groupByName: true, appVersion: ['v0'] });
+    expect(results.length).toBeGreaterThanOrEqual(1);
+
+    // Non-existent version returns no results
+    const empty = await sysdb.getWorkflowAggregates({ groupByName: true, appVersion: ['nonexistent'] });
+    expect(empty.length).toBe(0);
+  });
+
+  test('filter-by-time-range', async () => {
+    const beforeTime = new Date().toISOString();
+    await AggWorkflows.successWorkflow();
+    const afterTime = new Date().toISOString();
+
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+
+    // Within range
+    const results = await sysdb.getWorkflowAggregates({
+      groupByStatus: true,
+      startTime: beforeTime,
+      endTime: afterTime,
+    });
+    expect(results.length).toBe(1);
+    expect(results[0].group['status']).toBe('SUCCESS');
+    expect(results[0].count).toBe(1);
+
+    // Before any workflows
+    const empty = await sysdb.getWorkflowAggregates({
+      groupByStatus: true,
+      endTime: '2000-01-01T00:00:00Z',
+    });
+    expect(empty.length).toBe(0);
+  });
+
+  test('combined-filters-with-multiple-groupbys', async () => {
+    for (let i = 0; i < 4; i++) await AggWorkflows.successWorkflow();
+    for (let i = 0; i < 3; i++) await expect(AggWorkflows.failWorkflow()).rejects.toThrow();
+
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+
+    // Group by status + version, filtered to SUCCESS only
+    const results = await sysdb.getWorkflowAggregates({
+      groupByStatus: true,
+      groupByApplicationVersion: true,
+      status: ['SUCCESS'],
+    });
+    expect(results.length).toBe(1);
+    expect(results[0].group['status']).toBe('SUCCESS');
+    expect(results[0].group['application_version']).toBe('v0');
+    expect(results[0].count).toBe(4);
+  });
+
+  test('filter-by-workflow-id-prefix', async () => {
+    const prefix = 'agg-prefix-test-';
+    // Start workflows with known ID prefixes
+    for (let i = 0; i < 3; i++) {
+      const handle = await DBOS.startWorkflow(AggWorkflows, { workflowID: `${prefix}${i}` }).successWorkflow();
+      await handle.getResult();
+    }
+    // Start workflows without the prefix
+    for (let i = 0; i < 2; i++) {
+      await AggWorkflows.successWorkflow();
+    }
+
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+
+    // Filter to only the prefixed workflows
+    const results = await sysdb.getWorkflowAggregates({
+      groupByStatus: true,
+      workflowIdPrefix: [prefix],
+    });
+    expect(results.length).toBe(1);
+    expect(results[0].group['status']).toBe('SUCCESS');
+    expect(results[0].count).toBe(3);
+
+    // Non-matching prefix returns empty
+    const empty = await sysdb.getWorkflowAggregates({
+      groupByStatus: true,
+      workflowIdPrefix: ['nonexistent-prefix-'],
+    });
+    expect(empty.length).toBe(0);
+
+    // Multiple prefixes
+    const prefix2 = 'agg-prefix2-test-';
+    const handle = await DBOS.startWorkflow(AggWorkflows, { workflowID: `${prefix2}0` }).successWorkflow();
+    await handle.getResult();
+
+    const multi = await sysdb.getWorkflowAggregates({
+      groupByStatus: true,
+      workflowIdPrefix: [prefix, prefix2],
+    });
+    expect(multi.length).toBe(1);
+    expect(multi[0].group['status']).toBe('SUCCESS');
+    expect(multi[0].count).toBe(4);
+  });
+
+  test('no-group-by-flags-throws', async () => {
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    await expect(sysdb.getWorkflowAggregates({})).rejects.toThrow('At least one group_by flag must be set');
+  });
+
+  test('empty-results', async () => {
+    // No workflows run — aggregates should return empty
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    const results = await sysdb.getWorkflowAggregates({ groupByStatus: true });
+    expect(results.length).toBe(0);
+  });
+});

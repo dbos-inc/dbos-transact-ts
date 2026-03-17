@@ -20,7 +20,11 @@ export async function getWorkflow(sysdb: SystemDatabase, workflowID: string): Pr
   return status ? toWorkflowStatus(status, sysdb.getSerializer()) : undefined;
 }
 
-export async function listWorkflowSteps(sysdb: SystemDatabase, workflowID: string): Promise<StepInfo[] | undefined> {
+export async function listWorkflowSteps(
+  sysdb: SystemDatabase,
+  workflowID: string,
+  loadOutput: boolean = true,
+): Promise<StepInfo[] | undefined> {
   const status = await sysdb.getWorkflowStatus(workflowID);
   if (!status) {
     return undefined;
@@ -31,8 +35,8 @@ export async function listWorkflowSteps(sysdb: SystemDatabase, workflowID: strin
   const steps: StepInfo[] = $steps.map((step) => ({
     functionID: step.function_id,
     name: step.function_name ?? '',
-    output: step.output ? safeParse(sysdb.getSerializer(), step.output, step.serialization) : null,
-    error: step.error ? safeParseError(sysdb.getSerializer(), step.error, step.serialization) : null,
+    output: loadOutput && step.output ? safeParse(sysdb.getSerializer(), step.output, step.serialization) : null,
+    error: loadOutput && step.error ? safeParseError(sysdb.getSerializer(), step.error, step.serialization) : null,
     childWorkflowID: step.child_workflow_id,
     startedAtEpochMs: step.started_at_epoch_ms,
     completedAtEpochMs: step.completed_at_epoch_ms,
