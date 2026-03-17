@@ -788,6 +788,7 @@ export interface GetWorkflowAggregatesBody {
   app_version?: string[];
   executor_id?: string[];
   queue_name?: string[];
+  workflow_id_prefix?: string[];
 }
 
 export class GetWorkflowAggregatesRequest implements BaseMessage {

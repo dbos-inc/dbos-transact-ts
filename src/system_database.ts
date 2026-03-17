@@ -104,6 +104,7 @@ export interface GetWorkflowAggregatesInput {
   appVersion?: string[];
   executorId?: string[];
   queueName?: string[];
+  workflowIdPrefix?: string[];
 }
 
 // For internal use, not serialized status.
@@ -2526,6 +2527,14 @@ export class SystemDatabase {
     addFilter('application_version', input.appVersion);
     addFilter('executor_id', input.executorId);
     addFilter('queue_name', input.queueName);
+
+    if (input.workflowIdPrefix && input.workflowIdPrefix.length > 0) {
+      const likeClauses = input.workflowIdPrefix.map((p) => {
+        params.push(`${p}%`);
+        return `workflow_uuid LIKE $${paramIdx++}`;
+      });
+      whereClauses.push(`(${likeClauses.join(' OR ')})`);
+    }
 
     if (input.startTime) {
       whereClauses.push(`created_at >= $${paramIdx}`);

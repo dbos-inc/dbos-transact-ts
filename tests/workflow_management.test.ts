@@ -2650,6 +2650,50 @@ describe('test-workflow-aggregates', () => {
     expect(results[0].count).toBe(4);
   });
 
+  test('filter-by-workflow-id-prefix', async () => {
+    const prefix = 'agg-prefix-test-';
+    // Start workflows with known ID prefixes
+    for (let i = 0; i < 3; i++) {
+      const handle = await DBOS.startWorkflow(AggWorkflows, { workflowID: `${prefix}${i}` }).successWorkflow();
+      await handle.getResult();
+    }
+    // Start workflows without the prefix
+    for (let i = 0; i < 2; i++) {
+      await AggWorkflows.successWorkflow();
+    }
+
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+
+    // Filter to only the prefixed workflows
+    const results = await sysdb.getWorkflowAggregates({
+      groupByStatus: true,
+      workflowIdPrefix: [prefix],
+    });
+    expect(results.length).toBe(1);
+    expect(results[0].group['status']).toBe('SUCCESS');
+    expect(results[0].count).toBe(3);
+
+    // Non-matching prefix returns empty
+    const empty = await sysdb.getWorkflowAggregates({
+      groupByStatus: true,
+      workflowIdPrefix: ['nonexistent-prefix-'],
+    });
+    expect(empty.length).toBe(0);
+
+    // Multiple prefixes
+    const prefix2 = 'agg-prefix2-test-';
+    const handle = await DBOS.startWorkflow(AggWorkflows, { workflowID: `${prefix2}0` }).successWorkflow();
+    await handle.getResult();
+
+    const multi = await sysdb.getWorkflowAggregates({
+      groupByStatus: true,
+      workflowIdPrefix: [prefix, prefix2],
+    });
+    expect(multi.length).toBe(1);
+    expect(multi[0].group['status']).toBe('SUCCESS');
+    expect(multi[0].count).toBe(4);
+  });
+
   test('no-group-by-flags-throws', async () => {
     const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
     await expect(sysdb.getWorkflowAggregates({})).rejects.toThrow('At least one group_by flag must be set');

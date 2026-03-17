@@ -709,6 +709,7 @@ export class Conductor {
                 appVersion: aggBody.app_version,
                 executorId: aggBody.executor_id,
                 queueName: aggBody.queue_name,
+                workflowIdPrefix: aggBody.workflow_id_prefix,
               });
             } catch (e) {
               errorMsg = `Exception encountered when getting workflow aggregates: ${(e as Error).message}`;
