@@ -356,7 +356,7 @@ queueCommands
   .option('-e, --end-time <string>', 'Retrieve functions starting before this timestamp (ISO 8601 format)')
   .option(
     '-S, --status <string>',
-    'Retrieve functions with this status (PENDING, SUCCESS, ERROR, ENQUEUED, CANCELLED, or MAX_RECOVERY_ATTEMPTS_EXCEEDED)',
+    'Retrieve functions with this status (PENDING, SUCCESS, ERROR, ENQUEUED, DELAYED, CANCELLED, or MAX_RECOVERY_ATTEMPTS_EXCEEDED)',
   )
   .option('-l, --limit <number>', 'Limit the results returned')
   .option('-q, --queue <string>', 'Retrieve functions run on this queue')
