@@ -802,7 +802,7 @@ export class DBOS {
 
   /**
    * Set the priority of a queued workflow.
-   * Only affects workflows with ENQUEUED status.
+   * Only affects workflows with ENQUEUED or DELAYED status.
    * @param workflowID - ID of the workflow
    * @param priority - Priority value (1 to 2,147,483,647). Lower values are dequeued first.
    */
