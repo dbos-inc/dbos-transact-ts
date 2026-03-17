@@ -1169,7 +1169,7 @@ export class SystemDatabase {
             class_name, config_name, recovery_attempts, queue_name,
             workflow_timeout_ms, workflow_deadline_epoch_ms, started_at_epoch_ms,
             deduplication_id, inputs, priority, queue_partition_key, forked_from,
-            parent_workflow_id, serialization
+            parent_workflow_id, serialization, delay_until_epoch_ms
           FROM "${this.schemaName}".workflow_status
           WHERE workflow_uuid = $1`,
           [wfID],
@@ -1248,8 +1248,8 @@ export class SystemDatabase {
             class_name, config_name, recovery_attempts, queue_name,
             workflow_timeout_ms, workflow_deadline_epoch_ms, started_at_epoch_ms,
             deduplication_id, inputs, priority, queue_partition_key, forked_from,
-            parent_workflow_id, serialization
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28)`,
+            parent_workflow_id, serialization, delay_until_epoch_ms
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29)`,
           [
             status.workflow_uuid,
             status.status,
@@ -1279,6 +1279,7 @@ export class SystemDatabase {
             status.forked_from,
             status.parent_workflow_id,
             status.serialization,
+            status.delay_until_epoch_ms ?? null,
           ],
         );
 
@@ -2248,13 +2249,19 @@ export class SystemDatabase {
       // If there is a rate limit, compute how many functions have started in its period.
       let numRecentQueries = 0;
       if (queue.rateLimit) {
-        const params = [queue.name, StatusString.ENQUEUED, startTimeMs - limiterPeriodMS, ...partitionParams];
+        const params = [
+          queue.name,
+          StatusString.ENQUEUED,
+          StatusString.DELAYED,
+          startTimeMs - limiterPeriodMS,
+          ...partitionParams,
+        ];
         const countResult = await client.query<{ count: string }>(
           `SELECT COUNT(*) FROM "${this.schemaName}".workflow_status
            WHERE queue_name = $1
-             AND status <> $2
-             AND started_at_epoch_ms > $3
-             ${partitionFilter.replace('$PARTITION', '$4')}`,
+             AND status NOT IN ($2, $3)
+             AND started_at_epoch_ms > $4
+             ${partitionFilter.replace('$PARTITION', '$5')}`,
           params,
         );
         numRecentQueries = Number(countResult.rows[0].count);

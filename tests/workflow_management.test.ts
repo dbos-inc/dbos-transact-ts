@@ -743,6 +743,10 @@ describe('test-list-queues', () => {
     const gcWfIds = new Set(gcWorkflows.map((w) => w.workflowID));
     expect(gcWfIds.has(enqueuedHandle.workflowID)).toBe(true);
     expect(gcWfIds.has(delayedHandle.workflowID)).toBe(true);
+
+    // Clean up so they don't interfere with the rest of the test
+    await DBOS.cancelWorkflow(enqueuedHandle.workflowID);
+    await DBOS.cancelWorkflow(delayedHandle.workflowID);
   });
 
   class TestGlobalTimeout {

@@ -1914,6 +1914,7 @@ describe('delay-tests', () => {
     expect((await waitHandle.getStatus())?.status).toBe(StatusString.DELAYED);
     const completed = await DBOS.waitFirst([waitHandle]);
     expect(completed.workflowID).toBe(waitHandle.workflowID);
+    expect((await completed.getStatus())?.status).toBe(StatusString.SUCCESS);
 
     // Deduplication: a second enqueue with the same dedup ID should fail while DELAYED
     const dedupID = randomUUID();
