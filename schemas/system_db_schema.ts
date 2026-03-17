@@ -30,6 +30,7 @@ export interface workflow_status {
   owner_xid?: string;
   parent_workflow_id?: string;
   serialization: SysDBSerializationFormat | null;
+  delay_until_epoch_ms?: number | null;
 }
 
 export interface notifications {

@@ -379,5 +379,11 @@ export function allMigrations(
         `ALTER TABLE "${schemaName}"."workflow_schedules" ADD COLUMN "cron_timezone" TEXT DEFAULT NULL`,
       ],
     },
+    {
+      pg: [
+        `ALTER TABLE "${schemaName}"."workflow_status" ADD COLUMN "delay_until_epoch_ms" BIGINT DEFAULT NULL`,
+        `CREATE INDEX "idx_workflow_status_delay_until" ON "${schemaName}"."workflow_status" ("delay_until_epoch_ms") WHERE "delay_until_epoch_ms" IS NOT NULL`,
+      ],
+    },
   ];
 }

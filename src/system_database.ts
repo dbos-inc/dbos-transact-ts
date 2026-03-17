@@ -137,6 +137,7 @@ export interface WorkflowStatusInternal {
   forkedFrom?: string;
   parentWorkflowID?: string;
   serialization: string | null;
+  delayUntilEpochMS?: number;
 }
 
 export interface EnqueueOptions {
@@ -148,6 +149,8 @@ export interface EnqueueOptions {
   queuePartitionKey?: string;
   // Application version to set on the enqueued workflow (overrides the current app version)
   applicationVersion?: string;
+  // Number of seconds to delay the workflow before it starts executing. The workflow will be in DELAYED status until the delay expires.
+  delaySeconds?: number;
 }
 
 export interface ExistenceCheck {
@@ -336,6 +339,7 @@ function mapWorkflowStatus(row: workflow_status): WorkflowStatusInternal {
     forkedFrom: row.forked_from ?? undefined,
     parentWorkflowID: row.parent_workflow_id ?? undefined,
     serialization: row.serialization,
+    delayUntilEpochMS: row.delay_until_epoch_ms ? Number(row.delay_until_epoch_ms) : undefined,
   };
 }
 
@@ -1484,7 +1488,7 @@ export class SystemDatabase {
         const { rows } = await this.pool.query<workflow_status>(
           `SELECT workflow_uuid FROM "${this.schemaName}".workflow_status
            WHERE workflow_uuid IN (${placeholders})
-             AND status NOT IN ('${StatusString.PENDING}', '${StatusString.ENQUEUED}')
+             AND status NOT IN ('${StatusString.PENDING}', '${StatusString.ENQUEUED}', '${StatusString.DELAYED}')
            LIMIT 1`,
           workflowIds,
         );
@@ -2169,6 +2173,16 @@ export class SystemDatabase {
   }
 
   // ==================== Queues ====================
+  async transitionDelayedWorkflows(): Promise<void> {
+    // Transition workflows from DELAYED to ENQUEUED when their delay has expired
+    await this.pool.query(
+      `UPDATE "${this.schemaName}".workflow_status
+       SET status = $1, updated_at = $2
+       WHERE status = $3 AND delay_until_epoch_ms <= $2`,
+      [StatusString.ENQUEUED, Date.now(), StatusString.DELAYED],
+    );
+  }
+
   async clearQueueAssignment(workflowID: string): Promise<boolean> {
     // Reset the status of the task from "PENDING" to "ENQUEUED"
     const wqRes = await this.pool.query<workflow_status>(
@@ -2382,6 +2396,7 @@ export class SystemDatabase {
       'started_at_epoch_ms',
       'forked_from',
       'parent_workflow_id',
+      'delay_until_epoch_ms',
     ];
 
     input.loadInput = input.loadInput ?? true;
@@ -2424,9 +2439,9 @@ export class SystemDatabase {
     // If queuesOnly, filter for queued workflows
     if (input.queuesOnly) {
       whereClauses.push(`queue_name IS NOT NULL`);
-      whereClauses.push(`status IN ($${paramCounter}, $${paramCounter + 1})`);
-      params.push(StatusString.ENQUEUED, StatusString.PENDING);
-      paramCounter += 2;
+      whereClauses.push(`status IN ($${paramCounter}, $${paramCounter + 1}, $${paramCounter + 2})`);
+      params.push(StatusString.ENQUEUED, StatusString.PENDING, StatusString.DELAYED);
+      paramCounter += 3;
     }
 
     addFilter('name', input.workflowName);
@@ -2592,12 +2607,12 @@ export class SystemDatabase {
       return;
     }
 
-    // Delete all workflows older than cutoff that are NOT PENDING or ENQUEUED
+    // Delete all workflows older than cutoff that are NOT PENDING, ENQUEUED, or DELAYED
     await this.pool.query(
       `DELETE FROM "${this.schemaName}".workflow_status
        WHERE created_at < $1
-         AND status NOT IN ($2, $3)`,
-      [cutoffEpochTimestampMs, StatusString.PENDING, StatusString.ENQUEUED],
+         AND status NOT IN ($2, $3, $4)`,
+      [cutoffEpochTimestampMs, StatusString.PENDING, StatusString.ENQUEUED, StatusString.DELAYED],
     );
 
     return;
@@ -2884,18 +2899,19 @@ export class SystemDatabase {
           forked_from,
           parent_workflow_id,
           serialization,
-          owner_xid
-        ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $26, $27)
+          owner_xid,
+          delay_until_epoch_ms
+        ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $26, $27, $28)
         ON CONFLICT (workflow_uuid)
           DO UPDATE SET
             recovery_attempts = CASE
-              WHEN workflow_status.status != '${StatusString.ENQUEUED}'
+              WHEN workflow_status.status != '${StatusString.ENQUEUED}' AND workflow_status.status != '${StatusString.DELAYED}'
               THEN workflow_status.recovery_attempts + $25
               ELSE workflow_status.recovery_attempts
             END,
             updated_at = EXCLUDED.updated_at,
             executor_id = CASE
-              WHEN EXCLUDED.status != '${StatusString.ENQUEUED}'
+              WHEN EXCLUDED.status != '${StatusString.ENQUEUED}' AND EXCLUDED.status != '${StatusString.DELAYED}'
               THEN EXCLUDED.executor_id
               ELSE workflow_status.executor_id
             END
@@ -2916,7 +2932,7 @@ export class SystemDatabase {
           initStatus.applicationVersion ?? null,
           initStatus.applicationID,
           initStatus.createdAt,
-          initStatus.status === StatusString.ENQUEUED ? 0 : 1,
+          initStatus.status === StatusString.ENQUEUED || initStatus.status === StatusString.DELAYED ? 0 : 1,
           initStatus.updatedAt ?? Date.now(),
           initStatus.timeoutMS ?? null,
           initStatus.deadlineEpochMS ?? null,
@@ -2929,6 +2945,7 @@ export class SystemDatabase {
           (incrementAttempts ?? false) ? 1 : 0,
           initStatus.serialization,
           ownerXid,
+          initStatus.delayUntilEpochMS ?? null,
         ],
       );
       if (rows.length === 0) {

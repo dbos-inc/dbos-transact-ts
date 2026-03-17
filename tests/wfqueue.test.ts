@@ -1811,3 +1811,147 @@ describe('queue-time-outs', () => {
     assert.equal(await forkedHandle.getResult(), forkedHandle.workflowID);
   }, 10000);
 });
+
+describe('delay-tests', () => {
+  let config: DBOSConfig;
+
+  beforeAll(async () => {
+    config = generateDBOSTestConfig();
+    await setUpDBOSTestSysDb(config);
+    DBOS.setConfig(config);
+  });
+
+  beforeEach(async () => {
+    await DBOS.launch();
+  });
+
+  afterEach(async () => {
+    await DBOS.shutdown();
+  });
+
+  class TestDelayWFs {
+    static readonly queue = new WorkflowQueue('delay-test-queue');
+
+    @DBOS.workflow()
+    static async testWorkflow(): Promise<void> {
+      return;
+    }
+
+    @DBOS.workflow()
+    static async testWorkflowStr(): Promise<string> {
+      return 'done';
+    }
+  }
+
+  test('test_delay', async () => {
+    const delaySeconds = 1.5;
+
+    // Test via startWorkflow with enqueueOptions
+    const tBefore = Date.now();
+    const handle = await DBOS.startWorkflow(TestDelayWFs, {
+      queueName: TestDelayWFs.queue.name,
+      enqueueOptions: { delaySeconds },
+    }).testWorkflow();
+    const tAfter = Date.now();
+
+    const status = await handle.getStatus();
+    expect(status?.status).toBe(StatusString.DELAYED);
+    expect(status?.delayUntilEpochMS).toBeDefined();
+    expect(status!.delayUntilEpochMS!).toBeGreaterThanOrEqual(tBefore + delaySeconds * 1000);
+    expect(status!.delayUntilEpochMS!).toBeLessThanOrEqual(tAfter + delaySeconds * 1000);
+
+    await handle.getResult();
+
+    const finalStatus = await handle.getStatus();
+    expect(finalStatus?.status).toBe(StatusString.SUCCESS);
+    expect(finalStatus?.dequeuedAt).toBeDefined();
+    expect(finalStatus!.dequeuedAt!).toBeGreaterThanOrEqual(status!.delayUntilEpochMS!);
+
+    // Test via client enqueue
+    expect(config.systemDatabaseUrl).toBeDefined();
+    const client = await DBOSClient.create({ systemDatabaseUrl: config.systemDatabaseUrl! });
+    try {
+      const tClientBefore = Date.now();
+      const clientHandle = await client.enqueue({
+        queueName: TestDelayWFs.queue.name,
+        workflowName: 'testWorkflow',
+        workflowClassName: 'TestDelayWFs',
+        delaySeconds,
+      });
+      const tClientAfter = Date.now();
+
+      const clientStatus = await clientHandle.getStatus();
+      expect(clientStatus?.status).toBe(StatusString.DELAYED);
+      expect(clientStatus?.delayUntilEpochMS).toBeDefined();
+      expect(clientStatus!.delayUntilEpochMS!).toBeGreaterThanOrEqual(tClientBefore + delaySeconds * 1000);
+      expect(clientStatus!.delayUntilEpochMS!).toBeLessThanOrEqual(tClientAfter + delaySeconds * 1000);
+
+      await clientHandle.getResult();
+
+      const finalClientStatus = await clientHandle.getStatus();
+      expect(finalClientStatus?.status).toBe(StatusString.SUCCESS);
+      expect(finalClientStatus?.dequeuedAt).toBeDefined();
+      expect(finalClientStatus!.dequeuedAt!).toBeGreaterThanOrEqual(clientStatus!.delayUntilEpochMS!);
+    } finally {
+      await client.destroy();
+    }
+
+    // Delayed workflows appear in listWorkflows and listQueuedWorkflows
+    const listHandle = await DBOS.startWorkflow(TestDelayWFs, {
+      queueName: TestDelayWFs.queue.name,
+      enqueueOptions: { delaySeconds: 60 },
+    }).testWorkflow();
+    const allWorkflows = await DBOS.listWorkflows({ status: StatusString.DELAYED });
+    expect(allWorkflows.some((w) => w.workflowID === listHandle.workflowID)).toBe(true);
+    const queuedWorkflows = await DBOS.listQueuedWorkflows({ queueName: TestDelayWFs.queue.name });
+    expect(queuedWorkflows.some((w) => w.workflowID === listHandle.workflowID)).toBe(true);
+
+    // waitFirst treats DELAYED as active and unblocks when it completes
+    const waitHandle = await DBOS.startWorkflow(TestDelayWFs, {
+      queueName: TestDelayWFs.queue.name,
+      enqueueOptions: { delaySeconds: 1 },
+    }).testWorkflow();
+    expect((await waitHandle.getStatus())?.status).toBe(StatusString.DELAYED);
+    const completed = await DBOS.waitFirst([waitHandle]);
+    expect(completed.workflowID).toBe(waitHandle.workflowID);
+
+    // Deduplication: a second enqueue with the same dedup ID should fail while DELAYED
+    const dedupID = randomUUID();
+    const dedupHandle = await DBOS.startWorkflow(TestDelayWFs, {
+      queueName: TestDelayWFs.queue.name,
+      enqueueOptions: { delaySeconds: 60, deduplicationID: dedupID },
+    }).testWorkflow();
+    expect((await dedupHandle.getStatus())?.status).toBe(StatusString.DELAYED);
+    await expect(
+      DBOS.startWorkflow(TestDelayWFs, {
+        queueName: TestDelayWFs.queue.name,
+        enqueueOptions: { delaySeconds: 60, deduplicationID: dedupID },
+      }).testWorkflow(),
+    ).rejects.toBeInstanceOf(DBOSQueueDuplicatedError);
+  }, 30000);
+
+  test('test_delay_cancel_resume', async () => {
+    // Cancel a DELAYED workflow — it should never run
+    const cancelHandle = await DBOS.startWorkflow(TestDelayWFs, {
+      queueName: TestDelayWFs.queue.name,
+      enqueueOptions: { delaySeconds: 60 },
+    }).testWorkflowStr();
+    expect((await cancelHandle.getStatus())?.status).toBe(StatusString.DELAYED);
+    await DBOS.cancelWorkflow(cancelHandle.workflowID);
+    expect((await cancelHandle.getStatus())?.status).toBe(StatusString.CANCELLED);
+
+    // Verify it does not appear in queued workflows after cancellation
+    const queued = await DBOS.listQueuedWorkflows({ queueName: TestDelayWFs.queue.name });
+    expect(queued.some((w) => w.workflowID === cancelHandle.workflowID)).toBe(false);
+
+    // Resume a DELAYED workflow — it should run immediately, bypassing the delay
+    const resumeHandle = await DBOS.startWorkflow(TestDelayWFs, {
+      queueName: TestDelayWFs.queue.name,
+      enqueueOptions: { delaySeconds: 60 },
+    }).testWorkflowStr();
+    expect((await resumeHandle.getStatus())?.status).toBe(StatusString.DELAYED);
+    await DBOS.resumeWorkflow(resumeHandle.workflowID);
+    expect(await resumeHandle.getResult()).toBe('done');
+    expect((await resumeHandle.getStatus())?.status).toBe(StatusString.SUCCESS);
+  }, 15000);
+});

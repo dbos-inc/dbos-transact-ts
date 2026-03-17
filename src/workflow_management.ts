@@ -96,6 +96,7 @@ export function toWorkflowStatus(internal: WorkflowStatusInternal, serializer: D
     dequeuedAt: internal.startedAtEpochMs,
     forkedFrom: internal.forkedFrom,
     parentWorkflowID: internal.parentWorkflowID,
+    delayUntilEpochMS: internal.delayUntilEpochMS,
   };
 }
 
@@ -105,6 +106,9 @@ export async function globalTimeout(sysdb: SystemDatabase, cutoffEpochTimestampM
     await sysdb.cancelWorkflows([workflow.workflowID]);
   }
   for (const workflow of await listWorkflows(sysdb, { status: 'ENQUEUED', endTime: cutoffIso })) {
+    await sysdb.cancelWorkflows([workflow.workflowID]);
+  }
+  for (const workflow of await listWorkflows(sysdb, { status: 'DELAYED', endTime: cutoffIso })) {
     await sysdb.cancelWorkflows([workflow.workflowID]);
   }
 }

@@ -446,9 +446,19 @@ export class DBOSExecutor {
         ? ((funcArgs.deserialized as JsonWorkflowArgs).positionalArgs! as T)
         : (funcArgs.deserialized as T);
 
+    const delaySeconds = params.enqueueOptions?.delaySeconds;
+    const delayUntilEpochMS =
+      params.queueName !== undefined && delaySeconds !== undefined && delaySeconds > 0
+        ? Date.now() + delaySeconds * 1000
+        : undefined;
     const internalStatus: WorkflowStatusInternal = {
       workflowUUID: workflowID,
-      status: params.queueName !== undefined ? StatusString.ENQUEUED : StatusString.PENDING,
+      status:
+        params.queueName !== undefined
+          ? delayUntilEpochMS !== undefined
+            ? StatusString.DELAYED
+            : StatusString.ENQUEUED
+          : StatusString.PENDING,
       workflowName: wfname,
       workflowClassName: wfclassname,
       workflowConfigName: params.configuredInstance?.name || '',
@@ -471,6 +481,7 @@ export class DBOSExecutor {
       queuePartitionKey: params.enqueueOptions?.queuePartitionKey,
       parentWorkflowID: callerID,
       serialization: funcArgs.sername,
+      delayUntilEpochMS,
     };
 
     if (isTempWorkflow) {
