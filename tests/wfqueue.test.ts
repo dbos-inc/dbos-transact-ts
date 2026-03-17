@@ -1834,12 +1834,12 @@ describe('delay-tests', () => {
 
     @DBOS.workflow()
     static async testWorkflow(): Promise<void> {
-      return;
+      await Promise.resolve();
     }
 
     @DBOS.workflow()
     static async testWorkflowStr(): Promise<string> {
-      return 'done';
+      return await Promise.resolve('done');
     }
   }
 

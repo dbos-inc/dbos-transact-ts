@@ -679,7 +679,7 @@ describe('test-list-queues', () => {
 
     @DBOS.workflow()
     static async gcQueuedWorkflow() {
-      return;
+      await Promise.resolve();
     }
   }
 
