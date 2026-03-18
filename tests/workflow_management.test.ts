@@ -658,6 +658,7 @@ describe('test-list-queues', () => {
 
   class TestGarbageCollection {
     static event = new Event();
+    static readonly queue = new WorkflowQueue('gc-test-queue');
 
     @DBOS.step()
     static async testStep(x: number) {
@@ -674,6 +675,11 @@ describe('test-list-queues', () => {
     static async blockedWorkflow() {
       await TestGarbageCollection.event.wait();
       return DBOS.workflowID;
+    }
+
+    @DBOS.workflow()
+    static async gcQueuedWorkflow() {
+      await Promise.resolve();
     }
   }
 
@@ -722,6 +728,25 @@ describe('test-list-queues', () => {
     await DBOSExecutor.globalInstance!.systemDatabase.garbageCollect(Date.now() - 1000, undefined);
     workflows = await DBOS.listWorkflows({});
     expect(workflows.length).toBe(numWorkflows);
+
+    // ENQUEUED and DELAYED workflows must not be garbage collected
+    const enqueuedHandle = await DBOS.startWorkflow(TestGarbageCollection, {
+      queueName: TestGarbageCollection.queue.name,
+    }).gcQueuedWorkflow();
+    const delayedHandle = await DBOS.startWorkflow(TestGarbageCollection, {
+      queueName: TestGarbageCollection.queue.name,
+      enqueueOptions: { delaySeconds: 60 },
+    }).gcQueuedWorkflow();
+    expect((await delayedHandle.getStatus())?.status).toBe(StatusString.DELAYED);
+    await DBOSExecutor.globalInstance!.systemDatabase.garbageCollect(Date.now(), undefined);
+    const gcWorkflows = await DBOS.listWorkflows({});
+    const gcWfIds = new Set(gcWorkflows.map((w) => w.workflowID));
+    expect(gcWfIds.has(enqueuedHandle.workflowID)).toBe(true);
+    expect(gcWfIds.has(delayedHandle.workflowID)).toBe(true);
+
+    // Clean up so they don't interfere with the rest of the test
+    await DBOS.cancelWorkflow(enqueuedHandle.workflowID);
+    await DBOS.cancelWorkflow(delayedHandle.workflowID);
   });
 
   class TestGlobalTimeout {

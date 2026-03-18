@@ -137,6 +137,13 @@ class WFQueueRunner {
         listenQueues = Array.from(this.wfQueuesByName.values());
       }
 
+      // Transition delayed workflows that are ready to execute
+      try {
+        await exec.systemDatabase.transitionDelayedWorkflows();
+      } catch (e) {
+        exec.logger.warn(`Error transitioning delayed workflows: ${(e as Error).message}`);
+      }
+
       // Check queues
       for (const q of listenQueues) {
         let wfids: string[] = [];

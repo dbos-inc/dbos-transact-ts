@@ -111,6 +111,11 @@ export interface ClientEnqueueOptions {
    * Required when enqueueing on a partitioned queue.
    */
   queuePartitionKey?: string;
+  /**
+   * Number of seconds to delay the workflow before it starts executing.
+   * The workflow will be in DELAYED status until the delay expires, then transition to ENQUEUED.
+   */
+  delaySeconds?: number;
 }
 
 /**
@@ -233,9 +238,13 @@ export class DBOSClient {
     const workflowUUID = options.workflowID ?? randomUUID();
 
     const serparam = serializeArgs(args, undefined, this.serializer, options?.serializationType);
+    const delayUntilEpochMS =
+      options.delaySeconds !== undefined && options.delaySeconds > 0
+        ? Date.now() + options.delaySeconds * 1000
+        : undefined;
     const internalStatus: WorkflowStatusInternal = {
       workflowUUID: workflowUUID,
-      status: StatusString.ENQUEUED,
+      status: delayUntilEpochMS !== undefined ? StatusString.DELAYED : StatusString.ENQUEUED,
       workflowName: workflowName,
       workflowClassName: workflowClassName ?? '',
       workflowConfigName: workflowConfigName ?? '',
@@ -257,6 +266,7 @@ export class DBOSClient {
       priority: options.priority ?? 0,
       queuePartitionKey: options.queuePartitionKey,
       serialization: serparam.serialization,
+      delayUntilEpochMS,
     };
 
     await this.systemDatabase.initWorkflowStatus(internalStatus, null);
@@ -286,9 +296,13 @@ export class DBOSClient {
       this.serializer,
       options?.serializationType ?? 'portable',
     );
+    const delayUntilEpochMS =
+      options.delaySeconds !== undefined && options.delaySeconds > 0
+        ? Date.now() + options.delaySeconds * 1000
+        : undefined;
     const internalStatus: WorkflowStatusInternal = {
       workflowUUID: workflowUUID,
-      status: StatusString.ENQUEUED,
+      status: delayUntilEpochMS !== undefined ? StatusString.DELAYED : StatusString.ENQUEUED,
       workflowName: workflowName,
       workflowClassName: workflowClassName ?? '',
       workflowConfigName: workflowConfigName ?? '',
@@ -310,6 +324,7 @@ export class DBOSClient {
       priority: options.priority ?? 0,
       queuePartitionKey: options.queuePartitionKey,
       serialization: serparam.serialization,
+      delayUntilEpochMS,
     };
 
     await this.systemDatabase.initWorkflowStatus(internalStatus, null);

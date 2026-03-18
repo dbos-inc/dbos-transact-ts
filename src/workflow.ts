@@ -52,7 +52,7 @@ export interface WorkflowConfig {
 export interface WorkflowStatus {
   // The workflow ID
   readonly workflowID: string;
-  // The status of the workflow.  One of PENDING, SUCCESS, ERROR, ENQUEUED, CANCELLED, or MAX_RECOVERY_ATTEMPTS_EXCEEDED.
+  // The status of the workflow.  One of PENDING, SUCCESS, ERROR, ENQUEUED, DELAYED, CANCELLED, or MAX_RECOVERY_ATTEMPTS_EXCEEDED.
   readonly status: string;
   // The name of the workflow function.
   readonly workflowName: string;
@@ -99,6 +99,8 @@ export interface WorkflowStatus {
   readonly queuePartitionKey?: string;
   // If this workflow was enqueued, the time it was dequeued (started execution), as a UNIX epoch timestamp in milliseconds.
   readonly dequeuedAt?: number;
+  // If this workflow is delayed, the time at which it will transition to ENQUEUED, as a UNIX epoch timestamp in milliseconds.
+  readonly delayUntilEpochMS?: number;
 
   // If this workflow was forked from another, that workflow's ID.
   readonly forkedFrom?: string;
@@ -168,6 +170,8 @@ export const StatusString = {
   CANCELLED: 'CANCELLED',
   /** Workflow is on a `WorkflowQueue` and has not yet started */
   ENQUEUED: 'ENQUEUED',
+  /** Workflow is on a `WorkflowQueue` waiting for a delay to expire before it can start */
+  DELAYED: 'DELAYED',
 } as const;
 
 export type WorkflowStatusString =
@@ -176,10 +180,11 @@ export type WorkflowStatusString =
   | 'ERROR'
   | 'MAX_RECOVERY_ATTEMPTS_EXCEEDED'
   | 'CANCELLED'
-  | 'ENQUEUED';
+  | 'ENQUEUED'
+  | 'DELAYED';
 
 export function isWorkflowActive(status: string) {
-  return status === StatusString.PENDING || status === StatusString.ENQUEUED;
+  return status === StatusString.PENDING || status === StatusString.ENQUEUED || status === StatusString.DELAYED;
 }
 
 /**

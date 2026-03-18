@@ -729,7 +729,7 @@ export class DBOS {
 
   /**
    * Wait for any one of the given workflow handles to complete and return it.
-   * Polls the database until at least one workflow's status is no longer PENDING or ENQUEUED,
+   * Polls the database until at least one workflow's status is no longer PENDING, ENQUEUED, or DELAYED,
    * then returns the corresponding handle.
    * @param handles - Non-empty array of workflow handles to wait on
    * @returns The first handle whose workflow has completed
@@ -802,7 +802,7 @@ export class DBOS {
 
   /**
    * Set the priority of a queued workflow.
-   * Only affects workflows with ENQUEUED status.
+   * Only affects workflows with ENQUEUED or DELAYED status.
    * @param workflowID - ID of the workflow
    * @param priority - Priority value (1 to 2,147,483,647). Lower values are dequeued first.
    */
