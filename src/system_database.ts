@@ -1107,7 +1107,8 @@ export class SystemDatabase {
       // Fetch the status of all original workflows inside the transaction.
       const { rows: statusRows } = await client.query<workflow_status>(
         `SELECT workflow_uuid, name, class_name, config_name, application_id,
-                authenticated_user, authenticated_roles, assumed_role, inputs, serialization
+                authenticated_user, authenticated_roles, assumed_role, inputs, serialization,
+                request
          FROM "${this.schemaName}".workflow_status
          WHERE workflow_uuid = ANY($1)`,
         [originalWorkflowIDs],
@@ -1136,6 +1137,7 @@ export class SystemDatabase {
         'authenticated_user',
         'assumed_role',
         'authenticated_roles',
+        'request',
         'application_version',
         'application_id',
         'inputs',
@@ -1165,6 +1167,7 @@ export class SystemDatabase {
           ws.authenticated_user,
           ws.assumed_role,
           ws.authenticated_roles,
+          ws.request,
           options.applicationVersion ?? null,
           ws.application_id,
           ws.inputs,
