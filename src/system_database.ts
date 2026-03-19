@@ -1108,7 +1108,7 @@ export class SystemDatabase {
       const { rows: statusRows } = await client.query<workflow_status>(
         `SELECT workflow_uuid, name, class_name, config_name, application_id,
                 authenticated_user, authenticated_roles, assumed_role, inputs, serialization,
-                request, application_version, workflow_timeout_ms
+                application_version
          FROM "${this.schemaName}".workflow_status
          WHERE workflow_uuid = ANY($1)`,
         [originalWorkflowIDs],
@@ -1124,11 +1124,9 @@ export class SystemDatabase {
         }
       }
 
-      const now = Date.now();
       const queueName = options.queueName ?? INTERNAL_QUEUE_NAME;
 
       // Bulk insert all forked workflow status rows.
-      // Build a single INSERT with multiple VALUES tuples.
       const insertCols = [
         'workflow_uuid',
         'status',
@@ -1139,20 +1137,16 @@ export class SystemDatabase {
         'authenticated_user',
         'assumed_role',
         'authenticated_roles',
-        'request',
-        'executor_id',
         'application_version',
         'application_id',
-        'created_at',
-        'recovery_attempts',
-        'updated_at',
-        'workflow_timeout_ms',
         'inputs',
-        'priority',
         'queue_partition_key',
         'forked_from',
         'serialization',
       ];
+      if (options.timeoutMS !== undefined) {
+        insertCols.push('workflow_timeout_ms');
+      }
       const valuesPlaceholders: string[] = [];
       const params: unknown[] = [];
       let paramIdx = 1;
@@ -1172,20 +1166,16 @@ export class SystemDatabase {
           ws.authenticated_user,
           ws.assumed_role,
           ws.authenticated_roles,
-          ws.request,
-          globalParams.executorID,
           options.applicationVersion ?? ws.application_version ?? null,
           ws.application_id,
-          now,
-          0,
-          now,
-          options.timeoutMS ?? ws.workflow_timeout_ms ?? null,
           ws.inputs,
-          0,
           options.queuePartitionKey ?? null,
           origID,
           ws.serialization,
         );
+        if (options.timeoutMS !== undefined) {
+          params.push(options.timeoutMS);
+        }
       }
       await client.query(
         `INSERT INTO "${this.schemaName}".workflow_status (${insertCols.join(', ')})
@@ -1221,8 +1211,8 @@ export class SystemDatabase {
         await client.query(
           `${mappingCTE}
            INSERT INTO "${this.schemaName}".operation_outputs
-             (workflow_uuid, function_id, output, error, serialization, function_name, child_workflow_id)
-           SELECT m.fork_id, oo.function_id, oo.output, oo.error, oo.serialization, oo.function_name, oo.child_workflow_id
+             (workflow_uuid, function_id, output, error, serialization, function_name, child_workflow_id, started_at_epoch_ms, completed_at_epoch_ms)
+           SELECT m.fork_id, oo.function_id, oo.output, oo.error, oo.serialization, oo.function_name, oo.child_workflow_id, oo.started_at_epoch_ms, oo.completed_at_epoch_ms
            FROM typed_mapping m
            JOIN "${this.schemaName}".operation_outputs oo
              ON oo.workflow_uuid = m.orig_id AND oo.function_id < m.start_step`,
