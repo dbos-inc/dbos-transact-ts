@@ -104,6 +104,8 @@ export interface WorkflowStatus {
 
   // If this workflow was forked from another, that workflow's ID.
   readonly forkedFrom?: string;
+  // Whether this workflow has been forked from by another workflow.
+  readonly wasForkedFrom?: boolean;
   // If this workflow was started by another workflow, that workflow's ID.
   readonly parentWorkflowID?: string;
 
@@ -129,6 +131,7 @@ export interface GetWorkflowsInput {
   queueName?: string | string[]; // If this workflow is enqueued, on which queue (or any of these queues).
   queuesOnly?: boolean; // Return only workflows that are actively enqueued
   forkedFrom?: string | string[]; // Get workflows forked from this workflow ID (or any of these workflow IDs).
+  wasForkedFrom?: boolean; // Filter workflows that have (or have not) been forked from.
   parentWorkflowID?: string | string[]; // Get workflows started by this parent workflow ID (or any of these parent workflow IDs).
   limit?: number; // Return up to this many workflows IDs. IDs are ordered by workflow creation time.
   offset?: number; // Skip this many workflows IDs. IDs are ordered by workflow creation time.

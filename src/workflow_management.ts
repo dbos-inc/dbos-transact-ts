@@ -95,6 +95,7 @@ export function toWorkflowStatus(internal: WorkflowStatusInternal, serializer: D
     queuePartitionKey: internal.queuePartitionKey,
     dequeuedAt: internal.startedAtEpochMs,
     forkedFrom: internal.forkedFrom,
+    wasForkedFrom: internal.wasForkedFrom ?? false,
     parentWorkflowID: internal.parentWorkflowID,
     delayUntilEpochMS: internal.delayUntilEpochMS,
   };

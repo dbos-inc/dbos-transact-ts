@@ -135,6 +135,7 @@ export interface WorkflowStatusInternal {
   queuePartitionKey?: string;
   startedAtEpochMs?: number;
   forkedFrom?: string;
+  wasForkedFrom?: boolean;
   parentWorkflowID?: string;
   serialization: string | null;
   delayUntilEpochMS?: number;
@@ -337,6 +338,7 @@ function mapWorkflowStatus(row: workflow_status): WorkflowStatusInternal {
     queuePartitionKey: row.queue_partition_key ?? undefined,
     startedAtEpochMs: row.started_at_epoch_ms ? Number(row.started_at_epoch_ms) : undefined,
     forkedFrom: row.forked_from ?? undefined,
+    wasForkedFrom: row.was_forked_from ?? false,
     parentWorkflowID: row.parent_workflow_id ?? undefined,
     serialization: row.serialization,
     delayUntilEpochMS: row.delay_until_epoch_ms ? Number(row.delay_until_epoch_ms) : undefined,
@@ -1098,6 +1100,12 @@ export class SystemDatabase {
         null,
       );
 
+      // Mark the original workflow as having been forked from.
+      await client.query(
+        `UPDATE "${this.schemaName}".workflow_status SET was_forked_from = TRUE WHERE workflow_uuid = $1`,
+        [workflowID],
+      );
+
       if (startStep > 0) {
         // Copy operation outputs
         const copyOutputsQuery = `INSERT INTO "${this.schemaName}".operation_outputs
@@ -1147,6 +1155,43 @@ export class SystemDatabase {
     } finally {
       client.release();
     }
+  }
+
+  async forkFromFailure(
+    workflowIDs: string[],
+    options: {
+      applicationVersion?: string;
+      queueName?: string;
+      queuePartitionKey?: string;
+    } = {},
+  ): Promise<string[]> {
+    // For each workflow, find the first step with an error, or fallback to the last executed step.
+    const result = await this.pool.query<{ workflow_uuid: string; start_step: number }>(
+      `SELECT workflow_uuid,
+              COALESCE(
+                MAX(function_id) FILTER (WHERE error IS NOT NULL),
+                MAX(function_id)
+              ) AS start_step
+       FROM "${this.schemaName}".operation_outputs
+       WHERE workflow_uuid = ANY($1)
+       GROUP BY workflow_uuid`,
+      [workflowIDs],
+    );
+
+    const startStepByID = new Map(result.rows.map((r) => [r.workflow_uuid, Number(r.start_step)]));
+    for (const wid of workflowIDs) {
+      if (!startStepByID.has(wid)) {
+        throw new Error(`No steps were found for workflow ${wid}`);
+      }
+    }
+
+    const forkedIDs: string[] = [];
+    for (const wid of workflowIDs) {
+      const startStep = startStepByID.get(wid)!;
+      const forkedID = await this.forkWorkflow(wid, startStep, options);
+      forkedIDs.push(forkedID);
+    }
+    return forkedIDs;
   }
 
   async exportWorkflow(workflowID: string, exportChildren: boolean = false): Promise<ExportedWorkflow[]> {
@@ -2402,6 +2447,7 @@ export class SystemDatabase {
       'queue_partition_key',
       'started_at_epoch_ms',
       'forked_from',
+      'was_forked_from',
       'parent_workflow_id',
       'delay_until_epoch_ms',
     ];
@@ -2476,6 +2522,12 @@ export class SystemDatabase {
     addFilter('authenticated_user', input.authenticatedUser);
     addFilter('forked_from', input.forkedFrom);
     addFilter('parent_workflow_id', input.parentWorkflowID);
+
+    if (input.wasForkedFrom !== undefined) {
+      whereClauses.push(`was_forked_from = $${paramCounter}`);
+      params.push(input.wasForkedFrom);
+      paramCounter++;
+    }
 
     if (input.startTime) {
       whereClauses.push(`created_at >= $${paramCounter}`);

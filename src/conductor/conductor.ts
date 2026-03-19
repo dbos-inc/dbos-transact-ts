@@ -231,6 +231,27 @@ export class Conductor {
             const forkResp = new protocol.ForkWorkflowResponse(baseMsg.request_id, newWorkflowID, errorMsg);
             currWebsocket.send(JSON.stringify(forkResp));
             break;
+          case protocol.MessageType.FORK_FROM_FAILURE:
+            const forkFromFailureMsg = baseMsg as protocol.ForkFromFailureRequest;
+            const forkFromFailureBody = forkFromFailureMsg.body;
+            let forkedWorkflowIDs: string[] | undefined = undefined;
+            try {
+              forkedWorkflowIDs = await this.dbosExec.systemDatabase.forkFromFailure(forkFromFailureBody.workflow_ids, {
+                applicationVersion: forkFromFailureBody.application_version,
+                queueName: forkFromFailureBody.queue_name,
+                queuePartitionKey: forkFromFailureBody.queue_partition_key,
+              });
+            } catch (e) {
+              errorMsg = `Exception encountered when bulk forking workflows: ${(e as Error).message}`;
+              this.dbosExec.logger.error(errorMsg);
+            }
+            const forkFromFailureResp = new protocol.ForkFromFailureResponse(
+              baseMsg.request_id,
+              forkedWorkflowIDs,
+              errorMsg,
+            );
+            currWebsocket.send(JSON.stringify(forkFromFailureResp));
+            break;
           case protocol.MessageType.LIST_WORKFLOWS:
             const listWFMsg = baseMsg as protocol.ListWorkflowsRequest;
             const body = listWFMsg.body;
@@ -253,6 +274,7 @@ export class Conductor {
               loadOutput: body.load_output ?? false, // Default to false if not provided
               executorId: body.executor_id,
               queuesOnly: body.queues_only,
+              wasForkedFrom: body.was_forked_from,
             };
             let workflowsOutput: protocol.WorkflowsOutput[] = [];
             try {
@@ -286,6 +308,7 @@ export class Conductor {
               loadInput: bodyQueued.load_input ?? false, // Default to false if not provided
               loadOutput: bodyQueued.load_output ?? false, // Default to false if not provided
               executorId: bodyQueued.executor_id,
+              wasForkedFrom: bodyQueued.was_forked_from,
             };
             let queuedWFOutput: protocol.WorkflowsOutput[] = [];
             try {

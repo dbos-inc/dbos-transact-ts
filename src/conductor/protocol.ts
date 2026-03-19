@@ -32,6 +32,7 @@ export enum MessageType {
   GET_WORKFLOW_NOTIFICATIONS = 'get_workflow_notifications',
   GET_WORKFLOW_STREAMS = 'get_workflow_streams',
   GET_WORKFLOW_AGGREGATES = 'get_workflow_aggregates',
+  FORK_FROM_FAILURE = 'fork_from_failure',
 }
 
 export interface BaseMessage {
@@ -192,6 +193,7 @@ export interface ListWorkflowsBody {
   load_output?: boolean; // Load the output of the workflow (default false)
   executor_id?: string | string[];
   queues_only?: boolean;
+  was_forked_from?: boolean;
 }
 
 export class WorkflowsOutput {
@@ -218,7 +220,9 @@ export class WorkflowsOutput {
   QueuePartitionKey?: string;
   DequeuedAt?: string;
   ForkedFrom?: string;
+  WasForkedFrom?: boolean;
   ParentWorkflowID?: string;
+  DelayUntilEpochMS?: string;
 
   constructor(info: WorkflowStatus) {
     // Mark empty fields as undefined
@@ -246,7 +250,9 @@ export class WorkflowsOutput {
     this.QueuePartitionKey = info.queuePartitionKey;
     this.DequeuedAt = info.dequeuedAt !== undefined ? String(info.dequeuedAt) : undefined;
     this.ForkedFrom = info.forkedFrom;
+    this.WasForkedFrom = info.wasForkedFrom;
     this.ParentWorkflowID = info.parentWorkflowID;
+    this.DelayUntilEpochMS = info.delayUntilEpochMS !== undefined ? String(info.delayUntilEpochMS) : undefined;
   }
 }
 
@@ -306,6 +312,7 @@ export interface ListQueuedWorkflowsBody {
   load_input?: boolean; // Load the input of the workflow (default false)
   load_output?: boolean; // Load the output of the workflow (default false)
   executor_id?: string | string[];
+  was_forked_from?: boolean;
 }
 
 export class ListQueuedWorkflowsRequest implements BaseMessage {
@@ -409,6 +416,31 @@ export class ForkWorkflowResponse extends BaseResponse {
   constructor(request_id: string, new_workflow_id?: string, error_message?: string) {
     super(MessageType.FORK_WORKFLOW, request_id, error_message);
     this.new_workflow_id = new_workflow_id;
+  }
+}
+
+export interface ForkFromFailureBody {
+  workflow_ids: string[];
+  application_version?: string;
+  queue_name?: string;
+  queue_partition_key?: string;
+}
+
+export class ForkFromFailureRequest implements BaseMessage {
+  type = MessageType.FORK_FROM_FAILURE;
+  request_id: string;
+  body: ForkFromFailureBody;
+  constructor(request_id: string, body: ForkFromFailureBody) {
+    this.request_id = request_id;
+    this.body = body;
+  }
+}
+
+export class ForkFromFailureResponse extends BaseResponse {
+  forked_workflow_ids?: string[];
+  constructor(request_id: string, forked_workflow_ids?: string[], error_message?: string) {
+    super(MessageType.FORK_FROM_FAILURE, request_id, error_message);
+    this.forked_workflow_ids = forked_workflow_ids;
   }
 }
 
