@@ -1202,12 +1202,11 @@ export class SystemDatabase {
         const mappingParams: unknown[] = [];
         let mIdx = 1;
         for (const m of forkMappings) {
-          mappingValues.push(`($${mIdx}, $${mIdx + 1}, $${mIdx + 2})`);
+          mappingValues.push(`($${mIdx}::text, $${mIdx + 1}::text, $${mIdx + 2}::int)`);
           mappingParams.push(m.origID, m.forkID, m.startStep);
           mIdx += 3;
         }
-        const mappingCTE = `WITH mapping(orig_id, fork_id, start_step) AS (VALUES ${mappingValues.join(', ')})
-           , typed_mapping AS (SELECT orig_id::text, fork_id::text, start_step::int FROM mapping)`;
+        const mappingCTE = `WITH mapping(orig_id, fork_id, start_step) AS (VALUES ${mappingValues.join(', ')})`;
 
         // Copy operation outputs
         await client.query(
@@ -1215,7 +1214,7 @@ export class SystemDatabase {
            INSERT INTO "${this.schemaName}".operation_outputs
              (workflow_uuid, function_id, output, error, serialization, function_name, child_workflow_id, started_at_epoch_ms, completed_at_epoch_ms)
            SELECT m.fork_id, oo.function_id, oo.output, oo.error, oo.serialization, oo.function_name, oo.child_workflow_id, oo.started_at_epoch_ms, oo.completed_at_epoch_ms
-           FROM typed_mapping m
+           FROM mapping m
            JOIN "${this.schemaName}".operation_outputs oo
              ON oo.workflow_uuid = m.orig_id AND oo.function_id < m.start_step`,
           mappingParams,
@@ -1227,7 +1226,7 @@ export class SystemDatabase {
            INSERT INTO "${this.schemaName}".streams
              (workflow_uuid, key, value, serialization, "offset", function_id)
            SELECT m.fork_id, s.key, s.value, s.serialization, s."offset", s.function_id
-           FROM typed_mapping m
+           FROM mapping m
            JOIN "${this.schemaName}".streams s
              ON s.workflow_uuid = m.orig_id AND s.function_id < m.start_step`,
           mappingParams,
@@ -1239,7 +1238,7 @@ export class SystemDatabase {
            INSERT INTO "${this.schemaName}".workflow_events_history
              (workflow_uuid, function_id, key, value, serialization)
            SELECT m.fork_id, weh.function_id, weh.key, weh.value, weh.serialization
-           FROM typed_mapping m
+           FROM mapping m
            JOIN "${this.schemaName}".workflow_events_history weh
              ON weh.workflow_uuid = m.orig_id AND weh.function_id < m.start_step`,
           mappingParams,
@@ -1254,7 +1253,7 @@ export class SystemDatabase {
            FROM (
              SELECT m.fork_id AS workflow_uuid, weh.key, weh.value, weh.serialization,
                     ROW_NUMBER() OVER (PARTITION BY weh.workflow_uuid, weh.key ORDER BY weh.function_id DESC) AS rn
-             FROM typed_mapping m
+             FROM mapping m
              JOIN "${this.schemaName}".workflow_events_history weh
                ON weh.workflow_uuid = m.orig_id AND weh.function_id < m.start_step
            ) ranked
