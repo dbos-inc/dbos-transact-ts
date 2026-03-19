@@ -220,7 +220,7 @@ export class WorkflowsOutput {
   QueuePartitionKey?: string;
   DequeuedAt?: string;
   ForkedFrom?: string;
-  WasForkedFrom?: boolean;
+  WasForkedFrom: boolean;
   ParentWorkflowID?: string;
   DelayUntilEpochMS?: string;
 
@@ -250,7 +250,7 @@ export class WorkflowsOutput {
     this.QueuePartitionKey = info.queuePartitionKey;
     this.DequeuedAt = info.dequeuedAt !== undefined ? String(info.dequeuedAt) : undefined;
     this.ForkedFrom = info.forkedFrom;
-    this.WasForkedFrom = info.wasForkedFrom;
+    this.WasForkedFrom = info.wasForkedFrom ?? false;
     this.ParentWorkflowID = info.parentWorkflowID;
     this.DelayUntilEpochMS = info.delayUntilEpochMS !== undefined ? String(info.delayUntilEpochMS) : undefined;
   }
