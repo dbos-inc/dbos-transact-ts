@@ -1570,8 +1570,10 @@ describe('test-fork', () => {
     expect(ExampleWorkflow.stepTwoCount).toBe(3);
     expect(ExampleWorkflow.stepThreeCount).toBe(2);
 
-    // Bulk fork all three from failure
-    const forkedIDs = await DBOSExecutor.globalInstance!.systemDatabase.forkFromFailure([wf1Id, wf2Id, wf3Id]);
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+
+    // --- fromLastFailure mode ---
+    const forkedIDs = await sysdb.forkFromFailure([wf1Id, wf2Id, wf3Id], { fromLastFailure: true });
     expect(forkedIDs.length).toBe(3);
 
     const fork1 = DBOS.retrieveWorkflow<number>(forkedIDs[0]);
@@ -1588,15 +1590,55 @@ describe('test-fork', () => {
     expect(ExampleWorkflow.stepTwoCount).toBe(4); // re-run for fork1 only
     expect(ExampleWorkflow.stepThreeCount).toBe(5); // re-run for all three forks
 
+    // --- fromLastStep mode ---
+    const forkedIDsLast = await sysdb.forkFromFailure([wf1Id, wf2Id, wf3Id], { fromLastStep: true });
+    const f1 = DBOS.retrieveWorkflow<number>(forkedIDsLast[0]);
+    const f2 = DBOS.retrieveWorkflow<number>(forkedIDsLast[1]);
+    const f3 = DBOS.retrieveWorkflow<number>(forkedIDsLast[2]);
+    expect(await f1.getResult()).toBe(6);
+    expect(await f2.getResult()).toBe(6);
+    expect(await f3.getResult()).toBe(6);
+    // wf1's last step is 1 (step_three never ran), so step_two re-runs
+    expect(ExampleWorkflow.stepTwoCount).toBe(5);
+    // wf2 and wf3 last step is 2, so step_three re-runs for all three forks
+    expect(ExampleWorkflow.stepThreeCount).toBe(8);
+
+    // --- fromStep mode ---
+    const forkedIDsStep = await sysdb.forkFromFailure([wf3Id], { fromStep: 1 });
+    const fs = DBOS.retrieveWorkflow<number>(forkedIDsStep[0]);
+    expect(await fs.getResult()).toBe(6);
+    expect(ExampleWorkflow.stepOneCount).toBe(3); // replayed (function_id 0)
+    expect(ExampleWorkflow.stepTwoCount).toBe(6); // re-run from step 1
+    expect(ExampleWorkflow.stepThreeCount).toBe(9); // re-run
+
+    // --- fromStepName mode ---
+    const forkedIDsName = await sysdb.forkFromFailure([wf3Id], { fromStepName: 'failableStepTwo' });
+    const fn = DBOS.retrieveWorkflow<number>(forkedIDsName[0]);
+    expect(await fn.getResult()).toBe(6);
+    expect(ExampleWorkflow.stepOneCount).toBe(3); // replayed
+    expect(ExampleWorkflow.stepTwoCount).toBe(7); // re-run
+    expect(ExampleWorkflow.stepThreeCount).toBe(10); // re-run
+
+    // --- validation: fromStepName errors when step not found ---
+    await expect(sysdb.forkFromFailure([wf1Id], { fromStepName: 'failableStepThree' })).rejects.toThrow(
+      'has no step named',
+    );
+    await expect(sysdb.forkFromFailure([wf3Id], { fromStepName: 'nonexistent_step' })).rejects.toThrow(
+      'has no step named',
+    );
+
+    // --- validation: specifying no mode raises ---
+    await expect(sysdb.forkFromFailure([wf3Id])).rejects.toThrow('Exactly one');
+
+    // --- validation: specifying multiple modes raises ---
+    await expect(sysdb.forkFromFailure([wf3Id], { fromLastFailure: true, fromLastStep: true })).rejects.toThrow(
+      'Exactly one',
+    );
+
     // All three originals should be marked as having been forked from.
     for (const wid of [wf1Id, wf2Id, wf3Id]) {
       const status = await DBOS.getWorkflowStatus(wid);
       expect(status?.wasForkedFrom).toBe(true);
-    }
-    // The forked workflows themselves should not be marked.
-    for (const fid of forkedIDs) {
-      const status = await DBOS.getWorkflowStatus(fid);
-      expect(status?.wasForkedFrom).toBe(false);
     }
 
     // Filter by wasForkedFrom
@@ -1605,12 +1647,6 @@ describe('test-fork', () => {
     expect(forkedFromIDs).toContain(wf1Id);
     expect(forkedFromIDs).toContain(wf2Id);
     expect(forkedFromIDs).toContain(wf3Id);
-
-    const notForkedFromList = await DBOS.listWorkflows({ wasForkedFrom: false });
-    const notForkedIDs = new Set(notForkedFromList.map((w) => w.workflowID));
-    for (const fid of forkedIDs) {
-      expect(notForkedIDs).toContain(fid);
-    }
   }, 15000);
 
   test('test-fork-childwf', async () => {

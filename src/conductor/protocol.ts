@@ -424,6 +424,10 @@ export interface ForkFromFailureBody {
   application_version?: string;
   queue_name?: string;
   queue_partition_key?: string;
+  from_last_failure?: boolean;
+  from_last_step?: boolean;
+  from_step?: number;
+  from_step_name?: string;
 }
 
 export class ForkFromFailureRequest implements BaseMessage {

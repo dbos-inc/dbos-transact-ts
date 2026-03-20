@@ -1062,30 +1062,67 @@ export class SystemDatabase {
       applicationVersion?: string;
       queueName?: string;
       queuePartitionKey?: string;
+      fromLastFailure?: boolean;
+      fromLastStep?: boolean;
+      fromStep?: number;
+      fromStepName?: string;
     } = {},
   ): Promise<string[]> {
-    // For each workflow, find the first step with an error, or fallback to the last executed step.
-    const result = await this.pool.query<{ workflow_uuid: string; start_step: number }>(
-      `SELECT workflow_uuid,
-              COALESCE(
-                MAX(function_id) FILTER (WHERE error IS NOT NULL),
-                MAX(function_id)
-              ) AS start_step
-       FROM "${this.schemaName}".operation_outputs
-       WHERE workflow_uuid = ANY($1)
-       GROUP BY workflow_uuid`,
-      [workflowIDs],
-    );
+    const modes = [
+      options.fromLastFailure ?? false,
+      options.fromLastStep ?? false,
+      options.fromStep !== undefined,
+      options.fromStepName !== undefined,
+    ].filter(Boolean).length;
+    if (modes !== 1) {
+      throw new Error('Exactly one of fromLastFailure, fromLastStep, fromStep, or fromStepName must be specified');
+    }
 
-    const startStepByID = new Map(result.rows.map((r) => [r.workflow_uuid, Number(r.start_step)]));
-    for (const wid of workflowIDs) {
-      if (!startStepByID.has(wid)) {
-        throw new Error(`No steps were found for workflow ${wid}`);
+    let startSteps: number[];
+
+    if (options.fromStep !== undefined) {
+      startSteps = Array(workflowIDs.length).fill(options.fromStep) as number[];
+    } else {
+      let query: string;
+      const params: unknown[] = [workflowIDs];
+
+      if (options.fromLastFailure) {
+        query = `SELECT workflow_uuid,
+                        COALESCE(
+                          MAX(function_id) FILTER (WHERE error IS NOT NULL),
+                          MAX(function_id)
+                        ) AS start_step
+                 FROM "${this.schemaName}".operation_outputs
+                 WHERE workflow_uuid = ANY($1)
+                 GROUP BY workflow_uuid`;
+      } else if (options.fromLastStep) {
+        query = `SELECT workflow_uuid, MAX(function_id) AS start_step
+                 FROM "${this.schemaName}".operation_outputs
+                 WHERE workflow_uuid = ANY($1)
+                 GROUP BY workflow_uuid`;
+      } else {
+        // fromStepName
+        query = `SELECT workflow_uuid, MAX(function_id) AS start_step
+                 FROM "${this.schemaName}".operation_outputs
+                 WHERE workflow_uuid = ANY($1) AND function_name = $2
+                 GROUP BY workflow_uuid`;
+        params.push(options.fromStepName);
       }
+
+      const result = await this.pool.query<{ workflow_uuid: string; start_step: number }>(query, params);
+      const startStepByID = new Map(result.rows.map((r) => [r.workflow_uuid, Number(r.start_step)]));
+      for (const wid of workflowIDs) {
+        if (!startStepByID.has(wid)) {
+          if (options.fromStepName !== undefined) {
+            throw new Error(`Workflow ${wid} has no step named '${options.fromStepName}'`);
+          }
+          throw new Error(`Workflow ${wid} has no steps`);
+        }
+      }
+      startSteps = workflowIDs.map((wid) => startStepByID.get(wid)!);
     }
 
     const forkedIDs = workflowIDs.map(() => randomUUID());
-    const startSteps = workflowIDs.map((wid) => startStepByID.get(wid)!);
     return this.bulkForkWorkflows(workflowIDs, forkedIDs, startSteps, options);
   }
 

@@ -240,6 +240,10 @@ export class Conductor {
                 applicationVersion: forkFromFailureBody.application_version,
                 queueName: forkFromFailureBody.queue_name,
                 queuePartitionKey: forkFromFailureBody.queue_partition_key,
+                fromLastFailure: forkFromFailureBody.from_last_failure ?? false,
+                fromLastStep: forkFromFailureBody.from_last_step ?? false,
+                fromStep: forkFromFailureBody.from_step,
+                fromStepName: forkFromFailureBody.from_step_name,
               });
             } catch (e) {
               errorMsg = `Exception encountered when bulk forking workflows: ${(e as Error).message}`;
