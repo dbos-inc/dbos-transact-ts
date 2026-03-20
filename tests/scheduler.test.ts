@@ -1,4 +1,4 @@
-import { DBOS, ConfiguredInstance, DBOSClient } from '../src';
+import { DBOS, ConfiguredInstance, DBOSClient, WorkflowQueue } from '../src';
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import { generateDBOSTestConfig, setUpDBOSTestSysDb, dropDatabase } from './helpers';
 import { sleepms } from '../src/utils';
@@ -1179,4 +1179,64 @@ describe('dynamic-scheduler-tests', () => {
       await client.destroy();
     }
   });
+
+  // ---------------------------------------------------------------------------
+  // schedule-with-queue-name
+  // ---------------------------------------------------------------------------
+
+  const _schedulerTestQueue = new WorkflowQueue('scheduler-test-queue');
+  const queuedReceived: unknown[] = [];
+  async function queuedWorkflow(_scheduledDate: Date, context: unknown) {
+    const status = await DBOS.getWorkflowStatus(DBOS.workflowID!);
+    expect(status).toBeDefined();
+    expect(status!.queueName).toBe('scheduler-test-queue');
+    queuedReceived.push(context);
+  }
+  const regQueuedWf = DBOS.registerWorkflow(queuedWorkflow, { name: 'queuedWorkflow' });
+
+  test('schedule-with-queue-name', async () => {
+    queuedReceived.length = 0;
+
+    // Create a schedule with a valid queue name
+    await DBOS.createSchedule({
+      scheduleName: 'queued-schedule',
+      workflowFn: regQueuedWf,
+      schedule: '* * * * * *',
+      context: { queued: true },
+      options: { queueName: 'scheduler-test-queue' },
+    });
+
+    // Verify queue_name is stored via get and list
+    const sched = await DBOS.getSchedule('queued-schedule');
+    expect(sched).not.toBeNull();
+    expect(sched!.queueName).toBe('scheduler-test-queue');
+    const schedules = await DBOS.listSchedules();
+    expect(schedules.length).toBe(1);
+    expect(schedules[0].queueName).toBe('scheduler-test-queue');
+
+    // Verify the schedule fires and workflows land on the specified queue
+    await retryUntilSuccess(() => {
+      expect(queuedReceived.length).toBeGreaterThanOrEqual(2);
+      expect(queuedReceived.every((c) => (c as { queued: boolean }).queued === true)).toBe(true);
+    });
+
+    // Trigger also uses the queue
+    const countBefore = queuedReceived.length;
+    const handle = await DBOS.triggerSchedule('queued-schedule');
+    await handle.getResult();
+    expect(queuedReceived.length).toBeGreaterThan(countBefore);
+
+    await DBOS.deleteSchedule('queued-schedule');
+
+    // Schedule without queue_name should have null
+    await DBOS.createSchedule({
+      scheduleName: 'no-queue-schedule',
+      workflowFn: regQueuedWf,
+      schedule: '0 0 * * *',
+    });
+    const noQueueSched = await DBOS.getSchedule('no-queue-schedule');
+    expect(noQueueSched).not.toBeNull();
+    expect(noQueueSched!.queueName).toBeNull();
+    await DBOS.deleteSchedule('no-queue-schedule');
+  }, 30000);
 });

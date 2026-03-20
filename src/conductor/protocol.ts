@@ -535,6 +535,7 @@ export interface ScheduleOutput {
   last_fired_at: string | null;
   automatic_backfill: boolean;
   cron_timezone: string | null;
+  queue_name: string | null;
 }
 
 export interface ListSchedulesBody {
