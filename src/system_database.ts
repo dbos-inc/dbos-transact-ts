@@ -1139,6 +1139,13 @@ export class SystemDatabase {
       replacementChildren?: Record<string, string>;
     } = {},
   ): Promise<string[]> {
+    if (originalWorkflowIDs.length === 0) {
+      return [];
+    }
+    if (originalWorkflowIDs.length !== forkedWorkflowIDs.length || originalWorkflowIDs.length !== startSteps.length) {
+      throw new Error('originalWorkflowIDs, forkedWorkflowIDs, and startSteps must have the same length');
+    }
+
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');

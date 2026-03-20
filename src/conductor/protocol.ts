@@ -399,7 +399,6 @@ export interface ForkWorkflowBody {
   new_workflow_id?: string;
   queue_name?: string;
   queue_partition_key?: string;
-  replacement_children?: Record<string, string>;
 }
 
 export class ForkWorkflowRequest implements BaseMessage {
