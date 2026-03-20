@@ -1156,9 +1156,6 @@ export class SystemDatabase {
         if (!statusByID.has(wid)) {
           throw new DBOSNonExistentWorkflowError(`Workflow ${wid} does not exist`);
         }
-        if (!statusByID.get(wid)!.inputs) {
-          throw new DBOSNonExistentWorkflowError(`Workflow ${wid} has no input`);
-        }
       }
 
       const queueName = options.queueName ?? INTERNAL_QUEUE_NAME;
