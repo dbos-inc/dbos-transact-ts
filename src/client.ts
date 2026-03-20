@@ -513,6 +513,7 @@ export class DBOSClient {
       lastFiredAt: null,
       automaticBackfill: options.options?.automaticBackfill ?? false,
       cronTimezone: options.options?.cronTimezone ?? null,
+      queueName: options.options?.queueName ?? null,
     };
     await this.systemDatabase.createSchedule(schedInternal);
   }
@@ -552,6 +553,7 @@ export class DBOSClient {
       context?: unknown;
       automaticBackfill?: boolean;
       cronTimezone?: string;
+      queueName?: string;
     }>,
   ): Promise<void> {
     const internals: WorkflowScheduleInternal[] = [];
@@ -571,6 +573,7 @@ export class DBOSClient {
         lastFiredAt: null,
         automaticBackfill: sched.automaticBackfill ?? false,
         cronTimezone: sched.cronTimezone ?? null,
+        queueName: sched.queueName ?? null,
       });
     }
     await this.systemDatabase.applySchedules(internals);

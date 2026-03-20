@@ -385,5 +385,8 @@ export function allMigrations(
         `CREATE INDEX "idx_workflow_status_delayed" ON "${schemaName}"."workflow_status" ("delay_until_epoch_ms") WHERE status = 'DELAYED'`,
       ],
     },
+    {
+      pg: [`ALTER TABLE "${schemaName}"."workflow_schedules" ADD COLUMN "queue_name" TEXT DEFAULT NULL`],
+    },
   ];
 }

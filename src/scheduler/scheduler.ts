@@ -17,6 +17,7 @@ export type ScheduledWorkflowFn = (scheduledDate: Date, context: any) => Promise
 export interface ScheduleOptions {
   automaticBackfill?: boolean;
   cronTimezone?: string;
+  queueName?: string;
 }
 
 export interface WorkflowSchedule {
@@ -30,6 +31,7 @@ export interface WorkflowSchedule {
   lastFiredAt: string | null;
   automaticBackfill: boolean;
   cronTimezone: string | null;
+  queueName: string | null;
 }
 
 export function toWorkflowSchedule(internal: WorkflowScheduleInternal, serializer: DBOSSerializer): WorkflowSchedule {
@@ -46,6 +48,7 @@ export function toWorkflowSchedule(internal: WorkflowScheduleInternal, serialize
     lastFiredAt: internal.lastFiredAt,
     automaticBackfill: internal.automaticBackfill,
     cronTimezone: internal.cronTimezone,
+    queueName: internal.queueName,
   };
 }
 
@@ -166,6 +169,7 @@ export class DynamicSchedulerLoop implements DBOSLifecycleCallback {
               executor.serializer,
               controller.signal,
               sched.cronTimezone ?? undefined,
+              sched.queueName ?? undefined,
             );
             this.#scheduleLoops.set(sched.scheduleName, { controller, promise, scheduleId: sched.scheduleId });
           }
@@ -185,6 +189,7 @@ export class DynamicSchedulerLoop implements DBOSLifecycleCallback {
     serializer: DBOSSerializer,
     signal: AbortSignal,
     cronTimezone?: string,
+    queueName?: string,
   ): Promise<void> {
     const timeMatcher = new TimeMatcher(cronExpression, cronTimezone);
 
@@ -199,6 +204,7 @@ export class DynamicSchedulerLoop implements DBOSLifecycleCallback {
       lastFiredAt: null,
       automaticBackfill: false,
       cronTimezone: cronTimezone ?? null,
+      queueName: queueName ?? null,
     };
 
     let lastExec = new Date().setMilliseconds(0);
@@ -297,7 +303,7 @@ async function enqueueScheduledWorkflow(
     workflowClassName: sched.workflowClassName,
     workflowConfigName: '',
     applicationVersion: latestVersion.versionName,
-    queueName: INTERNAL_QUEUE_NAME,
+    queueName: sched.queueName || INTERNAL_QUEUE_NAME,
     authenticatedUser: '',
     output: null,
     error: null,
