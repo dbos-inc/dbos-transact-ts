@@ -222,6 +222,7 @@ export class Conductor {
                 applicationVersion: forkMsg.body.application_version,
                 queueName: forkMsg.body.queue_name,
                 queuePartitionKey: forkMsg.body.queue_partition_key,
+                replacementChildren: forkMsg.body.replacement_children,
               });
             } catch (e) {
               errorMsg = `Exception encountered when forking workflow ${forkMsg.body.workflow_id} to new workflow ${newWorkflowID} on step ${forkMsg.body.start_step}, app version ${forkMsg.body.application_version}: ${(e as Error).message}`;

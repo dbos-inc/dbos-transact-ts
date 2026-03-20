@@ -1049,6 +1049,7 @@ export class SystemDatabase {
       timeoutMS?: number;
       queueName?: string;
       queuePartitionKey?: string;
+      replacementChildren?: Record<string, string>;
     } = {},
   ): Promise<string> {
     const newWorkflowID = options.newWorkflowID ?? randomUUID();
@@ -1135,6 +1136,7 @@ export class SystemDatabase {
       timeoutMS?: number;
       queueName?: string;
       queuePartitionKey?: string;
+      replacementChildren?: Record<string, string>;
     } = {},
   ): Promise<string[]> {
     const client = await this.pool.connect();
@@ -1242,16 +1244,29 @@ export class SystemDatabase {
         }
         const mappingCTE = `WITH mapping(orig_id, fork_id, start_step) AS (VALUES ${mappingValues.join(', ')})`;
 
+        // Build the child_workflow_id expression, applying replacements if provided.
+        let childWfExpr = 'oo.child_workflow_id';
+        const ooParams = [...mappingParams];
+        if (options.replacementChildren && Object.keys(options.replacementChildren).length > 0) {
+          const whenClauses: string[] = [];
+          for (const [oldId, newId] of Object.entries(options.replacementChildren)) {
+            whenClauses.push(`WHEN oo.child_workflow_id = $${mIdx} THEN $${mIdx + 1}::text`);
+            ooParams.push(oldId, newId);
+            mIdx += 2;
+          }
+          childWfExpr = `CASE ${whenClauses.join(' ')} ELSE oo.child_workflow_id END`;
+        }
+
         // Copy operation outputs
         await client.query(
           `${mappingCTE}
            INSERT INTO "${this.schemaName}".operation_outputs
              (workflow_uuid, function_id, output, error, serialization, function_name, child_workflow_id, started_at_epoch_ms, completed_at_epoch_ms)
-           SELECT m.fork_id, oo.function_id, oo.output, oo.error, oo.serialization, oo.function_name, oo.child_workflow_id, oo.started_at_epoch_ms, oo.completed_at_epoch_ms
+           SELECT m.fork_id, oo.function_id, oo.output, oo.error, oo.serialization, oo.function_name, ${childWfExpr}, oo.started_at_epoch_ms, oo.completed_at_epoch_ms
            FROM mapping m
            JOIN "${this.schemaName}".operation_outputs oo
              ON oo.workflow_uuid = m.orig_id AND oo.function_id < m.start_step`,
-          mappingParams,
+          ooParams,
         );
 
         // Copy streams

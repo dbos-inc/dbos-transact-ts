@@ -883,6 +883,7 @@ export class DBOSExecutor {
       timeoutMS?: number;
       queueName?: string;
       queuePartitionKey?: string;
+      replacementChildren?: Record<string, string>;
     } = {},
   ): Promise<string> {
     const newWorkflowID = options.newWorkflowID ?? getNextWFID(undefined);

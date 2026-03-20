@@ -1546,7 +1546,7 @@ describe('test-fork', () => {
     ExampleWorkflow.stepTwoCount = 0;
     ExampleWorkflow.stepThreeCount = 0;
 
-    // wf1: step 2 fails (stepTwoCount === 1)
+    // wf1: step 2 fails
     const wf1Id = randomUUID();
     const h1 = await DBOS.startWorkflow(ExampleWorkflow, { workflowID: wf1Id }).failableThreeStepWorkflow();
     await expect(h1.getResult()).rejects.toThrow('step two failed');
@@ -1554,7 +1554,7 @@ describe('test-fork', () => {
     expect(ExampleWorkflow.stepTwoCount).toBe(1);
     expect(ExampleWorkflow.stepThreeCount).toBe(0);
 
-    // wf2: step 2 succeeds, step 3 fails (stepThreeCount === 1)
+    // wf2: step 3 fails
     const wf2Id = randomUUID();
     const h2 = await DBOS.startWorkflow(ExampleWorkflow, { workflowID: wf2Id }).failableThreeStepWorkflow();
     await expect(h2.getResult()).rejects.toThrow('step three failed');
@@ -1572,54 +1572,39 @@ describe('test-fork', () => {
 
     const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
 
-    // --- fromLastFailure mode ---
+    // fromLastFailure: wf1 from failed step 1, wf2 from failed step 2, wf3 from last step 2 (fallback)
     const forkedIDs = await sysdb.forkFromFailure([wf1Id, wf2Id, wf3Id], { fromLastFailure: true });
     expect(forkedIDs.length).toBe(3);
+    expect(await DBOS.retrieveWorkflow<number>(forkedIDs[0]).getResult()).toBe(6);
+    expect(await DBOS.retrieveWorkflow<number>(forkedIDs[1]).getResult()).toBe(6);
+    expect(await DBOS.retrieveWorkflow<number>(forkedIDs[2]).getResult()).toBe(6);
+    expect(ExampleWorkflow.stepOneCount).toBe(3);
+    expect(ExampleWorkflow.stepTwoCount).toBe(4);
+    expect(ExampleWorkflow.stepThreeCount).toBe(5);
 
-    const fork1 = DBOS.retrieveWorkflow<number>(forkedIDs[0]);
-    const fork2 = DBOS.retrieveWorkflow<number>(forkedIDs[1]);
-    const fork3 = DBOS.retrieveWorkflow<number>(forkedIDs[2]);
-    expect(await fork1.getResult()).toBe(6);
-    expect(await fork2.getResult()).toBe(6);
-    expect(await fork3.getResult()).toBe(6);
-
-    // fork1 re-ran from step 2: step_one replayed, step_two and step_three re-executed
-    // fork2 re-ran from step 3: step_one and step_two replayed, step_three re-executed
-    // fork3 re-ran from step 3: step_one and step_two replayed, step_three re-executed
-    expect(ExampleWorkflow.stepOneCount).toBe(3); // replayed for all three forks
-    expect(ExampleWorkflow.stepTwoCount).toBe(4); // re-run for fork1 only
-    expect(ExampleWorkflow.stepThreeCount).toBe(5); // re-run for all three forks
-
-    // --- fromLastStep mode ---
+    // fromLastStep: wf1 from step 1, wf2 and wf3 from step 2
     const forkedIDsLast = await sysdb.forkFromFailure([wf1Id, wf2Id, wf3Id], { fromLastStep: true });
-    const f1 = DBOS.retrieveWorkflow<number>(forkedIDsLast[0]);
-    const f2 = DBOS.retrieveWorkflow<number>(forkedIDsLast[1]);
-    const f3 = DBOS.retrieveWorkflow<number>(forkedIDsLast[2]);
-    expect(await f1.getResult()).toBe(6);
-    expect(await f2.getResult()).toBe(6);
-    expect(await f3.getResult()).toBe(6);
-    // wf1's last step is 1 (step_three never ran), so step_two re-runs
+    expect(await DBOS.retrieveWorkflow<number>(forkedIDsLast[0]).getResult()).toBe(6);
+    expect(await DBOS.retrieveWorkflow<number>(forkedIDsLast[1]).getResult()).toBe(6);
+    expect(await DBOS.retrieveWorkflow<number>(forkedIDsLast[2]).getResult()).toBe(6);
     expect(ExampleWorkflow.stepTwoCount).toBe(5);
-    // wf2 and wf3 last step is 2, so step_three re-runs for all three forks
     expect(ExampleWorkflow.stepThreeCount).toBe(8);
 
-    // --- fromStep mode ---
+    // fromStep: fork wf3 from step 1, re-runs steps 1 and 2
     const forkedIDsStep = await sysdb.forkFromFailure([wf3Id], { fromStep: 1 });
-    const fs = DBOS.retrieveWorkflow<number>(forkedIDsStep[0]);
-    expect(await fs.getResult()).toBe(6);
-    expect(ExampleWorkflow.stepOneCount).toBe(3); // replayed (function_id 0)
-    expect(ExampleWorkflow.stepTwoCount).toBe(6); // re-run from step 1
-    expect(ExampleWorkflow.stepThreeCount).toBe(9); // re-run
+    expect(await DBOS.retrieveWorkflow<number>(forkedIDsStep[0]).getResult()).toBe(6);
+    expect(ExampleWorkflow.stepOneCount).toBe(3);
+    expect(ExampleWorkflow.stepTwoCount).toBe(6);
+    expect(ExampleWorkflow.stepThreeCount).toBe(9);
 
-    // --- fromStepName mode ---
+    // fromStepName: fork wf3 from last occurrence of failableStepTwo
     const forkedIDsName = await sysdb.forkFromFailure([wf3Id], { fromStepName: 'failableStepTwo' });
-    const fn = DBOS.retrieveWorkflow<number>(forkedIDsName[0]);
-    expect(await fn.getResult()).toBe(6);
-    expect(ExampleWorkflow.stepOneCount).toBe(3); // replayed
-    expect(ExampleWorkflow.stepTwoCount).toBe(7); // re-run
-    expect(ExampleWorkflow.stepThreeCount).toBe(10); // re-run
+    expect(await DBOS.retrieveWorkflow<number>(forkedIDsName[0]).getResult()).toBe(6);
+    expect(ExampleWorkflow.stepOneCount).toBe(3);
+    expect(ExampleWorkflow.stepTwoCount).toBe(7);
+    expect(ExampleWorkflow.stepThreeCount).toBe(10);
 
-    // --- validation: fromStepName errors when step not found ---
+    // Validation: step name not found
     await expect(sysdb.forkFromFailure([wf1Id], { fromStepName: 'failableStepThree' })).rejects.toThrow(
       'has no step named',
     );
@@ -1627,15 +1612,15 @@ describe('test-fork', () => {
       'has no step named',
     );
 
-    // --- validation: specifying no mode raises ---
+    // Validation: no mode specified
     await expect(sysdb.forkFromFailure([wf3Id])).rejects.toThrow('Exactly one');
 
-    // --- validation: specifying multiple modes raises ---
+    // Validation: multiple modes specified
     await expect(sysdb.forkFromFailure([wf3Id], { fromLastFailure: true, fromLastStep: true })).rejects.toThrow(
       'Exactly one',
     );
 
-    // All three originals should be marked as having been forked from.
+    // All originals marked as forked from
     for (const wid of [wf1Id, wf2Id, wf3Id]) {
       const status = await DBOS.getWorkflowStatus(wid);
       expect(status?.wasForkedFrom).toBe(true);
@@ -1967,6 +1952,70 @@ describe('test-fork', () => {
     expect(ResumeForkQueueWorkflow.stepOneCount).toBe(1); // Step 1 replayed from checkpoint
     expect(ResumeForkQueueWorkflow.stepTwoCount).toBe(2); // Step 2 was re-executed
   }, 30000);
+
+  let replacementChildMultiplier = 2;
+
+  class ReplacementChildTest {
+    static childIds: string[] = [];
+
+    @DBOS.step()
+    static async childStep(x: number): Promise<number> {
+      return Promise.resolve(x * replacementChildMultiplier);
+    }
+
+    @DBOS.workflow()
+    static async childWf(x: number): Promise<number> {
+      return await ReplacementChildTest.childStep(x);
+    }
+
+    @DBOS.step()
+    static async combine(results: number[]): Promise<number> {
+      return Promise.resolve(results.reduce((a, b) => a + b, 0));
+    }
+
+    @DBOS.workflow()
+    static async parentWf(): Promise<number> {
+      const h1 = await DBOS.startWorkflow(ReplacementChildTest).childWf(10);
+      const h2 = await DBOS.startWorkflow(ReplacementChildTest).childWf(20);
+      const h3 = await DBOS.startWorkflow(ReplacementChildTest).childWf(30);
+      const h4 = await DBOS.startWorkflow(ReplacementChildTest).childWf(40);
+      const h5 = await DBOS.startWorkflow(ReplacementChildTest).childWf(50);
+      ReplacementChildTest.childIds = [h1, h2, h3, h4, h5].map((h) => h.workflowID);
+      const results = await Promise.all([h1, h2, h3, h4, h5].map((h) => h.getResult()));
+      return await ReplacementChildTest.combine(results);
+    }
+  }
+
+  test('test-fork-replacement-children', async () => {
+    replacementChildMultiplier = 2;
+
+    const parentHandle = await DBOS.startWorkflow(ReplacementChildTest).parentWf();
+    const originalResult = await parentHandle.getResult();
+    expect(originalResult).toBe(300); // sum of x*2 for x in [10,20,30,40,50]
+    expect(ReplacementChildTest.childIds.length).toBe(5);
+    const origIds = [...ReplacementChildTest.childIds];
+
+    replacementChildMultiplier = 10;
+
+    // Fork children 0, 2, and 4 from step 0 (re-run childStep with new multiplier)
+    const forkedChild0 = await DBOS.forkWorkflow(origIds[0], 0);
+    const forkedChild2 = await DBOS.forkWorkflow(origIds[2], 0);
+    const forkedChild4 = await DBOS.forkWorkflow(origIds[4], 0);
+    expect(await forkedChild0.getResult()).toBe(100);
+    expect(await forkedChild2.getResult()).toBe(300);
+    expect(await forkedChild4.getResult()).toBe(500);
+
+    // Fork the parent from step 5 (combine): replays steps 0-4 with replaced child IDs, re-runs combine
+    const forkedParent = await DBOS.forkWorkflow(parentHandle.workflowID, 5, {
+      replacementChildren: {
+        [origIds[0]]: forkedChild0.workflowID,
+        [origIds[2]]: forkedChild2.workflowID,
+        [origIds[4]]: forkedChild4.workflowID,
+      },
+    });
+    const forkedResult = await forkedParent.getResult();
+    expect(forkedResult).toBe(1020); // [100, 40, 300, 80, 500]
+  }, 15000);
 });
 
 describe('wf-cancel-tests', () => {
