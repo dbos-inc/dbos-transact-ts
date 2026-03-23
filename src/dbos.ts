@@ -922,6 +922,7 @@ export class DBOS {
       timeoutMS?: number;
       queueName?: string;
       queuePartitionKey?: string;
+      replacementChildren?: Record<string, string>;
     },
   ): Promise<WorkflowHandle<Awaited<T>>> {
     ensureDBOSIsLaunched('forkWorkflow');

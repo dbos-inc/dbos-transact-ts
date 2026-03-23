@@ -136,6 +136,7 @@ export interface WorkflowStatusInternal {
   queuePartitionKey?: string;
   startedAtEpochMs?: number;
   forkedFrom?: string;
+  wasForkedFrom?: boolean;
   parentWorkflowID?: string;
   serialization: string | null;
   delayUntilEpochMS?: number;
@@ -338,6 +339,7 @@ function mapWorkflowStatus(row: workflow_status): WorkflowStatusInternal {
     queuePartitionKey: row.queue_partition_key ?? undefined,
     startedAtEpochMs: row.started_at_epoch_ms ? Number(row.started_at_epoch_ms) : undefined,
     forkedFrom: row.forked_from ?? undefined,
+    wasForkedFrom: row.was_forked_from ?? false,
     parentWorkflowID: row.parent_workflow_id ?? undefined,
     serialization: row.serialization,
     delayUntilEpochMS: row.delay_until_epoch_ms ? Number(row.delay_until_epoch_ms) : undefined,
@@ -1048,100 +1050,277 @@ export class SystemDatabase {
       timeoutMS?: number;
       queueName?: string;
       queuePartitionKey?: string;
+      replacementChildren?: Record<string, string>;
     } = {},
   ): Promise<string> {
     const newWorkflowID = options.newWorkflowID ?? randomUUID();
-    const workflowStatus = await this.getWorkflowStatus(workflowID);
+    const result = await this.bulkForkWorkflows([workflowID], [newWorkflowID], [startStep], options);
+    return result[0];
+  }
 
-    if (workflowStatus === null) {
-      throw new DBOSNonExistentWorkflowError(`Workflow ${workflowID} does not exist`);
+  async forkFromFailure(
+    workflowIDs: string[],
+    options: {
+      applicationVersion?: string;
+      queueName?: string;
+      queuePartitionKey?: string;
+      fromLastFailure?: boolean;
+      fromLastStep?: boolean;
+      fromStep?: number;
+      fromStepName?: string;
+    } = {},
+  ): Promise<string[]> {
+    const modes = [
+      options.fromLastFailure ?? false,
+      options.fromLastStep ?? false,
+      options.fromStep !== undefined,
+      options.fromStepName !== undefined,
+    ].filter(Boolean).length;
+    if (modes !== 1) {
+      throw new Error('Exactly one of fromLastFailure, fromLastStep, fromStep, or fromStepName must be specified');
     }
 
-    if (!workflowStatus.input) {
-      throw new DBOSNonExistentWorkflowError(`Workflow ${workflowID} has no input`);
+    let startSteps: number[];
+
+    if (options.fromStep !== undefined) {
+      startSteps = Array(workflowIDs.length).fill(options.fromStep) as number[];
+    } else {
+      let query: string;
+      const params: unknown[] = [workflowIDs];
+
+      if (options.fromLastFailure) {
+        query = `SELECT workflow_uuid,
+                        COALESCE(
+                          MAX(function_id) FILTER (WHERE error IS NOT NULL),
+                          MAX(function_id)
+                        ) AS start_step
+                 FROM "${this.schemaName}".operation_outputs
+                 WHERE workflow_uuid = ANY($1)
+                 GROUP BY workflow_uuid`;
+      } else if (options.fromLastStep) {
+        query = `SELECT workflow_uuid, MAX(function_id) AS start_step
+                 FROM "${this.schemaName}".operation_outputs
+                 WHERE workflow_uuid = ANY($1)
+                 GROUP BY workflow_uuid`;
+      } else {
+        // fromStepName
+        query = `SELECT workflow_uuid, MAX(function_id) AS start_step
+                 FROM "${this.schemaName}".operation_outputs
+                 WHERE workflow_uuid = ANY($1) AND function_name = $2
+                 GROUP BY workflow_uuid`;
+        params.push(options.fromStepName);
+      }
+
+      const result = await this.pool.query<{ workflow_uuid: string; start_step: number }>(query, params);
+      const startStepByID = new Map(result.rows.map((r) => [r.workflow_uuid, Number(r.start_step)]));
+      for (const wid of workflowIDs) {
+        if (!startStepByID.has(wid)) {
+          if (options.fromStepName !== undefined) {
+            throw new Error(`Workflow ${wid} has no step named '${options.fromStepName}'`);
+          }
+          throw new Error(`Workflow ${wid} has no steps`);
+        }
+      }
+      startSteps = workflowIDs.map((wid) => startStepByID.get(wid)!);
+    }
+
+    const forkedIDs = workflowIDs.map(() => randomUUID());
+    return this.bulkForkWorkflows(workflowIDs, forkedIDs, startSteps, options);
+  }
+
+  private async bulkForkWorkflows(
+    originalWorkflowIDs: string[],
+    forkedWorkflowIDs: string[],
+    startSteps: number[],
+    options: {
+      applicationVersion?: string;
+      timeoutMS?: number;
+      queueName?: string;
+      queuePartitionKey?: string;
+      replacementChildren?: Record<string, string>;
+    } = {},
+  ): Promise<string[]> {
+    if (originalWorkflowIDs.length === 0) {
+      return [];
+    }
+    if (originalWorkflowIDs.length !== forkedWorkflowIDs.length || originalWorkflowIDs.length !== startSteps.length) {
+      throw new Error('originalWorkflowIDs, forkedWorkflowIDs, and startSteps must have the same length');
     }
 
     const client = await this.pool.connect();
-
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
 
-      const now = Date.now();
-      await this.insertWorkflowStatus(
-        client,
-        {
-          workflowUUID: newWorkflowID,
-          status: StatusString.ENQUEUED,
-          workflowName: workflowStatus.workflowName,
-          workflowClassName: workflowStatus.workflowClassName,
-          workflowConfigName: workflowStatus.workflowConfigName,
-          queueName: options.queueName ?? INTERNAL_QUEUE_NAME,
-          authenticatedUser: workflowStatus.authenticatedUser,
-          assumedRole: workflowStatus.assumedRole,
-          authenticatedRoles: workflowStatus.authenticatedRoles,
-          output: null,
-          error: null,
-          request: workflowStatus.request,
-          executorId: globalParams.executorID,
-          applicationVersion: options.applicationVersion ?? workflowStatus.applicationVersion,
-          applicationID: workflowStatus.applicationID,
-          createdAt: now,
-          recoveryAttempts: 0,
-          updatedAt: now,
-          timeoutMS: options.timeoutMS ?? workflowStatus.timeoutMS,
-          input: workflowStatus.input,
-          deduplicationID: undefined,
-          priority: 0,
-          queuePartitionKey: options.queuePartitionKey,
-          forkedFrom: workflowID,
-          serialization: workflowStatus.serialization,
-        },
-        null,
+      // Fetch the status of all original workflows inside the transaction.
+      const { rows: statusRows } = await client.query<workflow_status>(
+        `SELECT workflow_uuid, name, class_name, config_name, application_id,
+                authenticated_user, authenticated_roles, assumed_role, inputs, serialization,
+                request, application_version
+         FROM "${this.schemaName}".workflow_status
+         WHERE workflow_uuid = ANY($1)`,
+        [originalWorkflowIDs],
       );
 
-      if (startStep > 0) {
+      const statusByID = new Map(statusRows.map((r) => [r.workflow_uuid, r]));
+      for (const wid of originalWorkflowIDs) {
+        if (!statusByID.has(wid)) {
+          throw new DBOSNonExistentWorkflowError(`Workflow ${wid} does not exist`);
+        }
+      }
+
+      const queueName = options.queueName ?? INTERNAL_QUEUE_NAME;
+
+      // Bulk insert all forked workflow status rows.
+      const insertCols = [
+        'workflow_uuid',
+        'status',
+        'name',
+        'class_name',
+        'config_name',
+        'queue_name',
+        'authenticated_user',
+        'assumed_role',
+        'authenticated_roles',
+        'request',
+        'application_version',
+        'application_id',
+        'inputs',
+        'queue_partition_key',
+        'forked_from',
+        'serialization',
+      ];
+      if (options.timeoutMS !== undefined) {
+        insertCols.push('workflow_timeout_ms');
+      }
+      const valuesPlaceholders: string[] = [];
+      const params: unknown[] = [];
+      let paramIdx = 1;
+      for (let i = 0; i < originalWorkflowIDs.length; i++) {
+        const origID = originalWorkflowIDs[i];
+        const forkID = forkedWorkflowIDs[i];
+        const ws = statusByID.get(origID)!;
+        const placeholders = insertCols.map(() => `$${paramIdx++}`).join(', ');
+        valuesPlaceholders.push(`(${placeholders})`);
+        params.push(
+          forkID,
+          StatusString.ENQUEUED,
+          ws.name,
+          ws.class_name ?? null,
+          ws.config_name ?? null,
+          queueName,
+          ws.authenticated_user,
+          ws.assumed_role,
+          ws.authenticated_roles,
+          ws.request,
+          options.applicationVersion ?? ws.application_version ?? null,
+          ws.application_id,
+          ws.inputs,
+          options.queuePartitionKey ?? null,
+          origID,
+          ws.serialization,
+        );
+        if (options.timeoutMS !== undefined) {
+          params.push(options.timeoutMS);
+        }
+      }
+      await client.query(
+        `INSERT INTO "${this.schemaName}".workflow_status (${insertCols.join(', ')})
+         VALUES ${valuesPlaceholders.join(', ')}`,
+        params,
+      );
+
+      // Mark all original workflows as having been forked from.
+      await client.query(
+        `UPDATE "${this.schemaName}".workflow_status SET was_forked_from = TRUE WHERE workflow_uuid = ANY($1)`,
+        [originalWorkflowIDs],
+      );
+
+      // For workflows with start_step > 0, copy checkpoints/events/streams.
+      // Build a mapping CTE so each copy is a single SQL statement.
+      const forkMappings = originalWorkflowIDs
+        .map((origID, i) => ({ origID, forkID: forkedWorkflowIDs[i], startStep: startSteps[i] }))
+        .filter((m) => m.startStep > 0);
+
+      if (forkMappings.length > 0) {
+        const mappingValues: string[] = [];
+        const mappingParams: unknown[] = [];
+        let mIdx = 1;
+        for (const m of forkMappings) {
+          mappingValues.push(`($${mIdx}::text, $${mIdx + 1}::text, $${mIdx + 2}::int)`);
+          mappingParams.push(m.origID, m.forkID, m.startStep);
+          mIdx += 3;
+        }
+        const mappingCTE = `WITH mapping(orig_id, fork_id, start_step) AS (VALUES ${mappingValues.join(', ')})`;
+
+        // Build the child_workflow_id expression, applying replacements if provided.
+        let childWfExpr = 'oo.child_workflow_id';
+        const ooParams = [...mappingParams];
+        if (options.replacementChildren && Object.keys(options.replacementChildren).length > 0) {
+          const whenClauses: string[] = [];
+          for (const [oldId, newId] of Object.entries(options.replacementChildren)) {
+            whenClauses.push(`WHEN oo.child_workflow_id = $${mIdx} THEN $${mIdx + 1}::text`);
+            ooParams.push(oldId, newId);
+            mIdx += 2;
+          }
+          childWfExpr = `CASE ${whenClauses.join(' ')} ELSE oo.child_workflow_id END`;
+        }
+
         // Copy operation outputs
-        const copyOutputsQuery = `INSERT INTO "${this.schemaName}".operation_outputs
-          (workflow_uuid, function_id, output, error, serialization, function_name, child_workflow_id)
-          SELECT $1 AS workflow_uuid, function_id, output, error, serialization, function_name, child_workflow_id
-          FROM "${this.schemaName}".operation_outputs
-          WHERE workflow_uuid = $2 AND function_id < $3`;
-        await client.query(copyOutputsQuery, [newWorkflowID, workflowID, startStep]);
+        await client.query(
+          `${mappingCTE}
+           INSERT INTO "${this.schemaName}".operation_outputs
+             (workflow_uuid, function_id, output, error, serialization, function_name, child_workflow_id, started_at_epoch_ms, completed_at_epoch_ms)
+           SELECT m.fork_id, oo.function_id, oo.output, oo.error, oo.serialization, oo.function_name, ${childWfExpr}, oo.started_at_epoch_ms, oo.completed_at_epoch_ms
+           FROM mapping m
+           JOIN "${this.schemaName}".operation_outputs oo
+             ON oo.workflow_uuid = m.orig_id AND oo.function_id < m.start_step`,
+          ooParams,
+        );
 
         // Copy streams
-        const copyStreamsQuery = `INSERT INTO "${this.schemaName}".streams
-          (workflow_uuid, key, value, serialization, "offset", function_id)
-          SELECT $1 AS workflow_uuid, key, value, serialization, "offset", function_id
-          FROM "${this.schemaName}".streams
-          WHERE workflow_uuid = $2 AND function_id < $3`;
-        await client.query(copyStreamsQuery, [newWorkflowID, workflowID, startStep]);
+        await client.query(
+          `${mappingCTE}
+           INSERT INTO "${this.schemaName}".streams
+             (workflow_uuid, key, value, serialization, "offset", function_id)
+           SELECT m.fork_id, s.key, s.value, s.serialization, s."offset", s.function_id
+           FROM mapping m
+           JOIN "${this.schemaName}".streams s
+             ON s.workflow_uuid = m.orig_id AND s.function_id < m.start_step`,
+          mappingParams,
+        );
 
         // Copy events history
-        const copyEventsHistoryQuery = `INSERT INTO "${this.schemaName}".workflow_events_history
-          (workflow_uuid, function_id, key, value, serialization)
-          SELECT $1 AS workflow_uuid, function_id, key, value, serialization
-          FROM "${this.schemaName}".workflow_events_history
-          WHERE workflow_uuid = $2 AND function_id < $3`;
-        await client.query(copyEventsHistoryQuery, [newWorkflowID, workflowID, startStep]);
+        await client.query(
+          `${mappingCTE}
+           INSERT INTO "${this.schemaName}".workflow_events_history
+             (workflow_uuid, function_id, key, value, serialization)
+           SELECT m.fork_id, weh.function_id, weh.key, weh.value, weh.serialization
+           FROM mapping m
+           JOIN "${this.schemaName}".workflow_events_history weh
+             ON weh.workflow_uuid = m.orig_id AND weh.function_id < m.start_step`,
+          mappingParams,
+        );
 
-        // Copy only the latest version of each event (max function_id per key) into workflow_events
-        const copyLatestEventsQuery = `INSERT INTO "${this.schemaName}".workflow_events
-          (workflow_uuid, key, value, serialization)
-          SELECT $1 AS workflow_uuid, weh1.key, weh1.value, serialization
-          FROM "${this.schemaName}".workflow_events_history weh1
-          WHERE weh1.workflow_uuid = $2
-            AND weh1.function_id = (
-              SELECT MAX(weh2.function_id)
-              FROM "${this.schemaName}".workflow_events_history weh2
-              WHERE weh2.workflow_uuid = $2
-                AND weh2.key = weh1.key
-                AND weh2.function_id < $3
-            )`;
-        await client.query(copyLatestEventsQuery, [newWorkflowID, workflowID, startStep]);
+        // Copy only the latest version of each event using a window function
+        await client.query(
+          `${mappingCTE}
+           INSERT INTO "${this.schemaName}".workflow_events
+             (workflow_uuid, key, value, serialization)
+           SELECT ranked.workflow_uuid, ranked.key, ranked.value, ranked.serialization
+           FROM (
+             SELECT m.fork_id AS workflow_uuid, weh.key, weh.value, weh.serialization,
+                    ROW_NUMBER() OVER (PARTITION BY weh.workflow_uuid, weh.key ORDER BY weh.function_id DESC) AS rn
+             FROM mapping m
+             JOIN "${this.schemaName}".workflow_events_history weh
+               ON weh.workflow_uuid = m.orig_id AND weh.function_id < m.start_step
+           ) ranked
+           WHERE ranked.rn = 1`,
+          mappingParams,
+        );
       }
 
       await client.query('COMMIT');
-      return newWorkflowID;
+      return forkedWorkflowIDs;
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;
@@ -2403,6 +2582,7 @@ export class SystemDatabase {
       'queue_partition_key',
       'started_at_epoch_ms',
       'forked_from',
+      'was_forked_from',
       'parent_workflow_id',
       'delay_until_epoch_ms',
     ];
@@ -2477,6 +2657,12 @@ export class SystemDatabase {
     addFilter('authenticated_user', input.authenticatedUser);
     addFilter('forked_from', input.forkedFrom);
     addFilter('parent_workflow_id', input.parentWorkflowID);
+
+    if (input.wasForkedFrom !== undefined) {
+      whereClauses.push(`was_forked_from = $${paramCounter}`);
+      params.push(input.wasForkedFrom);
+      paramCounter++;
+    }
 
     if (input.startTime) {
       whereClauses.push(`created_at >= $${paramCounter}`);

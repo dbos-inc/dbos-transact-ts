@@ -27,6 +27,7 @@ export interface workflow_status {
   priority?: number; // Optional priority for the workflow.
   queue_partition_key?: string; // Partition key for partitioned queues.
   forked_from?: string;
+  was_forked_from?: boolean;
   owner_xid?: string;
   parent_workflow_id?: string;
   serialization: SysDBSerializationFormat | null;

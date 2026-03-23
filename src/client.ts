@@ -416,6 +416,7 @@ export class DBOSClient {
       timeoutMS?: number;
       queueName?: string;
       queuePartitionKey?: string;
+      replacementChildren?: Record<string, string>;
     },
   ): Promise<string> {
     return forkWorkflow(this.systemDatabase, workflowID, startStep, options);
