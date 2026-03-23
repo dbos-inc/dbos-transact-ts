@@ -2083,6 +2083,7 @@ export class DBOS {
       lastFiredAt: null,
       automaticBackfill: options.options?.automaticBackfill ?? false,
       cronTimezone: options.options?.cronTimezone ?? null,
+      queueName: options.options?.queueName ?? null,
     };
 
     await runTransactionalInternalStep(
@@ -2147,6 +2148,7 @@ export class DBOS {
       context?: unknown;
       automaticBackfill?: boolean;
       cronTimezone?: string;
+      queueName?: string;
     }>,
   ): Promise<void> {
     ensureDBOSIsLaunched('applySchedules');
@@ -2179,6 +2181,7 @@ export class DBOS {
         lastFiredAt: null,
         automaticBackfill: sched.automaticBackfill ?? false,
         cronTimezone: sched.cronTimezone ?? null,
+        queueName: sched.queueName ?? null,
       });
     }
 
