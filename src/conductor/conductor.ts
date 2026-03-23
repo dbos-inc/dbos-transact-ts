@@ -516,6 +516,7 @@ export class Conductor {
                 last_fired_at: s.lastFiredAt,
                 automatic_backfill: s.automaticBackfill,
                 cron_timezone: s.cronTimezone,
+                queue_name: s.queueName,
               }));
             } catch (e) {
               errorMsg = `Exception encountered when listing schedules: ${(e as Error).message}`;
@@ -542,6 +543,7 @@ export class Conductor {
                   last_fired_at: sched.lastFiredAt,
                   automatic_backfill: sched.automaticBackfill,
                   cron_timezone: sched.cronTimezone,
+                  queue_name: sched.queueName,
                 };
               }
             } catch (e) {

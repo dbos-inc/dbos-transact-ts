@@ -386,6 +386,9 @@ export function allMigrations(
       ],
     },
     {
+      pg: [`ALTER TABLE "${schemaName}"."workflow_schedules" ADD COLUMN "queue_name" TEXT DEFAULT NULL`],
+    },
+    {
       pg: [`ALTER TABLE "${schemaName}"."workflow_status" ADD COLUMN "was_forked_from" BOOLEAN NOT NULL DEFAULT FALSE`],
     },
   ];

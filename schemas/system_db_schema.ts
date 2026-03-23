@@ -101,6 +101,7 @@ export interface workflow_schedules {
   last_fired_at: string | null;
   automatic_backfill: boolean;
   cron_timezone: string | null;
+  queue_name: string | null;
 }
 
 export interface application_versions {
