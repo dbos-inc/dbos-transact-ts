@@ -5,8 +5,6 @@ import { dropDB, ensureDB } from './test-helpers';
 import { randomUUID } from 'crypto';
 import SuperJSON from 'superjson';
 import { pgTable, text, integer } from 'drizzle-orm/pg-core';
-import { drizzle } from 'drizzle-orm/node-postgres';
-import { pushSchema } from 'drizzle-kit/api';
 import { sql } from 'drizzle-orm';
 
 const config = { user: 'postgres', database: 'drizzle_pool_test_userdb' };
@@ -69,14 +67,9 @@ describe('DrizzleDataSource with custom Pool', () => {
       poolClient.release();
     }
 
-    const drizzlePool = new Pool(config);
-    const db = drizzle(drizzlePool);
-    try {
-      const res = await pushSchema({ greetingsTable }, db);
-      await res.apply();
-    } finally {
-      await drizzlePool.end();
-    }
+    await customPool.query(
+      `CREATE TABLE IF NOT EXISTS greetings (name TEXT PRIMARY KEY NOT NULL, greet_count INTEGER DEFAULT 0)`,
+    );
   });
 
   afterAll(async () => {

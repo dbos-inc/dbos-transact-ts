@@ -994,6 +994,17 @@ export class SystemDatabase {
     );
   }
 
+  async setWorkflowDelay(workflowID: string, delaySeconds: number): Promise<void> {
+    const delayUntilEpochMS = Date.now() + delaySeconds * 1000;
+    await this.pool.query(
+      `UPDATE "${this.schemaName}".workflow_status
+       SET delay_until_epoch_ms = $1, updated_at = $2
+       WHERE workflow_uuid = $3
+         AND status = $4`,
+      [delayUntilEpochMS, Date.now(), workflowID, StatusString.DELAYED],
+    );
+  }
+
   async getWorkflowChildren(workflowID: string): Promise<string[]> {
     // BFS to find all descendant workflows
     const visited = new Set<string>([workflowID]);
