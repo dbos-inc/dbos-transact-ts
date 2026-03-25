@@ -316,10 +316,114 @@ describe('recovery-tests', () => {
       await rm(barrierPath, { force: true });
     }
   }, 30000);
+
+  /** Dual recovery with overlapping starter; tune via DBOS_REPRO_MINIMAL_* / DBOS_TEST_* env (default 1 iter for CI). */
+  test(
+    'repro-minimal-dual-local-recovery-with-conflicting-recv',
+    async () => {
+      const iterations = Math.max(1, parseInt(process.env.DBOS_REPRO_MINIMAL_ITERATIONS ?? '1', 10) || 1);
+      const disableBarrier = (process.env.DBOS_REPRO_MINIMAL_DISABLE_BARRIER ?? 'true') === 'true';
+      const workerScript = './tests/recoveryMinimalDualRecoveryWorker.ts';
+      const payload = 'minimal-ping';
+      const timeoutSeconds = 30;
+      const childEnv = {
+        ...process.env,
+        DBOS_TEST_START_WORKER_PREEXIT_GRACE_MS: String(
+          parseInt(process.env.DBOS_TEST_START_WORKER_PREEXIT_GRACE_MS ?? '600', 10) || 600,
+        ),
+        DBOS_TEST_MINIMAL_BEFORE_RECV_MS: String(
+          parseInt(process.env.DBOS_TEST_MINIMAL_BEFORE_RECV_MS ?? '150', 10) || 150,
+        ),
+        DBOS__APPVERSION: globalParams.appVersion,
+      };
+      const worker2JitterMs = parseInt(process.env.DBOS_REPRO_MINIMAL_WORKER2_JITTER_MS ?? '800', 10) || 800;
+      type WorkerOut = { code: number | null; stdout: string; stderr: string };
+      const dump = (label: string, w: WorkerOut) =>
+        console.error(
+          `[minimal dual repro] ${label} exit=${w.code}\n--- stdout ---\n${w.stdout}\n--- stderr ---\n${w.stderr}`,
+        );
+
+      for (let iter = 0; iter < iterations; iter++) {
+        const workflowID = randomUUID();
+        const topic = `minimal-dual-topic-${randomUUID()}`;
+        const barrierPath = path.join(os.tmpdir(), `dbos-minimal-dual-${randomUUID()}`);
+        console.log(
+          `[minimal dual repro] ${iter + 1}/${iterations} start workflowID=${workflowID} t=${new Date().toISOString()}`,
+        );
+        if (disableBarrier) await writeFile(barrierPath, 'go');
+
+        const startW = spawnRecvWorker(
+          ['start', workflowID, topic, `${timeoutSeconds}`],
+          { ...childEnv, DBOS__VMID: 'local' },
+          workerScript,
+        );
+        await startW.waitFor('STARTED');
+        const startDone = startW.done;
+
+        const r1 = spawnRecvWorker(
+          ['recover', workflowID, topic, `${timeoutSeconds}`, barrierPath],
+          { ...childEnv, DBOS__VMID: 'test-minimal-recover-1' },
+          workerScript,
+        );
+        const jitter = Math.floor(Math.random() * (worker2JitterMs + 1));
+        if (jitter > 0) await sleepms(jitter);
+        const r2 = spawnRecvWorker(
+          ['recover', workflowID, topic, `${timeoutSeconds}`, barrierPath],
+          { ...childEnv, DBOS__VMID: 'test-minimal-recover-2' },
+          workerScript,
+        );
+
+        let w1: WorkerOut | undefined;
+        let w2: WorkerOut | undefined;
+        try {
+          await Promise.all([r1.waitFor('PREPARED'), r2.waitFor('PREPARED')]);
+          if (!disableBarrier) await writeFile(barrierPath, 'go');
+          await Promise.all([r1.waitFor('RECOVERED:'), r2.waitFor('RECOVERED:')]);
+          await DBOS.send(workflowID, payload, topic);
+          [w1, w2] = await Promise.all([r1.done, r2.done]);
+          if (w1.code !== 0 || w2.code !== 0) {
+            if (w1.code !== 0) dump('recover-1', w1);
+            if (w2.code !== 0) dump('recover-2', w2);
+          }
+          expect(w1.code).toBe(0);
+          expect(w2.code).toBe(0);
+          await expect(DBOS.retrieveWorkflow<string>(workflowID).getResult()).resolves.toBe(payload);
+          const steps = (await DBOS.listWorkflowSteps(workflowID)) ?? [];
+          expect(steps.some((s) => s.name === 'cleanupOne')).toBe(false);
+          expect(steps.some((s) => s.name === 'cleanupTwo')).toBe(false);
+          const recvSteps = steps.filter((s) => s.name === 'DBOS.recv');
+          expect(recvSteps).toHaveLength(1);
+          expect(recvSteps[0].output).toBe(payload);
+          expect((await startDone).code).toBe(0);
+          console.log(`[minimal dual repro] ${iter + 1}/${iterations} ok workflowID=${workflowID}`);
+        } catch (err) {
+          const e = err instanceof Error ? err : new Error(String(err));
+          console.error(`[minimal dual repro] FAIL iter ${iter + 1}/${iterations} workflowID=${workflowID}`);
+          console.error(e.stack ?? e.message);
+          if (e.cause instanceof Error) console.error('[cause]', e.cause.stack ?? e.cause.message);
+          if (w1 !== undefined) dump('recover-1@fail', w1);
+          if (w2 !== undefined) dump('recover-2@fail', w2);
+          throw err;
+        } finally {
+          const sr = await startDone;
+          if (sr.code !== 0) {
+            console.error(`[minimal dual repro] starter exit=${sr.code} workflowID=${workflowID}`);
+            dump('starter', sr);
+          }
+          await rm(barrierPath, { force: true });
+        }
+      }
+    },
+    Math.min(900_000, Math.max(45_000, (parseInt(process.env.DBOS_REPRO_MINIMAL_ITERATIONS ?? '1', 10) || 1) * 25_000)),
+  );
 });
 
-function spawnRecvWorker(args: string[], env: NodeJS.ProcessEnv) {
-  const child = spawn('npx', ['ts-node', './tests/recoveryRecvWorker.ts', ...args], {
+function spawnRecvWorker(
+  args: string[],
+  env: NodeJS.ProcessEnv,
+  workerScript: string = './tests/recoveryRecvWorker.ts',
+) {
+  const child = spawn('npx', ['ts-node', workerScript, ...args], {
     cwd: process.cwd(),
     env,
     stdio: ['ignore', 'pipe', 'pipe'],
