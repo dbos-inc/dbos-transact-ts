@@ -5,8 +5,6 @@ import { dropDB, ensureDB } from './test-helpers';
 import { randomUUID } from 'crypto';
 import SuperJSON from 'superjson';
 import { pgTable, text, integer } from 'drizzle-orm/pg-core';
-import { drizzle } from 'drizzle-orm/node-postgres';
-import { pushSchema } from 'drizzle-kit/api';
 import { eq, sql } from 'drizzle-orm';
 
 const config = { user: 'postgres', database: 'drizzle_ds_test_userdb' };
@@ -19,14 +17,14 @@ interface transaction_completion {
   error: string | null;
 }
 
-async function createSchema(config: PoolConfig, entities: { [key: string]: object }) {
-  const drizzlePool = new Pool(config);
-  const db = drizzle(drizzlePool);
+async function createSchema(config: PoolConfig) {
+  const pool = new Pool(config);
   try {
-    const res = await pushSchema(entities, db);
-    await res.apply();
+    await pool.query(
+      `CREATE TABLE IF NOT EXISTS greetings (name TEXT PRIMARY KEY NOT NULL, greet_count INTEGER DEFAULT 0)`,
+    );
   } finally {
-    await drizzlePool.end();
+    await pool.end();
   }
 }
 
@@ -344,7 +342,7 @@ async function createDatabases(createTxCompletions: boolean) {
   if (createTxCompletions) {
     await DrizzleDataSource.initializeDBOSSchema(config);
   }
-  await createSchema(config, { greetingsTable });
+  await createSchema(config);
 }
 
 async function insertFunction(user: string) {
