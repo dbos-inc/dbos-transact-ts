@@ -399,6 +399,10 @@ export class DBOSClient {
     return this.systemDatabase.setWorkflowPriority(workflowID, priority);
   }
 
+  setWorkflowDelay(workflowID: string, delaySeconds: number): Promise<void> {
+    return this.systemDatabase.setWorkflowDelay(workflowID, delaySeconds);
+  }
+
   deleteWorkflow(workflowID: string, deleteChildren: boolean = false): Promise<void> {
     return this.systemDatabase.deleteWorkflows([workflowID], deleteChildren);
   }

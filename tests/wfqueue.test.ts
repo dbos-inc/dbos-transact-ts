@@ -1955,4 +1955,32 @@ describe('delay-tests', () => {
     expect(await resumeHandle.getResult()).toBe('done');
     expect((await resumeHandle.getStatus())?.status).toBe(StatusString.SUCCESS);
   }, 15000);
+
+  test('test_setWorkflowDelay', async () => {
+    // Start a workflow with a long delay
+    const handle = await DBOS.startWorkflow(TestDelayWFs, {
+      queueName: TestDelayWFs.queue.name,
+      enqueueOptions: { delaySeconds: 60 },
+    }).testWorkflowStr();
+    expect((await handle.getStatus())?.status).toBe(StatusString.DELAYED);
+
+    // Update the delay to a short value
+    const tBefore = Date.now();
+    await DBOS.setWorkflowDelay(handle.workflowID, 1);
+    const tAfter = Date.now();
+
+    // Verify the delay was updated
+    const status = await handle.getStatus();
+    expect(status?.status).toBe(StatusString.DELAYED);
+    expect(status?.delayUntilEpochMS).toBeDefined();
+    expect(status!.delayUntilEpochMS!).toBeGreaterThanOrEqual(tBefore + 1000);
+    expect(status!.delayUntilEpochMS!).toBeLessThanOrEqual(tAfter + 1000);
+
+    // Wait for the workflow to complete
+    expect(await handle.getResult()).toBe('done');
+    expect((await handle.getStatus())?.status).toBe(StatusString.SUCCESS);
+
+    // Test invalid delay
+    await expect(DBOS.setWorkflowDelay('some-id', -1)).rejects.toThrow('delaySeconds must be non-negative');
+  }, 30000);
 });

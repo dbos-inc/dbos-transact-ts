@@ -817,6 +817,23 @@ export class DBOS {
   }
 
   /**
+   * Update the delay on a DELAYED workflow. The new delay is calculated from when this method is called.
+   * The workflow will remain in DELAYED status until the new delay expires, then transition to ENQUEUED.
+   * Only affects workflows with DELAYED status.
+   * @param workflowID - ID of the workflow
+   * @param delaySeconds - Number of seconds to delay the workflow from now.
+   */
+  static async setWorkflowDelay(workflowID: string, delaySeconds: number): Promise<void> {
+    ensureDBOSIsLaunched('setWorkflowDelay');
+    if (delaySeconds < 0) {
+      throw new DBOSError('delaySeconds must be non-negative');
+    }
+    return runInternalStep(async () => {
+      return DBOSExecutor.globalInstance!.systemDatabase.setWorkflowDelay(workflowID, delaySeconds);
+    }, 'DBOS.setWorkflowDelay');
+  }
+
+  /**
    * Retrieve the steps of a workflow
    * @param workflowID - ID of the workflow
    * @returns `StepInfo` array listing the executed steps of the workflow. If the workflow is not found, `undefined` is returned.
