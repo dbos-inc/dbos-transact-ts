@@ -391,5 +391,10 @@ export function allMigrations(
     {
       pg: [`ALTER TABLE "${schemaName}"."workflow_status" ADD COLUMN "was_forked_from" BOOLEAN NOT NULL DEFAULT FALSE`],
     },
+    {
+      pg: [
+        `CREATE INDEX "idx_operation_outputs_completed_at_function_name" ON "${schemaName}"."operation_outputs" ("completed_at_epoch_ms", "function_name")`,
+      ],
+    },
   ];
 }
