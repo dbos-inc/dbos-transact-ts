@@ -1003,6 +1003,33 @@ describe('test-list-steps', () => {
     expect(wfsteps).toBeUndefined();
   });
 
+  test('test-list-steps-pagination', async () => {
+    const wfid = randomUUID();
+    const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).testWorkflow();
+    await handle.getResult();
+
+    // All steps returned without pagination
+    const allSteps = await DBOS.listWorkflowSteps(wfid);
+    expect(allSteps!.length).toBe(3);
+
+    // Limit 2 returns the first two steps
+    const limited = await DBOS.listWorkflowSteps(wfid, { limit: 2 });
+    expect(limited!.length).toBe(2);
+    expect(limited![0].name).toBe('stepOne');
+    expect(limited![1].name).toBe('stepTwo');
+
+    // Limit 2 offset 1 returns the second and third steps
+    const paginated = await DBOS.listWorkflowSteps(wfid, { limit: 2, offset: 1 });
+    expect(paginated!.length).toBe(2);
+    expect(paginated![0].name).toBe('stepTwo');
+    expect(paginated![1].name).toBe('DBOS.sleep');
+
+    // Offset 2 returns only the last step
+    const offsetOnly = await DBOS.listWorkflowSteps(wfid, { offset: 2 });
+    expect(offsetOnly!.length).toBe(1);
+    expect(offsetOnly![0].name).toBe('DBOS.sleep');
+  });
+
   test('test-send-recv', async () => {
     const wfid1 = randomUUID();
     const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid1 }).recvWorkflow('message1');
