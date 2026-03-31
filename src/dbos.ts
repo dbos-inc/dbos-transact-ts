@@ -180,6 +180,26 @@ export interface WriteStreamOptions {
 }
 
 /**
+ * Options for `DBOS.recv`
+ */
+export interface RecvOptions {
+  /** Timeout in seconds; if no message is received before the timeout (default 60 seconds), `null` will be returned */
+  timeoutSeconds?: number;
+  /** Absolute deadline as a UNIX epoch timestamp in milliseconds; if no message is received before this time, `null` will be returned */
+  deadlineEpochMS?: number;
+}
+
+/**
+ * Options for `DBOS.getEvent`
+ */
+export interface GetEventOptions {
+  /** Timeout in seconds; if no event is received before the timeout (default 60 seconds), `null` will be returned */
+  timeoutSeconds?: number;
+  /** Absolute deadline as a UNIX epoch timestamp in milliseconds; if no event is received before this time, `null` will be returned */
+  deadlineEpochMS?: number;
+}
+
+/**
  * Options for `DBOS.setEvent`
  */
 export interface SetEventOptions {
@@ -188,6 +208,15 @@ export interface SetEventOptions {
    *   workflows or clients written in other languages
    */
   serializationType?: WorkflowSerializationFormat;
+}
+
+export function resolveTimeoutSeconds(options?: number | RecvOptions | GetEventOptions): number | undefined {
+  if (options === undefined) return undefined;
+  if (typeof options === 'number') return options;
+  if (options.deadlineEpochMS !== undefined) {
+    return Math.max(0, (options.deadlineEpochMS - Date.now()) / 1000);
+  }
+  return options.timeoutSeconds;
 }
 
 export function getExecutor() {
@@ -1261,11 +1290,11 @@ export class DBOS {
    * @see `DBOS.send`
    *
    * @param topic - Optional topic; if specified the `recv` command can specify the same topic to receive selectively
-   * @param timeoutSeconds - If no message is received before the timeout (default 60 seconds), `null` will be returned
+   * @param options - {@link RecvOptions} controlling timeout or deadline; if neither is set, times out after 60 seconds
    * @template T - The type of message that is expected to be received
    * @returns Any message received, or `null` if the timeout expires
    */
-  static async recv<T>(topic?: string, timeoutSeconds?: number): Promise<T | null> {
+  static async recv<T>(topic?: string, options?: number | RecvOptions): Promise<T | null> {
     ensureDBOSIsLaunched('recv');
     if (DBOS.isWithinWorkflow()) {
       if (!DBOS.isInWorkflow()) {
@@ -1273,6 +1302,7 @@ export class DBOS {
       }
       const functionID: number = functionIDGetIncrement();
       const timeoutFunctionID: number = functionIDGetIncrement();
+      const timeoutSeconds = resolveTimeoutSeconds(options);
       const msg = await DBOSExecutor.globalInstance!.systemDatabase.recv(
         DBOS.workflowID!,
         functionID,
@@ -1329,12 +1359,13 @@ export class DBOS {
    *
    * @param workflowID - The ID of the workflow with the corresponding `setEvent`
    * @param key - The key for the event; at most one value is associated with a key at any given time.
-   * @param timeoutSeconds - If a value for `key` is not available before the timeout (default 60 seconds), `null` will be returned
+   * @param options - {@link GetEventOptions} controlling timeout or deadline; if neither is set, times out after 60 seconds
    * @template T - The expected type for the value assigned to `key`
    * @returns The value to associate with `key`, or `null` if the timeout is hit
    */
-  static async getEvent<T>(workflowID: string, key: string, timeoutSeconds?: number): Promise<T | null> {
+  static async getEvent<T>(workflowID: string, key: string, options?: number | GetEventOptions): Promise<T | null> {
     ensureDBOSIsLaunched('getEvent');
+    const timeoutSeconds = resolveTimeoutSeconds(options);
     if (DBOS.isWithinWorkflow()) {
       if (!DBOS.isInWorkflow()) {
         throw new DBOSInvalidWorkflowTransitionError(

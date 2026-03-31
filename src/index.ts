@@ -1,4 +1,4 @@
-export { DBOS } from './dbos';
+export { DBOS, RecvOptions, GetEventOptions } from './dbos';
 
 export { DBOSClient } from './client';
 
