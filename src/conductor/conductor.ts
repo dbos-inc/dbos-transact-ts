@@ -375,6 +375,7 @@ export class Conductor {
               const stepsInfo = await this.dbosExec.listWorkflowSteps(
                 listStepsMessage.workflow_id,
                 listStepsMessage.load_output ?? true,
+                { limit: listStepsMessage.limit, offset: listStepsMessage.offset },
               );
               workflowSteps = stepsInfo?.map((i) => new protocol.WorkflowSteps(i));
             } catch (e) {

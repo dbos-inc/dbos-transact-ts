@@ -155,6 +155,11 @@ export interface StepInfo {
   readonly completedAtEpochMs?: number;
 }
 
+export interface ListWorkflowStepsOptions {
+  limit?: number;
+  offset?: number;
+}
+
 export interface PgTransactionId {
   txid: string;
 }

@@ -808,11 +808,18 @@ export class SystemDatabase {
     }
   }
 
-  async getAllOperationResults(workflowID: string): Promise<operation_outputs[]> {
-    const { rows } = await this.pool.query<operation_outputs>(
-      `SELECT * FROM "${this.schemaName}".operation_outputs WHERE workflow_uuid=$1`,
-      [workflowID],
-    );
+  async getAllOperationResults(workflowID: string, limit?: number, offset?: number): Promise<operation_outputs[]> {
+    let query = `SELECT * FROM "${this.schemaName}".operation_outputs WHERE workflow_uuid=$1 ORDER BY function_id`;
+    const params: unknown[] = [workflowID];
+    if (limit !== undefined) {
+      params.push(limit);
+      query += ` LIMIT $${params.length}`;
+    }
+    if (offset !== undefined) {
+      params.push(offset);
+      query += ` OFFSET $${params.length}`;
+    }
+    const { rows } = await this.pool.query<operation_outputs>(query, params);
     return rows;
   }
 
