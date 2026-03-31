@@ -185,6 +185,14 @@ describe('workflow-management-cli-tests', () => {
       },
       { name: 'queuedWorkflow' },
     ),
+
+    bigintWorkflow: DBOS.registerWorkflow(
+      async (input: bigint) => {
+        await Promise.resolve();
+        return input * 2n;
+      },
+      { name: 'bigintWorkflow' },
+    ),
   };
 
   function runCommand(command: string): string {
@@ -357,5 +365,29 @@ describe('workflow-management-cli-tests', () => {
     const excludeWorkflows = JSON.parse(excludeOutput);
     const excludeWorkflowIds = excludeWorkflows.map((w: any) => w.workflowID);
     expect(excludeWorkflowIds).not.toContain(handle.workflowID);
+  }, 30000);
+
+  test('workflow list and get handle bigint values', async () => {
+    const handle = await DBOS.startWorkflow(TestWorkflows.bigintWorkflow)(42n);
+    const result = await handle.getResult();
+    expect(result).toBe(84n);
+
+    // Verify that list command succeeds and returns valid JSON despite BigInt input/output
+    const listOutput = runCommand(
+      `npx dbos workflow list --name bigintWorkflow --limit 1 --sys-db-url "${systemDbUrl}"`,
+    );
+    const workflows = JSON.parse(listOutput);
+    expect(workflows.length).toBe(1);
+    expect(workflows[0].workflowID).toBe(handle.workflowID);
+    // input and output are now inspect()-ed strings
+    expect(workflows[0].input).toContain('42n');
+    expect(workflows[0].output).toContain('84n');
+
+    // Verify that get command also succeeds with BigInt values
+    const getOutput = runCommand(`npx dbos workflow get ${handle.workflowID} --sys-db-url "${systemDbUrl}"`);
+    const workflow = JSON.parse(getOutput);
+    expect(workflow.workflowID).toBe(handle.workflowID);
+    expect(workflow.status).toBe('SUCCESS');
+    expect(workflow.output).toContain('84n');
   }, 30000);
 });
