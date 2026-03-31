@@ -404,9 +404,8 @@ queueCommands
 /* PARSING */
 /////////////
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function inspectUnsafeFields(obj: Record<string, any>, fields: string[]): Record<string, any> {
-  const result = { ...obj };
+function inspectUnsafeFields<T extends object>(obj: T, fields: (keyof T & string)[]) {
+  const result = { ...obj } as Record<string, unknown>;
   for (const field of fields) {
     if (result[field] !== undefined && result[field] !== null) {
       result[field] = inspect(result[field]);
