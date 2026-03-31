@@ -18,6 +18,7 @@ import { stdin as input, stdout as output } from 'node:process';
 import { DBOSClient, GetWorkflowsInput, StatusString } from '..';
 import { ensureSystemDatabase, grantDbosSchemaPermissions } from '../system_database';
 import { exit } from 'node:process';
+import { inspect } from 'node:util';
 import { runCommand } from './commands';
 import { startDockerPg, stopDockerPg } from './docker_pg_helper';
 import { dropPGDatabase, getDatabaseNameFromUrl } from '../database_utils';
@@ -242,7 +243,7 @@ workflowCommands
       });
       try {
         const output = await client.listWorkflows(input);
-        console.log(JSON.stringify(output));
+        console.log(JSON.stringify(output.map((wf) => inspectUnsafeFields(wf, ['input', 'output', 'error']))));
       } finally {
         await client.destroy();
       }
@@ -261,7 +262,7 @@ workflowCommands
     });
     try {
       const output = await client.getWorkflow(workflowID);
-      console.log(JSON.stringify(output));
+      console.log(JSON.stringify(output ? inspectUnsafeFields(output, ['input', 'output', 'error']) : output));
     } finally {
       await client.destroy();
     }
@@ -279,7 +280,7 @@ workflowCommands
     });
     try {
       const output = await client.listWorkflowSteps(workflowID);
-      console.log(JSON.stringify(output));
+      console.log(JSON.stringify(output?.map((step) => inspectUnsafeFields(step, ['output', 'error']))));
     } finally {
       await client.destroy();
     }
@@ -392,7 +393,7 @@ queueCommands
       try {
         // TOD: Review!
         const output = await client.listQueuedWorkflows(input);
-        console.log(JSON.stringify(output));
+        console.log(JSON.stringify(output.map((wf) => inspectUnsafeFields(wf, ['input', 'output', 'error']))));
       } finally {
         await client.destroy();
       }
@@ -402,6 +403,16 @@ queueCommands
 /////////////
 /* PARSING */
 /////////////
+
+function inspectUnsafeFields<T extends object>(obj: T, fields: (keyof T & string)[]) {
+  const result = { ...obj } as Record<string, unknown>;
+  for (const field of fields) {
+    if (result[field] !== undefined && result[field] !== null) {
+      result[field] = inspect(result[field]);
+    }
+  }
+  return result;
+}
 
 program.parse(process.argv);
 
