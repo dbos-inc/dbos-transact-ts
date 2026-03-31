@@ -108,24 +108,24 @@ describe('dbos-tests', () => {
 
     @DBOS.workflow()
     static async recvTwoMsgs() {
-      const msg1 = await DBOS.recv<string>(undefined, 10);
+      const msg1 = await DBOS.recv<string>(undefined, { timeoutSeconds: 10 });
       SendIdempotencyTestClass.recvTwoMessagesEvent.set();
-      const msg2 = await DBOS.recv<string>(undefined, 2);
+      const msg2 = await DBOS.recv<string>(undefined, { timeoutSeconds: 2 });
       return `${msg1}-${msg2}`;
     }
 
     @DBOS.workflow()
     static async recvTwoOnTopic() {
-      const msg1 = await DBOS.recv<string>('t', 10);
-      const msg2 = await DBOS.recv<string>('t', 10);
+      const msg1 = await DBOS.recv<string>('t', { timeoutSeconds: 10 });
+      const msg2 = await DBOS.recv<string>('t', { timeoutSeconds: 10 });
       return `${msg1}-${msg2}`;
     }
 
     @DBOS.workflow()
     static async recvTwoMsgsWfIdem() {
-      const msg1 = await DBOS.recv<string>(undefined, 10);
+      const msg1 = await DBOS.recv<string>(undefined, { timeoutSeconds: 10 });
       SendIdempotencyTestClass.recvWfEvent.set();
-      const msg2 = await DBOS.recv<string>(undefined, 2);
+      const msg2 = await DBOS.recv<string>(undefined, { timeoutSeconds: 2 });
       return `${msg1}-${msg2}`;
     }
 
@@ -151,9 +151,9 @@ describe('dbos-tests', () => {
 
     @DBOS.workflow()
     static async recvTwoMsgsAgain() {
-      const msg1 = await DBOS.recv<string>(undefined, 10);
+      const msg1 = await DBOS.recv<string>(undefined, { timeoutSeconds: 10 });
       SendIdempotencyTestClass.recvStepEvent.set();
-      const msg2 = await DBOS.recv<string>(undefined, 2);
+      const msg2 = await DBOS.recv<string>(undefined, { timeoutSeconds: 2 });
       return `${msg1}-${msg2}`;
     }
 
