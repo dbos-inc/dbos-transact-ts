@@ -994,8 +994,7 @@ export class SystemDatabase {
     );
   }
 
-  async setWorkflowDelay(workflowID: string, delaySeconds: number): Promise<void> {
-    const delayUntilEpochMS = Date.now() + delaySeconds * 1000;
+  async setWorkflowDelay(workflowID: string, delayUntilEpochMS: number): Promise<void> {
     await this.pool.query(
       `UPDATE "${this.schemaName}".workflow_status
        SET delay_until_epoch_ms = $1, updated_at = $2

@@ -19,7 +19,7 @@ import {
   type WorkflowStatus,
 } from './workflow';
 import { sleepms } from './utils';
-import { type GetEventOptions, resolveTimeoutSeconds } from './dbos';
+import { type GetEventOptions, type SetWorkflowDelayOptions, resolveTimeoutSeconds, resolveDelayEpochMS } from './dbos';
 import {
   DBOSJSON,
   DBOSSerializer,
@@ -401,8 +401,9 @@ export class DBOSClient {
     return this.systemDatabase.setWorkflowPriority(workflowID, priority);
   }
 
-  setWorkflowDelay(workflowID: string, delaySeconds: number): Promise<void> {
-    return this.systemDatabase.setWorkflowDelay(workflowID, delaySeconds);
+  setWorkflowDelay(workflowID: string, options: number | SetWorkflowDelayOptions): Promise<void> {
+    const delayUntilEpochMS = resolveDelayEpochMS(options);
+    return this.systemDatabase.setWorkflowDelay(workflowID, delayUntilEpochMS);
   }
 
   deleteWorkflow(workflowID: string, deleteChildren: boolean = false): Promise<void> {

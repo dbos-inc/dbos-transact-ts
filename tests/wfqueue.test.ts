@@ -1983,4 +1983,38 @@ describe('delay-tests', () => {
     // Test invalid delay
     await expect(DBOS.setWorkflowDelay('some-id', -1)).rejects.toThrow('delaySeconds must be non-negative');
   }, 30000);
+
+  test('test_setWorkflowDelay_options', async () => {
+    // Test with delaySeconds option
+    const handle1 = await DBOS.startWorkflow(TestDelayWFs, {
+      queueName: TestDelayWFs.queue.name,
+      enqueueOptions: { delaySeconds: 60 },
+    }).testWorkflowStr();
+    expect((await handle1.getStatus())?.status).toBe(StatusString.DELAYED);
+
+    const tBefore1 = Date.now();
+    await DBOS.setWorkflowDelay(handle1.workflowID, { delaySeconds: 1 });
+    const tAfter1 = Date.now();
+
+    const status1 = await handle1.getStatus();
+    expect(status1?.status).toBe(StatusString.DELAYED);
+    expect(status1!.delayUntilEpochMS!).toBeGreaterThanOrEqual(tBefore1 + 1000);
+    expect(status1!.delayUntilEpochMS!).toBeLessThanOrEqual(tAfter1 + 1000);
+    expect(await handle1.getResult()).toBe('done');
+
+    // Test with delayUntilEpochMS option
+    const handle2 = await DBOS.startWorkflow(TestDelayWFs, {
+      queueName: TestDelayWFs.queue.name,
+      enqueueOptions: { delaySeconds: 60 },
+    }).testWorkflowStr();
+    expect((await handle2.getStatus())?.status).toBe(StatusString.DELAYED);
+
+    const deadline = Date.now() + 1000;
+    await DBOS.setWorkflowDelay(handle2.workflowID, { delayUntilEpochMS: deadline });
+
+    const status2 = await handle2.getStatus();
+    expect(status2?.status).toBe(StatusString.DELAYED);
+    expect(status2!.delayUntilEpochMS).toBe(deadline);
+    expect(await handle2.getResult()).toBe('done');
+  }, 30000);
 });

@@ -200,6 +200,16 @@ export interface GetEventOptions {
 }
 
 /**
+ * Options for `DBOS.setWorkflowDelay`
+ */
+export interface SetWorkflowDelayOptions {
+  /** Number of seconds to delay the workflow from now */
+  delaySeconds?: number;
+  /** Absolute deadline as a UNIX epoch timestamp in milliseconds; the workflow will remain DELAYED until this time */
+  delayUntilEpochMS?: number;
+}
+
+/**
  * Options for `DBOS.setEvent`
  */
 export interface SetEventOptions {
@@ -217,6 +227,13 @@ export function resolveTimeoutSeconds(options?: number | RecvOptions | GetEventO
     return Math.max(0, (options.deadlineEpochMS - Date.now()) / 1000);
   }
   return options.timeoutSeconds;
+}
+
+export function resolveDelayEpochMS(options: number | SetWorkflowDelayOptions): number {
+  if (typeof options === 'number') return Date.now() + options * 1000;
+  if (options.delayUntilEpochMS !== undefined) return options.delayUntilEpochMS;
+  if (options.delaySeconds !== undefined) return Date.now() + options.delaySeconds * 1000;
+  throw new DBOSError('SetWorkflowDelayOptions must specify either delaySeconds or delayUntilEpochMS');
 }
 
 export function getExecutor() {
@@ -846,19 +863,20 @@ export class DBOS {
   }
 
   /**
-   * Update the delay on a DELAYED workflow. The new delay is calculated from when this method is called.
-   * The workflow will remain in DELAYED status until the new delay expires, then transition to ENQUEUED.
+   * Update the delay on a DELAYED workflow.
+   * The workflow will remain in DELAYED status until the delay expires, then transition to ENQUEUED.
    * Only affects workflows with DELAYED status.
    * @param workflowID - ID of the workflow
-   * @param delaySeconds - Number of seconds to delay the workflow from now.
+   * @param options - {@link SetWorkflowDelayOptions} controlling delay duration or absolute deadline, or a number of seconds
    */
-  static async setWorkflowDelay(workflowID: string, delaySeconds: number): Promise<void> {
+  static async setWorkflowDelay(workflowID: string, options: number | SetWorkflowDelayOptions): Promise<void> {
     ensureDBOSIsLaunched('setWorkflowDelay');
-    if (delaySeconds < 0) {
+    const delayUntilEpochMS = resolveDelayEpochMS(options);
+    if (typeof options === 'number' && options < 0) {
       throw new DBOSError('delaySeconds must be non-negative');
     }
     return runInternalStep(async () => {
-      return DBOSExecutor.globalInstance!.systemDatabase.setWorkflowDelay(workflowID, delaySeconds);
+      return DBOSExecutor.globalInstance!.systemDatabase.setWorkflowDelay(workflowID, delayUntilEpochMS);
     }, 'DBOS.setWorkflowDelay');
   }
 
