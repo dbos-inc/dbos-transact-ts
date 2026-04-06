@@ -194,6 +194,7 @@ export interface ListWorkflowsBody {
   executor_id?: string | string[];
   queues_only?: boolean;
   was_forked_from?: boolean;
+  has_parent?: boolean;
 }
 
 export class WorkflowsOutput {
@@ -313,6 +314,7 @@ export interface ListQueuedWorkflowsBody {
   load_output?: boolean; // Load the output of the workflow (default false)
   executor_id?: string | string[];
   was_forked_from?: boolean;
+  has_parent?: boolean;
 }
 
 export class ListQueuedWorkflowsRequest implements BaseMessage {
@@ -378,6 +380,8 @@ export class ListStepsRequest implements BaseMessage {
   request_id: string;
   workflow_id: string;
   load_output?: boolean;
+  limit?: number;
+  offset?: number;
   constructor(request_id: string, workflow_id: string) {
     this.request_id = request_id;
     this.workflow_id = workflow_id;

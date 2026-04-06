@@ -1,5 +1,5 @@
 import type { SystemDatabase, WorkflowStatusInternal } from './system_database';
-import type { StepInfo, WorkflowStatus, GetWorkflowsInput } from './workflow';
+import type { StepInfo, WorkflowStatus, GetWorkflowsInput, ListWorkflowStepsOptions } from './workflow';
 import { DBOSSerializer, safeParse, safeParseError, safeParsePositionalArgs } from './serialization';
 import { randomUUID } from 'node:crypto';
 
@@ -24,13 +24,14 @@ export async function listWorkflowSteps(
   sysdb: SystemDatabase,
   workflowID: string,
   loadOutput: boolean = true,
+  options?: ListWorkflowStepsOptions,
 ): Promise<StepInfo[] | undefined> {
   const status = await sysdb.getWorkflowStatus(workflowID);
   if (!status) {
     return undefined;
   }
 
-  const $steps = await sysdb.getAllOperationResults(workflowID);
+  const $steps = await sysdb.getAllOperationResults(workflowID, options?.limit, options?.offset);
 
   const steps: StepInfo[] = $steps.map((step) => ({
     functionID: step.function_id,

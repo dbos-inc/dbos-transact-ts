@@ -279,6 +279,7 @@ export class Conductor {
               executorId: body.executor_id,
               queuesOnly: body.queues_only,
               wasForkedFrom: body.was_forked_from,
+              hasParent: body.has_parent,
             };
             let workflowsOutput: protocol.WorkflowsOutput[] = [];
             try {
@@ -313,6 +314,7 @@ export class Conductor {
               loadOutput: bodyQueued.load_output ?? false, // Default to false if not provided
               executorId: bodyQueued.executor_id,
               wasForkedFrom: bodyQueued.was_forked_from,
+              hasParent: bodyQueued.has_parent,
             };
             let queuedWFOutput: protocol.WorkflowsOutput[] = [];
             try {
@@ -375,6 +377,7 @@ export class Conductor {
               const stepsInfo = await this.dbosExec.listWorkflowSteps(
                 listStepsMessage.workflow_id,
                 listStepsMessage.load_output ?? true,
+                { limit: listStepsMessage.limit, offset: listStepsMessage.offset },
               );
               workflowSteps = stepsInfo?.map((i) => new protocol.WorkflowSteps(i));
             } catch (e) {
