@@ -31,6 +31,7 @@ export {
   WorkflowStatusString,
   GetWorkflowsInput,
   GetWorkflowsInput as GetQueuedWorkflowsInput,
+  ListWorkflowStepsOptions,
   WorkflowStatus,
 } from './workflow';
 

@@ -18,6 +18,7 @@ import {
   StatusString,
   type WorkflowStatus,
   type StepInfo,
+  type ListWorkflowStepsOptions,
   WorkflowConfig,
   DEFAULT_MAX_RECOVERY_ATTEMPTS,
   WorkflowSerializationFormat,
@@ -960,8 +961,12 @@ export class DBOSExecutor {
     return listQueuedWorkflows(this.systemDatabase, input);
   }
 
-  async listWorkflowSteps(workflowID: string, loadOutput: boolean = true): Promise<StepInfo[] | undefined> {
-    return listWorkflowSteps(this.systemDatabase, workflowID, loadOutput);
+  async listWorkflowSteps(
+    workflowID: string,
+    loadOutput: boolean = true,
+    options?: ListWorkflowStepsOptions,
+  ): Promise<StepInfo[] | undefined> {
+    return listWorkflowSteps(this.systemDatabase, workflowID, loadOutput, options);
   }
 
   /* INTERNAL HELPERS */

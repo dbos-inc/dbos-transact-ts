@@ -14,6 +14,7 @@ import {
   isWorkflowActive,
   StatusString,
   type StepInfo,
+  type ListWorkflowStepsOptions,
   type WorkflowHandle,
   WorkflowSerializationFormat,
   type WorkflowStatus,
@@ -438,8 +439,8 @@ export class DBOSClient {
     return listQueuedWorkflows(this.systemDatabase, input);
   }
 
-  listWorkflowSteps(workflowID: string): Promise<StepInfo[] | undefined> {
-    return listWorkflowSteps(this.systemDatabase, workflowID);
+  listWorkflowSteps(workflowID: string, options?: ListWorkflowStepsOptions): Promise<StepInfo[] | undefined> {
+    return listWorkflowSteps(this.systemDatabase, workflowID, true, options);
   }
 
   async waitFirst(handles: WorkflowHandle<unknown>[]): Promise<WorkflowHandle<unknown>> {

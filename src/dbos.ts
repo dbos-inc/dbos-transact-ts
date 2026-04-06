@@ -23,6 +23,7 @@ import {
   isWorkflowActive,
   RetrievedHandle,
   StepInfo,
+  ListWorkflowStepsOptions,
   WorkflowConfig,
   WorkflowHandle,
   WorkflowParams,
@@ -836,12 +837,16 @@ export class DBOS {
   /**
    * Retrieve the steps of a workflow
    * @param workflowID - ID of the workflow
+   * @param options - Optional pagination parameters (limit, offset)
    * @returns `StepInfo` array listing the executed steps of the workflow. If the workflow is not found, `undefined` is returned.
    */
-  static async listWorkflowSteps(workflowID: string): Promise<StepInfo[] | undefined> {
+  static async listWorkflowSteps(
+    workflowID: string,
+    options?: ListWorkflowStepsOptions,
+  ): Promise<StepInfo[] | undefined> {
     ensureDBOSIsLaunched('listWorkflowSteps');
     return await runInternalStep(async () => {
-      return await DBOS.#executor.listWorkflowSteps(workflowID);
+      return await DBOS.#executor.listWorkflowSteps(workflowID, true, options);
     }, 'DBOS.listWorkflowSteps');
   }
 
