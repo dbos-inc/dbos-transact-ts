@@ -20,6 +20,7 @@ import {
   type WorkflowStatus,
 } from './workflow';
 import { sleepms } from './utils';
+import { type GetEventOptions, type SetWorkflowDelayOptions, resolveTimeoutSeconds, resolveDelayEpochMS } from './dbos';
 import {
   DBOSJSON,
   DBOSSerializer,
@@ -363,10 +364,11 @@ export class DBOSClient {
    * Retrieves an event published by workflowID for a given key.
    * @param workflowID - The ID of the workflow that published the event.
    * @param key - The key associated with the event you want to retrieve.
-   * @param timeoutSeconds - Timeout in seconds for how long to wait for the event to be available; default 60 seconds.
+   * @param options - {@link GetEventOptions} controlling timeout or deadline; if neither is set, times out after 60 seconds
    * @returns A Promise that resolves with the event payload.
    */
-  async getEvent<T>(workflowID: string, key: string, timeoutSeconds?: number): Promise<T | null> {
+  async getEvent<T>(workflowID: string, key: string, options?: number | GetEventOptions): Promise<T | null> {
+    const timeoutSeconds = resolveTimeoutSeconds(options);
     const evt = await this.systemDatabase.getEvent(workflowID, key, timeoutSeconds ?? 60);
     return deserializeValue(evt.serializedValue, evt.serialization, this.serializer) as T;
   }
@@ -400,8 +402,9 @@ export class DBOSClient {
     return this.systemDatabase.setWorkflowPriority(workflowID, priority);
   }
 
-  setWorkflowDelay(workflowID: string, delaySeconds: number): Promise<void> {
-    return this.systemDatabase.setWorkflowDelay(workflowID, delaySeconds);
+  setWorkflowDelay(workflowID: string, options: number | SetWorkflowDelayOptions): Promise<void> {
+    const delayUntilEpochMS = resolveDelayEpochMS(options);
+    return this.systemDatabase.setWorkflowDelay(workflowID, delayUntilEpochMS);
   }
 
   deleteWorkflow(workflowID: string, deleteChildren: boolean = false): Promise<void> {

@@ -108,24 +108,24 @@ describe('dbos-tests', () => {
 
     @DBOS.workflow()
     static async recvTwoMsgs() {
-      const msg1 = await DBOS.recv<string>(undefined, 10);
+      const msg1 = await DBOS.recv<string>(undefined, { timeoutSeconds: 10 });
       SendIdempotencyTestClass.recvTwoMessagesEvent.set();
-      const msg2 = await DBOS.recv<string>(undefined, 2);
+      const msg2 = await DBOS.recv<string>(undefined, { timeoutSeconds: 2 });
       return `${msg1}-${msg2}`;
     }
 
     @DBOS.workflow()
     static async recvTwoOnTopic() {
-      const msg1 = await DBOS.recv<string>('t', 10);
-      const msg2 = await DBOS.recv<string>('t', 10);
+      const msg1 = await DBOS.recv<string>('t', { timeoutSeconds: 10 });
+      const msg2 = await DBOS.recv<string>('t', { timeoutSeconds: 10 });
       return `${msg1}-${msg2}`;
     }
 
     @DBOS.workflow()
     static async recvTwoMsgsWfIdem() {
-      const msg1 = await DBOS.recv<string>(undefined, 10);
+      const msg1 = await DBOS.recv<string>(undefined, { timeoutSeconds: 10 });
       SendIdempotencyTestClass.recvWfEvent.set();
-      const msg2 = await DBOS.recv<string>(undefined, 2);
+      const msg2 = await DBOS.recv<string>(undefined, { timeoutSeconds: 2 });
       return `${msg1}-${msg2}`;
     }
 
@@ -151,9 +151,9 @@ describe('dbos-tests', () => {
 
     @DBOS.workflow()
     static async recvTwoMsgsAgain() {
-      const msg1 = await DBOS.recv<string>(undefined, 10);
+      const msg1 = await DBOS.recv<string>(undefined, { timeoutSeconds: 10 });
       SendIdempotencyTestClass.recvStepEvent.set();
-      const msg2 = await DBOS.recv<string>(undefined, 2);
+      const msg2 = await DBOS.recv<string>(undefined, { timeoutSeconds: 2 });
       return `${msg1}-${msg2}`;
     }
 
@@ -815,6 +815,113 @@ describe('timeout-tests', () => {
 
     const forkedHandle = await DBOS.forkWorkflow(handle.workflowID, 5);
     expect(await forkedHandle.getResult()).toBeNull();
+  });
+});
+
+class TimeoutOptionsTestClass {
+  @DBOS.workflow()
+  static async recvWithNumber() {
+    return DBOS.recv(undefined, 0);
+  }
+
+  @DBOS.workflow()
+  static async recvWithTimeoutOptions() {
+    return DBOS.recv(undefined, { timeoutSeconds: 0 });
+  }
+
+  @DBOS.workflow()
+  static async recvWithDeadlineOptions() {
+    return DBOS.recv(undefined, { deadlineEpochMS: Date.now() });
+  }
+
+  @DBOS.workflow()
+  static async getEventWithNumber(targetID: string) {
+    return DBOS.getEvent(targetID, 'key', 0);
+  }
+
+  @DBOS.workflow()
+  static async getEventWithTimeoutOptions(targetID: string) {
+    return DBOS.getEvent(targetID, 'key', { timeoutSeconds: 0 });
+  }
+
+  @DBOS.workflow()
+  static async getEventWithDeadlineOptions(targetID: string) {
+    return DBOS.getEvent(targetID, 'key', { deadlineEpochMS: Date.now() });
+  }
+}
+
+describe('timeout-options-tests', () => {
+  let config: DBOSConfig;
+
+  beforeAll(async () => {
+    config = generateDBOSTestConfig();
+    await setUpDBOSTestSysDb(config);
+    DBOS.setConfig(config);
+  });
+
+  beforeEach(async () => {
+    await DBOS.launch();
+  });
+
+  afterEach(async () => {
+    await DBOS.shutdown();
+  });
+
+  test('recv-timeout-number', async () => {
+    const handle = await DBOS.startWorkflow(TimeoutOptionsTestClass).recvWithNumber();
+    expect(await handle.getResult()).toBeNull();
+  });
+
+  test('recv-timeout-options', async () => {
+    const handle = await DBOS.startWorkflow(TimeoutOptionsTestClass).recvWithTimeoutOptions();
+    expect(await handle.getResult()).toBeNull();
+  });
+
+  test('recv-deadline-options', async () => {
+    const handle = await DBOS.startWorkflow(TimeoutOptionsTestClass).recvWithDeadlineOptions();
+    expect(await handle.getResult()).toBeNull();
+  });
+
+  test('getEvent-timeout-number', async () => {
+    const handle = await DBOS.startWorkflow(TimeoutOptionsTestClass).getEventWithNumber(randomUUID());
+    expect(await handle.getResult()).toBeNull();
+  });
+
+  test('getEvent-timeout-options', async () => {
+    const handle = await DBOS.startWorkflow(TimeoutOptionsTestClass).getEventWithTimeoutOptions(randomUUID());
+    expect(await handle.getResult()).toBeNull();
+  });
+
+  test('getEvent-deadline-options', async () => {
+    const handle = await DBOS.startWorkflow(TimeoutOptionsTestClass).getEventWithDeadlineOptions(randomUUID());
+    expect(await handle.getResult()).toBeNull();
+  });
+
+  test('client-getEvent-timeout-number', async () => {
+    const client = await DBOSClient.create({ systemDatabaseUrl: config.systemDatabaseUrl! });
+    try {
+      expect(await client.getEvent(randomUUID(), 'key', 0)).toBeNull();
+    } finally {
+      await client.destroy();
+    }
+  });
+
+  test('client-getEvent-timeout-options', async () => {
+    const client = await DBOSClient.create({ systemDatabaseUrl: config.systemDatabaseUrl! });
+    try {
+      expect(await client.getEvent(randomUUID(), 'key', { timeoutSeconds: 0 })).toBeNull();
+    } finally {
+      await client.destroy();
+    }
+  });
+
+  test('client-getEvent-deadline-options', async () => {
+    const client = await DBOSClient.create({ systemDatabaseUrl: config.systemDatabaseUrl! });
+    try {
+      expect(await client.getEvent(randomUUID(), 'key', { deadlineEpochMS: Date.now() })).toBeNull();
+    } finally {
+      await client.destroy();
+    }
   });
 });
 
