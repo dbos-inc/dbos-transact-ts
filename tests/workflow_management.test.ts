@@ -1030,6 +1030,29 @@ describe('test-list-steps', () => {
     expect(offsetOnly![0].name).toBe('DBOS.sleep');
   });
 
+  test('test-list-workflows-has-parent', async () => {
+    // Run a parent workflow that starts a child
+    const parentId = randomUUID();
+    const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: parentId }).callChildWorkflowfirst();
+    const childId = await handle.getResult();
+
+    // Also run a standalone workflow (no parent)
+    const standaloneId = randomUUID();
+    await DBOS.startWorkflow(TestListSteps, { workflowID: standaloneId }).testWorkflow();
+
+    // hasParent=true returns only the child workflow
+    const withParent = await DBOS.listWorkflows({ hasParent: true });
+    expect(withParent.length).toBe(1);
+    expect(withParent[0].workflowID).toBe(childId);
+
+    // hasParent=false returns workflows without a parent
+    const withoutParent = await DBOS.listWorkflows({ hasParent: false });
+    const ids = new Set(withoutParent.map((w) => w.workflowID));
+    expect(ids).toContain(parentId);
+    expect(ids).toContain(standaloneId);
+    expect(ids).not.toContain(childId);
+  });
+
   test('test-send-recv', async () => {
     const wfid1 = randomUUID();
     const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid1 }).recvWorkflow('message1');

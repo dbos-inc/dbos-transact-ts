@@ -2682,6 +2682,14 @@ export class SystemDatabase {
       paramCounter++;
     }
 
+    if (input.hasParent !== undefined) {
+      if (input.hasParent) {
+        whereClauses.push(`parent_workflow_id IS NOT NULL`);
+      } else {
+        whereClauses.push(`parent_workflow_id IS NULL`);
+      }
+    }
+
     if (input.startTime) {
       whereClauses.push(`created_at >= $${paramCounter}`);
       params.push(new Date(input.startTime).getTime());

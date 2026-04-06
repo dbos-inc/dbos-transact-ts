@@ -133,6 +133,7 @@ export interface GetWorkflowsInput {
   forkedFrom?: string | string[]; // Get workflows forked from this workflow ID (or any of these workflow IDs).
   wasForkedFrom?: boolean; // Filter workflows that have (or have not) been forked from.
   parentWorkflowID?: string | string[]; // Get workflows started by this parent workflow ID (or any of these parent workflow IDs).
+  hasParent?: boolean; // Filter workflows that have (or do not have) a parent workflow.
   limit?: number; // Return up to this many workflows IDs. IDs are ordered by workflow creation time.
   offset?: number; // Skip this many workflows IDs. IDs are ordered by workflow creation time.
   sortDesc?: boolean; // Sort the workflows in descending order by creation time (default ascending order).
