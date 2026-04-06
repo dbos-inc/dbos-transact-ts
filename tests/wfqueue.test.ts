@@ -1981,7 +1981,7 @@ describe('delay-tests', () => {
     expect((await handle.getStatus())?.status).toBe(StatusString.SUCCESS);
 
     // Test invalid delay
-    await expect(DBOS.setWorkflowDelay('some-id', -1)).rejects.toThrow('delaySeconds must be non-negative');
+    await expect(DBOS.setWorkflowDelay('some-id', -1)).rejects.toThrow('delaySeconds must be greater than 0');
   }, 30000);
 
   test('test_setWorkflowDelay_options', async () => {
