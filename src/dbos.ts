@@ -230,9 +230,18 @@ export function resolveTimeoutSeconds(options?: number | RecvOptions | GetEventO
 }
 
 export function resolveDelayEpochMS(options: number | SetWorkflowDelayOptions): number {
-  if (typeof options === 'number') return Date.now() + options * 1000;
-  if (options.delayUntilEpochMS !== undefined) return options.delayUntilEpochMS;
-  if (options.delaySeconds !== undefined) return Date.now() + options.delaySeconds * 1000;
+  if (typeof options === 'number') {
+    if (options <= 0) throw new DBOSError('delaySeconds must be greater than 0');
+    return Date.now() + options * 1000;
+  }
+  if (options.delayUntilEpochMS !== undefined) {
+    if (options.delayUntilEpochMS <= 0) throw new DBOSError('delayUntilEpochMS must be greater than 0');
+    return options.delayUntilEpochMS;
+  }
+  if (options.delaySeconds !== undefined) {
+    if (options.delaySeconds <= 0) throw new DBOSError('delaySeconds must be greater than 0');
+    return Date.now() + options.delaySeconds * 1000;
+  }
   throw new DBOSError('SetWorkflowDelayOptions must specify either delaySeconds or delayUntilEpochMS');
 }
 
@@ -872,9 +881,6 @@ export class DBOS {
   static async setWorkflowDelay(workflowID: string, options: number | SetWorkflowDelayOptions): Promise<void> {
     ensureDBOSIsLaunched('setWorkflowDelay');
     const delayUntilEpochMS = resolveDelayEpochMS(options);
-    if (typeof options === 'number' && options < 0) {
-      throw new DBOSError('delaySeconds must be non-negative');
-    }
     return runInternalStep(async () => {
       return DBOSExecutor.globalInstance!.systemDatabase.setWorkflowDelay(workflowID, delayUntilEpochMS);
     }, 'DBOS.setWorkflowDelay');
