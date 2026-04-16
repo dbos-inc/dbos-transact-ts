@@ -90,6 +90,7 @@ export class WorkflowQueue {
       throw Error(`Workflow Queue '${name}' defined multiple times`);
     }
     wfQueueRunner.wfQueuesByName.set(name, this);
+    wfQueueRunner.onQueueRegistered(this);
   }
 }
 
@@ -99,6 +100,9 @@ class WFQueueRunner {
   private isRunning: boolean = false;
   private stopResolve?: () => void;
   private stopPromise?: Promise<void>;
+  private exec?: DBOSExecutor;
+  private listenQueuesArg: WorkflowQueue[] | null = null;
+  private readonly activeLoops: Set<Promise<void>> = new Set();
 
   private static readonly defaultMinPollingIntervalMs: number = 1000;
   private static readonly defaultMaxPollingIntervalMs: number = 120000;
@@ -117,8 +121,24 @@ class WFQueueRunner {
     this.wfQueuesByName.clear();
   }
 
+  /** Called when a new queue is registered while the runner is already active. */
+  onQueueRegistered(queue: WorkflowQueue) {
+    if (!this.isRunning || !this.exec) return;
+    // If explicitly listening to specific queues, don't auto-start for dynamically added ones
+    if (this.listenQueuesArg !== null) return;
+    this.launchQueueLoop(queue);
+  }
+
+  private launchQueueLoop(queue: WorkflowQueue) {
+    const loop = this.runQueue(this.exec!, queue);
+    this.activeLoops.add(loop);
+    loop.finally(() => this.activeLoops.delete(loop));
+  }
+
   async dispatchLoop(exec: DBOSExecutor, listenQueuesArg: WorkflowQueue[] | null): Promise<void> {
     this.isRunning = true;
+    this.exec = exec;
+    this.listenQueuesArg = listenQueuesArg;
     this.stopPromise = new Promise<void>((resolve) => {
       this.stopResolve = resolve;
     });
@@ -130,8 +150,14 @@ class WFQueueRunner {
       listenQueues = Array.from(this.wfQueuesByName.values());
     }
 
-    // Start one loop per queue, wait for all to complete
-    await Promise.all(listenQueues.map((q) => this.runQueue(exec, q)));
+    // Start one loop per queue
+    for (const q of listenQueues) {
+      this.launchQueueLoop(q);
+    }
+
+    // Wait until stop() is called, then wait for all loops to drain
+    await this.stopPromise;
+    await Promise.all(this.activeLoops);
   }
 
   private async runQueue(exec: DBOSExecutor, queue: WorkflowQueue): Promise<void> {
