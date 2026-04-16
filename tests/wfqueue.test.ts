@@ -1405,6 +1405,9 @@ describe('enqueue-options', () => {
   }, 30000);
 });
 
+// Timeout tests rely on the 1s default polling delay for timing assumptions
+const timeoutQueue = new WorkflowQueue('timeout-test-queue');
+
 describe('queue-time-outs', () => {
   let config: DBOSConfig;
 
@@ -1442,7 +1445,7 @@ describe('queue-time-outs', () => {
 
     @DBOS.workflow()
     static async timeoutParentEnqueueWF(timeout: number) {
-      await DBOS.startWorkflow(DBOSTimeoutTestClass, { timeoutMS: timeout, queueName: queue.name })
+      await DBOS.startWorkflow(DBOSTimeoutTestClass, { timeoutMS: timeout, queueName: timeoutQueue.name })
         .blockedWorkflow()
         .then((h) => h.getResult());
     }
@@ -1463,7 +1466,7 @@ describe('queue-time-outs', () => {
 
     @DBOS.workflow()
     static async timeoutParentEnqueueDetached(duration: number) {
-      await DBOS.startWorkflow(DBOSTimeoutTestClass, { timeoutMS: null, queueName: queue.name })
+      await DBOS.startWorkflow(DBOSTimeoutTestClass, { timeoutMS: null, queueName: timeoutQueue.name })
         .sleepingWorkflow(duration * 2)
         .then((h) => h.getResult());
     }
@@ -1488,7 +1491,7 @@ describe('queue-time-outs', () => {
     const workflowID: string = randomUUID();
     const handle = await DBOS.startWorkflow(DBOSTimeoutTestClass, {
       workflowID,
-      queueName: queue.name,
+      queueName: timeoutQueue.name,
       timeoutMS: 100,
     }).blockedWorkflow();
     await expect(handle.getResult()).rejects.toThrow(new DBOSAwaitedWorkflowCancelledError(workflowID));
@@ -1503,7 +1506,7 @@ describe('queue-time-outs', () => {
     const childID: string = `${workflowID}-0`;
     const handle = await DBOS.startWorkflow(DBOSTimeoutTestClass, {
       workflowID,
-      queueName: queue.name,
+      queueName: timeoutQueue.name,
     }).timeoutParentStartWF(100);
     await expect(handle.getResult()).rejects.toThrow(new DBOSAwaitedWorkflowCancelledError(childID));
     await expect(handle.getStatus()).resolves.toMatchObject({
@@ -1522,7 +1525,7 @@ describe('queue-time-outs', () => {
     events_map.set(childID, new Event());
     const handle = await DBOS.startWorkflow(DBOSTimeoutTestClass, {
       workflowID,
-      queueName: queue.name,
+      queueName: timeoutQueue.name,
       timeoutMS: 1000,
     }).timeoutParentEnqueueWF(100); // The trick here is that the child deadline starts at dequeue, which happens after the 1s dequeue polling interval
     await events_map.get(childID)?.wait();
@@ -1546,7 +1549,7 @@ describe('queue-time-outs', () => {
     events_map.set(childID, new Event());
     const handle = await DBOS.startWorkflow(DBOSTimeoutTestClass, {
       workflowID,
-      queueName: queue.name,
+      queueName: timeoutQueue.name,
       timeoutMS: 2000, // allow a dequeue interval to pass
     }).timeoutParentEnqueueWF(100);
     await events_map.get(childID)?.wait();
@@ -1568,7 +1571,7 @@ describe('queue-time-outs', () => {
     const childID: string = `${workflowID}-0`;
     const handle = await DBOS.startWorkflow(DBOSTimeoutTestClass, {
       workflowID,
-      queueName: queue.name,
+      queueName: timeoutQueue.name,
       timeoutMS: 100,
     }).timeoutParentStartDetachedChild(100);
     await expect(handle.getResult()).rejects.toThrow(new DBOSAwaitedWorkflowCancelledError(workflowID));
@@ -1588,7 +1591,7 @@ describe('queue-time-outs', () => {
     const childID: string = `${workflowID}-0`;
     const handle = await DBOS.startWorkflow(DBOSTimeoutTestClass, {
       workflowID,
-      queueName: queue.name,
+      queueName: timeoutQueue.name,
       timeoutMS: 100,
     }).timeoutParentStartDetachedChildWithSyntax(100);
     await expect(handle.getResult()).rejects.toThrow(new DBOSAwaitedWorkflowCancelledError(workflowID));
@@ -1608,7 +1611,7 @@ describe('queue-time-outs', () => {
     const childID: string = `${workflowID}-0`;
     const handle = await DBOS.startWorkflow(DBOSTimeoutTestClass, {
       workflowID,
-      queueName: queue.name,
+      queueName: timeoutQueue.name,
       timeoutMS: 100,
     }).timeoutParentEnqueueDetached(100);
     await expect(handle.getResult()).rejects.toThrow(new DBOSAwaitedWorkflowCancelledError(workflowID));
@@ -1628,7 +1631,7 @@ describe('queue-time-outs', () => {
     events_map.set(workflowID, new Event());
     const handle = await DBOS.startWorkflow(DBOSTimeoutTestClass, {
       workflowID,
-      queueName: queue.name,
+      queueName: timeoutQueue.name,
       timeoutMS: 3000,
     }).blockedWorkflow();
     await events_map.get(workflowID)?.wait();
