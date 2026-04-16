@@ -2450,8 +2450,8 @@ export class SystemDatabase {
 
     const client = await this.pool.connect();
     try {
-      // Default to READ COMMITTED except with global concurrency limits
-      if (queue.concurrency !== undefined) {
+      // Default to READ COMMITTED except with global concurrency limits or rate limits
+      if (queue.concurrency !== undefined || queue.rateLimit !== undefined) {
         await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ');
       } else {
         await client.query('BEGIN');
