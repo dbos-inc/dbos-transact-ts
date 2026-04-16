@@ -2453,6 +2453,8 @@ export class SystemDatabase {
       // Default to READ COMMITTED except with global concurrency limits
       if (queue.concurrency !== undefined) {
         await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ');
+      } else {
+        await client.query('BEGIN');
       }
 
       // If there is a rate limit, compute how many functions have started in its period.
@@ -2547,8 +2549,10 @@ export class SystemDatabase {
           break;
         }
 
-        // Start the functions by marking them as pending and updating their executor IDs
-        await client.query(
+        // Start the functions by marking them as pending and updating their executor IDs.
+        // Only claim the workflow if the UPDATE actually transitioned an ENQUEUED row —
+        // otherwise another worker won the race and we must not re-dispatch it.
+        const updateRes = await client.query(
           `UPDATE "${this.schemaName}".workflow_status
            SET status = $1,
                executor_id = $2,
@@ -2562,7 +2566,9 @@ export class SystemDatabase {
            WHERE workflow_uuid = $5 AND status = $6`,
           [StatusString.PENDING, executorID, appVersion, startTimeMs, id, StatusString.ENQUEUED],
         );
-        claimedIDs.push(id);
+        if ((updateRes.rowCount ?? 0) > 0) {
+          claimedIDs.push(id);
+        }
       }
 
       await client.query('COMMIT');
