@@ -542,7 +542,10 @@ export class SystemDatabase {
   readonly cancelWakeupMap: NotificationMap<void> = new NotificationMap();
   customPool: boolean = false;
 
-  readonly runningWorkflowMap: Map<string, { promise: Promise<unknown>; queueName?: string }> = new Map(); // Map from workflowID to workflow promise and optional queue name
+  readonly runningWorkflowMap: Map<
+    string,
+    { promise: Promise<unknown>; queueName?: string; queuePartitionKey?: string }
+  > = new Map(); // Map from workflowID to workflow promise, queue name and partition key
   readonly workflowCancellationMap: Map<string, boolean> = new Map(); // Map from workflowID to its cancellation status.
 
   constructor(
@@ -1543,7 +1546,12 @@ export class SystemDatabase {
   }
 
   // ==================== Awaiting Workflows ====================
-  registerRunningWorkflow(workflowID: string, workflowPromise: Promise<unknown>, queueName?: string) {
+  registerRunningWorkflow(
+    workflowID: string,
+    workflowPromise: Promise<unknown>,
+    queueName?: string,
+    queuePartitionKey?: string,
+  ) {
     // Need to await for the workflow and capture errors.
     const awaitWorkflowPromise = workflowPromise
       .catch((error) => {
@@ -1554,17 +1562,21 @@ export class SystemDatabase {
         this.runningWorkflowMap.delete(workflowID);
         this.workflowCancellationMap.delete(workflowID);
       });
-    this.runningWorkflowMap.set(workflowID, { promise: awaitWorkflowPromise, queueName });
+    this.runningWorkflowMap.set(workflowID, {
+      promise: awaitWorkflowPromise,
+      queueName,
+      queuePartitionKey,
+    });
   }
 
   checkForRunningWorkflow(workflowID: string): boolean {
     return this.runningWorkflowMap.has(workflowID);
   }
 
-  countRunningWorkflowsForQueue(queueName: string): number {
+  countRunningWorkflowsForQueue(queueName: string, queuePartitionKey?: string): number {
     let count = 0;
     for (const entry of this.runningWorkflowMap.values()) {
-      if (entry.queueName === queueName) count++;
+      if (entry.queueName === queueName && entry.queuePartitionKey === queuePartitionKey) count++;
     }
     return count;
   }
@@ -2438,7 +2450,7 @@ export class SystemDatabase {
     const startTimeMs = Date.now();
     const limiterPeriodMS = queue.rateLimit ? queue.rateLimit.periodSec * 1000 : 0;
     const claimedIDs: string[] = [];
-    const localRunningForQueue = this.countRunningWorkflowsForQueue(queue.name);
+    const localRunningForQueue = this.countRunningWorkflowsForQueue(queue.name, queuePartitionKey);
 
     // Build partition key filter
     let partitionFilter = '';

@@ -667,7 +667,12 @@ export class DBOSExecutor {
     ) {
       const workflowPromise: Promise<R> = runWorkflow();
 
-      this.systemDatabase.registerRunningWorkflow(workflowID, workflowPromise, params.queueName);
+      this.systemDatabase.registerRunningWorkflow(
+        workflowID,
+        workflowPromise,
+        params.queueName,
+        params.enqueueOptions?.queuePartitionKey,
+      );
 
       // Return the normal handle that doesn't capture errors.
       return new InvokedHandle(this.systemDatabase, workflowPromise, workflowID, wf.name);
