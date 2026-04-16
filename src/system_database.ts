@@ -542,7 +542,10 @@ export class SystemDatabase {
   readonly cancelWakeupMap: NotificationMap<void> = new NotificationMap();
   customPool: boolean = false;
 
-  readonly runningWorkflowMap: Map<string, Promise<unknown>> = new Map(); // Map from workflowID to workflow promise
+  readonly runningWorkflowMap: Map<
+    string,
+    { promise: Promise<unknown>; queueName?: string; queuePartitionKey?: string }
+  > = new Map(); // Map from workflowID to workflow promise, queue name and partition key
   readonly workflowCancellationMap: Map<string, boolean> = new Map(); // Map from workflowID to its cancellation status.
 
   constructor(
@@ -1543,7 +1546,12 @@ export class SystemDatabase {
   }
 
   // ==================== Awaiting Workflows ====================
-  registerRunningWorkflow(workflowID: string, workflowPromise: Promise<unknown>) {
+  registerRunningWorkflow(
+    workflowID: string,
+    workflowPromise: Promise<unknown>,
+    queueName?: string,
+    queuePartitionKey?: string,
+  ) {
     // Need to await for the workflow and capture errors.
     const awaitWorkflowPromise = workflowPromise
       .catch((error) => {
@@ -1554,17 +1562,29 @@ export class SystemDatabase {
         this.runningWorkflowMap.delete(workflowID);
         this.workflowCancellationMap.delete(workflowID);
       });
-    this.runningWorkflowMap.set(workflowID, awaitWorkflowPromise);
+    this.runningWorkflowMap.set(workflowID, {
+      promise: awaitWorkflowPromise,
+      queueName,
+      queuePartitionKey,
+    });
   }
 
   checkForRunningWorkflow(workflowID: string): boolean {
     return this.runningWorkflowMap.has(workflowID);
   }
 
+  countRunningWorkflowsForQueue(queueName: string, queuePartitionKey?: string): number {
+    let count = 0;
+    for (const entry of this.runningWorkflowMap.values()) {
+      if (entry.queueName === queueName && entry.queuePartitionKey === queuePartitionKey) count++;
+    }
+    return count;
+  }
+
   async awaitRunningWorkflows(): Promise<void> {
     if (this.runningWorkflowMap.size > 0) {
       this.logger.info('Waiting for pending workflows to finish.');
-      await Promise.allSettled(this.runningWorkflowMap.values());
+      await Promise.allSettled(Array.from(this.runningWorkflowMap.values(), (entry) => entry.promise));
     }
     if (this.workflowEventsMap.map.size > 0) {
       this.logger.warn('Workflow events map is not empty - shutdown is not clean.');
@@ -2430,6 +2450,7 @@ export class SystemDatabase {
     const startTimeMs = Date.now();
     const limiterPeriodMS = queue.rateLimit ? queue.rateLimit.periodSec * 1000 : 0;
     const claimedIDs: string[] = [];
+    const localRunningForQueue = this.countRunningWorkflowsForQueue(queue.name, queuePartitionKey);
 
     // Build partition key filter
     let partitionFilter = '';
@@ -2441,7 +2462,12 @@ export class SystemDatabase {
 
     const client = await this.pool.connect();
     try {
-      await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ');
+      // Default to READ COMMITTED except with global concurrency limits or rate limits
+      if (queue.concurrency !== undefined || queue.rateLimit !== undefined) {
+        await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ');
+      } else {
+        await client.query('BEGIN');
+      }
 
       // If there is a rate limit, compute how many functions have started in its period.
       let numRecentQueries = 0;
@@ -2474,37 +2500,29 @@ export class SystemDatabase {
 
       let maxTasks = Infinity;
 
-      if (queue.workerConcurrency !== undefined || queue.concurrency !== undefined) {
-        // Count how many workflows on this queue are currently PENDING both locally and globally.
+      if (queue.workerConcurrency !== undefined) {
+        // Use the in-memory registry for this worker's running count — avoids a DB round trip.
+        maxTasks = Math.max(0, queue.workerConcurrency - localRunningForQueue);
+      }
+
+      if (queue.concurrency !== undefined) {
+        // Global concurrency still requires a DB query since other workers may be running workflows too.
         const params = [queue.name, StatusString.PENDING, ...partitionParams];
-        const runningTasksResult = await client.query(
-          `SELECT executor_id, COUNT(*) as task_count
+        const runningTasksResult = await client.query<{ task_count: string }>(
+          `SELECT COUNT(*) as task_count
            FROM "${this.schemaName}".workflow_status
            WHERE queue_name = $1 AND status = $2
-             ${partitionFilter.replace('$PARTITION', '$3')}
-           GROUP BY executor_id`,
+             ${partitionFilter.replace('$PARTITION', '$3')}`,
           params,
         );
-        const runningTasksResultDict: Record<string, number> = {};
-        runningTasksResult.rows.forEach((row: { executor_id: string; task_count: string }) => {
-          runningTasksResultDict[row.executor_id] = Number(row.task_count);
-        });
-        const runningTasksForThisWorker = runningTasksResultDict[executorID] || 0;
-
-        if (queue.workerConcurrency !== undefined) {
-          maxTasks = Math.max(0, queue.workerConcurrency - runningTasksForThisWorker);
+        const totalRunningTasks = Number(runningTasksResult.rows[0]?.task_count ?? 0);
+        if (totalRunningTasks > queue.concurrency) {
+          this.logger.warn(
+            `Total running tasks (${totalRunningTasks}) exceeds the global concurrency limit (${queue.concurrency})`,
+          );
         }
-
-        if (queue.concurrency !== undefined) {
-          const totalRunningTasks = Object.values(runningTasksResultDict).reduce((acc, val) => acc + val, 0);
-          if (totalRunningTasks > queue.concurrency) {
-            this.logger.warn(
-              `Total running tasks (${totalRunningTasks}) exceeds the global concurrency limit (${queue.concurrency})`,
-            );
-          }
-          const availableTasks = Math.max(0, queue.concurrency - totalRunningTasks);
-          maxTasks = Math.min(maxTasks, availableTasks);
-        }
+        const availableTasks = Math.max(0, queue.concurrency - totalRunningTasks);
+        maxTasks = Math.min(maxTasks, availableTasks);
       }
 
       // Return immediately if there are no available tasks due to flow control limits
@@ -2543,8 +2561,10 @@ export class SystemDatabase {
           break;
         }
 
-        // Start the functions by marking them as pending and updating their executor IDs
-        await client.query(
+        // Start the functions by marking them as pending and updating their executor IDs.
+        // Only claim the workflow if the UPDATE actually transitioned an ENQUEUED row —
+        // otherwise another worker won the race and we must not re-dispatch it.
+        const updateRes = await client.query(
           `UPDATE "${this.schemaName}".workflow_status
            SET status = $1,
                executor_id = $2,
@@ -2555,10 +2575,12 @@ export class SystemDatabase {
                  THEN (EXTRACT(epoch FROM now()) * 1000)::bigint + workflow_timeout_ms
                  ELSE workflow_deadline_epoch_ms
                END
-           WHERE workflow_uuid = $5`,
-          [StatusString.PENDING, executorID, appVersion, startTimeMs, id],
+           WHERE workflow_uuid = $5 AND status = $6`,
+          [StatusString.PENDING, executorID, appVersion, startTimeMs, id, StatusString.ENQUEUED],
         );
-        claimedIDs.push(id);
+        if ((updateRes.rowCount ?? 0) > 0) {
+          claimedIDs.push(id);
+        }
       }
 
       await client.query('COMMIT');
