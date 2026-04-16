@@ -37,11 +37,12 @@ import {
 } from '../src/debugpoint';
 import assert from 'node:assert';
 
-const queue = new WorkflowQueue('testQ');
-const serialqueue = new WorkflowQueue('serialQ', { concurrency: 1 });
+const queue = new WorkflowQueue('testQ', { minPollingIntervalMs: 500, maxPollingIntervalMs: 5000 });
+const serialqueue = new WorkflowQueue('serialQ', { concurrency: 1, minPollingIntervalMs: 500 });
 const serialqueueLimited = new WorkflowQueue('serialQL', {
   concurrency: 1,
   rateLimit: { limitPerPeriod: 10, periodSec: 1 },
+  maxPollingIntervalMs: 10000,
 });
 const childqueue = new WorkflowQueue('childQ', { concurrency: 3 });
 const workerConcurrencyQueue = new WorkflowQueue('workerQ', { workerConcurrency: 1 });
