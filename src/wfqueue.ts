@@ -179,59 +179,63 @@ class WFQueueRunner {
 
       if (!this.isRunning) break;
 
-      // Transition delayed workflows that are ready to execute
-      try {
-        await exec.systemDatabase.transitionDelayedWorkflows();
-      } catch (e) {
-        exec.logger.warn(`Error transitioning delayed workflows: ${(e as Error).message}`);
-      }
-
-      // Dequeue workflows for this queue
       let contentionDetected = false;
-      let wfids: string[] = [];
       try {
-        if (queue.partitionQueue) {
-          const partitionKeys = await exec.systemDatabase.getQueuePartitions(queue.name);
-          for (const partitionKey of partitionKeys) {
-            const partitionWfids = await exec.systemDatabase.findAndMarkStartableWorkflows(
+        // Transition delayed workflows that are ready to execute
+        try {
+          await exec.systemDatabase.transitionDelayedWorkflows();
+        } catch (e) {
+          exec.logger.warn(`Error transitioning delayed workflows: ${(e as Error).message}`);
+        }
+
+        // Dequeue workflows for this queue
+        let wfids: string[] = [];
+        try {
+          if (queue.partitionQueue) {
+            const partitionKeys = await exec.systemDatabase.getQueuePartitions(queue.name);
+            for (const partitionKey of partitionKeys) {
+              const partitionWfids = await exec.systemDatabase.findAndMarkStartableWorkflows(
+                queue,
+                exec.executorID,
+                globalParams.appVersion,
+                partitionKey,
+              );
+              wfids.push(...partitionWfids);
+            }
+          } else {
+            wfids = await exec.systemDatabase.findAndMarkStartableWorkflows(
               queue,
               exec.executorID,
               globalParams.appVersion,
-              partitionKey,
+              undefined,
             );
-            wfids.push(...partitionWfids);
           }
-        } else {
-          wfids = await exec.systemDatabase.findAndMarkStartableWorkflows(
-            queue,
-            exec.executorID,
-            globalParams.appVersion,
-            undefined,
-          );
+        } catch (e) {
+          const err = e as Error;
+          // Handle serialization errors and lock contention with backoff
+          if ('code' in err && (err.code === '40001' || err.code === '55P03')) {
+            // 40001: serialization_failure, 55P03: lock_not_available
+            contentionDetected = true;
+            exec.logger.warn(`Contention detected in queue ${queue.name}.`);
+          } else {
+            exec.logger.warn(`Error getting startable workflows for queue ${queue.name}: ${err.message}`);
+          }
+          wfids = [];
+        }
+
+        if (wfids.length > 0) {
+          await debugTriggerPoint(DEBUG_TRIGGER_WORKFLOW_QUEUE_START);
+        }
+
+        for (const wfid of wfids) {
+          try {
+            await exec.executeWorkflowId(wfid, { isQueueDispatch: true });
+          } catch (e) {
+            exec.logger.warn(`Could not execute workflow with id ${wfid}: ${(e as Error).message}`);
+          }
         }
       } catch (e) {
-        const err = e as Error;
-        // Handle serialization errors and lock contention with backoff
-        if ('code' in err && (err.code === '40001' || err.code === '55P03')) {
-          // 40001: serialization_failure, 55P03: lock_not_available
-          contentionDetected = true;
-          exec.logger.warn(`Contention detected in queue ${queue.name}.`);
-        } else {
-          exec.logger.warn(`Error getting startable workflows for queue ${queue.name}: ${err.message}`);
-        }
-        wfids = [];
-      }
-
-      if (wfids.length > 0) {
-        await debugTriggerPoint(DEBUG_TRIGGER_WORKFLOW_QUEUE_START);
-      }
-
-      for (const wfid of wfids) {
-        try {
-          await exec.executeWorkflowId(wfid, { isQueueDispatch: true });
-        } catch (e) {
-          exec.logger.warn(`Could not execute workflow with id ${wfid}: ${(e as Error).message}`);
-        }
+        exec.logger.warn(`Error in queue ${queue.name} dispatch loop: ${(e as Error).message}`);
       }
 
       // Adjust polling interval based on contention
