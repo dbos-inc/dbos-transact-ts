@@ -2559,8 +2559,8 @@ export class SystemDatabase {
                  THEN (EXTRACT(epoch FROM now()) * 1000)::bigint + workflow_timeout_ms
                  ELSE workflow_deadline_epoch_ms
                END
-           WHERE workflow_uuid = $5`,
-          [StatusString.PENDING, executorID, appVersion, startTimeMs, id],
+           WHERE workflow_uuid = $5 AND status = $6`,
+          [StatusString.PENDING, executorID, appVersion, startTimeMs, id, StatusString.ENQUEUED],
         );
         claimedIDs.push(id);
       }
