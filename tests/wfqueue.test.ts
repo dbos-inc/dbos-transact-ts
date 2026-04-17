@@ -37,18 +37,23 @@ import {
 } from '../src/debugpoint';
 import assert from 'node:assert';
 
-const queue = new WorkflowQueue('testQ');
-const serialqueue = new WorkflowQueue('serialQ', { concurrency: 1 });
+const testPolling = { minPollingIntervalMs: 100, maxPollingIntervalMs: 2000 };
+const queue = new WorkflowQueue('testQ', { ...testPolling });
+const serialqueue = new WorkflowQueue('serialQ', { concurrency: 1, ...testPolling });
 const serialqueueLimited = new WorkflowQueue('serialQL', {
   concurrency: 1,
   rateLimit: { limitPerPeriod: 10, periodSec: 1 },
+  ...testPolling,
 });
-const childqueue = new WorkflowQueue('childQ', { concurrency: 3 });
-const workerConcurrencyQueue = new WorkflowQueue('workerQ', { workerConcurrency: 1 });
+const childqueue = new WorkflowQueue('childQ', { concurrency: 3, ...testPolling });
+const workerConcurrencyQueue = new WorkflowQueue('workerQ', { workerConcurrency: 1, ...testPolling });
 
 const qlimit = 5;
 const qperiod = 2;
-const rlqueue = new WorkflowQueue('limited_queue', { rateLimit: { limitPerPeriod: qlimit, periodSec: qperiod } });
+const rlqueue = new WorkflowQueue('limited_queue', {
+  rateLimit: { limitPerPeriod: qlimit, periodSec: qperiod },
+  ...testPolling,
+});
 
 describe('queued-wf-tests-simple', () => {
   let config: DBOSConfig;
@@ -349,7 +354,7 @@ describe('queued-wf-tests-simple', () => {
     static queuedSteps = 5;
     static taskEvents = Array.from({ length: TestQueueRecovery.queuedSteps }, () => new Event());
     static taskCount = 0;
-    static queue = new WorkflowQueue('testQueueRecovery');
+    static queue = new WorkflowQueue('testQueueRecovery', { ...testPolling });
 
     @DBOS.workflow()
     static async testWorkflow() {
@@ -432,7 +437,7 @@ describe('queued-wf-tests-simple', () => {
   });
 
   test('test-queue-concurrency-under-recovery', async () => {
-    const recoveryQueue = new WorkflowQueue('recoveryQ', { concurrency: 2 });
+    const recoveryQueue = new WorkflowQueue('recoveryQ', { concurrency: 2, ...testPolling });
     const wfid1 = randomUUID();
     const wfh1 = await DBOS.startWorkflow(TestQueueRecovery, {
       workflowID: wfid1,
@@ -521,7 +526,7 @@ describe('queued-wf-tests-simple', () => {
   class TestCancelQueues {
     static startEvent = new Event();
     static blockingEvent = new Event();
-    static queue = new WorkflowQueue('TestCancelQueues', { concurrency: 1 });
+    static queue = new WorkflowQueue('TestCancelQueues', { concurrency: 1, ...testPolling });
 
     @DBOS.workflow()
     static async stuckWorkflow() {
@@ -574,7 +579,7 @@ describe('queued-wf-tests-simple', () => {
   class TestResumeQueues {
     static startEvent = new Event();
     static blockingEvent = new Event();
-    static queue = new WorkflowQueue('TestResumeQueues', { concurrency: 1 });
+    static queue = new WorkflowQueue('TestResumeQueues', { concurrency: 1, ...testPolling });
 
     @DBOS.workflow()
     static async stuckWorkflow() {
@@ -631,7 +636,11 @@ describe('queued-wf-tests-simple', () => {
   class TestResumeQueuesPartitioned {
     static startEvent = new Event();
     static blockingEvent = new Event();
-    static queue = new WorkflowQueue('TestResumeQueuesPartitioned', { concurrency: 1, partitionQueue: true });
+    static queue = new WorkflowQueue('TestResumeQueuesPartitioned', {
+      concurrency: 1,
+      partitionQueue: true,
+      ...testPolling,
+    });
 
     @DBOS.workflow()
     static async stuckWorkflow() {
@@ -691,7 +700,7 @@ describe('queued-wf-tests-simple', () => {
   });
 
   class TestConcurrencyAcrossVersions {
-    static queue = new WorkflowQueue('TestAcrossVersions', { workerConcurrency: 1 });
+    static queue = new WorkflowQueue('TestAcrossVersions', { workerConcurrency: 1, ...testPolling });
 
     @DBOS.workflow()
     static async testWorkflow() {
@@ -768,7 +777,7 @@ describe('queued-wf-tests-simple', () => {
   }, 30000);
 });
 
-const waitFirstQueue = new WorkflowQueue('wait_first_queue', { concurrency: 5 });
+const waitFirstQueue = new WorkflowQueue('wait_first_queue', { concurrency: 5, ...testPolling });
 
 class WaitFirstQueueTest {
   static numTasks = 5;
@@ -830,6 +839,7 @@ export class InterProcessWorkflowTask {
 // This queue cannot dequeue
 const IPWQueue = new WorkflowQueue('IPWQueue', {
   rateLimit: { limitPerPeriod: 0, periodSec: 30 },
+  ...testPolling,
 });
 class InterProcessWorkflow {
   static localConcurrencyLimit = 5;
@@ -1146,8 +1156,8 @@ describe('enqueue-options', () => {
       TestExample.resolveEvent = resolve;
     });
 
-    static queue = new WorkflowQueue('test_dedup_queue', { concurrency: 1 });
-    static queue2 = new WorkflowQueue('queue2', { concurrency: 1 });
+    static queue = new WorkflowQueue('test_dedup_queue', { concurrency: 1, ...testPolling });
+    static queue2 = new WorkflowQueue('queue2', { concurrency: 1, ...testPolling });
 
     @DBOS.workflow()
     static async parentWorkflow(input: string): Promise<string> {
@@ -1246,8 +1256,8 @@ describe('enqueue-options', () => {
 
     static wfPriorityList: number[] = [];
 
-    static queue = new WorkflowQueue('test_queue_prority', { concurrency: 1, priorityEnabled: true });
-    static childqueue = new WorkflowQueue('child_queue', { concurrency: 1, priorityEnabled: true });
+    static queue = new WorkflowQueue('test_queue_prority', { concurrency: 1, priorityEnabled: true, ...testPolling });
+    static childqueue = new WorkflowQueue('child_queue', { concurrency: 1, priorityEnabled: true, ...testPolling });
 
     @DBOS.workflow()
     static async parentWorkflow(input: number): Promise<number> {
@@ -1319,7 +1329,11 @@ describe('enqueue-options', () => {
   }, 30000);
 
   class SetPriorityTest {
-    static setPriorityQueue = new WorkflowQueue('test_set_priority_queue', { concurrency: 1, priorityEnabled: true });
+    static setPriorityQueue = new WorkflowQueue('test_set_priority_queue', {
+      concurrency: 1,
+      priorityEnabled: true,
+      ...testPolling,
+    });
 
     static resolveBlocker: () => void;
     static blockerPromise = new Promise<void>((resolve) => {
@@ -1391,6 +1405,9 @@ describe('enqueue-options', () => {
   }, 30000);
 });
 
+// Timeout tests rely on the 1s default polling delay for timing assumptions
+const timeoutQueue = new WorkflowQueue('timeout-test-queue');
+
 describe('queue-time-outs', () => {
   let config: DBOSConfig;
 
@@ -1428,7 +1445,7 @@ describe('queue-time-outs', () => {
 
     @DBOS.workflow()
     static async timeoutParentEnqueueWF(timeout: number) {
-      await DBOS.startWorkflow(DBOSTimeoutTestClass, { timeoutMS: timeout, queueName: queue.name })
+      await DBOS.startWorkflow(DBOSTimeoutTestClass, { timeoutMS: timeout, queueName: timeoutQueue.name })
         .blockedWorkflow()
         .then((h) => h.getResult());
     }
@@ -1449,7 +1466,7 @@ describe('queue-time-outs', () => {
 
     @DBOS.workflow()
     static async timeoutParentEnqueueDetached(duration: number) {
-      await DBOS.startWorkflow(DBOSTimeoutTestClass, { timeoutMS: null, queueName: queue.name })
+      await DBOS.startWorkflow(DBOSTimeoutTestClass, { timeoutMS: null, queueName: timeoutQueue.name })
         .sleepingWorkflow(duration * 2)
         .then((h) => h.getResult());
     }
@@ -1474,7 +1491,7 @@ describe('queue-time-outs', () => {
     const workflowID: string = randomUUID();
     const handle = await DBOS.startWorkflow(DBOSTimeoutTestClass, {
       workflowID,
-      queueName: queue.name,
+      queueName: timeoutQueue.name,
       timeoutMS: 100,
     }).blockedWorkflow();
     await expect(handle.getResult()).rejects.toThrow(new DBOSAwaitedWorkflowCancelledError(workflowID));
@@ -1489,7 +1506,7 @@ describe('queue-time-outs', () => {
     const childID: string = `${workflowID}-0`;
     const handle = await DBOS.startWorkflow(DBOSTimeoutTestClass, {
       workflowID,
-      queueName: queue.name,
+      queueName: timeoutQueue.name,
     }).timeoutParentStartWF(100);
     await expect(handle.getResult()).rejects.toThrow(new DBOSAwaitedWorkflowCancelledError(childID));
     await expect(handle.getStatus()).resolves.toMatchObject({
@@ -1508,7 +1525,7 @@ describe('queue-time-outs', () => {
     events_map.set(childID, new Event());
     const handle = await DBOS.startWorkflow(DBOSTimeoutTestClass, {
       workflowID,
-      queueName: queue.name,
+      queueName: timeoutQueue.name,
       timeoutMS: 1000,
     }).timeoutParentEnqueueWF(100); // The trick here is that the child deadline starts at dequeue, which happens after the 1s dequeue polling interval
     await events_map.get(childID)?.wait();
@@ -1532,7 +1549,7 @@ describe('queue-time-outs', () => {
     events_map.set(childID, new Event());
     const handle = await DBOS.startWorkflow(DBOSTimeoutTestClass, {
       workflowID,
-      queueName: queue.name,
+      queueName: timeoutQueue.name,
       timeoutMS: 2000, // allow a dequeue interval to pass
     }).timeoutParentEnqueueWF(100);
     await events_map.get(childID)?.wait();
@@ -1554,7 +1571,7 @@ describe('queue-time-outs', () => {
     const childID: string = `${workflowID}-0`;
     const handle = await DBOS.startWorkflow(DBOSTimeoutTestClass, {
       workflowID,
-      queueName: queue.name,
+      queueName: timeoutQueue.name,
       timeoutMS: 100,
     }).timeoutParentStartDetachedChild(100);
     await expect(handle.getResult()).rejects.toThrow(new DBOSAwaitedWorkflowCancelledError(workflowID));
@@ -1574,7 +1591,7 @@ describe('queue-time-outs', () => {
     const childID: string = `${workflowID}-0`;
     const handle = await DBOS.startWorkflow(DBOSTimeoutTestClass, {
       workflowID,
-      queueName: queue.name,
+      queueName: timeoutQueue.name,
       timeoutMS: 100,
     }).timeoutParentStartDetachedChildWithSyntax(100);
     await expect(handle.getResult()).rejects.toThrow(new DBOSAwaitedWorkflowCancelledError(workflowID));
@@ -1594,7 +1611,7 @@ describe('queue-time-outs', () => {
     const childID: string = `${workflowID}-0`;
     const handle = await DBOS.startWorkflow(DBOSTimeoutTestClass, {
       workflowID,
-      queueName: queue.name,
+      queueName: timeoutQueue.name,
       timeoutMS: 100,
     }).timeoutParentEnqueueDetached(100);
     await expect(handle.getResult()).rejects.toThrow(new DBOSAwaitedWorkflowCancelledError(workflowID));
@@ -1614,7 +1631,7 @@ describe('queue-time-outs', () => {
     events_map.set(workflowID, new Event());
     const handle = await DBOS.startWorkflow(DBOSTimeoutTestClass, {
       workflowID,
-      queueName: queue.name,
+      queueName: timeoutQueue.name,
       timeoutMS: 3000,
     }).blockedWorkflow();
     await events_map.get(workflowID)?.wait();
@@ -1635,7 +1652,7 @@ describe('queue-time-outs', () => {
   });
 
   const dedupRecoveryEvent = new Event();
-  const dedupRecoveryQueue = new WorkflowQueue('dedup-recovery-queue');
+  const dedupRecoveryQueue = new WorkflowQueue('dedup-recovery-queue', { ...testPolling });
   const dedupRecoveryKey = 'my-dedup-id';
   const dedupRecoveryParentWorkflow = DBOS.registerWorkflow(
     async () => {
@@ -1681,7 +1698,7 @@ describe('queue-time-outs', () => {
 
   const partitionBlockingEvent = new Event();
   const partitionWaitingEvent = new Event();
-  const partitionQueue = new WorkflowQueue('partition-queue', { partitionQueue: true, concurrency: 1 });
+  const partitionQueue = new WorkflowQueue('partition-queue', { partitionQueue: true, concurrency: 1, ...testPolling });
 
   const partitionBlockedWorkflow = DBOS.registerWorkflow(
     async () => {
@@ -1766,7 +1783,7 @@ describe('queue-time-outs', () => {
     }, Error);
 
     // You can only enqueue with a partition key on a partitioned queue
-    const partitionlessQueue = new WorkflowQueue('partitionless-queue');
+    const partitionlessQueue = new WorkflowQueue('partitionless-queue', { ...testPolling });
     await assert.rejects(async () => {
       await DBOS.startWorkflow(partitionNormalWorkflow, {
         queueName: partitionlessQueue.name,
@@ -1781,8 +1798,8 @@ describe('queue-time-outs', () => {
     // Reset the test database
     await setUpDBOSTestSysDb(config);
 
-    const queueOne = new WorkflowQueue('queue-one');
-    const queueTwo = new WorkflowQueue('queue-two');
+    const queueOne = new WorkflowQueue('queue-one', { ...testPolling });
+    const queueTwo = new WorkflowQueue('queue-two', { ...testPolling });
     const workflow = DBOS.registerWorkflow(
       async () => {
         return Promise.resolve(DBOS.workflowID);
@@ -1830,7 +1847,7 @@ describe('delay-tests', () => {
   });
 
   class TestDelayWFs {
-    static readonly queue = new WorkflowQueue('delay-test-queue');
+    static readonly queue = new WorkflowQueue('delay-test-queue', { ...testPolling });
 
     @DBOS.workflow()
     static async testWorkflow(): Promise<void> {
