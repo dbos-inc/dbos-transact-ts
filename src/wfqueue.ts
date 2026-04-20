@@ -33,8 +33,6 @@ export interface QueueParameters {
   partitionQueue?: boolean;
   /** Base (minimum) polling interval in ms for this queue's dispatch loop (default 1000) */
   minPollingIntervalMs?: number;
-  /** Maximum polling interval in ms for this queue's dispatch loop (default 120000) */
-  maxPollingIntervalMs?: number;
 }
 
 /**
@@ -51,7 +49,6 @@ export class WorkflowQueue {
   readonly priorityEnabled: boolean = false;
   readonly partitionQueue: boolean = false;
   readonly minPollingIntervalMs?: number;
-  readonly maxPollingIntervalMs?: number;
 
   constructor(name: string);
 
@@ -79,7 +76,6 @@ export class WorkflowQueue {
       this.priorityEnabled = arg2.priorityEnabled ?? false;
       this.partitionQueue = arg2.partitionQueue ?? false;
       this.minPollingIntervalMs = arg2.minPollingIntervalMs;
-      this.maxPollingIntervalMs = arg2.maxPollingIntervalMs;
     } else {
       // Handle the case where the second argument is a number
       this.concurrency = arg2;
@@ -162,7 +158,7 @@ class WFQueueRunner {
 
   private async runQueue(exec: DBOSExecutor, queue: WorkflowQueue): Promise<void> {
     const minPollingMs = queue.minPollingIntervalMs ?? WFQueueRunner.defaultMinPollingIntervalMs;
-    const maxPollingMs = queue.maxPollingIntervalMs ?? WFQueueRunner.defaultMaxPollingIntervalMs;
+    const maxPollingMs = WFQueueRunner.defaultMaxPollingIntervalMs;
     let currentPollingMs = minPollingMs;
 
     while (this.isRunning) {

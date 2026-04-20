@@ -37,7 +37,7 @@ import {
 } from '../src/debugpoint';
 import assert from 'node:assert';
 
-const testPolling = { minPollingIntervalMs: 100, maxPollingIntervalMs: 2000 };
+const testPolling = { minPollingIntervalMs: 100 };
 const queue = new WorkflowQueue('testQ', { ...testPolling });
 const serialqueue = new WorkflowQueue('serialQ', { concurrency: 1, ...testPolling });
 const serialqueueLimited = new WorkflowQueue('serialQL', {
