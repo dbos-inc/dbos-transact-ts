@@ -65,8 +65,8 @@ jobs:
         working-directory: ./
         run: |
           npm ci
-          npm run lint
           npm run build
+          npm run lint
           npm test
         env:
           PGPASSWORD: dbos
