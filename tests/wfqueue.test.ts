@@ -52,7 +52,6 @@ const qlimit = 5;
 const qperiod = 2;
 const rlqueue = new WorkflowQueue('limited_queue', {
   rateLimit: { limitPerPeriod: qlimit, periodSec: qperiod },
-  ...testPolling,
 });
 
 describe('queued-wf-tests-simple', () => {
