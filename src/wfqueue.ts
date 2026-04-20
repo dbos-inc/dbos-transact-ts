@@ -132,7 +132,7 @@ class WFQueueRunner {
   private launchQueueLoop(queue: WorkflowQueue) {
     const loop = this.runQueue(this.exec!, queue);
     this.activeLoops.add(loop);
-    loop.finally(() => this.activeLoops.delete(loop));
+    void loop.finally(() => this.activeLoops.delete(loop));
   }
 
   async dispatchLoop(exec: DBOSExecutor, listenQueuesArg: WorkflowQueue[] | null): Promise<void> {
