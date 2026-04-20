@@ -86,7 +86,6 @@ export class WorkflowQueue {
       throw Error(`Workflow Queue '${name}' defined multiple times`);
     }
     wfQueueRunner.wfQueuesByName.set(name, this);
-    wfQueueRunner.onQueueRegistered(this);
   }
 }
 
@@ -115,14 +114,6 @@ class WFQueueRunner {
 
   clearRegistrations() {
     this.wfQueuesByName.clear();
-  }
-
-  /** Called when a new queue is registered while the runner is already active. */
-  onQueueRegistered(queue: WorkflowQueue) {
-    if (!this.isRunning || !this.exec) return;
-    // If explicitly listening to specific queues, don't auto-start for dynamically added ones
-    if (this.listenQueuesArg !== null) return;
-    this.launchQueueLoop(queue);
   }
 
   private launchQueueLoop(queue: WorkflowQueue) {
