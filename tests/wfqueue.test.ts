@@ -354,6 +354,7 @@ describe('queued-wf-tests-simple', () => {
     static taskEvents = Array.from({ length: TestQueueRecovery.queuedSteps }, () => new Event());
     static taskCount = 0;
     static queue = new WorkflowQueue('testQueueRecovery', { ...testPolling });
+    static recoveryQueue = new WorkflowQueue('recoveryQ', { concurrency: 2, ...testPolling });
 
     @DBOS.workflow()
     static async testWorkflow() {
@@ -436,21 +437,20 @@ describe('queued-wf-tests-simple', () => {
   });
 
   test('test-queue-concurrency-under-recovery', async () => {
-    const recoveryQueue = new WorkflowQueue('recoveryQ', { concurrency: 2, ...testPolling });
     const wfid1 = randomUUID();
     const wfh1 = await DBOS.startWorkflow(TestQueueRecovery, {
       workflowID: wfid1,
-      queueName: recoveryQueue.name,
+      queueName: TestQueueRecovery.recoveryQueue.name,
     }).blockedWorkflow(0);
     const wfid2 = randomUUID();
     const wfh2 = await DBOS.startWorkflow(TestQueueRecovery, {
       workflowID: wfid2,
-      queueName: recoveryQueue.name,
+      queueName: TestQueueRecovery.recoveryQueue.name,
     }).blockedWorkflow(1);
     const wfid3 = randomUUID();
     const wfh3 = await DBOS.startWorkflow(TestWFs, {
       workflowID: wfid3,
-      queueName: recoveryQueue.name,
+      queueName: TestQueueRecovery.recoveryQueue.name,
     }).noop();
 
     for (const e of TestQueueRecovery.startEvents) {
@@ -459,7 +459,7 @@ describe('queued-wf-tests-simple', () => {
     }
     expect(TestQueueRecovery.cnt).toBe(2);
 
-    const workflows = await DBOS.listQueuedWorkflows({ queueName: recoveryQueue.name });
+    const workflows = await DBOS.listQueuedWorkflows({ queueName: TestQueueRecovery.recoveryQueue.name });
     expect(workflows.length).toBe(3);
     expect(workflows[0].workflowID).toBe(wfid1);
     expect(workflows[0].executorId).toBe('local');

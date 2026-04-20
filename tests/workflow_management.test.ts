@@ -1381,6 +1381,7 @@ describe('test-fork', () => {
     config = generateDBOSTestConfig();
     DBOS.setConfig(config);
   });
+  let _queue: WorkflowQueue;
   beforeEach(async () => {
     ExampleWorkflow.stepOneCount = 0;
     ExampleWorkflow.stepTwoCount = 0;
@@ -1392,6 +1393,7 @@ describe('test-fork', () => {
     ExampleWorkflow.transactionThreeCount = 0;
     ExampleWorkflow.childWorkflowCount = 0;
     await setUpDBOSTestSysDb(config);
+    _queue = new WorkflowQueue('test_resume_fork_queue');
     await DBOS.launch();
   });
   afterEach(async () => {
@@ -1953,8 +1955,6 @@ describe('test-fork', () => {
   }
 
   test('test-resume-and-fork-to-queue', async () => {
-    const _queue = new WorkflowQueue('test_resume_fork_queue');
-
     ResumeForkQueueWorkflow.stepOneCount = 0;
     ResumeForkQueueWorkflow.stepTwoCount = 0;
     ResumeForkQueueWorkflow.step1Gate = new Event();
