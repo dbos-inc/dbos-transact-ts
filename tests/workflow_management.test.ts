@@ -1377,7 +1377,7 @@ describe('test-list-steps', () => {
 
 describe('test-fork', () => {
   let config: DBOSConfig;
-  var _queue = new WorkflowQueue('test_resume_fork_queue');
+  const _queue = new WorkflowQueue('test_resume_fork_queue');
   beforeAll(() => {
     config = generateDBOSTestConfig();
     DBOS.setConfig(config);
