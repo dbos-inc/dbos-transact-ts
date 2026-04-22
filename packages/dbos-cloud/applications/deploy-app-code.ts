@@ -415,15 +415,15 @@ export async function deployAppCode(
     let applicationAvailable = false;
     while (!applicationAvailable) {
       count += 1;
-      if (count % 50 === 0) {
+      if (count % 5 === 0) {
         logger.info(`Waiting for ${appName} with version ${deployOutput.ApplicationVersion} to be available`);
-        if (count > 200) {
+        if (count > 20) {
           logger.info(
             `If ${appName} takes too long to become available, check its logs with 'dbos-cloud applications logs'`,
           );
         }
       }
-      if (count > 1800) {
+      if (count > 180) {
         logger.error('Application taking too long to become available');
         return 1;
       }
@@ -440,7 +440,7 @@ export async function deployAppCode(
           applicationAvailable = true;
         }
       }
-      await sleepms(100);
+      await sleepms(1000);
     }
     logger.info(`Successfully deployed ${appName}!`);
     logger.info(`Access your application at https://${userCredentials.organization}-${appName}.${host}/`);
