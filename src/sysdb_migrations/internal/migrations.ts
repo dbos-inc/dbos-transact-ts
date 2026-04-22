@@ -2,9 +2,10 @@ import type { DBMigration } from '../migration_runner';
 
 export function allMigrations(
   schemaName: string = 'dbos',
-  opts?: { useListenNotify?: boolean },
+  opts?: { useListenNotify?: boolean; isCockroach?: boolean },
 ): ReadonlyArray<DBMigration> {
   const useListenNotify = opts?.useListenNotify ?? true;
+  const isCockroach = opts?.isCockroach ?? false;
   return [
     {
       name: '20240123182943_schema',
@@ -397,20 +398,22 @@ export function allMigrations(
       ],
     },
     {
-      pg: [
-        `ALTER FUNCTION "${schemaName}".enqueue_workflow(
+      pg: isCockroach
+        ? []
+        : [
+            `ALTER FUNCTION "${schemaName}".enqueue_workflow(
             TEXT, TEXT, JSON[], JSON, TEXT, TEXT, TEXT, TEXT, BIGINT, BIGINT, TEXT, INTEGER, TEXT
         ) SET search_path = pg_catalog, pg_temp;`,
-        `ALTER FUNCTION "${schemaName}".send_message(
+            `ALTER FUNCTION "${schemaName}".send_message(
             TEXT, JSON, TEXT, TEXT
         ) SET search_path = pg_catalog, pg_temp;`,
-        ...(useListenNotify
-          ? [
-              `ALTER FUNCTION "${schemaName}".notifications_function() SET search_path = pg_catalog, pg_temp;`,
-              `ALTER FUNCTION "${schemaName}".workflow_events_function() SET search_path = pg_catalog, pg_temp;`,
-            ]
-          : []),
-      ],
+            ...(useListenNotify
+              ? [
+                  `ALTER FUNCTION "${schemaName}".notifications_function() SET search_path = pg_catalog, pg_temp;`,
+                  `ALTER FUNCTION "${schemaName}".workflow_events_function() SET search_path = pg_catalog, pg_temp;`,
+                ]
+              : []),
+          ],
     },
   ];
 }

@@ -252,7 +252,9 @@ export async function ensureSystemDatabase(
   }
 
   try {
-    await runSysMigrationsPg(client, allMigrations(schemaName, { useListenNotify }), schemaName, {
+    const versionRes = await client.query<{ version: string }>('SELECT version() AS version');
+    const isCockroach = /cockroachdb/i.test(versionRes.rows[0]?.version ?? '');
+    await runSysMigrationsPg(client, allMigrations(schemaName, { useListenNotify, isCockroach }), schemaName, {
       onWarn: (e: string) => logger.info(e),
     });
   } finally {
