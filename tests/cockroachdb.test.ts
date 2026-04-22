@@ -91,7 +91,7 @@ describeIf('cockroachdb', () => {
     const handle = await DBOS.startWorkflow(CRDBTestClass).receiveWorkflow();
     await DBOS.send(handle.workflowID, 'hello');
     expect(await handle.getResult()).toBe('hello');
-  }, 10000);
+  });
 
   test('set-and-get-events', async () => {
     const handle = await DBOS.startWorkflow(CRDBTestClass).eventWorkflow();
@@ -197,5 +197,5 @@ describeIf('cockroachdb', () => {
       await client.end();
     }
     expect(await handle.getResult()).toBe('hello');
-  }, 10000);
+  });
 });

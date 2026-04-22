@@ -67,7 +67,7 @@ describe('queued-wf-tests-simple', () => {
 
   afterEach(async () => {
     await DBOS.shutdown();
-  }, 10000);
+  });
 
   test('simple-queue', async () => {
     const wfid = randomUUID();
@@ -91,19 +91,19 @@ describe('queued-wf-tests-simple', () => {
 
   test('one-at-a-time', async () => {
     await runOneAtATime(serialqueue);
-  }, 10000);
+  });
 
   test('child-wfs-queue', async () => {
     expect(await TestChildWFs.testWorkflow('a', 'b')).toBe('adbdadbd');
-  }, 10000);
+  });
 
   test('test_one_at_a_time_with_limiter', async () => {
     await runOneAtATime(serialqueueLimited);
-  }, 10000);
+  });
 
   test('test_one_at_a_time_with_worker_concurrency', async () => {
     await runOneAtATime(workerConcurrencyQueue);
-  }, 10000);
+  });
 
   test('test-queue_rate_limit', async () => {
     const handles: WorkflowHandle<number>[] = [];
@@ -142,7 +142,7 @@ describe('queued-wf-tests-simple', () => {
     for (const h of handles) {
       expect((await h.getStatus())!.status).toBe(StatusString.SUCCESS);
     }
-  }, 20000);
+  });
 
   test('test_multiple_queues', async () => {
     let wfRes: () => void = () => {};
@@ -208,7 +208,7 @@ describe('queued-wf-tests-simple', () => {
 
     // Verify all queue entries eventually get cleaned up.
     expect(await queueEntriesAreCleanedUp()).toBe(true);
-  }, 15000);
+  });
 
   test('test_one_at_a_time_with_crash', async () => {
     let wfqRes: () => void = () => {};
@@ -236,7 +236,7 @@ describe('queued-wf-tests-simple', () => {
     const wfh2b = DBOS.retrieveWorkflow(wfh2.workflowID);
     expect(await wfh1b.getResult()).toBe('ab');
     expect(await wfh2b.getResult()).toBe('cd');
-  }, 10000);
+  });
 
   test('queue workflow in recovered workflow', async () => {
     expect(WF.x).toBe(5);
@@ -516,7 +516,7 @@ describe('queued-wf-tests-simple', () => {
     } finally {
       await systemDBClient.end();
     }
-  }, 20000);
+  });
 
   class TestCancelQueues {
     static startEvent = new Event();
@@ -765,7 +765,7 @@ describe('queued-wf-tests-simple', () => {
     expect(await forkedHandle.getResult()).toEqual(expected);
 
     expect(await queueEntriesAreCleanedUp()).toBe(true);
-  }, 30000);
+  });
 });
 
 const waitFirstQueue = new WorkflowQueue('wait_first_queue', { concurrency: 5 });
@@ -1236,7 +1236,7 @@ describe('enqueue-options', () => {
 
     const result4 = await wfh4.getResult();
     expect(result4).toBe('xyz-c-p');
-  }, 20000);
+  });
 
   class TestPriority {
     static resolveEvent: () => void;
@@ -1316,7 +1316,7 @@ describe('enqueue-options', () => {
         enqueueOptions: { priority: DBOS_QUEUE_MAX_PRIORITY + 1 },
       }).parentWorkflow(7),
     ).rejects.toBeInstanceOf(DBOSInvalidQueuePriorityError);
-  }, 30000);
+  });
 
   class SetPriorityTest {
     static setPriorityQueue = new WorkflowQueue('test_set_priority_queue', { concurrency: 1, priorityEnabled: true });
@@ -1388,7 +1388,7 @@ describe('enqueue-options', () => {
     await expect(DBOS.setWorkflowPriority('some-id', DBOS_QUEUE_MAX_PRIORITY + 1)).rejects.toBeInstanceOf(
       DBOSInvalidQueuePriorityError,
     );
-  }, 30000);
+  });
 });
 
 describe('queue-time-outs', () => {
@@ -1773,7 +1773,7 @@ describe('queue-time-outs', () => {
         enqueueOptions: { queuePartitionKey: 'test' },
       })();
     }, Error);
-  }, 20000);
+  });
 
   test('explicit-queue-listen-test', async () => {
     await DBOS.shutdown();
@@ -1809,7 +1809,7 @@ describe('queue-time-outs', () => {
     assert.equal(await retrievedHandle.getResult(), retrievedHandle.workflowID);
     const forkedHandle = await DBOS.forkWorkflow(handleTwo.workflowID, 0);
     assert.equal(await forkedHandle.getResult(), forkedHandle.workflowID);
-  }, 10000);
+  });
 });
 
 describe('delay-tests', () => {
@@ -1929,7 +1929,7 @@ describe('delay-tests', () => {
         enqueueOptions: { delaySeconds: 60, deduplicationID: dedupID },
       }).testWorkflow(),
     ).rejects.toBeInstanceOf(DBOSQueueDuplicatedError);
-  }, 30000);
+  });
 
   test('test_delay_cancel_resume', async () => {
     // Cancel a DELAYED workflow — it should never run
@@ -1954,7 +1954,7 @@ describe('delay-tests', () => {
     await DBOS.resumeWorkflow(resumeHandle.workflowID);
     expect(await resumeHandle.getResult()).toBe('done');
     expect((await resumeHandle.getStatus())?.status).toBe(StatusString.SUCCESS);
-  }, 15000);
+  });
 
   test('test_setWorkflowDelay', async () => {
     // Start a workflow with a long delay
@@ -1982,7 +1982,7 @@ describe('delay-tests', () => {
 
     // Test invalid delay
     await expect(DBOS.setWorkflowDelay('some-id', -1)).rejects.toThrow('delaySeconds must be greater than 0');
-  }, 30000);
+  });
 
   test('test_setWorkflowDelay_options', async () => {
     // Test with delaySeconds option
@@ -2016,5 +2016,5 @@ describe('delay-tests', () => {
     expect(status2?.status).toBe(StatusString.DELAYED);
     expect(status2!.delayUntilEpochMS).toBe(deadline);
     expect(await handle2.getResult()).toBe('done');
-  }, 30000);
+  });
 });

@@ -17,7 +17,7 @@ describe('debouncer-tests', () => {
 
   afterEach(async () => {
     await DBOS.shutdown();
-  }, 10000);
+  });
 
   // Register a simple workflow for testing
   const workflow = DBOS.registerWorkflow(
@@ -80,7 +80,7 @@ describe('debouncer-tests', () => {
     await recoverHandle!.getResult();
     const status = await recoverHandle!.getStatus();
     assert.equal(status?.status, StatusString.SUCCESS);
-  }, 30000);
+  });
 
   test('test-debouncer-timeout', async () => {
     const firstValue = 0;
@@ -122,7 +122,7 @@ describe('debouncer-tests', () => {
     assert.equal(fifthHandle.workflowID, sixthHandle.workflowID);
     assert.equal(await fifthHandle.getResult(), secondValue);
     assert.equal(await sixthHandle.getResult(), secondValue);
-  }, 30000);
+  });
 
   test('test-multiple-debouncers', async () => {
     const firstValue = 0;
@@ -154,7 +154,7 @@ describe('debouncer-tests', () => {
     assert.equal(await secondHandle.getResult(), secondValue);
     assert.equal(await thirdHandle.getResult(), fourthValue);
     assert.equal(await fourthHandle.getResult(), fourthValue);
-  }, 30000);
+  });
 
   test('test-debouncer-queue', async () => {
     const firstValue = 0;
@@ -190,7 +190,7 @@ describe('debouncer-tests', () => {
     assert.equal(fourthStatus?.queueName, queue.name);
     assert.equal(fourthStatus?.timeoutMS, 5000);
     assert(fourthStatus?.deadlineEpochMS);
-  }, 30000);
+  });
 
   test('test-debouncer-client', async () => {
     const firstValue = 0;
@@ -287,5 +287,5 @@ describe('debouncer-tests', () => {
     assert.equal(await fifthHandle.getResult(), sixthValue);
     assert.equal(await fifthHandle.getResult(), sixthValue);
     await client.destroy();
-  }, 30000);
+  });
 });

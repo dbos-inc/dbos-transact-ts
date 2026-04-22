@@ -394,7 +394,7 @@ describe('workflow-management-tests', () => {
     );
     // expect(result.rows[0].attempts).toBe(String(1));
     expect(result.rows[0].status).toBe(StatusString.SUCCESS);
-  }, 30000);
+  });
 
   test('systemdb-migration-backward-compatible', async () => {
     // Make sure the system DB migration failure is handled correctly.
@@ -465,7 +465,7 @@ describe('test-list-queues', () => {
 
   afterEach(async () => {
     await DBOS.shutdown();
-  }, 20000);
+  });
 
   class TestListQueues {
     static queuedSteps = 5;
@@ -1589,7 +1589,7 @@ describe('test-fork', () => {
     expect(notForkedFromIDs).toContain(forkedWithTimeout.workflowID);
     expect(notForkedFromIDs).toContain(forkedHandle2.workflowID);
     expect(notForkedFromIDs).toContain(forkedHandle3.workflowID);
-  }, 10000);
+  });
 
   test('test-fork-from-failure', async () => {
     ExampleWorkflow.stepOneCount = 0;
@@ -1682,7 +1682,7 @@ describe('test-fork', () => {
     expect(forkedFromIDs).toContain(wf1Id);
     expect(forkedFromIDs).toContain(wf2Id);
     expect(forkedFromIDs).toContain(wf3Id);
-  }, 15000);
+  });
 
   test('test-fork-childwf', async () => {
     const wfid = randomUUID();
@@ -1868,7 +1868,7 @@ describe('test-fork', () => {
       }
       expect(finalValues).toEqual([0, 1, 2]);
     }
-  }, 10000);
+  });
 
   const testForkEventsKey = 'event_key';
   const testForkEventsEvent = new Event();
@@ -1920,7 +1920,7 @@ describe('test-fork', () => {
       expect(await forkHandle.getResult()).toBeTruthy();
       expect(await DBOS.getEvent(forkHandle.workflowID, testForkEventsKey)).toBe(2);
     }
-  }, 10000);
+  });
 
   class ResumeForkQueueWorkflow {
     static stepOneCount = 0;
@@ -2001,7 +2001,7 @@ describe('test-fork', () => {
     await expect(forkedHandle.getResult()).resolves.toBe(expectedOutput);
     expect(ResumeForkQueueWorkflow.stepOneCount).toBe(1); // Step 1 replayed from checkpoint
     expect(ResumeForkQueueWorkflow.stepTwoCount).toBe(2); // Step 2 was re-executed
-  }, 30000);
+  });
 
   let replacementChildMultiplier = 2;
 
@@ -2065,7 +2065,7 @@ describe('test-fork', () => {
     });
     const forkedResult = await forkedParent.getResult();
     expect(forkedResult).toBe(1020); // [100, 40, 300, 80, 500]
-  }, 15000);
+  });
 });
 
 describe('wf-cancel-tests', () => {
@@ -2086,7 +2086,7 @@ describe('wf-cancel-tests', () => {
 
   afterEach(async () => {
     await DBOS.shutdown();
-  }, 10000);
+  });
 
   test('test-two-steps-cancel-resume', async () => {
     const wfid = randomUUID();

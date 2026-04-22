@@ -18,7 +18,7 @@ describe('metrics-tests', () => {
 
   afterEach(async () => {
     await DBOS.shutdown();
-  }, 10000);
+  });
 
   const sysDB = () => DBOSExecutor.globalInstance!.systemDatabase;
 
@@ -65,5 +65,5 @@ describe('metrics-tests', () => {
     // Verify step counts
     assert.equal(metricsMap.get('step_count:testStepX'), 4);
     assert.equal(metricsMap.get('step_count:testStepY'), 1);
-  }, 30000);
+  });
 });

@@ -119,7 +119,7 @@ describe('queued-wf-tests-simple', () => {
 
   afterEach(async () => {
     await DBOS.shutdown();
-  }, 10000);
+  });
 
   // Test that functions run
   test('run-step-tx', async () => {
@@ -128,7 +128,7 @@ describe('queued-wf-tests-simple', () => {
 
     expect(StaticStep.stepCnt).toBe(1);
     expect(InstanceStep.stepCnt).toBe(1);
-  }, 10000);
+  });
 
   // Test that functions run as workflows
   test('start-step-tx', async () => {
@@ -137,7 +137,7 @@ describe('queued-wf-tests-simple', () => {
 
     expect(StaticStep.stepCnt).toBe(1);
     expect(InstanceStep.stepCnt).toBe(1);
-  }, 10000);
+  });
 
   // Test that functions run as workflows w/ assigned IDs
   test('start-step-tx-wfid', async () => {
@@ -150,7 +150,7 @@ describe('queued-wf-tests-simple', () => {
 
     expect(StaticStep.stepCnt).toBe(1);
     expect(InstanceStep.stepCnt).toBe(1);
-  }, 10000);
+  });
 
   // Test that functions run as workflows w/ assigned IDs and q
   test('start-step-tx-wfid', async () => {
@@ -178,7 +178,7 @@ describe('queued-wf-tests-simple', () => {
 
     expect(StaticStep.stepCnt).toBe(1);
     expect(InstanceStep.stepCnt).toBe(1);
-  }, 10000);
+  });
 
   // Test that functions run (from wf)
   test('run-step-tx-wf', async () => {
@@ -186,7 +186,7 @@ describe('queued-wf-tests-simple', () => {
 
     expect(StaticStep.stepCnt).toBe(1);
     expect(InstanceStep.stepCnt).toBe(1);
-  }, 10000);
+  });
 
   // Test that functions run as child WFs (from wf)
   test('run-step-tx-cwf', async () => {
@@ -194,7 +194,7 @@ describe('queued-wf-tests-simple', () => {
 
     expect(StaticStep.stepCnt).toBe(1);
     expect(InstanceStep.stepCnt).toBe(1);
-  }, 10000);
+  });
 
   // Test that functions run as child WFs (from wf)
   test('run-step-tx-wfq', async () => {
@@ -209,7 +209,7 @@ describe('queued-wf-tests-simple', () => {
 
     expect(StaticStep.stepCnt).toBe(1);
     expect(InstanceStep.stepCnt).toBe(1);
-  }, 30000);
+  });
 
   // Test that functions run (from wf)
   test('run-step-tx-wf-onq', async () => {
@@ -223,7 +223,7 @@ describe('queued-wf-tests-simple', () => {
 
     expect(StaticStep.stepCnt).toBe(3);
     expect(InstanceStep.stepCnt).toBe(3);
-  }, 10000);
+  });
 
   test('test-queue-recovery', async () => {
     const wfid = randomUUID();
@@ -259,7 +259,7 @@ describe('queued-wf-tests-simple', () => {
 
     // Verify all queue entries eventually get cleaned up
     expect(await queueEntriesAreCleanedUp()).toBe(true);
-  }, 10000);
+  });
 });
 
 class TestQueueRecoveryInst extends ConfiguredInstance {

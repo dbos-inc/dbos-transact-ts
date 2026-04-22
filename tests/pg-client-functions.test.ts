@@ -66,7 +66,7 @@ describe('PostgreSQL Client Functions', () => {
     } finally {
       await DBOS.shutdown();
     }
-  }, 20000);
+  });
 
   // Test error handling for non-existent workflow
   test('pg-send-to-nonexistent-workflow', async () => {
@@ -149,7 +149,7 @@ describe('PostgreSQL Client Functions', () => {
     } finally {
       await DBOS.shutdown();
     }
-  }, 20000);
+  });
 
   test('pg-enqueue-gen-wfid', async () => {
     const dbClient = new Client(poolConfig);
@@ -204,5 +204,5 @@ describe('PostgreSQL Client Functions', () => {
     } finally {
       await DBOS.shutdown();
     }
-  }, 20000);
+  });
 });

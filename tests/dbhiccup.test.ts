@@ -89,5 +89,5 @@ describe('sys-db-hiccup', () => {
 
     await expect(h1.getResult()).resolves.toBe('Part1hello1');
     await expect(h2.getResult()).resolves.toBe('Part2v1');
-  }, 30000);
+  });
 });

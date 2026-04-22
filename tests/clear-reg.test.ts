@@ -55,5 +55,5 @@ describe('clear-reg-tests', () => {
         await DBOS.shutdown({ deregister: true });
       }
     }
-  }, 20000);
+  });
 });

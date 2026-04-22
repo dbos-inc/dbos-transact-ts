@@ -88,7 +88,7 @@ describe('running-admin-server-tests', () => {
   afterEach(async () => {
     await systemDBClient.end();
     await DBOS.shutdown();
-  }, 10000);
+  });
 
   const testQueueOne = new WorkflowQueue('test-queue-1');
   const testQueueTwo = new WorkflowQueue('test-queue-2', { concurrency: 1 });

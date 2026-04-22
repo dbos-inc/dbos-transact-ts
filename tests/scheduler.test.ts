@@ -26,7 +26,7 @@ describe('dynamic-scheduler-tests', () => {
 
   afterEach(async () => {
     await DBOS.shutdown();
-  }, 10000);
+  });
 
   // ---------------------------------------------------------------------------
   // schedule-crud
@@ -389,7 +389,7 @@ describe('dynamic-scheduler-tests', () => {
 
     await DBOS.deleteSchedule('fire-a');
     await DBOS.deleteSchedule('fire-b');
-  }, 30000);
+  });
 
   // --- Delete stops firing ---
   let deleteCounter = 0;
@@ -417,7 +417,7 @@ describe('dynamic-scheduler-tests', () => {
     const snapshot = deleteCounter;
     await sleepms(3000);
     expect(deleteCounter).toBe(snapshot);
-  }, 30000);
+  });
 
   // --- Add after launch ---
   let addAfterCounter = 0;
@@ -443,7 +443,7 @@ describe('dynamic-scheduler-tests', () => {
     });
 
     await DBOS.deleteSchedule('add-after');
-  }, 30000);
+  });
 
   // --- Replace schedule ---
   const replaceResults: { count: number; contexts: unknown[] } = { count: 0, contexts: [] };
@@ -507,7 +507,7 @@ describe('dynamic-scheduler-tests', () => {
     }
 
     await DBOS.deleteSchedule('replace-test');
-  }, 30000);
+  });
 
   // --- Long schedule shutdown ---
   let longCounter = 0;
@@ -529,7 +529,7 @@ describe('dynamic-scheduler-tests', () => {
     await sleepms(3000);
     expect(longCounter).toBe(0);
     // Test passes if DBOS.shutdown() in afterEach doesn't hang/timeout
-  }, 30000);
+  });
 
   // --- Pause/Resume ---
   let pauseCounter = 0;
@@ -572,7 +572,7 @@ describe('dynamic-scheduler-tests', () => {
     });
 
     await DBOS.deleteSchedule('pause-test');
-  }, 30000);
+  });
 
   // ---------------------------------------------------------------------------
   // Trigger schedule
@@ -617,7 +617,7 @@ describe('dynamic-scheduler-tests', () => {
     await expect(DBOS.triggerSchedule('nonexistent')).rejects.toThrow(/not found/);
 
     await DBOS.deleteSchedule('trigger-test');
-  }, 30000);
+  });
 
   // ---------------------------------------------------------------------------
   // Backfill schedule
@@ -720,7 +720,7 @@ describe('dynamic-scheduler-tests', () => {
 
     // Backfilling a nonexistent schedule should throw
     await expect(DBOS.backfillSchedule('nonexistent', everyMinStart, everyMinEnd)).rejects.toThrow(/not found/);
-  }, 30000);
+  });
 
   // ---------------------------------------------------------------------------
   // Backfill with timezone
@@ -797,7 +797,7 @@ describe('dynamic-scheduler-tests', () => {
 
     await DBOS.deleteSchedule('tz-utc');
     await DBOS.deleteSchedule('tz-ny');
-  }, 30000);
+  });
 
   // ---------------------------------------------------------------------------
   // Automatic backfill on restart
@@ -854,7 +854,7 @@ describe('dynamic-scheduler-tests', () => {
     }
 
     await DBOS.deleteSchedule('backfill-restart');
-  }, 30000);
+  });
 
   // ---------------------------------------------------------------------------
   // Class-based workflows
@@ -897,7 +897,7 @@ describe('dynamic-scheduler-tests', () => {
     expect(ScheduledClass.counter).toBeGreaterThan(snapshot);
 
     await DBOS.deleteSchedule('class-static-test');
-  }, 30000);
+  });
 
   // Instance method on a ConfiguredInstance — should fail at createSchedule time
   class InstanceScheduleClass extends ConfiguredInstance {
@@ -918,7 +918,7 @@ describe('dynamic-scheduler-tests', () => {
         schedule: '* * * * * *',
       }),
     ).rejects.toThrow(/instance method/i);
-  }, 30000);
+  });
 
   // ---------------------------------------------------------------------------
   // Client schedule tests
@@ -1110,7 +1110,7 @@ describe('dynamic-scheduler-tests', () => {
     } finally {
       await client.destroy();
     }
-  }, 30000);
+  });
 
   test('test_client_backfill_schedule', async () => {
     clientBackfillResults.dates = [];
@@ -1152,7 +1152,7 @@ describe('dynamic-scheduler-tests', () => {
     } finally {
       await client.destroy();
     }
-  }, 30000);
+  });
 
   test('test_client_pause_resume_schedule', async () => {
     const client = await DBOSClient.create({ systemDatabaseUrl: config.systemDatabaseUrl! });
@@ -1238,5 +1238,5 @@ describe('dynamic-scheduler-tests', () => {
     expect(noQueueSched).not.toBeNull();
     expect(noQueueSched!.queueName).toBeNull();
     await DBOS.deleteSchedule('no-queue-schedule');
-  }, 30000);
+  });
 });

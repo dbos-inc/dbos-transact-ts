@@ -740,7 +740,7 @@ describe('portable-serizlization-tests', () => {
     } finally {
       await client.destroy();
     }
-  }, 15000);
+  });
 });
 
 // Workflows for custom-serializer-restart tests (registered at module level)
@@ -856,7 +856,7 @@ describe('custom-serializer-restart-tests', () => {
     expect(p2Evt.rows[0].serialization).toBe('custom_base64');
 
     process.env.DBOS__APPVERSION = undefined;
-  }, 30000);
+  });
 
   test('test-remove-custom-serializer-errors', async () => {
     // Phase 1: Launch with custom serializer, create data
@@ -956,5 +956,5 @@ describe('custom-serializer-restart-tests', () => {
     expect(setEventStep).toBeDefined();
 
     process.env.DBOS__APPVERSION = undefined;
-  }, 30000);
+  });
 });

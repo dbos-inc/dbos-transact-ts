@@ -173,9 +173,9 @@ async function main11() {
 describe('dbos-v2api-tests-main', () => {
   test('transitions', async () => {
     await main9();
-  }, 15000);
+  });
 
   test('double decorator error', async () => {
     await main11();
-  }, 15000);
+  });
 });

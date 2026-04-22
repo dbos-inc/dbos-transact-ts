@@ -112,11 +112,11 @@ describe('event-receiver-tests-v3', () => {
 
   beforeEach(async () => {
     await DBOS.launch();
-  }, 30000);
+  });
 
   afterEach(async () => {
     await DBOS.shutdown();
-  }, 30000);
+  });
 
   test('wf-event', async () => {
     const _dropPromise = erd.deliver3Events();
@@ -127,7 +127,7 @@ describe('event-receiver-tests-v3', () => {
       await sleepms(100);
     }
     expect(MyEventReceiver.callNumSum).toBe(66);
-  }, 30000);
+  });
 
   test('sysdb-el-state-time', async () => {
     const r0 = await DBOS.getEventDispatchState('test', 'func', 'key0');
