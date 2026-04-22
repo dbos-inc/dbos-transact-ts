@@ -11,7 +11,6 @@ jobs:
       fail-fast: false
       matrix:
         node-version: ['20', '22', '24']
-        db: [postgres, cockroachdb]
 
     services:
       # Postgres service container
@@ -75,6 +74,38 @@ jobs:
           DB_USER: postgres
           KAFKA_BROKER: localhost:9092
           DBOS_COCKROACHDB_URL: postgresql://root@localhost:26257/postgres
-          DBOS_TEST_DB_URL: ${{ matrix.db == 'cockroachdb' && 'postgresql://root@localhost:26257/dbostest?sslmode=disable' || '' }}
+          NPM_AUTH_TOKEN: ${{secrets.GITHUB_TOKEN}}
+          SILENCE_LOGS: true
+
+  cockroachdb:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    services:
+      cockroachdb:
+        image: cockroachdb/cockroach:latest
+        ports:
+          - 26257:26257
+        env:
+          COCKROACH_ARGS: start-single-node --insecure
+        options: >-
+          --health-cmd "curl -f http://localhost:8080/health?ready=1 || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4.1.1
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4.0.2
+        with:
+          node-version: '24'
+      - name: Compile and Test
+        working-directory: ./
+        run: |
+          npm ci
+          npm run build
+          npm test
+        env:
+          DBOS_TEST_DB_URL: postgresql://root@localhost:26257/dbostest?sslmode=disable
+          DBOS_COCKROACHDB_URL: postgresql://root@localhost:26257/postgres
           NPM_AUTH_TOKEN: ${{secrets.GITHUB_TOKEN}}
           SILENCE_LOGS: true
