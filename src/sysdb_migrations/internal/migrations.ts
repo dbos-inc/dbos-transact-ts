@@ -396,5 +396,21 @@ export function allMigrations(
         `CREATE INDEX "idx_operation_outputs_completed_at_function_name" ON "${schemaName}"."operation_outputs" ("completed_at_epoch_ms", "function_name")`,
       ],
     },
+    {
+      pg: [
+        `ALTER FUNCTION "${schemaName}".enqueue_workflow(
+            TEXT, TEXT, JSON[], JSON, TEXT, TEXT, TEXT, TEXT, BIGINT, BIGINT, TEXT, INTEGER, TEXT
+        ) SET search_path = pg_catalog, pg_temp;`,
+        `ALTER FUNCTION "${schemaName}".send_message(
+            TEXT, JSON, TEXT, TEXT
+        ) SET search_path = pg_catalog, pg_temp;`,
+        ...(useListenNotify
+          ? [
+              `ALTER FUNCTION "${schemaName}".notifications_function() SET search_path = pg_catalog, pg_temp;`,
+              `ALTER FUNCTION "${schemaName}".workflow_events_function() SET search_path = pg_catalog, pg_temp;`,
+            ]
+          : []),
+      ],
+    },
   ];
 }
