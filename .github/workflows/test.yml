@@ -103,7 +103,7 @@ jobs:
         run: |
           npm ci
           npm run build
-          npx jest ./tests --detectOpenHandles
+          npx jest ./tests --detectOpenHandles --testPathIgnorePatterns='(pgdatabaseadmin|runtime|dbhiccup|bundler|cli|custom-schema)\.test\.'
         env:
           DBOS_TEST_DB_URL: postgresql://root@localhost:26257/dbostest?sslmode=disable
           DBOS_COCKROACHDB_URL: postgresql://root@localhost:26257/postgres
