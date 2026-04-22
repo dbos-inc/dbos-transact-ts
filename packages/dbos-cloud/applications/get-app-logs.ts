@@ -1,4 +1,5 @@
 import axios, { AxiosError } from 'axios';
+import https from 'https';
 import {
   handleAPIErrors,
   getCloudCredentials,
@@ -57,6 +58,7 @@ export async function getAppLogs(
     'Content-Type': 'application/json',
     Authorization: bearerToken,
   };
+  const httpsAgent = new https.Agent({ keepAlive: false });
   const $upto = upto?.toUTC().toFormat('yyyy-MM-dd HH:mm:ss.SSS000');
   const params = {
     format: 'json',
@@ -66,7 +68,7 @@ export async function getAppLogs(
     limit: pagesize,
   };
   try {
-    const res = await axios.get(url, { headers: headers, params: params });
+    const res = await axios.get(url, { headers: headers, params: params, httpsAgent });
     const logResponse = res.data as LogResponse;
     if (logResponse.end && logResponse.body === '') {
       logger.info(`No logs found for the specified parameters`);
@@ -81,7 +83,7 @@ export async function getAppLogs(
           since: nextTs,
           upto: $upto,
         };
-        const nextPage = await axios.get(url, { headers: headers, params: pageParams });
+        const nextPage = await axios.get(url, { headers: headers, params: pageParams, httpsAgent });
         const logResponse = nextPage.data as LogResponse;
         console.log(logResponse.body.trimEnd());
         more = !logResponse.end;
