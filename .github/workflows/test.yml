@@ -103,7 +103,7 @@ jobs:
         run: |
           npm ci
           npm run build
-          npm test
+          npx jest ./tests --detectOpenHandles
         env:
           DBOS_TEST_DB_URL: postgresql://root@localhost:26257/dbostest?sslmode=disable
           DBOS_COCKROACHDB_URL: postgresql://root@localhost:26257/postgres
