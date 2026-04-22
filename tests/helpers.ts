@@ -20,18 +20,24 @@ function getSysDatabaseUrlFromUserDb(userDB: string) {
 }
 
 export function generateDBOSTestConfig(): DBOSConfig {
-  const dbPassword: string | undefined = process.env.DB_PASSWORD || process.env.PGPASSWORD;
-  if (!dbPassword) {
-    throw new Error('DB_PASSWORD or PGPASSWORD environment variable not set');
-  }
   const _silenceLogs = process.env.SILENCE_LOGS === 'true';
 
-  const databaseUrl = `postgresql://postgres:${dbPassword}@localhost:5432/dbostest?sslmode=disable`;
+  let databaseUrl = process.env.DBOS_TEST_DB_URL;
+  if (!databaseUrl) {
+    const dbPassword: string | undefined = process.env.DB_PASSWORD || process.env.PGPASSWORD;
+    if (!dbPassword) {
+      throw new Error('DB_PASSWORD or PGPASSWORD environment variable not set');
+    }
+    databaseUrl = `postgresql://postgres:${dbPassword}@localhost:5432/dbostest?sslmode=disable`;
+  }
   const systemDatabaseUrl = getSysDatabaseUrlFromUserDb(databaseUrl);
+
+  const isCockroach = new URL(databaseUrl).port === '26257';
 
   return {
     name: 'dbostest',
     systemDatabaseUrl,
+    ...(isCockroach ? { useListenNotify: false } : {}),
   };
 }
 

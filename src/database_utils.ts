@@ -230,9 +230,16 @@ export async function ensurePGDatabase(opts: EnsureDatabaseOptions): Promise<Ens
     try {
       const probe = await connectToPGAndReportOutcome(opts.urlToEnsure, log, 'probe target (existence test)');
       if (probe.result === 'ok') {
-        // We can reach the target DB, do nothing
-        await probe.client.end().catch(() => {});
-        return { status: 'already_exists', notes, message: 'Success (already existed)' };
+        // CockroachDB lets you connect to (and SELECT 1 from) a nonexistent database;
+        // hit a catalog that requires the current database to exist to verify.
+        try {
+          await probe.client.query('SELECT 1 FROM information_schema.schemata LIMIT 1');
+          await probe.client.end().catch(() => {});
+          return { status: 'already_exists', notes, message: 'Success (already existed)' };
+        } catch (qerr) {
+          await probe.client.end().catch(() => {});
+          log(`Probe connect succeeded but verification query failed: ${(qerr as Error).message}; attempting create.`);
+        }
       }
     } catch (e) {
       log(`Caught error probing database: (e as Error).message; attempting create.`);
@@ -465,11 +472,15 @@ async function terminateAndDrop(
   } catch (e) {
     log(`ALTER DATABASE ... ALLOW_CONNECTIONS=false failed (continuing): ${shortenErr(e as Error)}`);
   }
-  // Terminate existing sessions
-  await admin.query(
-    `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()`,
-    [dbName],
-  );
+  // Terminate existing sessions (best-effort; not all servers expose pg_terminate_backend, e.g. CockroachDB)
+  try {
+    await admin.query(
+      `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()`,
+      [dbName],
+    );
+  } catch (e) {
+    log(`pg_terminate_backend failed (continuing): ${shortenErr(e as Error)}`);
+  }
   if (settleMs > 0) {
     log(`Waiting ${settleMs}ms for backends to terminate...`);
     await new Promise((r) => setTimeout(r, settleMs));
@@ -482,10 +493,14 @@ async function terminateAndDrop(
     if (e?.code === '55006') {
       log(`DB still "being accessed by other users"; retrying after extra wait...`);
       await new Promise((r) => setTimeout(r, Math.max(1000, settleMs)));
-      await admin.query(
-        `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()`,
-        [dbName],
-      );
+      try {
+        await admin.query(
+          `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()`,
+          [dbName],
+        );
+      } catch (e2) {
+        log(`pg_terminate_backend failed (continuing): ${shortenErr(e2 as Error)}`);
+      }
       await admin.query(`DROP DATABASE IF EXISTS ${quotePGIdentifier(dbName)}`);
     } else {
       throw e;
