@@ -22,7 +22,7 @@ describe('cf-scheduled-wf-tests-simple', () => {
 
   afterEach(async () => {
     await DBOS.shutdown();
-  }, 10000);
+  });
 
   test('wf-scheduled', async () => {
     // Make sure two functions with the same name in different classes are not interfering with each other.
@@ -36,7 +36,7 @@ describe('cf-scheduled-wf-tests-simple', () => {
 
     await sleepms(1000);
     expect(DBOSSchedTestClass.nCalls).toBeLessThanOrEqual(6);
-  }, 10000);
+  });
 });
 
 const q = new WorkflowQueue('schedQ', { concurrency: 1 });
@@ -139,7 +139,7 @@ describe('cf-scheduled-wf-tests-oaoo', () => {
 
   beforeEach(async () => {});
 
-  afterEach(async () => {}, 10000);
+  afterEach(async () => {});
 
   test('wf-scheduled-recover', async () => {
     DBOSSchedTestClassOAOO.reset();
@@ -165,7 +165,7 @@ describe('cf-scheduled-wf-tests-oaoo', () => {
     } finally {
       await DBOS.shutdown();
     }
-  }, 20000);
+  });
 });
 
 describe('cf-scheduled-wf-tests-when-active', () => {
@@ -179,7 +179,7 @@ describe('cf-scheduled-wf-tests-when-active', () => {
 
   beforeEach(async () => {});
 
-  afterEach(async () => {}, 10000);
+  afterEach(async () => {});
 
   test('wf-scheduled-recover', async () => {
     DBOSSchedTestClass.reset(false);
@@ -213,7 +213,7 @@ describe('cf-scheduled-wf-tests-when-active', () => {
     } finally {
       await DBOS.shutdown();
     }
-  }, 20000);
+  });
 });
 
 interface SchedulerEvents {
@@ -269,7 +269,7 @@ describe('decorator-free-scheduled', () => {
 
   afterEach(async () => {
     await DBOS.shutdown();
-  }, 10000);
+  });
 
   test('free-func-scheduled', async () => {
     const events: { functionName: string; schedTime: Date; startTime: Date; workflowID: string | undefined }[] = [];
@@ -289,5 +289,5 @@ describe('decorator-free-scheduled', () => {
     for (const workflow of workflows) {
       expect(workflow.queueName).toEqual(INTERNAL_QUEUE_NAME);
     }
-  }, 10000);
+  });
 });

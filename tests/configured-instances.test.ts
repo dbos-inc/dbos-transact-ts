@@ -291,31 +291,31 @@ async function main7() {
 describe('dbos-v2api-tests-main', () => {
   test('simple-functions', async () => {
     await main();
-  }, 15000);
+  });
 
   test('assign_workflow_id', async () => {
     await main2();
-  }, 15000);
+  });
 
   test('start_workflow', async () => {
     await main3();
-  }, 15000);
+  });
 
   test('temp_step_transaction', async () => {
     await main4();
-  }, 15000);
+  });
 
   test('assign_workflow_queue', async () => {
     await main5();
-  }, 15000);
+  });
 
   test('send_recv_get_set', async () => {
     await main6();
-  }, 15000);
+  });
 
   test('roles', async () => {
     await main7();
-  }, 15000);
+  });
 });
 
 class CCRConfig {

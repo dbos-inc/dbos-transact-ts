@@ -520,7 +520,7 @@ describe('concurrency-tests', () => {
 
     await cleanDB();
     await runALotOfThingsAtOnce(true);
-  }, 30000);
+  });
 
   test('promise-all-settled-manysteps', async () => {
     const wfidSerial = randomUUID();
@@ -544,7 +544,7 @@ describe('concurrency-tests', () => {
     await fwf2.getResult();
     const fwf3 = await DBOS.forkWorkflow(wfidConcurrent, 7);
     await fwf3.getResult();
-  }, 20000);
+  });
 
   test('promise-all-settled-transactions', async () => {
     const wfidSerial = randomUUID();
@@ -573,7 +573,7 @@ describe('concurrency-tests', () => {
     await cleanDB();
     const fwf3 = await DBOS.forkWorkflow(wfidConcurrent, 7);
     await fwf3.getResult();
-  }, 20000);
+  });
 });
 
 class ConcurrTestClass {

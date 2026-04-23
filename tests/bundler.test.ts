@@ -17,7 +17,7 @@ describe('DBOS Bundler Tests', () => {
 
   afterAll(async () => {
     await DBOS.shutdown();
-  }, 30000);
+  });
 
   test('test app with bundler', async () => {
     const dbPassword = process.env.PGPASSWORD || 'dbos';
@@ -92,7 +92,7 @@ describe('DBOS Bundler Tests', () => {
         if (!child.killed) {
           child.kill('SIGTERM');
         }
-      }, 15000);
+      });
     });
 
     const exitCode2 = await runPromise2;

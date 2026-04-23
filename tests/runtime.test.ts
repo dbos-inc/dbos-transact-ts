@@ -155,7 +155,7 @@ describe('runtime-tests-knex', () => {
     //  and we expect a clear error message on launch if the DB is not
     //  in a good condition
     await expect(runProcess(command)).rejects.toThrow('Exited with code 1');
-  }, 20000);
+  });
 });
 
 describe('runtime-tests-typeorm', () => {

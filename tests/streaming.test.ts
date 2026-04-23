@@ -343,7 +343,7 @@ describe('dbos-streaming-tests', () => {
     // Verify all values were read
     const expectedValues = Array.from({ length: numValues }, (_, i) => `value_${i}`);
     expect(readValues).toEqual(expectedValues);
-  }, 10000);
+  });
 
   test('workflow-recovery', async () => {
     // Test that stream operations are properly recovered during workflow replay

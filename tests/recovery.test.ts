@@ -180,7 +180,7 @@ describe('recovery-tests', () => {
     status = await handle.getStatus();
     expect(status?.recoveryAttempts).toBe(LocalRecovery.maxRecoveryAttempts + 2);
     expect(status?.status).toBe(StatusString.MAX_RECOVERY_ATTEMPTS_EXCEEDED);
-  }, 20000);
+  });
 
   test('local-recovery', async () => {
     LocalRecovery.cnt = 0;
@@ -315,7 +315,7 @@ describe('recovery-tests', () => {
     } finally {
       await rm(barrierPath, { force: true });
     }
-  }, 30000);
+  });
 });
 
 function spawnRecvWorker(args: string[], env: NodeJS.ProcessEnv) {

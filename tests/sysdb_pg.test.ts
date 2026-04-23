@@ -210,7 +210,7 @@ describe('queued-wf-tests-simple', () => {
 
   afterEach(async () => {
     await DBOS.shutdown();
-  }, 10000);
+  });
 
   // Test functions - notification variant
   test('run-sysdb-nopoller', async () => {
@@ -231,7 +231,7 @@ describe('queued-wf-tests-simple', () => {
 
     await doTheWFCancelTest();
     sysDB().dbPollingIntervalResultMs = prev;
-  }, 10000);
+  });
 
   // Test functions - poller variant
   test('run-sysdb-onlypoller', async () => {
@@ -249,7 +249,7 @@ describe('queued-wf-tests-simple', () => {
 
     await doTheWFCancelTest();
     sysDB().dbPollingIntervalResultMs = prev;
-  }, 10000);
+  });
 });
 
 describe('sysdb-no-listen-notify', () => {
@@ -267,7 +267,7 @@ describe('sysdb-no-listen-notify', () => {
 
   afterEach(async () => {
     await DBOS.shutdown();
-  }, 10000);
+  });
 
   test('polling-without-listen-notify', async () => {
     expect(sysDB().shouldUseDBNotifications).toBe(false);
@@ -283,5 +283,5 @@ describe('sysdb-no-listen-notify', () => {
     await doTheWFDelayedTest();
 
     await doTheWFCancelTest();
-  }, 10000);
+  });
 });

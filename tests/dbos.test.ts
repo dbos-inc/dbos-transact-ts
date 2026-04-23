@@ -224,7 +224,7 @@ describe('dbos-tests', () => {
     await SendIdempotencyTestClass.sendFromStepIdemWF(destUUID4, 'hello_step_dup', stepIdemKey);
     // The second recv times out (returns null), proving only one message was delivered.
     expect(await handle4.getResult()).toBe('hello_step-null');
-  }, 30000);
+  });
 
   test('simple-workflow-events', async () => {
     const handle: WorkflowHandle<number> = await DBOS.startWorkflow(DBOSTestClass).setEventWorkflow();
@@ -527,7 +527,7 @@ describe('dbos-tests', () => {
       } finally {
         await client.destroy();
       }
-    }, 10000);
+    });
 
     test('test_wait_first_empty', async () => {
       await expect(DBOS.waitFirst([])).rejects.toThrow('handles must not be empty');
@@ -623,7 +623,7 @@ describe('dbos-tests', () => {
       assert.equal(badClientSteps[1].output, jsonSerializer.stringify(message));
       assert.equal(badClientSteps.length, 2);
       await badClient.destroy();
-    }, 10000);
+    });
   });
 });
 
@@ -940,6 +940,7 @@ describe('custom-pool-test', () => {
     let config: DBOSConfig = {
       systemDatabaseUrl: 'postgres://fake:nonsense@badhost:1111/no_database',
       systemDatabasePool: pool,
+      useListenNotify: false,
     };
     DBOS.setConfig(config);
     const workflow = DBOS.registerWorkflow(
@@ -957,6 +958,7 @@ describe('custom-pool-test', () => {
     config = {
       systemDatabaseUrl: 'postgres://fake:nonsense@badhost:1111/no_database',
       systemDatabasePool: pool,
+      useListenNotify: false,
     };
     DBOS.setConfig(config);
     await DBOS.launch();
@@ -1011,5 +1013,5 @@ describe('long-sleep-tests', () => {
       sleepConfig.maxTimeoutMS = saved;
       await DBOS.shutdown();
     }
-  }, 10000);
+  });
 });

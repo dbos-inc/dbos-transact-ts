@@ -236,7 +236,7 @@ describe('DBOSClient', () => {
     } finally {
       await dbClient.end();
     }
-  }, 20000);
+  });
 
   test('DBOSClient-enqueue-appVer-notSet', async () => {
     await DBOS.launch(); // Before client create as it will create sysdb
@@ -278,7 +278,7 @@ describe('DBOSClient', () => {
     } finally {
       await dbClient.end();
     }
-  }, 20000);
+  });
 
   test('DBOSClient-enqueue-and-get-result', async () => {
     await DBOS.launch(); // Before client create as it will create sysdb
@@ -326,7 +326,7 @@ describe('DBOSClient', () => {
     } finally {
       await dbClient.end();
     }
-  }, 20000);
+  });
 
   test('DBOSClient-enqueue-and-get-result-portable', async () => {
     await DBOS.launch(); // Before client create as it will create sysdb
@@ -375,7 +375,7 @@ describe('DBOSClient', () => {
     } finally {
       await dbClient.end();
     }
-  }, 20000);
+  });
 
   test('DBOSClient-enqueue-dedupid', async () => {
     await DBOS.launch(); // Before client create as it will create sysdb
@@ -418,7 +418,7 @@ describe('DBOSClient', () => {
     } finally {
       await client.destroy();
     }
-  }, 20000);
+  });
 
   test('DBOSClient-enqueue-priority', async () => {
     await DBOS.launch(); // Before client create as it will create sysdb
@@ -469,7 +469,7 @@ describe('DBOSClient', () => {
     } finally {
       await client.destroy();
     }
-  }, 30000);
+  });
 
   test('DBOSClient-enqueue-appVer-set', async () => {
     await DBOS.launch(); // Before client create as it will create sysdb
@@ -512,7 +512,7 @@ describe('DBOSClient', () => {
     } finally {
       await dbClient.end();
     }
-  }, 20000);
+  });
 
   test('DBOSClient-enqueue-wrong-appVer', async () => {
     const client = await DBOSClient.create({ systemDatabaseUrl });
@@ -549,7 +549,7 @@ describe('DBOSClient', () => {
     } finally {
       await dbClient.end();
     }
-  }, 20000);
+  });
 
   test('DBOSClient-send-topic', async () => {
     const now = Date.now();
@@ -621,7 +621,7 @@ describe('DBOSClient', () => {
     const handle = DBOS.retrieveWorkflow<string>(workflowID);
     const result = await handle.getResult();
     expect(result).toBe(message);
-  }, 30000);
+  });
 
   test('DBOSClient-send-portable', async () => {
     const now = Date.now();
@@ -661,7 +661,7 @@ describe('DBOSClient', () => {
     } finally {
       await client.destroy();
     }
-  }, 30000);
+  });
 
   test('DBOSClient-getEvent-when-finished', async () => {
     const now = Date.now();
@@ -682,7 +682,7 @@ describe('DBOSClient', () => {
     } finally {
       await client.destroy();
     }
-  }, 10000);
+  });
 
   test('DBOSClient-getEvent-update-while-running', async () => {
     const now = Date.now();
@@ -704,7 +704,7 @@ describe('DBOSClient', () => {
     } finally {
       await client.destroy();
     }
-  }, 10000);
+  });
 
   test('DBOSClient-getEvent-update-when-finished', async () => {
     const now = Date.now();
@@ -725,7 +725,7 @@ describe('DBOSClient', () => {
     } finally {
       await client.destroy();
     }
-  }, 10000);
+  });
 
   test('DBOSClient-retrieve-workflow', async () => {
     const wfid = `client-retrieve-${Date.now()}`;
