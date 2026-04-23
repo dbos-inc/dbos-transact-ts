@@ -132,6 +132,7 @@ export async function runSysMigrationsPg(
     if (stmts.length === 0) {
       onWarn(`Migration "${m.name}" has no Postgres statements; skipping.`);
       skipped++;
+      lastAppliedVersion = v;
       continue;
     }
 
