@@ -1,5 +1,6 @@
 import { DBOS, WorkflowQueue } from '../src/';
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
+import { dropPGDatabase, ensurePGDatabase } from '../src/datasource';
 import { randomUUID } from 'node:crypto';
 import { Client } from 'pg';
 
@@ -50,11 +51,14 @@ describeIf('cockroachdb', () => {
     url.pathname = '/dbos_test';
     const systemDatabaseUrl = url.toString();
 
-    const client = new Client({ connectionString: cockroachdbUrl });
-    await client.connect();
-    await client.query('DROP DATABASE IF EXISTS dbos_test');
-    await client.query('CREATE DATABASE dbos_test');
-    await client.end();
+    const dropResult = await dropPGDatabase({ urlToDrop: systemDatabaseUrl, logger: () => {} });
+    if (dropResult.status !== 'dropped' && dropResult.status !== 'did_not_exist') {
+      throw new Error(`Failed to drop dbos_test: ${dropResult.message}`);
+    }
+    const ensureResult = await ensurePGDatabase({ urlToEnsure: systemDatabaseUrl, logger: () => {} });
+    if (ensureResult.status !== 'created' && ensureResult.status !== 'already_exists') {
+      throw new Error(`Failed to create dbos_test: ${ensureResult.message}`);
+    }
     config = {
       name: 'cockroachdb-test',
       systemDatabaseUrl,
