@@ -496,6 +496,10 @@ databaseCommands
   .option('-W, --password <string>', 'Specify password for the dbosadmin user')
   .option('--enable-timetravel', 'Enable time travel on the linked database', false)
   .option('--supabase-ref <string>', 'Link a Supabase database')
+  .option(
+    '--dbos-admin-name <string>',
+    'Specify a custom Postgres role for DBOS Cloud to administer the database as (default: dbosadmin). Not compatible with --supabase-ref.',
+  )
   .action(
     async (
       dbname: string,
@@ -505,6 +509,7 @@ databaseCommands
         password: string | undefined;
         enableTimetravel: boolean;
         supabaseRef: string | undefined;
+        dbosAdminName: string | undefined;
       },
     ) => {
       if (!options.password) {
@@ -518,6 +523,7 @@ databaseCommands
         options.password,
         options.enableTimetravel,
         options.supabaseRef,
+        options.dbosAdminName,
       );
       process.exit(exitCode);
     },
