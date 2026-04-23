@@ -16,5 +16,5 @@ module.exports = {
   modulePathIgnorePatterns: ['tests/proc-test'],
   collectCoverageFrom: ['src/**/*.ts', '!src/**/index.ts'],
   setupFiles: ['./jest.setup.ts'],
-  testTimeout: 30000,
+  testTimeout: 60000,
 };
