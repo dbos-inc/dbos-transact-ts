@@ -38,6 +38,7 @@ export interface UserDBInstance {
   readonly HostName: string;
   readonly Port: number;
   readonly DatabaseUsername: string;
+  readonly DBOSAdminName: string;
   readonly IsLinked: boolean;
   readonly SupabaseReference: string | null;
 }
