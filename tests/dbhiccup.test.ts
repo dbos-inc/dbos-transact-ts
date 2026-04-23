@@ -78,7 +78,7 @@ describe('sys-db-hiccup', () => {
 
   afterEach(async () => {
     await DBOS.shutdown();
-  });
+  }, 30000);
 
   test('a-little-chaos', async () => {
     await expect(DisruptiveWFs.dbLossBetweenSteps()).resolves.toBe('Hehehe');

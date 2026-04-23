@@ -66,8 +66,8 @@ jobs:
         run: |
           npm ci
           npm run build
-          npm test
           npm run lint
+          npm test
         env:
           PGPASSWORD: dbos
           DB_PASSWORD: dbos

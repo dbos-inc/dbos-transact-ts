@@ -31,6 +31,8 @@ export interface QueueParameters {
   priorityEnabled?: boolean;
   /** If set, this queue supports partitioning */
   partitionQueue?: boolean;
+  /** Base (minimum) polling interval in ms for this queue's dispatch loop (default 1000) */
+  minPollingIntervalMs?: number;
 }
 
 /**
@@ -46,6 +48,7 @@ export class WorkflowQueue {
   readonly workerConcurrency?: number;
   readonly priorityEnabled: boolean = false;
   readonly partitionQueue: boolean = false;
+  readonly minPollingIntervalMs?: number;
 
   constructor(name: string);
 
@@ -72,6 +75,7 @@ export class WorkflowQueue {
       this.workerConcurrency = arg2.workerConcurrency;
       this.priorityEnabled = arg2.priorityEnabled ?? false;
       this.partitionQueue = arg2.partitionQueue ?? false;
+      this.minPollingIntervalMs = arg2.minPollingIntervalMs;
     } else {
       // Handle the case where the second argument is a number
       this.concurrency = arg2;
@@ -89,71 +93,96 @@ class WFQueueRunner {
   readonly wfQueuesByName: Map<string, WorkflowQueue> = new Map();
 
   private isRunning: boolean = false;
-  private interruptResolve?: () => void;
-  private pollingIntervalMs: number = 1000;
-  private readonly minPollingIntervalMs: number = 1000;
-  private readonly maxPollingIntervalMs: number = 120000;
+  private stopResolve?: () => void;
+  private stopPromise?: Promise<void>;
+  private exec?: DBOSExecutor;
+  private listenQueuesArg: WorkflowQueue[] | null = null;
+  private readonly activeLoops: Set<Promise<void>> = new Set();
+
+  private static readonly defaultMinPollingIntervalMs: number = 1000;
+  private static readonly defaultMaxPollingIntervalMs: number = 120000;
+  private readonly backoffFactor: number = 2.0;
+  private readonly scalebackFactor: number = 0.9;
+  private readonly jitterMin: number = 0.95;
+  private readonly jitterMax: number = 1.05;
 
   stop() {
     if (!this.isRunning) return;
     this.isRunning = false;
-    if (this.interruptResolve) {
-      this.interruptResolve();
-    }
+    this.stopResolve?.();
   }
 
   clearRegistrations() {
     this.wfQueuesByName.clear();
   }
 
+  private launchQueueLoop(queue: WorkflowQueue) {
+    const loop = this.runQueue(this.exec!, queue);
+    this.activeLoops.add(loop);
+    void loop.finally(() => this.activeLoops.delete(loop));
+  }
+
   async dispatchLoop(exec: DBOSExecutor, listenQueuesArg: WorkflowQueue[] | null): Promise<void> {
     this.isRunning = true;
+    this.exec = exec;
+    this.listenQueuesArg = listenQueuesArg;
+    this.stopPromise = new Promise<void>((resolve) => {
+      this.stopResolve = resolve;
+    });
+
+    let listenQueues: WorkflowQueue[];
+    if (listenQueuesArg !== null) {
+      listenQueues = [...listenQueuesArg, this.wfQueuesByName.get(INTERNAL_QUEUE_NAME)!];
+    } else {
+      listenQueues = Array.from(this.wfQueuesByName.values());
+    }
+
+    // Start one loop per queue
+    for (const q of listenQueues) {
+      this.launchQueueLoop(q);
+    }
+
+    // Wait until stop() is called, then wait for all loops to drain
+    await this.stopPromise;
+    await Promise.all(this.activeLoops);
+  }
+
+  private async runQueue(exec: DBOSExecutor, queue: WorkflowQueue): Promise<void> {
+    const minPollingMs = queue.minPollingIntervalMs ?? WFQueueRunner.defaultMinPollingIntervalMs;
+    const maxPollingMs = WFQueueRunner.defaultMaxPollingIntervalMs;
+    let currentPollingMs = minPollingMs;
+
     while (this.isRunning) {
-      // Wait for either the timeout or an interruption
+      // Sleep with jitter, racing against the stop signal
+      const jitter = this.jitterMin + Math.random() * (this.jitterMax - this.jitterMin);
+      const sleepMs = currentPollingMs * jitter;
       let timer: NodeJS.Timeout;
       const timeoutPromise = new Promise<void>((resolve) => {
-        timer = setTimeout(() => {
-          resolve();
-        }, this.pollingIntervalMs);
+        timer = setTimeout(resolve, sleepMs);
       });
 
-      await Promise.race([timeoutPromise, new Promise<void>((_, reject) => (this.interruptResolve = reject))]).catch(
-        () => {
-          exec.logger.debug('Workflow queue loop interrupted!');
-        },
-      ); // Interrupt sleep throws
+      await Promise.race([timeoutPromise, this.stopPromise!]);
       clearTimeout(timer!);
 
-      if (!this.isRunning) {
-        break;
-      }
+      if (!this.isRunning) break;
 
-      let listenQueues;
-      if (listenQueuesArg !== null) {
-        // If explicitly listening for queues, use only those queues plus the internal queue
-        listenQueues = [...listenQueuesArg, this.wfQueuesByName.get(INTERNAL_QUEUE_NAME)!];
-      } else {
-        // Else, listen to all declared queues
-        listenQueues = Array.from(this.wfQueuesByName.values());
-      }
-
-      // Transition delayed workflows that are ready to execute
+      let contentionDetected = false;
       try {
-        await exec.systemDatabase.transitionDelayedWorkflows();
-      } catch (e) {
-        exec.logger.warn(`Error transitioning delayed workflows: ${(e as Error).message}`);
-      }
+        // Transition delayed workflows that are ready to execute
+        try {
+          await exec.systemDatabase.transitionDelayedWorkflows();
+        } catch (e) {
+          exec.logger.warn(`Error transitioning delayed workflows: ${(e as Error).message}`);
+        }
 
-      // Check queues
-      for (const q of listenQueues) {
+        // Dequeue workflows for this queue
         let wfids: string[] = [];
         try {
-          if (q.partitionQueue) {
-            // For partitioned queues, get all partition keys and dequeue from each partition separately
-            const partitionKeys = await exec.systemDatabase.getQueuePartitions(q.name);
+          if (queue.partitionQueue) {
+            const partitionKeys = await exec.systemDatabase.getQueuePartitions(queue.name);
             for (const partitionKey of partitionKeys) {
               const partitionWfids = await exec.systemDatabase.findAndMarkStartableWorkflows(
-                q,
+                queue,
                 exec.executorID,
                 globalParams.appVersion,
                 partitionKey,
@@ -161,9 +190,8 @@ class WFQueueRunner {
               wfids.push(...partitionWfids);
             }
           } else {
-            // For non-partitioned queues, pass null to match workflows with queue_partition_key IS NULL
             wfids = await exec.systemDatabase.findAndMarkStartableWorkflows(
-              q,
+              queue,
               exec.executorID,
               globalParams.appVersion,
               undefined,
@@ -174,13 +202,10 @@ class WFQueueRunner {
           // Handle serialization errors and lock contention with backoff
           if ('code' in err && (err.code === '40001' || err.code === '55P03')) {
             // 40001: serialization_failure, 55P03: lock_not_available
-            // Increase the polling interval on contention
-            this.pollingIntervalMs = Math.min(this.maxPollingIntervalMs, this.pollingIntervalMs * 2.0);
-            exec.logger.warn(
-              `Contention detected in queue thread for ${q.name}. Increasing polling interval to ${(this.pollingIntervalMs / 1000).toFixed(2)}s.`,
-            );
+            contentionDetected = true;
+            exec.logger.warn(`Contention detected in queue ${queue.name}.`);
           } else {
-            exec.logger.warn(`Error getting startable workflows: ${err.message}`);
+            exec.logger.warn(`Error getting startable workflows for queue ${queue.name}: ${err.message}`);
           }
           wfids = [];
         }
@@ -191,15 +216,24 @@ class WFQueueRunner {
 
         for (const wfid of wfids) {
           try {
-            const _wfh = await exec.executeWorkflowId(wfid, { isQueueDispatch: true });
+            await exec.executeWorkflowId(wfid, { isQueueDispatch: true });
           } catch (e) {
             exec.logger.warn(`Could not execute workflow with id ${wfid}: ${(e as Error).message}`);
           }
         }
+      } catch (e) {
+        exec.logger.warn(`Error in queue ${queue.name} dispatch loop: ${(e as Error).message}`);
       }
 
-      // Gradually decrease the polling interval when there's no contention
-      this.pollingIntervalMs = Math.max(this.minPollingIntervalMs, this.pollingIntervalMs * 0.9);
+      // Adjust polling interval based on contention
+      if (contentionDetected) {
+        currentPollingMs = Math.min(maxPollingMs, currentPollingMs * this.backoffFactor);
+        exec.logger.warn(
+          `Increasing polling interval for queue ${queue.name} to ${(currentPollingMs / 1000).toFixed(2)}s due to contention.`,
+        );
+      } else {
+        currentPollingMs = Math.max(minPollingMs, currentPollingMs * this.scalebackFactor);
+      }
     }
   }
 
