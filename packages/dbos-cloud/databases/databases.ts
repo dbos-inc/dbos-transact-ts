@@ -99,6 +99,7 @@ export async function linkUserDB(
   dbPassword: string,
   enableTimetravel: boolean,
   supabaseReference: string | undefined,
+  dbosAdminName: string | undefined,
 ) {
   const logger = getLogger();
   const userCredentials = await getCloudCredentials(host, logger);
@@ -108,22 +109,27 @@ export async function linkUserDB(
     return 1;
   }
 
-  let data = {};
-  if (supabaseReference === undefined) {
-    data = { Name: dbName, HostName: hostName, Port: port, Password: dbPassword, captureProvenance: enableTimetravel };
-  } else {
-    data = {
-      Name: dbName,
-      HostName: hostName,
-      Port: port,
-      Password: dbPassword,
-      captureProvenance: enableTimetravel,
-      supabaseReference: supabaseReference,
-    };
+  if (supabaseReference !== undefined && dbosAdminName !== undefined) {
+    logger.error('Cannot specify --dbos-admin-name when linking a Supabase database.');
+    return 1;
+  }
+
+  const data: Record<string, unknown> = {
+    Name: dbName,
+    HostName: hostName,
+    Port: port,
+    Password: dbPassword,
+    captureProvenance: enableTimetravel,
+  };
+  if (supabaseReference !== undefined) {
+    data.supabaseReference = supabaseReference;
+  }
+  if (dbosAdminName !== undefined) {
+    data.dbosAdminName = dbosAdminName;
   }
 
   logger.info(
-    `Linking Postgres instance ${dbName} to DBOS Cloud. Hostname: ${hostName} Port: ${port} Time travel: ${enableTimetravel} Supabase Reference: ${supabaseReference}`,
+    `Linking Postgres instance ${dbName} to DBOS Cloud. Hostname: ${hostName} Port: ${port} Time travel: ${enableTimetravel} Supabase Reference: ${supabaseReference} DBOS Admin Name: ${dbosAdminName ?? 'dbosadmin'}`,
   );
   try {
     await axios.post(`https://${host}/v1alpha1/${userCredentials.organization}/databases/byod`, data, {
@@ -212,6 +218,7 @@ export async function getUserDb(host: string, dbName: string, json: boolean) {
       console.log(`Host Name: ${userDBInfo.HostName}`);
       console.log(`Port: ${userDBInfo.Port}`);
       console.log(`Database Username: ${userDBInfo.DatabaseUsername}`);
+      console.log(`DBOS Admin Name: ${userDBInfo.DBOSAdminName}`);
     }
     return 0;
   } catch (e) {
@@ -253,6 +260,7 @@ export async function listUserDB(host: string, json: boolean) {
         console.log(`Host Name: ${userDBInfo.HostName}`);
         console.log(`Port: ${userDBInfo.Port}`);
         console.log(`Database Username: ${userDBInfo.DatabaseUsername}`);
+        console.log(`DBOS Admin Name: ${userDBInfo.DBOSAdminName}`);
       });
     }
     return 0;
