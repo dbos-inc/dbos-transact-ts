@@ -323,10 +323,14 @@ class WFQueueRunner {
   private stopPromise?: Promise<void>;
   private exec?: DBOSExecutor;
   private listenQueuesArg: WorkflowQueue[] | null = null;
+  private listenQueueNames: Set<string> | null = null;
   private readonly activeLoops: Set<Promise<void>> = new Set();
+  private readonly runningQueueNames: Set<string> = new Set();
+  private readonly warnedCollisions: Set<string> = new Set();
 
   private static readonly defaultMinPollingIntervalMs: number = 1000;
   private static readonly defaultMaxPollingIntervalMs: number = 120000;
+  private static readonly supervisorIntervalMs: number = 1000;
   private readonly backoffFactor: number = 2.0;
   private readonly scalebackFactor: number = 0.9;
   private readonly jitterMin: number = 0.95;
@@ -340,18 +344,25 @@ class WFQueueRunner {
 
   clearRegistrations() {
     this.wfQueuesByName.clear();
+    this.warnedCollisions.clear();
   }
 
   private launchQueueLoop(queue: WorkflowQueue) {
+    if (this.runningQueueNames.has(queue.name)) return;
+    this.runningQueueNames.add(queue.name);
     const loop = this.runQueue(this.exec!, queue);
     this.activeLoops.add(loop);
-    void loop.finally(() => this.activeLoops.delete(loop));
+    void loop.finally(() => {
+      this.activeLoops.delete(loop);
+      this.runningQueueNames.delete(queue.name);
+    });
   }
 
   async dispatchLoop(exec: DBOSExecutor, listenQueuesArg: WorkflowQueue[] | null): Promise<void> {
     this.isRunning = true;
     this.exec = exec;
     this.listenQueuesArg = listenQueuesArg;
+    this.listenQueueNames = listenQueuesArg ? new Set(listenQueuesArg.map((q) => q.name)) : null;
     this.stopPromise = new Promise<void>((resolve) => {
       this.stopResolve = resolve;
     });
@@ -363,14 +374,71 @@ class WFQueueRunner {
       listenQueues = Array.from(this.wfQueuesByName.values());
     }
 
-    // Start one loop per queue
+    // Start one loop per in-memory queue
     for (const q of listenQueues) {
       this.launchQueueLoop(q);
     }
 
+    // Discover any database-backed queues registered before launch and start
+    // their workers synchronously so an immediate enqueue on a DB-backed
+    // queue does not race the first supervisor cycle.
+    await this.discoverAndLaunchDbQueues(exec);
+
+    // Periodic supervisor: picks up queues registered after launch.
+    const supervisor = this.superviseLoop(exec);
+    this.activeLoops.add(supervisor);
+    void supervisor.finally(() => this.activeLoops.delete(supervisor));
+
     // Wait until stop() is called, then wait for all loops to drain
     await this.stopPromise;
     await Promise.all(this.activeLoops);
+  }
+
+  /**
+   * List the queues table and launch a worker for any database-backed queue
+   * that isn't already running. Skips names that collide with an in-memory
+   * queue (with a warn-once log) and respects the `listenQueues` filter.
+   */
+  private async discoverAndLaunchDbQueues(exec: DBOSExecutor): Promise<void> {
+    let records: QueueRecord[];
+    try {
+      records = await exec.systemDatabase.listQueues();
+    } catch (e) {
+      exec.logger.warn(`Error listing database-backed queues: ${(e as Error).message}`);
+      return;
+    }
+
+    for (const record of records) {
+      if (record.name === INTERNAL_QUEUE_NAME) continue;
+      if (this.wfQueuesByName.has(record.name)) {
+        if (!this.warnedCollisions.has(record.name)) {
+          exec.logger.warn(
+            `Database-backed queue '${record.name}' has the same name as an in-memory queue. ` +
+              `The in-memory queue's configuration is being used; the database-backed queue is ignored. ` +
+              `Rename one of them to resolve the conflict.`,
+          );
+          this.warnedCollisions.add(record.name);
+        }
+        continue;
+      }
+      if (this.runningQueueNames.has(record.name)) continue;
+      if (this.listenQueueNames !== null && !this.listenQueueNames.has(record.name)) continue;
+      this.launchQueueLoop(WorkflowQueue._fromRecord(record));
+    }
+  }
+
+  private async superviseLoop(exec: DBOSExecutor): Promise<void> {
+    while (this.isRunning) {
+      let timer: NodeJS.Timeout;
+      const timeoutPromise = new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, WFQueueRunner.supervisorIntervalMs);
+      });
+      await Promise.race([timeoutPromise, this.stopPromise!]);
+      clearTimeout(timer!);
+      if (!this.isRunning) return;
+
+      await this.discoverAndLaunchDbQueues(exec);
+    }
   }
 
   private async runQueue(exec: DBOSExecutor, initialQueue: WorkflowQueue): Promise<void> {

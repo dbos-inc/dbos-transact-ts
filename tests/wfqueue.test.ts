@@ -2168,6 +2168,42 @@ describe('database-backed-queue-crud', () => {
     await DBOS.deleteQueue(queueName);
   });
 
+  test('supervisor-launches-worker-for-queue-registered-after-launch', async () => {
+    const queueName = `supervisor_${randomUUID()}`;
+    // Queue is registered AFTER DBOS launches; the supervisor's discovery
+    // cycle must pick it up and start a worker without a process restart.
+    await DBOS.registerQueue(queueName, { minPollingIntervalMs: 100 });
+
+    const wfid = randomUUID();
+    const handle = await DBOS.startWorkflow(TestWFs, { workflowID: wfid, queueName }).testWorkflowSimple('hi', '!');
+    expect(await handle.getResult()).toBe('hi!');
+
+    await DBOS.deleteQueue(queueName);
+  });
+
+  test('worker-exits-and-resumes-on-delete-and-recreate', async () => {
+    const queueName = `recreate_${randomUUID()}`;
+    await DBOS.registerQueue(queueName, { minPollingIntervalMs: 100 });
+
+    // The original worker processes one workflow.
+    const h1 = await DBOS.startWorkflow(TestWFs, { workflowID: randomUUID(), queueName }).testWorkflowSimple('a', '1');
+    expect(await h1.getResult()).toBe('a1');
+
+    // Deleting the row makes the worker exit on its next iteration.
+    await DBOS.deleteQueue(queueName);
+    expect(await DBOS.retrieveQueue(queueName)).toBeNull();
+
+    // Re-registering with new config; the supervisor must start a fresh
+    // worker for the new row.
+    await DBOS.registerQueue(queueName, { minPollingIntervalMs: 100, concurrency: 5 });
+    expect((await DBOS.retrieveQueue(queueName))!.concurrency).toBe(5);
+
+    const h2 = await DBOS.startWorkflow(TestWFs, { workflowID: randomUUID(), queueName }).testWorkflowSimple('b', '2');
+    expect(await h2.getResult()).toBe('b2');
+
+    await DBOS.deleteQueue(queueName);
+  });
+
   test('async-getters-reflect-cross-process-changes', async () => {
     const queueName = `test_freshness_${randomUUID()}`;
     await DBOS.registerQueue(queueName, { concurrency: 5 });

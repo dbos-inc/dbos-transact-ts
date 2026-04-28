@@ -1220,16 +1220,20 @@ export class DBOS {
     }
 
     if (params && params.queueName) {
-      // Validate partition key usage
+      // Validate partition key usage. Skip the partition-flag checks when the
+      // queue is not registered in-process (e.g. a database-backed queue);
+      // server-side dequeue will enforce partition rules in that case.
       const wfqueue = this.#executor.getQueueByName(params.queueName);
       const queuePartitionKey = params.enqueueOptions?.queuePartitionKey;
-      if (wfqueue.partitionQueue && !queuePartitionKey) {
-        throw Error(`A workflow cannot be enqueued on partitioned queue ${params.queueName} without a partition key`);
-      }
-      if (queuePartitionKey && !wfqueue.partitionQueue) {
-        throw Error(
-          `You can only use a partition key on a partition-enabled queue. Key ${queuePartitionKey} was used with non-partitioned queue ${params.queueName}`,
-        );
+      if (wfqueue) {
+        if (wfqueue.partitionQueue && !queuePartitionKey) {
+          throw Error(`A workflow cannot be enqueued on partitioned queue ${params.queueName} without a partition key`);
+        }
+        if (queuePartitionKey && !wfqueue.partitionQueue) {
+          throw Error(
+            `You can only use a partition key on a partition-enabled queue. Key ${queuePartitionKey} was used with non-partitioned queue ${params.queueName}`,
+          );
+        }
       }
       if (queuePartitionKey && params.enqueueOptions?.deduplicationID) {
         throw Error('Deduplication is not supported for partitioned queues');
