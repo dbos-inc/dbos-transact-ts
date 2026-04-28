@@ -2037,15 +2037,14 @@ describe('delay-tests', () => {
 });
 
 describe('database-backed-queue-crud', () => {
-  let config: DBOSConfig;
-
   beforeAll(async () => {
-    config = generateDBOSTestConfig();
-    await setUpDBOSTestSysDb(config);
-    DBOS.setConfig(config);
+    await setUpDBOSTestSysDb(generateDBOSTestConfig());
   });
 
   beforeEach(async () => {
+    // Reset the config every test so a prior test's listenQueues filter
+    // doesn't leak across the suite.
+    DBOS.setConfig(generateDBOSTestConfig());
     await DBOS.launch();
   });
 
@@ -2281,5 +2280,110 @@ describe('database-backed-queue-crud', () => {
     const mem = new WorkflowQueue(memName, { concurrency: 7, priorityEnabled: true });
     expect(await mem.getConcurrency()).toBe(7);
     expect(await mem.getPriorityEnabled()).toBe(true);
+  });
+
+  test('in-memory-and-db-backed-queues-coexist', async () => {
+    // beforeEach already launched DBOS with the default config; restart it
+    // with a custom listenQueues filter so we can exercise mixed listening.
+    await DBOS.shutdown();
+
+    const listenedMemName = `inmem_listened_${randomUUID()}`;
+    const idleMemName = `inmem_idle_${randomUUID()}`;
+    const dbBackedName = `dbbacked_${randomUUID()}`;
+
+    const listenedMem = new WorkflowQueue(listenedMemName, { minPollingIntervalMs: 100 });
+    new WorkflowQueue(idleMemName, { concurrency: 2, minPollingIntervalMs: 100 });
+
+    // Re-declaring an in-memory queue with the same name throws.
+    expect(() => new WorkflowQueue(listenedMemName)).toThrow(/defined multiple times/);
+
+    // listenQueues accepts a mix of WorkflowQueue instances and string names.
+    const cfg = generateDBOSTestConfig();
+    cfg.listenQueues = [listenedMem, dbBackedName];
+    DBOS.setConfig(cfg);
+    await DBOS.launch();
+
+    // Register the database-backed queue post-launch; the supervisor picks it
+    // up since it matches the listen filter.
+    await DBOS.registerQueue(dbBackedName, { minPollingIntervalMs: 100 });
+
+    // The listened in-memory queue runs workflows.
+    const memHandle = await DBOS.startWorkflow(TestWFs, { queueName: listenedMemName }).testWorkflowSimple('a', '1');
+    expect(await memHandle.getResult()).toBe('a1');
+
+    // The listened database-backed queue runs workflows.
+    const dbHandle = await DBOS.startWorkflow(TestWFs, { queueName: dbBackedName }).testWorkflowSimple('b', '2');
+    expect(await dbHandle.getResult()).toBe('b2');
+
+    // A workflow enqueued on the un-listened in-memory queue stays ENQUEUED.
+    const idleHandle = await DBOS.startWorkflow(TestWFs, { queueName: idleMemName }).testWorkflowSimple('c', '3');
+    await sleepms(2000);
+    expect((await idleHandle.getStatus())?.status).toBe(StatusString.ENQUEUED);
+
+    // Restart DBOS listening to the previously idle queue. The pending
+    // workflow now runs to completion.
+    await DBOS.shutdown();
+    const cfg2 = generateDBOSTestConfig();
+    cfg2.listenQueues = [idleMemName];
+    DBOS.setConfig(cfg2);
+    await DBOS.launch();
+
+    const resumed = DBOS.retrieveWorkflow(idleHandle.workflowID);
+    expect(await resumed.getResult()).toBe('c3');
+
+    await DBOS.deleteQueue(dbBackedName);
+  });
+
+  class DynConcWFs {
+    static startedCount = 0;
+    static releaseEvent = new Event();
+    static reset() {
+      DynConcWFs.startedCount = 0;
+      DynConcWFs.releaseEvent = new Event();
+    }
+    @DBOS.workflow()
+    static async blocking(): Promise<void> {
+      DynConcWFs.startedCount += 1;
+      await DynConcWFs.releaseEvent.wait();
+    }
+  }
+
+  test('dynamic-concurrency-takes-effect-on-running-worker', async () => {
+    DynConcWFs.reset();
+    const queueName = `dyn_conc_${randomUUID()}`;
+    const queue = await DBOS.registerQueue(queueName, { concurrency: 1, minPollingIntervalMs: 100 });
+
+    try {
+      const handles = await Promise.all([0, 1, 2].map(() => DBOS.startWorkflow(DynConcWFs, { queueName }).blocking()));
+
+      // With concurrency=1, exactly one workflow should start. Wait long
+      // enough for several poll iterations to confirm the limit holds.
+      const concDeadline = Date.now() + 5000;
+      while (Date.now() < concDeadline && DynConcWFs.startedCount < 1) {
+        await sleepms(50);
+      }
+      expect(DynConcWFs.startedCount).toBe(1);
+      await sleepms(1000);
+      expect(DynConcWFs.startedCount).toBe(1);
+
+      // Bump concurrency. The worker reloads its config from the database on
+      // its next poll iteration and starts the remaining two workflows.
+      await queue.setConcurrency(3);
+
+      const deadline = Date.now() + 5000;
+      while (Date.now() < deadline && DynConcWFs.startedCount < 3) {
+        await sleepms(50);
+      }
+      expect(DynConcWFs.startedCount).toBe(3);
+
+      // Release everything; all three complete.
+      DynConcWFs.releaseEvent.set();
+      for (const h of handles) {
+        await h.getResult();
+      }
+    } finally {
+      DynConcWFs.releaseEvent.set();
+      await DBOS.deleteQueue(queueName);
+    }
   });
 });
