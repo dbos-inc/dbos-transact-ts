@@ -750,6 +750,51 @@ export class Conductor {
             const aggResp = new protocol.GetWorkflowAggregatesResponse(baseMsg.request_id, aggOutput, errorMsg);
             currWebsocket.send(JSON.stringify(aggResp));
             break;
+          case protocol.MessageType.LIST_QUEUES:
+            let queueOutputs: protocol.QueueOutput[] = [];
+            try {
+              const queues = await this.dbosExec.systemDatabase.listQueues();
+              queueOutputs = queues.map((q) => ({
+                name: q.name,
+                concurrency: q.concurrency,
+                worker_concurrency: q.workerConcurrency,
+                rate_limit_max: q.rateLimitMax,
+                rate_limit_period_sec: q.rateLimitPeriodSec,
+                priority_enabled: q.priorityEnabled,
+                partition_queue: q.partitionQueue,
+                polling_interval_sec: q.pollingIntervalSec,
+              }));
+            } catch (e) {
+              errorMsg = `Exception encountered when listing queues: ${(e as Error).message}`;
+              this.dbosExec.logger.error(errorMsg);
+            }
+            const listQueuesResp = new protocol.ListQueuesResponse(baseMsg.request_id, queueOutputs, errorMsg);
+            currWebsocket.send(JSON.stringify(listQueuesResp));
+            break;
+          case protocol.MessageType.GET_QUEUE:
+            const getQueueMsg = baseMsg as protocol.GetQueueRequest;
+            let getQueueOutput: protocol.QueueOutput | null = null;
+            try {
+              const queue = await this.dbosExec.systemDatabase.getQueue(getQueueMsg.name);
+              if (queue !== null) {
+                getQueueOutput = {
+                  name: queue.name,
+                  concurrency: queue.concurrency,
+                  worker_concurrency: queue.workerConcurrency,
+                  rate_limit_max: queue.rateLimitMax,
+                  rate_limit_period_sec: queue.rateLimitPeriodSec,
+                  priority_enabled: queue.priorityEnabled,
+                  partition_queue: queue.partitionQueue,
+                  polling_interval_sec: queue.pollingIntervalSec,
+                };
+              }
+            } catch (e) {
+              errorMsg = `Exception encountered when getting queue ${getQueueMsg.name}: ${(e as Error).message}`;
+              this.dbosExec.logger.error(errorMsg);
+            }
+            const getQueueResp = new protocol.GetQueueResponse(baseMsg.request_id, getQueueOutput, errorMsg);
+            currWebsocket.send(JSON.stringify(getQueueResp));
+            break;
           default:
             this.dbosExec.logger.warn(`Unknown message type: ${baseMsg.type}`);
             // Still need to send a response to the conductor
