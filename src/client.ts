@@ -371,7 +371,7 @@ export class DBOSClient {
     return record === null ? null : WorkflowQueue._fromRecord(record, this.systemDatabase);
   }
 
-  /** Delete a database-backed queue by name. No-op if the queue does not exist. */
+  /** Delete a database-backed queue. Pending workflows on it are unrecoverable. */
   async deleteQueue(name: string): Promise<void> {
     await this.systemDatabase.deleteQueue(name);
   }
