@@ -1,6 +1,7 @@
 import { DBOSExecutor } from './dbos-executor';
 import { DBOS } from './dbos';
 import { DEBUG_TRIGGER_WORKFLOW_QUEUE_START, debugTriggerPoint } from './debugpoint';
+import type { QueueRecord, SystemDatabase } from './system_database';
 import { globalParams, INTERNAL_QUEUE_NAME } from './utils';
 
 /**
@@ -9,7 +10,7 @@ import { globalParams, INTERNAL_QUEUE_NAME } from './utils';
  * If the limit is 5 and the period is 10, no more than 5 functions can be
  *   started per 10 seconds.
  */
-interface QueueRateLimit {
+export interface QueueRateLimit {
   /** Number of queue dispateches per `periodSec` */
   limitPerPeriod: number;
   /** Period of time during which `limitPerPeriod` queued workflows may be dispatched */
@@ -43,12 +44,28 @@ export interface QueueParameters {
  */
 export class WorkflowQueue {
   readonly name: string;
-  readonly concurrency?: number;
-  readonly rateLimit?: QueueRateLimit;
-  readonly workerConcurrency?: number;
-  readonly priorityEnabled: boolean = false;
-  readonly partitionQueue: boolean = false;
-  readonly minPollingIntervalMs?: number;
+  concurrency?: number;
+  rateLimit?: QueueRateLimit;
+  workerConcurrency?: number;
+  priorityEnabled: boolean = false;
+  partitionQueue: boolean = false;
+  minPollingIntervalMs?: number;
+
+  /**
+   * When true, this queue's configuration is persisted in the `queues` system
+   * table and may be mutated at runtime via the `setX` methods. When false,
+   * the queue's configuration is fixed at construction and lives only in
+   * process memory.
+   */
+  readonly databaseBacked: boolean = false;
+
+  /**
+   * If set, configuration reads/writes target this SystemDatabase instead of
+   * the global executor's. This lets a queue handle operate on the system
+   * database directly, without requiring a launched DBOS runtime in the same
+   * process.
+   */
+  readonly clientSystemDatabase?: SystemDatabase;
 
   constructor(name: string);
 
@@ -68,24 +85,132 @@ export class WorkflowQueue {
       );
     }
 
+    let params: QueueParameters;
     if (typeof arg2 === 'object' && arg2 !== null) {
-      // Handle the case where the second argument is QueueParameters
-      this.concurrency = arg2.concurrency;
-      this.rateLimit = arg2.rateLimit;
-      this.workerConcurrency = arg2.workerConcurrency;
-      this.priorityEnabled = arg2.priorityEnabled ?? false;
-      this.partitionQueue = arg2.partitionQueue ?? false;
-      this.minPollingIntervalMs = arg2.minPollingIntervalMs;
+      params = arg2;
     } else {
-      // Handle the case where the second argument is a number
-      this.concurrency = arg2;
-      this.rateLimit = rateLimit;
+      params = { concurrency: arg2, rateLimit };
     }
+    WorkflowQueue.validateQueueParams(params);
+
+    this.concurrency = params.concurrency;
+    this.rateLimit = params.rateLimit;
+    this.workerConcurrency = params.workerConcurrency;
+    this.priorityEnabled = params.priorityEnabled ?? false;
+    this.partitionQueue = params.partitionQueue ?? false;
+    this.minPollingIntervalMs = params.minPollingIntervalMs;
 
     if (wfQueueRunner.wfQueuesByName.has(name)) {
       throw Error(`Workflow Queue '${name}' defined multiple times`);
     }
     wfQueueRunner.wfQueuesByName.set(name, this);
+  }
+
+  /** Throws if any combination of queue parameters is invalid. */
+  static validateQueueParams(params: QueueParameters): void {
+    const { concurrency, workerConcurrency, rateLimit, minPollingIntervalMs } = params;
+    if (workerConcurrency !== undefined && concurrency !== undefined && workerConcurrency > concurrency) {
+      throw new Error('concurrency must be greater than or equal to workerConcurrency');
+    }
+    if (minPollingIntervalMs !== undefined && minPollingIntervalMs <= 0) {
+      throw new Error('minPollingIntervalMs must be positive');
+    }
+    if (rateLimit !== undefined && (rateLimit.limitPerPeriod === undefined || rateLimit.periodSec === undefined)) {
+      throw new Error('rateLimit must specify both limitPerPeriod and periodSec');
+    }
+  }
+
+  /**
+   * Construct a database-backed queue from a persisted record. Bypasses the
+   * legacy constructor so the instance is not added to the global registry —
+   * the queues table is the source of truth.
+   * @internal
+   */
+  static _fromRecord(record: QueueRecord, clientSystemDatabase?: SystemDatabase): WorkflowQueue {
+    // Allocate without invoking the constructor (which would auto-register
+    // in `wfQueuesByName`) and strip `readonly` so we can set the fields here.
+    const q = Object.create(WorkflowQueue.prototype) as { -readonly [K in keyof WorkflowQueue]: WorkflowQueue[K] };
+    q.name = record.name;
+    q.concurrency = record.concurrency ?? undefined;
+    q.workerConcurrency = record.workerConcurrency ?? undefined;
+    q.rateLimit =
+      record.rateLimitMax !== null && record.rateLimitPeriodSec !== null
+        ? { limitPerPeriod: record.rateLimitMax, periodSec: record.rateLimitPeriodSec }
+        : undefined;
+    q.priorityEnabled = record.priorityEnabled;
+    q.partitionQueue = record.partitionQueue;
+    q.minPollingIntervalMs = record.pollingIntervalSec * 1000;
+    q.databaseBacked = true;
+    q.clientSystemDatabase = clientSystemDatabase;
+    return q as WorkflowQueue;
+  }
+
+  private requireDatabaseBacked(): void {
+    if (!this.databaseBacked) {
+      throw new Error(
+        `Cannot configure queue ${this.name}: dynamic configuration is only supported for queues registered via DBOS.registerQueue.`,
+      );
+    }
+  }
+
+  private sysDB(): SystemDatabase {
+    if (this.clientSystemDatabase) return this.clientSystemDatabase;
+    const exec = DBOSExecutor.globalInstance;
+    if (!exec) {
+      throw new Error(`Cannot access system database for queue ${this.name}: DBOS has not been launched.`);
+    }
+    return exec.systemDatabase;
+  }
+
+  async setConcurrency(value: number | undefined): Promise<void> {
+    this.requireDatabaseBacked();
+    if (value !== undefined && this.workerConcurrency !== undefined && this.workerConcurrency > value) {
+      throw new Error('workerConcurrency must be less than or equal to concurrency');
+    }
+    await this.sysDB().updateQueue(this.name, { concurrency: value ?? null });
+    this.concurrency = value;
+  }
+
+  async setWorkerConcurrency(value: number | undefined): Promise<void> {
+    this.requireDatabaseBacked();
+    if (value !== undefined && this.concurrency !== undefined && value > this.concurrency) {
+      throw new Error('workerConcurrency must be less than or equal to concurrency');
+    }
+    await this.sysDB().updateQueue(this.name, { workerConcurrency: value ?? null });
+    this.workerConcurrency = value;
+  }
+
+  async setRateLimit(value: QueueRateLimit | undefined): Promise<void> {
+    this.requireDatabaseBacked();
+    if (value !== undefined && (value.limitPerPeriod === undefined || value.periodSec === undefined)) {
+      throw new Error('rateLimit must specify both limitPerPeriod and periodSec');
+    }
+    await this.sysDB().updateQueue(this.name, {
+      rateLimitMax: value ? value.limitPerPeriod : null,
+      rateLimitPeriodSec: value ? value.periodSec : null,
+    });
+    this.rateLimit = value;
+  }
+
+  async setPriorityEnabled(value: boolean): Promise<void> {
+    this.requireDatabaseBacked();
+    await this.sysDB().updateQueue(this.name, { priorityEnabled: value });
+    this.priorityEnabled = value;
+  }
+
+  async setPartitionQueue(value: boolean): Promise<void> {
+    this.requireDatabaseBacked();
+    await this.sysDB().updateQueue(this.name, { partitionQueue: value });
+    this.partitionQueue = value;
+  }
+
+  async setMinPollingIntervalMs(value: number): Promise<void> {
+    this.requireDatabaseBacked();
+    if (value <= 0) {
+      throw new Error('minPollingIntervalMs must be positive');
+    }
+    await this.sysDB().updateQueue(this.name, { pollingIntervalSec: value / 1000 });
+    this.minPollingIntervalMs = value;
   }
 }
 

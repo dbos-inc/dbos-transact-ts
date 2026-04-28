@@ -99,7 +99,7 @@ export interface QueueRecord {
   pollingIntervalSec: number;
 }
 
-/** Subset of a queue record that may be updated after creation. */
+/** The subset of a queue record that may be changed after creation. */
 export type QueueRecordUpdate = Partial<Omit<QueueRecord, 'name'>>;
 
 const QUEUE_COLUMN_BY_FIELD: Record<keyof QueueRecordUpdate, string> = {
