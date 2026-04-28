@@ -788,13 +788,11 @@ describe('DBOSClient', () => {
       });
       expect(registered.name).toBe(queueName);
       expect(registered.databaseBacked).toBe(true);
-      // Client-bound queues carry a SystemDatabase handle so their setters
-      // route through the client's database, not the global executor's.
-      expect(registered.clientSystemDatabase).toBeDefined();
+      expect(registered.clientBound).toBe(true);
 
       const retrieved = await client.retrieveQueue(queueName);
       expect(retrieved).not.toBeNull();
-      expect(retrieved!.clientSystemDatabase).toBeDefined();
+      expect(retrieved!.clientBound).toBe(true);
       expect(retrieved!.concurrency).toBe(4);
       expect(retrieved!.workerConcurrency).toBe(2);
       expect(retrieved!.rateLimit).toEqual({ limitPerPeriod: 5, periodSec: 1.5 });
@@ -808,7 +806,7 @@ describe('DBOSClient', () => {
       expect(fromDbos).not.toBeNull();
       expect(fromDbos!.concurrency).toBe(8);
       // Queues retrieved through DBOS are not client-bound.
-      expect(fromDbos!.clientSystemDatabase).toBeUndefined();
+      expect(fromDbos!.clientBound).toBe(false);
 
       // Clients have no application version, so update_if_latest_version
       // is rejected.

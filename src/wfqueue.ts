@@ -55,6 +55,55 @@ export interface RegisterQueueOptions extends QueueParameters {
 }
 
 /**
+ * Per-instance association of a client-bound queue to its `SystemDatabase`.
+ * Stored off-class because any class member — including TS `private` — gives
+ * the class a nominal brand, so the type-only members below all live as
+ * module-level helpers to keep `WorkflowQueue` structurally compatible across
+ * separate compiled copies of this package.
+ */
+const clientSystemDatabases = new WeakMap<WorkflowQueue, SystemDatabase>();
+
+function requireDatabaseBacked(q: WorkflowQueue): void {
+  if (!q.databaseBacked) {
+    throw new Error(
+      `Cannot configure queue ${q.name}: dynamic configuration is only supported for queues registered via DBOS.registerQueue.`,
+    );
+  }
+}
+
+function sysDBFor(q: WorkflowQueue): SystemDatabase {
+  const clientDb = clientSystemDatabases.get(q);
+  if (clientDb) return clientDb;
+  const exec = DBOSExecutor.globalInstance;
+  if (!exec) {
+    throw new Error(`Cannot access system database for queue ${q.name}: DBOS has not been launched.`);
+  }
+  return exec.systemDatabase;
+}
+
+/**
+ * Re-read the queue's row from the database and update the cached fields on
+ * `q` in place. No-op for in-memory queues. Throws if the row has been
+ * deleted.
+ */
+async function refreshFromDb(q: WorkflowQueue): Promise<void> {
+  if (!q.databaseBacked) return;
+  const record = await sysDBFor(q).getQueue(q.name);
+  if (record === null) {
+    throw new Error(`Queue '${q.name}' was not found in the database.`);
+  }
+  q.concurrency = record.concurrency ?? undefined;
+  q.workerConcurrency = record.workerConcurrency ?? undefined;
+  q.rateLimit =
+    record.rateLimitMax !== null && record.rateLimitPeriodSec !== null
+      ? { limitPerPeriod: record.rateLimitMax, periodSec: record.rateLimitPeriodSec }
+      : undefined;
+  q.priorityEnabled = record.priorityEnabled;
+  q.partitionQueue = record.partitionQueue;
+  q.minPollingIntervalMs = record.pollingIntervalSec * 1000;
+}
+
+/**
  * Settings structure for a named workflow queue.
  * Workflow queues limit the rate and concurrency at which DBOS executes workflows.
  * Queue policies apply to workflows started by `DBOS.startWorkflow`,
@@ -82,12 +131,12 @@ export class WorkflowQueue {
   readonly databaseBacked: boolean = false;
 
   /**
-   * If set, configuration reads/writes target this SystemDatabase instead of
-   * the global executor's. This lets a queue handle operate on the system
-   * database directly, without requiring a launched DBOS runtime in the same
-   * process.
+   * True when configuration reads/writes target a `DBOSClient`-supplied
+   * SystemDatabase rather than the global executor's. The actual handle is
+   * kept off this class's public type — see the module-level WeakMap below —
+   * so that `WorkflowQueue` does not transitively depend on `SystemDatabase`.
    */
-  readonly clientSystemDatabase?: SystemDatabase;
+  readonly clientBound: boolean = false;
 
   constructor(name: string);
 
@@ -177,51 +226,37 @@ export class WorkflowQueue {
     q.partitionQueue = record.partitionQueue;
     q.minPollingIntervalMs = record.pollingIntervalSec * 1000;
     q.databaseBacked = true;
-    q.clientSystemDatabase = clientSystemDatabase;
+    q.clientBound = clientSystemDatabase !== undefined;
+    if (clientSystemDatabase !== undefined) {
+      clientSystemDatabases.set(q as WorkflowQueue, clientSystemDatabase);
+    }
     return q as WorkflowQueue;
   }
 
-  private requireDatabaseBacked(): void {
-    if (!this.databaseBacked) {
-      throw new Error(
-        `Cannot configure queue ${this.name}: dynamic configuration is only supported for queues registered via DBOS.registerQueue.`,
-      );
-    }
-  }
-
-  private sysDB(): SystemDatabase {
-    if (this.clientSystemDatabase) return this.clientSystemDatabase;
-    const exec = DBOSExecutor.globalInstance;
-    if (!exec) {
-      throw new Error(`Cannot access system database for queue ${this.name}: DBOS has not been launched.`);
-    }
-    return exec.systemDatabase;
-  }
-
   async setConcurrency(value: number | undefined): Promise<void> {
-    this.requireDatabaseBacked();
+    requireDatabaseBacked(this);
     if (value !== undefined && this.workerConcurrency !== undefined && this.workerConcurrency > value) {
       throw new Error('workerConcurrency must be less than or equal to concurrency');
     }
-    await this.sysDB().updateQueue(this.name, { concurrency: value ?? null });
+    await sysDBFor(this).updateQueue(this.name, { concurrency: value ?? null });
     this.concurrency = value;
   }
 
   async setWorkerConcurrency(value: number | undefined): Promise<void> {
-    this.requireDatabaseBacked();
+    requireDatabaseBacked(this);
     if (value !== undefined && this.concurrency !== undefined && value > this.concurrency) {
       throw new Error('workerConcurrency must be less than or equal to concurrency');
     }
-    await this.sysDB().updateQueue(this.name, { workerConcurrency: value ?? null });
+    await sysDBFor(this).updateQueue(this.name, { workerConcurrency: value ?? null });
     this.workerConcurrency = value;
   }
 
   async setRateLimit(value: QueueRateLimit | undefined): Promise<void> {
-    this.requireDatabaseBacked();
+    requireDatabaseBacked(this);
     if (value !== undefined && (value.limitPerPeriod === undefined || value.periodSec === undefined)) {
       throw new Error('rateLimit must specify both limitPerPeriod and periodSec');
     }
-    await this.sysDB().updateQueue(this.name, {
+    await sysDBFor(this).updateQueue(this.name, {
       rateLimitMax: value ? value.limitPerPeriod : null,
       rateLimitPeriodSec: value ? value.periodSec : null,
     });
@@ -229,74 +264,53 @@ export class WorkflowQueue {
   }
 
   async setPriorityEnabled(value: boolean): Promise<void> {
-    this.requireDatabaseBacked();
-    await this.sysDB().updateQueue(this.name, { priorityEnabled: value });
+    requireDatabaseBacked(this);
+    await sysDBFor(this).updateQueue(this.name, { priorityEnabled: value });
     this.priorityEnabled = value;
   }
 
   async setPartitionQueue(value: boolean): Promise<void> {
-    this.requireDatabaseBacked();
-    await this.sysDB().updateQueue(this.name, { partitionQueue: value });
+    requireDatabaseBacked(this);
+    await sysDBFor(this).updateQueue(this.name, { partitionQueue: value });
     this.partitionQueue = value;
   }
 
   async setMinPollingIntervalMs(value: number): Promise<void> {
-    this.requireDatabaseBacked();
+    requireDatabaseBacked(this);
     if (value <= 0) {
       throw new Error('minPollingIntervalMs must be positive');
     }
-    await this.sysDB().updateQueue(this.name, { pollingIntervalSec: value / 1000 });
+    await sysDBFor(this).updateQueue(this.name, { pollingIntervalSec: value / 1000 });
     this.minPollingIntervalMs = value;
   }
 
-  /**
-   * Re-read the queue's row from the database and update the cached fields
-   * in place. No-op for in-memory queues. Throws if the row has been deleted.
-   */
-  private async refreshFromDb(): Promise<void> {
-    if (!this.databaseBacked) return;
-    const record = await this.sysDB().getQueue(this.name);
-    if (record === null) {
-      throw new Error(`Queue '${this.name}' was not found in the database.`);
-    }
-    this.concurrency = record.concurrency ?? undefined;
-    this.workerConcurrency = record.workerConcurrency ?? undefined;
-    this.rateLimit =
-      record.rateLimitMax !== null && record.rateLimitPeriodSec !== null
-        ? { limitPerPeriod: record.rateLimitMax, periodSec: record.rateLimitPeriodSec }
-        : undefined;
-    this.priorityEnabled = record.priorityEnabled;
-    this.partitionQueue = record.partitionQueue;
-    this.minPollingIntervalMs = record.pollingIntervalSec * 1000;
-  }
-
   async getConcurrency(): Promise<number | undefined> {
-    await this.refreshFromDb();
+    await refreshFromDb(this);
     return this.concurrency;
   }
 
   async getWorkerConcurrency(): Promise<number | undefined> {
-    await this.refreshFromDb();
+    await refreshFromDb(this);
     return this.workerConcurrency;
   }
 
   async getRateLimit(): Promise<QueueRateLimit | undefined> {
-    await this.refreshFromDb();
+    await refreshFromDb(this);
     return this.rateLimit;
   }
 
   async getPriorityEnabled(): Promise<boolean> {
-    await this.refreshFromDb();
+    await refreshFromDb(this);
     return this.priorityEnabled;
   }
 
   async getPartitionQueue(): Promise<boolean> {
-    await this.refreshFromDb();
+    await refreshFromDb(this);
     return this.partitionQueue;
   }
 
   async getMinPollingIntervalMs(): Promise<number | undefined> {
-    await this.refreshFromDb();
+    await refreshFromDb(this);
     return this.minPollingIntervalMs;
   }
 }
