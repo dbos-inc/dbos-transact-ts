@@ -1,4 +1,4 @@
-import { DBOS, WorkflowQueue } from '../src';
+import { DBOS } from '../src';
 import { generateDBOSTestConfig, Event, queueEntriesAreCleanedUp } from '../tests/helpers';
 
 // Extract worker arguments from command-line input
@@ -31,12 +31,6 @@ console.log(
   `Worker ID: ${workerId}, Global Concurrency Limit: ${globalConcurrencyLimit}, Local Concurrency Limit: ${localConcurrencyLimit}, Parent Workflow ID: ${parentWorkflowID}, Queue Name: ${queueName}`,
 );
 
-// Declare worker queue with controlled concurrency
-new WorkflowQueue(queueName, {
-  workerConcurrency: localConcurrencyLimit,
-  concurrency: globalConcurrencyLimit,
-});
-
 class InterProcessWorkflowTask {
   // Create a bunch of re-usable events. Increase the length if needed.
   static start_events = Array.from({ length: 20 }, () => new Event());
@@ -53,6 +47,10 @@ class InterProcessWorkflowTask {
 
 async function main() {
   const config = generateDBOSTestConfig();
+  // Listen only on the queue the parent registered. The queue's config
+  // (worker/global concurrency) lives in the database; the supervisor will
+  // discover it and start a dispatch loop on this process.
+  config.listenQueues = [queueName];
   DBOS.setConfig(config);
   await DBOS.launch();
 

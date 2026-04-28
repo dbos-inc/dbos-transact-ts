@@ -874,13 +874,12 @@ export class InterProcessWorkflowTask {
   }
 }
 
-// This queue cannot dequeue (rateLimit=0 in the parent process). Worker
-// processes spawned by `InterProcessWorkflow` re-create an in-memory queue
-// with the same name and their own concurrency limits.
-const IPWQueue: QueueRef = {
-  name: 'IPWQueue',
-  config: { rateLimit: { limitPerPeriod: 0, periodSec: 30 }, ...testPolling },
-};
+// Single DB-backed queue shared between the parent process and the worker
+// child processes. The parent does not listen on it (see `listenQueues: []`
+// in the test); only the workers dequeue. Concurrency is filled in from
+// `InterProcessWorkflow`'s class constants when the queue is registered.
+const IPWQueueName = 'IPWQueue';
+
 class InterProcessWorkflow {
   static localConcurrencyLimit = 5;
   static globalConcurrencyLimit = InterProcessWorkflow.localConcurrencyLimit * 2;
@@ -890,7 +889,7 @@ class InterProcessWorkflow {
     // First, start local concurrency limit tasks
     let handles = [];
     for (let i = 0; i < InterProcessWorkflow.localConcurrencyLimit; ++i) {
-      handles.push(await DBOS.startWorkflow(InterProcessWorkflowTask, { queueName: IPWQueue.name }).task(i));
+      handles.push(await DBOS.startWorkflow(InterProcessWorkflowTask, { queueName: IPWQueueName }).task(i));
     }
     // Start two workers
     const workerPromises = await InterProcessWorkflow.startWorkerProcesses(2);
@@ -915,7 +914,7 @@ class InterProcessWorkflow {
       // Now enqueue less than the local concurrency limit. Check that the 2nd worker acquired them.
       handles = [];
       for (let i = 0; i < InterProcessWorkflow.localConcurrencyLimit - 1; ++i) {
-        handles.push(await DBOS.startWorkflow(InterProcessWorkflowTask, { queueName: IPWQueue.name }).task(i));
+        handles.push(await DBOS.startWorkflow(InterProcessWorkflowTask, { queueName: IPWQueueName }).task(i));
       }
       n_dequeued = 0;
       while (n_dequeued < InterProcessWorkflow.localConcurrencyLimit - 1) {
@@ -939,7 +938,7 @@ class InterProcessWorkflow {
       handles = [];
       for (let i = 0; i < 2; ++i) {
         handles.push(
-          await DBOS.startWorkflow(InterProcessWorkflowTask, { queueName: IPWQueue.name }).task(
+          await DBOS.startWorkflow(InterProcessWorkflowTask, { queueName: IPWQueueName }).task(
             InterProcessWorkflow.localConcurrencyLimit - 1 + i,
           ),
         );
@@ -973,7 +972,7 @@ class InterProcessWorkflow {
       try {
         const result = await systemDBClient.query<{ count: string }>(
           'SELECT COUNT(*) FROM dbos.workflow_status WHERE status = $1 AND queue_name = $2',
-          [StatusString.PENDING, IPWQueue.name],
+          [StatusString.PENDING, IPWQueueName],
         );
         const count = Number(result.rows[0].count);
         expect(count).toBe(InterProcessWorkflow.globalConcurrencyLimit);
@@ -1001,7 +1000,7 @@ class InterProcessWorkflow {
             `${InterProcessWorkflow.localConcurrencyLimit}`,
             `${InterProcessWorkflow.globalConcurrencyLimit}`,
             `${DBOS.workflowID}`,
-            `${IPWQueue.name}`,
+            `${IPWQueueName}`,
           ],
           {
             cwd: process.cwd(),
@@ -1035,12 +1034,19 @@ describe('queued-wf-tests-concurrent-workers', () => {
   beforeAll(async () => {
     config = generateDBOSTestConfig();
     await setUpDBOSTestSysDb(config);
-    DBOS.setConfig(config);
   });
 
   beforeEach(async () => {
+    // The parent does not dispatch IPWQueue — only the spawned workers do.
+    // listenQueues: [] disables every user queue on this process.
+    DBOS.setConfig({ ...config, listenQueues: [] });
     await DBOS.launch();
-    await DBOS.registerQueue(IPWQueue.name, { onConflict: 'always_update', ...IPWQueue.config });
+    await DBOS.registerQueue(IPWQueueName, {
+      onConflict: 'always_update',
+      workerConcurrency: InterProcessWorkflow.localConcurrencyLimit,
+      concurrency: InterProcessWorkflow.globalConcurrencyLimit,
+      ...testPolling,
+    });
   });
 
   afterEach(async () => {

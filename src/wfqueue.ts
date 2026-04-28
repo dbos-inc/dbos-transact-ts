@@ -152,7 +152,8 @@ export class WorkflowQueue {
 
     if (DBOS.isInitialized()) {
       DBOS.logger.warn(
-        `Workflow queue '${name}' is being created after DBOS initialization and will not be considered for dequeue.`,
+        `In-memory workflow queue '${name}' was created after DBOS initialization and will not be picked up by the queue dispatcher. ` +
+          `Use DBOS.registerQueue to register a database-backed queue at runtime.`,
       );
     }
 
@@ -398,6 +399,9 @@ class WFQueueRunner {
     // queue does not race the first supervisor cycle.
     await this.discoverAndLaunchDbQueues(exec);
 
+    // Log everything we're now dispatching for, before the supervisor starts.
+    await this.logRunningQueues(exec);
+
     // Periodic supervisor: picks up queues registered after launch.
     const supervisor = this.superviseLoop(exec);
     this.activeLoops.add(supervisor);
@@ -406,6 +410,40 @@ class WFQueueRunner {
     // Wait until stop() is called, then wait for all loops to drain
     await this.stopPromise;
     await Promise.all(this.activeLoops);
+  }
+
+  /**
+   * Emit a single log block describing every queue this process will dispatch
+   * for. Called once at dispatcher startup, after discovery has completed.
+   */
+  private async logRunningQueues(exec: DBOSExecutor): Promise<void> {
+    const logger = exec.logger;
+    const merged = new Map<string, WorkflowQueue>();
+    try {
+      const records = await exec.systemDatabase.listQueues();
+      for (const record of records) {
+        if (record.name === INTERNAL_QUEUE_NAME) continue;
+        if (this.listenQueueNames !== null && !this.listenQueueNames.has(record.name)) continue;
+        merged.set(record.name, WorkflowQueue._fromRecord(record));
+      }
+    } catch (e) {
+      logger.warn(`Error listing database-backed queues for endpoint logging: ${(e as Error).message}`);
+    }
+    for (const [qn, q] of this.wfQueuesByName) {
+      merged.set(qn, q);
+    }
+
+    logger.info('Workflow queues:');
+    for (const [qn, q] of merged) {
+      const conc =
+        q.concurrency !== undefined ? `global concurrency limit: ${q.concurrency}` : 'No concurrency limit set';
+      logger.info(`    ${qn}: ${conc}`);
+      const workerconc =
+        q.workerConcurrency !== undefined
+          ? `worker concurrency limit: ${q.workerConcurrency}`
+          : 'No worker concurrency limit set';
+      logger.info(`    ${qn}: ${workerconc}`);
+    }
   }
 
   /**
@@ -562,39 +600,6 @@ class WFQueueRunner {
       } else {
         currentPollingMs = Math.max(minPollingMs, currentPollingMs * this.scalebackFactor);
       }
-    }
-  }
-
-  async logRegisteredEndpoints(exec: DBOSExecutor): Promise<void> {
-    const logger = exec.logger;
-    logger.info('Workflow queues:');
-
-    // Build a unified view: DB-backed queues first, then overlay in-memory
-    // entries so a same-named in-memory queue wins on collision.
-    const merged = new Map<string, WorkflowQueue>();
-    try {
-      const records = await exec.systemDatabase.listQueues();
-      for (const record of records) {
-        if (record.name === INTERNAL_QUEUE_NAME) continue;
-        if (this.listenQueueNames !== null && !this.listenQueueNames.has(record.name)) continue;
-        merged.set(record.name, WorkflowQueue._fromRecord(record));
-      }
-    } catch (e) {
-      logger.warn(`Error listing database-backed queues for endpoint logging: ${(e as Error).message}`);
-    }
-    for (const [qn, q] of this.wfQueuesByName) {
-      merged.set(qn, q);
-    }
-
-    for (const [qn, q] of merged) {
-      const conc =
-        q.concurrency !== undefined ? `global concurrency limit: ${q.concurrency}` : 'No concurrency limit set';
-      logger.info(`    ${qn}: ${conc}`);
-      const workerconc =
-        q.workerConcurrency !== undefined
-          ? `worker concurrency limit: ${q.workerConcurrency}`
-          : 'No worker concurrency limit set';
-      logger.info(`    ${qn}: ${workerconc}`);
     }
   }
 }

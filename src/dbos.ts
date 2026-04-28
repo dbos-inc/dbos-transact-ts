@@ -466,9 +466,6 @@ export class DBOS {
    */
   static logRegisteredEndpoints(): void {
     if (!DBOSExecutor.globalInstance) return;
-    // logRegisteredEndpoints reads from the database, so the underlying call
-    // is async; fire-and-forget here to keep this method's signature stable.
-    void wfQueueRunner.logRegisteredEndpoints(DBOSExecutor.globalInstance);
     for (const lcl of getLifecycleListeners()) {
       lcl.logRegisteredEndpoints?.();
     }
