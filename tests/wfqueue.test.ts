@@ -1,6 +1,6 @@
 import { StatusString, WorkflowHandle, DBOS, ConfiguredInstance, DBOSClient } from '../src';
 import { DBOSConfig, DBOSExecutor, DBOS_QUEUE_MAX_PRIORITY, DBOS_QUEUE_MIN_PRIORITY } from '../src/dbos-executor';
-import { wfQueueRunner } from '../src/wfqueue';
+import { QueueParameters, wfQueueRunner } from '../src/wfqueue';
 import {
   generateDBOSTestConfig,
   setUpDBOSTestSysDb,
@@ -39,21 +39,44 @@ import {
 import assert from 'node:assert';
 
 const testPolling = { minPollingIntervalMs: 100 };
-const queue = new WorkflowQueue('testQ', { ...testPolling });
-const serialqueue = new WorkflowQueue('serialQ', { concurrency: 1, ...testPolling });
-const serialqueueLimited = new WorkflowQueue('serialQL', {
-  concurrency: 1,
-  rateLimit: { limitPerPeriod: 10, periodSec: 1 },
-  ...testPolling,
-});
-const childqueue = new WorkflowQueue('childQ', { concurrency: 3, ...testPolling });
-const workerConcurrencyQueue = new WorkflowQueue('workerQ', { workerConcurrency: 1, ...testPolling });
+
+// Queue descriptors. The actual database-backed queues are registered in
+// `beforeEach` via `DBOS.registerQueue` once DBOS has launched. These objects
+// keep `queue.name` available for use in `DBOS.startWorkflow` calls.
+type QueueRef = { name: string; config: QueueParameters };
+const queue: QueueRef = { name: 'testQ', config: { ...testPolling } };
+const serialqueue: QueueRef = { name: 'serialQ', config: { concurrency: 1, ...testPolling } };
+const serialqueueLimited: QueueRef = {
+  name: 'serialQL',
+  config: { concurrency: 1, rateLimit: { limitPerPeriod: 10, periodSec: 1 }, ...testPolling },
+};
+const childqueue: QueueRef = { name: 'childQ', config: { concurrency: 3, ...testPolling } };
+const workerConcurrencyQueue: QueueRef = {
+  name: 'workerQ',
+  config: { workerConcurrency: 1, ...testPolling },
+};
 
 const qlimit = 5;
 const qperiod = 2;
-const rlqueue = new WorkflowQueue('limited_queue', {
-  rateLimit: { limitPerPeriod: qlimit, periodSec: qperiod },
-});
+const rlqueue: QueueRef = {
+  name: 'limited_queue',
+  config: { rateLimit: { limitPerPeriod: qlimit, periodSec: qperiod } },
+};
+
+const sharedQueueRefs: QueueRef[] = [
+  queue,
+  serialqueue,
+  serialqueueLimited,
+  childqueue,
+  workerConcurrencyQueue,
+  rlqueue,
+];
+
+async function registerSharedQueues() {
+  for (const ref of sharedQueueRefs) {
+    await DBOS.registerQueue(ref.name, { onConflict: 'always_update', ...ref.config });
+  }
+}
 
 describe('queued-wf-tests-simple', () => {
   let config: DBOSConfig;
@@ -68,6 +91,19 @@ describe('queued-wf-tests-simple', () => {
     TestWFs.reset();
     TestWFs2.reset();
     await DBOS.launch();
+    await registerSharedQueues();
+    // Class-level queues used inside this describe block.
+    for (const ref of [
+      TestQueueRecovery.queue,
+      TestQueueRecovery.recoveryQueue,
+      TestCancelQueues.queue,
+      TestResumeQueues.queue,
+      TestResumeQueuesPartitioned.queue,
+      TestConcurrencyAcrossVersions.queue,
+      waitFirstQueue,
+    ]) {
+      await DBOS.registerQueue(ref.name, { onConflict: 'always_update', ...ref.config });
+    }
   });
 
   afterEach(async () => {
@@ -354,8 +390,8 @@ describe('queued-wf-tests-simple', () => {
     static queuedSteps = 5;
     static taskEvents = Array.from({ length: TestQueueRecovery.queuedSteps }, () => new Event());
     static taskCount = 0;
-    static queue = new WorkflowQueue('testQueueRecovery', { ...testPolling });
-    static recoveryQueue = new WorkflowQueue('recoveryQ', { concurrency: 2, ...testPolling });
+    static queue: QueueRef = { name: 'testQueueRecovery', config: { ...testPolling } };
+    static recoveryQueue: QueueRef = { name: 'recoveryQ', config: { concurrency: 2, ...testPolling } };
 
     @DBOS.workflow()
     static async testWorkflow() {
@@ -526,7 +562,7 @@ describe('queued-wf-tests-simple', () => {
   class TestCancelQueues {
     static startEvent = new Event();
     static blockingEvent = new Event();
-    static queue = new WorkflowQueue('TestCancelQueues', { concurrency: 1, ...testPolling });
+    static queue: QueueRef = { name: 'TestCancelQueues', config: { concurrency: 1, ...testPolling } };
 
     @DBOS.workflow()
     static async stuckWorkflow() {
@@ -579,7 +615,7 @@ describe('queued-wf-tests-simple', () => {
   class TestResumeQueues {
     static startEvent = new Event();
     static blockingEvent = new Event();
-    static queue = new WorkflowQueue('TestResumeQueues', { concurrency: 1, ...testPolling });
+    static queue: QueueRef = { name: 'TestResumeQueues', config: { concurrency: 1, ...testPolling } };
 
     @DBOS.workflow()
     static async stuckWorkflow() {
@@ -636,11 +672,10 @@ describe('queued-wf-tests-simple', () => {
   class TestResumeQueuesPartitioned {
     static startEvent = new Event();
     static blockingEvent = new Event();
-    static queue = new WorkflowQueue('TestResumeQueuesPartitioned', {
-      concurrency: 1,
-      partitionQueue: true,
-      ...testPolling,
-    });
+    static queue: QueueRef = {
+      name: 'TestResumeQueuesPartitioned',
+      config: { concurrency: 1, partitionQueue: true, ...testPolling },
+    };
 
     @DBOS.workflow()
     static async stuckWorkflow() {
@@ -700,7 +735,10 @@ describe('queued-wf-tests-simple', () => {
   });
 
   class TestConcurrencyAcrossVersions {
-    static queue = new WorkflowQueue('TestAcrossVersions', { workerConcurrency: 1, ...testPolling });
+    static queue: QueueRef = {
+      name: 'TestAcrossVersions',
+      config: { workerConcurrency: 1, ...testPolling },
+    };
 
     @DBOS.workflow()
     static async testWorkflow() {
@@ -777,7 +815,7 @@ describe('queued-wf-tests-simple', () => {
   });
 });
 
-const waitFirstQueue = new WorkflowQueue('wait_first_queue', { concurrency: 5, ...testPolling });
+const waitFirstQueue: QueueRef = { name: 'wait_first_queue', config: { concurrency: 5, ...testPolling } };
 
 class WaitFirstQueueTest {
   static numTasks = 5;
@@ -836,11 +874,13 @@ export class InterProcessWorkflowTask {
   }
 }
 
-// This queue cannot dequeue
-const IPWQueue = new WorkflowQueue('IPWQueue', {
-  rateLimit: { limitPerPeriod: 0, periodSec: 30 },
-  ...testPolling,
-});
+// This queue cannot dequeue (rateLimit=0 in the parent process). Worker
+// processes spawned by `InterProcessWorkflow` re-create an in-memory queue
+// with the same name and their own concurrency limits.
+const IPWQueue: QueueRef = {
+  name: 'IPWQueue',
+  config: { rateLimit: { limitPerPeriod: 0, periodSec: 30 }, ...testPolling },
+};
 class InterProcessWorkflow {
   static localConcurrencyLimit = 5;
   static globalConcurrencyLimit = InterProcessWorkflow.localConcurrencyLimit * 2;
@@ -1000,6 +1040,7 @@ describe('queued-wf-tests-concurrent-workers', () => {
 
   beforeEach(async () => {
     await DBOS.launch();
+    await DBOS.registerQueue(IPWQueue.name, { onConflict: 'always_update', ...IPWQueue.config });
   });
 
   afterEach(async () => {
@@ -1110,7 +1151,7 @@ class TestChildWFs {
   }
 }
 
-async function runOneAtATime(queue: WorkflowQueue) {
+async function runOneAtATime(queue: QueueRef) {
   let wfRes: () => void = () => {};
   TestWFs2.wfPromise = new Promise<void>((resolve, _rj) => {
     wfRes = resolve;
@@ -1144,6 +1185,17 @@ describe('enqueue-options', () => {
 
   beforeEach(async () => {
     await DBOS.launch();
+    // childqueue is shared with the simple block; the others are local.
+    for (const ref of [
+      childqueue,
+      TestExample.queue,
+      TestExample.queue2,
+      TestPriority.queue,
+      TestPriority.childqueue,
+      SetPriorityTest.setPriorityQueue,
+    ]) {
+      await DBOS.registerQueue(ref.name, { onConflict: 'always_update', ...ref.config });
+    }
   });
 
   afterEach(async () => {
@@ -1156,8 +1208,8 @@ describe('enqueue-options', () => {
       TestExample.resolveEvent = resolve;
     });
 
-    static queue = new WorkflowQueue('test_dedup_queue', { concurrency: 1, ...testPolling });
-    static queue2 = new WorkflowQueue('queue2', { concurrency: 1, ...testPolling });
+    static queue: QueueRef = { name: 'test_dedup_queue', config: { concurrency: 1, ...testPolling } };
+    static queue2: QueueRef = { name: 'queue2', config: { concurrency: 1, ...testPolling } };
 
     @DBOS.workflow()
     static async parentWorkflow(input: string): Promise<string> {
@@ -1256,8 +1308,14 @@ describe('enqueue-options', () => {
 
     static wfPriorityList: number[] = [];
 
-    static queue = new WorkflowQueue('test_queue_prority', { concurrency: 1, priorityEnabled: true, ...testPolling });
-    static childqueue = new WorkflowQueue('child_queue', { concurrency: 1, priorityEnabled: true, ...testPolling });
+    static queue: QueueRef = {
+      name: 'test_queue_prority',
+      config: { concurrency: 1, priorityEnabled: true, ...testPolling },
+    };
+    static childqueue: QueueRef = {
+      name: 'child_queue',
+      config: { concurrency: 1, priorityEnabled: true, ...testPolling },
+    };
 
     @DBOS.workflow()
     static async parentWorkflow(input: number): Promise<number> {
@@ -1329,11 +1387,10 @@ describe('enqueue-options', () => {
   });
 
   class SetPriorityTest {
-    static setPriorityQueue = new WorkflowQueue('test_set_priority_queue', {
-      concurrency: 1,
-      priorityEnabled: true,
-      ...testPolling,
-    });
+    static setPriorityQueue: QueueRef = {
+      name: 'test_set_priority_queue',
+      config: { concurrency: 1, priorityEnabled: true, ...testPolling },
+    };
 
     static resolveBlocker: () => void;
     static blockerPromise = new Promise<void>((resolve) => {
@@ -1406,7 +1463,7 @@ describe('enqueue-options', () => {
 });
 
 // Timeout tests rely on the 1s default polling delay for timing assumptions
-const timeoutQueue = new WorkflowQueue('timeout-test-queue');
+const timeoutQueue: QueueRef = { name: 'timeout-test-queue', config: {} };
 
 describe('queue-time-outs', () => {
   let config: DBOSConfig;
@@ -1480,6 +1537,9 @@ describe('queue-time-outs', () => {
 
   beforeEach(async () => {
     await DBOS.launch();
+    for (const ref of [timeoutQueue, dedupRecoveryQueue, partitionQueue]) {
+      await DBOS.registerQueue(ref.name, { onConflict: 'always_update', ...ref.config });
+    }
   });
 
   afterEach(async () => {
@@ -1652,7 +1712,7 @@ describe('queue-time-outs', () => {
   });
 
   const dedupRecoveryEvent = new Event();
-  const dedupRecoveryQueue = new WorkflowQueue('dedup-recovery-queue', { ...testPolling });
+  const dedupRecoveryQueue: QueueRef = { name: 'dedup-recovery-queue', config: { ...testPolling } };
   const dedupRecoveryKey = 'my-dedup-id';
   const dedupRecoveryParentWorkflow = DBOS.registerWorkflow(
     async () => {
@@ -1698,7 +1758,10 @@ describe('queue-time-outs', () => {
 
   const partitionBlockingEvent = new Event();
   const partitionWaitingEvent = new Event();
-  const partitionQueue = new WorkflowQueue('partition-queue', { partitionQueue: true, concurrency: 1, ...testPolling });
+  const partitionQueue: QueueRef = {
+    name: 'partition-queue',
+    config: { partitionQueue: true, concurrency: 1, ...testPolling },
+  };
 
   const partitionBlockedWorkflow = DBOS.registerWorkflow(
     async () => {
@@ -1783,7 +1846,10 @@ describe('queue-time-outs', () => {
     }, Error);
 
     // You can only enqueue with a partition key on a partitioned queue
-    const partitionlessQueue = new WorkflowQueue('partitionless-queue', { ...testPolling });
+    const partitionlessQueue = await DBOS.registerQueue('partitionless-queue', {
+      onConflict: 'always_update',
+      ...testPolling,
+    });
     await assert.rejects(async () => {
       await DBOS.startWorkflow(partitionNormalWorkflow, {
         queueName: partitionlessQueue.name,
@@ -1798,8 +1864,6 @@ describe('queue-time-outs', () => {
     // Reset the test database
     await setUpDBOSTestSysDb(config);
 
-    const queueOne = new WorkflowQueue('queue-one', { ...testPolling });
-    const queueTwo = new WorkflowQueue('queue-two', { ...testPolling });
     const workflow = DBOS.registerWorkflow(
       async () => {
         return Promise.resolve(DBOS.workflowID);
@@ -1807,18 +1871,23 @@ describe('queue-time-outs', () => {
       { name: 'explicit-queue-listen-test' },
     );
 
-    config.listenQueues = [queueOne];
+    config.listenQueues = ['queue-one'];
     DBOS.setConfig(config);
     await DBOS.launch();
 
-    const handleOne = await DBOS.startWorkflow(workflow, { queueName: queueOne.name })();
-    const handleTwo = await DBOS.startWorkflow(workflow, { queueName: queueTwo.name })();
+    // Both queues are persisted in the database; only the one in
+    // listenQueues will have a worker on this process.
+    await DBOS.registerQueue('queue-one', { onConflict: 'always_update', ...testPolling });
+    await DBOS.registerQueue('queue-two', { onConflict: 'always_update', ...testPolling });
+
+    const handleOne = await DBOS.startWorkflow(workflow, { queueName: 'queue-one' })();
+    const handleTwo = await DBOS.startWorkflow(workflow, { queueName: 'queue-two' })();
     assert.equal(await handleOne.getResult(), handleOne.workflowID);
     const status = await handleTwo.getStatus();
     assert.equal(status?.status, 'ENQUEUED');
 
     await DBOS.shutdown();
-    config.listenQueues = [queueOne, queueTwo];
+    config.listenQueues = ['queue-one', 'queue-two'];
     DBOS.setConfig(config);
     await DBOS.launch();
 
@@ -1840,6 +1909,10 @@ describe('delay-tests', () => {
 
   beforeEach(async () => {
     await DBOS.launch();
+    await DBOS.registerQueue(TestDelayWFs.queue.name, {
+      onConflict: 'always_update',
+      ...TestDelayWFs.queue.config,
+    });
   });
 
   afterEach(async () => {
@@ -1847,7 +1920,7 @@ describe('delay-tests', () => {
   });
 
   class TestDelayWFs {
-    static readonly queue = new WorkflowQueue('delay-test-queue', { ...testPolling });
+    static readonly queue: QueueRef = { name: 'delay-test-queue', config: { ...testPolling } };
 
     @DBOS.workflow()
     static async testWorkflow(): Promise<void> {
