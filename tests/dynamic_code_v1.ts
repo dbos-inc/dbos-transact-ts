@@ -1,4 +1,4 @@
-import { ConfiguredInstance, DBOS, WorkflowQueue } from '../src';
+import { ConfiguredInstance, DBOS } from '../src';
 
 export class DBOSWFTest {
   @DBOS.step()
@@ -21,7 +21,8 @@ export class DBOSWFTest {
   }
 }
 
-export const queue = new WorkflowQueue('example_queue');
+// Registered as a database-backed queue by clear-reg.test.ts after launch.
+export const queue = { name: 'example_queue' };
 
 class TestFunctions extends ConfiguredInstance {
   constructor(name: string) {

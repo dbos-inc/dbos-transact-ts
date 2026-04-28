@@ -1,12 +1,12 @@
 import { Client } from 'pg';
-import { ConfiguredInstance, DBOS, DBOSClient, WorkflowHandle, WorkflowQueue } from '../src/';
+import { ConfiguredInstance, DBOS, DBOSClient, WorkflowHandle } from '../src/';
 import { DBOSConflictingRegistrationError } from '../src/error';
 import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
 import { randomUUID } from 'node:crypto';
 import { promises as fsp } from 'node:fs';
 import { DBOSExecutor } from '../src/dbos-executor';
 
-const queue = new WorkflowQueue('example_queue');
+const queue = { name: 'example_queue' };
 
 function stepTest(value: number): Promise<number> {
   expect(DBOS.stepStatus).toBeDefined();
@@ -147,6 +147,7 @@ describe('decorator-free-tests', () => {
 
   beforeEach(async () => {
     await DBOS.launch();
+    await DBOS.registerQueue(queue.name, { onConflict: 'always_update' });
   });
 
   afterEach(async () => {

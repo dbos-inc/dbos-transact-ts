@@ -6,11 +6,8 @@ import {
   DBOSConfig,
   DBOSMethodMiddlewareInstaller,
   MethodRegistrationBase,
-  WorkflowQueue,
 } from '../src';
 import { generateDBOSTestConfig, reexecuteWorkflowById, setUpDBOSTestSysDb } from './helpers';
-
-const _queue = new WorkflowQueue('testQueue');
 
 @DBOS.className('ClassA')
 class TestClass {
@@ -88,6 +85,7 @@ describe('rename_tests', () => {
       }
     ).key = 'b';
     await DBOS.launch();
+    await DBOS.registerQueue('testQueue', { onConflict: 'always_update' });
   });
 
   afterEach(async () => {

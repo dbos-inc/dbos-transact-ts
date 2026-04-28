@@ -1,4 +1,4 @@
-import { WorkflowQueue, DBOS } from '../src/';
+import { DBOS } from '../src/';
 import {
   generateDBOSTestConfig,
   setUpDBOSTestSysDb,
@@ -24,7 +24,7 @@ import { globalParams } from '../src/utils';
 describe('recovery-tests', () => {
   let config: DBOSConfig;
   let systemDBClient: Client;
-  const queue = new WorkflowQueue('DLQQ', { concurrency: 1 });
+  const queue = { name: 'DLQQ' };
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
@@ -34,6 +34,7 @@ describe('recovery-tests', () => {
 
   beforeEach(async () => {
     await DBOS.launch();
+    await DBOS.registerQueue(queue.name, { onConflict: 'always_update', concurrency: 1 });
     process.env.DBOS__VMID = '';
     systemDBClient = new Client({
       connectionString: config.systemDatabaseUrl,

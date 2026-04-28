@@ -30,6 +30,7 @@ describe('clear-reg-tests', () => {
       const m = require(`./dynamic_code_v${i}`) as typeof import('./dynamic_code_v1'); // (Both source files have same interface)
 
       await DBOS.launch();
+      await DBOS.registerQueue(m.queue.name, { onConflict: 'always_update' });
       try {
         await expect(wf()).resolves.toBe(`${i}${i}`);
         const wfh = await DBOS.startWorkflow(wf)();

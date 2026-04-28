@@ -1,4 +1,4 @@
-import { DBOS, WorkflowQueue } from '../src/';
+import { DBOS } from '../src/';
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import { dropPGDatabase, ensurePGDatabase } from '../src/datasource';
 import { randomUUID } from 'node:crypto';
@@ -7,7 +7,7 @@ import { Client } from 'pg';
 const cockroachdbUrl = process.env.DBOS_COCKROACHDB_URL;
 const describeIf = cockroachdbUrl ? describe : describe.skip;
 
-const testQueue = new WorkflowQueue('crdb-test-queue');
+const testQueueName = 'crdb-test-queue';
 
 class CRDBTestClass {
   @DBOS.workflow()
@@ -69,6 +69,7 @@ describeIf('cockroachdb', () => {
 
   beforeEach(async () => {
     await DBOS.launch();
+    await DBOS.registerQueue(testQueueName, { onConflict: 'always_update' });
     const sysDB = DBOSExecutor.globalInstance!.systemDatabase;
     sysDB.dbPollingIntervalResultMs = 100;
     sysDB.dbPollingIntervalEventMs = 100;
@@ -85,7 +86,7 @@ describeIf('cockroachdb', () => {
   });
 
   test('workflow-on-queue', async () => {
-    const handle = await DBOS.startWorkflow(CRDBTestClass, { queueName: testQueue.name }).testWorkflow('queued');
+    const handle = await DBOS.startWorkflow(CRDBTestClass, { queueName: testQueueName }).testWorkflow('queued');
     expect(await handle.getResult()).toBe('QUEUED');
     const status = await handle.getStatus();
     expect(status?.queueName).toBe('crdb-test-queue');

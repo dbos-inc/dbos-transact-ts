@@ -1,7 +1,7 @@
-import { DBOS, WorkflowQueue } from '../src';
+import { DBOS } from '../src';
 import { generateDBOSTestConfig } from './helpers';
 
-const q = new WorkflowQueue('testq', { concurrency: 1, rateLimit: { limitPerPeriod: 1, periodSec: 1 } });
+const q = { name: 'testq' };
 
 export class WF {
   @DBOS.workflow()
@@ -33,6 +33,11 @@ async function main() {
   const config = generateDBOSTestConfig();
   DBOS.setConfig(config);
   await DBOS.launch();
+  await DBOS.registerQueue(q.name, {
+    onConflict: 'always_update',
+    concurrency: 1,
+    rateLimit: { limitPerPeriod: 1, periodSec: 1 },
+  });
 
   await DBOS.withNextWorkflowID('testqueuedwfcrash', async () => {
     await WF.enqueue5Tasks();

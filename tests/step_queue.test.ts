@@ -8,11 +8,10 @@ import {
   recoverPendingWorkflows,
   setWfAndChildrenToPending,
 } from './helpers';
-import { WorkflowQueue } from '../src';
 import { randomUUID } from 'node:crypto';
 
-const queue = new WorkflowQueue('testQ');
-const serialqueue = new WorkflowQueue('serialQ', { concurrency: 1 });
+const queue = { name: 'testQ' };
+const serialqueue = { name: 'serialQ' };
 
 class InstanceStep extends ConfiguredInstance {
   constructor() {
@@ -115,6 +114,11 @@ describe('queued-wf-tests-simple', () => {
     StaticStep.reset();
     InstanceStep.reset();
     await DBOS.launch();
+    for (const ref of [queue, serialqueue, TestQueueRecoveryInst.queue]) {
+      await DBOS.registerQueue(ref.name, { onConflict: 'always_update' });
+    }
+    // serialqueue carries its own concurrency limit.
+    await DBOS.registerQueue(serialqueue.name, { onConflict: 'always_update', concurrency: 1 });
   });
 
   afterEach(async () => {
@@ -272,7 +276,7 @@ class TestQueueRecoveryInst extends ConfiguredInstance {
   static queuedSteps = 3;
   taskEvents = Array.from({ length: TestQueueRecoveryInst.queuedSteps }, () => new Event());
   taskCount = 0;
-  static queue = new WorkflowQueue('testQueueRecovery');
+  static queue = { name: 'testQueueRecovery' };
 
   @DBOS.workflow()
   async testWorkflow() {

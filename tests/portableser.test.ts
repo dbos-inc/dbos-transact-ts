@@ -1,5 +1,5 @@
 import { Client } from 'pg';
-import { DBOS, DBOSClient, DBOSConfig, DBOSSerializer, WorkflowHandle, WorkflowQueue } from '../src';
+import { DBOS, DBOSClient, DBOSConfig, DBOSSerializer, WorkflowHandle } from '../src';
 import { generateDBOSTestConfig, reexecuteWorkflowById, setUpDBOSTestSysDb } from './helpers';
 import {
   JsonWorkflowArgs,
@@ -14,8 +14,6 @@ import { DBOSJSON, DBOSPortableJSON } from '../src/serialization';
 import { randomUUID } from 'node:crypto';
 import { DBOSExecutor } from '../src/dbos-executor';
 import { z } from 'zod';
-
-const _queue = new WorkflowQueue('testq');
 
 async function workflowFunc(s: string, x: number, o: { k: string; v: string[] }, wfid?: string): Promise<string> {
   await DBOS.setEvent('defstat', { status: 'Happy' });
@@ -148,6 +146,7 @@ describe('portable-serizlization-tests', () => {
     process.env.DBOS__APPVERSION = 'v0';
     await setUpDBOSTestSysDb(config);
     await DBOS.launch();
+    await DBOS.registerQueue('testq', { onConflict: 'always_update' });
 
     systemDBClient = new Client({
       connectionString: config.systemDatabaseUrl,

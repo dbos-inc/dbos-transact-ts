@@ -1,4 +1,4 @@
-import { DBOS, ConfiguredInstance, DBOSClient, WorkflowQueue } from '../src';
+import { DBOS, ConfiguredInstance, DBOSClient } from '../src';
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import { generateDBOSTestConfig, setUpDBOSTestSysDb, dropDatabase } from './helpers';
 import { sleepms } from '../src/utils';
@@ -1184,7 +1184,6 @@ describe('dynamic-scheduler-tests', () => {
   // schedule-with-queue-name
   // ---------------------------------------------------------------------------
 
-  const _schedulerTestQueue = new WorkflowQueue('scheduler-test-queue');
   const queuedReceived: unknown[] = [];
   async function queuedWorkflow(_scheduledDate: Date, context: unknown) {
     const status = await DBOS.getWorkflowStatus(DBOS.workflowID!);
@@ -1196,6 +1195,7 @@ describe('dynamic-scheduler-tests', () => {
 
   test('schedule-with-queue-name', async () => {
     queuedReceived.length = 0;
+    await DBOS.registerQueue('scheduler-test-queue', { onConflict: 'always_update' });
 
     // Create a schedule with a valid queue name
     await DBOS.createSchedule({

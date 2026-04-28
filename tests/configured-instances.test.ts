@@ -1,4 +1,4 @@
-import { ConfiguredInstance, DBOS, DBOSConfig, WorkflowQueue } from '../src';
+import { ConfiguredInstance, DBOS, DBOSConfig } from '../src';
 import {
   generateDBOSTestConfig,
   recoverPendingWorkflows,
@@ -179,11 +179,11 @@ async function main4() {
 }
 
 async function main5() {
-  const wfq = new WorkflowQueue('wfq');
   const config = generateDBOSTestConfig();
   await setUpDBOSTestSysDb(config);
   DBOS.setConfig(config);
   await DBOS.launch();
+  const wfq = await DBOS.registerQueue('wfq', { onConflict: 'always_update' });
 
   const res = await DBOS.withWorkflowQueue(wfq.name, async () => {
     return await instA.doWorkflow();

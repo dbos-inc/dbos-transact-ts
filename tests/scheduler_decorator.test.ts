@@ -1,5 +1,5 @@
 import EventEmitter from 'node:events';
-import { DBOS, SchedulerMode, WorkflowQueue } from '../src';
+import { DBOS, SchedulerMode } from '../src';
 import { DBOSConfig } from '../src/dbos-executor';
 import { INTERNAL_QUEUE_NAME, sleepms } from '../src/utils';
 import { dropDatabase, generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
@@ -18,6 +18,7 @@ describe('cf-scheduled-wf-tests-simple', () => {
 
   beforeEach(async () => {
     await DBOS.launch();
+    await DBOS.registerQueue(q.name, { onConflict: 'always_update', concurrency: 1 });
   });
 
   afterEach(async () => {
@@ -39,7 +40,8 @@ describe('cf-scheduled-wf-tests-simple', () => {
   });
 });
 
-const q = new WorkflowQueue('schedQ', { concurrency: 1 });
+// Registered as a database-backed queue in `beforeEach` below.
+const q = { name: 'schedQ' };
 
 class DBOSSchedTestClass {
   static nCalls = 0;
@@ -184,6 +186,7 @@ describe('cf-scheduled-wf-tests-when-active', () => {
   test('wf-scheduled-recover', async () => {
     DBOSSchedTestClass.reset(false);
     await DBOS.launch();
+    await DBOS.registerQueue(q.name, { onConflict: 'always_update', concurrency: 1 });
     try {
       await sleepms(3000);
       expect(DBOSSchedTestClass.nCalls).toBeGreaterThanOrEqual(1);
@@ -206,6 +209,7 @@ describe('cf-scheduled-wf-tests-when-active', () => {
     await sleepms(5000);
     DBOSSchedTestClass.reset(false);
     await DBOS.launch();
+    await DBOS.registerQueue(q.name, { onConflict: 'always_update', concurrency: 1 });
     try {
       await sleepms(3000);
       expect(DBOSSchedTestClass.nCalls).toBeGreaterThanOrEqual(1); // 3 new ones, +/- 1

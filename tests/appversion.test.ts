@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import { DBOS, DBOSClient, StatusString, WorkflowQueue } from '../src';
+import { DBOS, DBOSClient, StatusString } from '../src';
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import { generateDBOSTestConfig, recoverPendingWorkflows, setUpDBOSTestSysDb } from './helpers';
 
@@ -281,8 +281,6 @@ describe('test-app-version', () => {
   });
 
   test('test-enqueue-with-custom-version', async () => {
-    const queue = new WorkflowQueue('version-enqueue-queue');
-
     class TestEnqueueVersion {
       @DBOS.workflow()
       static async versionedWorkflow() {
@@ -299,6 +297,7 @@ describe('test-app-version', () => {
     await DBOS.shutdown();
     DBOS.setConfig(config);
     await DBOS.launch();
+    const queue = await DBOS.registerQueue('version-enqueue-queue', { onConflict: 'always_update' });
 
     // Enqueue a workflow targeting v2
     const handle = await DBOS.startWorkflow(TestEnqueueVersion, {
