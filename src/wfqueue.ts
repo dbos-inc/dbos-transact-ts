@@ -322,11 +322,9 @@ class WFQueueRunner {
   private stopResolve?: () => void;
   private stopPromise?: Promise<void>;
   private exec?: DBOSExecutor;
-  private listenQueuesArg: WorkflowQueue[] | null = null;
   private listenQueueNames: Set<string> | null = null;
   private readonly activeLoops: Set<Promise<void>> = new Set();
   private readonly runningQueueNames: Set<string> = new Set();
-  private readonly warnedCollisions: Set<string> = new Set();
 
   private static readonly defaultMinPollingIntervalMs: number = 1000;
   private static readonly defaultMaxPollingIntervalMs: number = 120000;
@@ -344,7 +342,6 @@ class WFQueueRunner {
 
   clearRegistrations() {
     this.wfQueuesByName.clear();
-    this.warnedCollisions.clear();
   }
 
   private launchQueueLoop(queue: WorkflowQueue) {
@@ -361,7 +358,6 @@ class WFQueueRunner {
   async dispatchLoop(exec: DBOSExecutor, listenQueuesArg: WorkflowQueue[] | null): Promise<void> {
     this.isRunning = true;
     this.exec = exec;
-    this.listenQueuesArg = listenQueuesArg;
     this.listenQueueNames = listenQueuesArg ? new Set(listenQueuesArg.map((q) => q.name)) : null;
     this.stopPromise = new Promise<void>((resolve) => {
       this.stopResolve = resolve;
@@ -411,14 +407,11 @@ class WFQueueRunner {
     for (const record of records) {
       if (record.name === INTERNAL_QUEUE_NAME) continue;
       if (this.wfQueuesByName.has(record.name)) {
-        if (!this.warnedCollisions.has(record.name)) {
-          exec.logger.warn(
-            `Database-backed queue '${record.name}' has the same name as an in-memory queue. ` +
-              `The in-memory queue's configuration is being used; the database-backed queue is ignored. ` +
-              `Rename one of them to resolve the conflict.`,
-          );
-          this.warnedCollisions.add(record.name);
-        }
+        exec.logger.warn(
+          `Database-backed queue '${record.name}' has the same name as an in-memory queue. ` +
+            `The in-memory queue's configuration is being used; the database-backed queue is ignored. ` +
+            `Rename one of them to resolve the conflict.`,
+        );
         continue;
       }
       if (this.runningQueueNames.has(record.name)) continue;
