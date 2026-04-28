@@ -118,7 +118,14 @@ export interface DBOSConfig {
 
   serializer?: DBOSSerializer;
   enablePatching?: boolean;
-  listenQueues?: WorkflowQueue[];
+  /**
+   * Restrict this process to only dequeue from the listed queues. Each entry
+   * is either a `WorkflowQueue` instance or the name of a queue (in-memory
+   * or database-backed). Names that match nothing at launch are deferred —
+   * a database-backed queue registered later under that name will be picked
+   * up by the supervisor.
+   */
+  listenQueues?: (WorkflowQueue | string)[];
   schedulerPollingIntervalMs?: number;
   useListenNotify?: boolean;
 }
@@ -1021,7 +1028,7 @@ export class DBOSExecutor {
     return handlerArray;
   }
 
-  async initEventReceivers(listenQueues: WorkflowQueue[] | null) {
+  async initEventReceivers(listenQueues: (WorkflowQueue | string)[] | null) {
     this.#wfqEnded = wfQueueRunner.dispatchLoop(this, listenQueues);
 
     for (const lcl of getLifecycleListeners()) {

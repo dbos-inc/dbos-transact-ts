@@ -355,23 +355,41 @@ class WFQueueRunner {
     });
   }
 
-  async dispatchLoop(exec: DBOSExecutor, listenQueuesArg: WorkflowQueue[] | null): Promise<void> {
+  async dispatchLoop(exec: DBOSExecutor, listenQueuesArg: (WorkflowQueue | string)[] | null): Promise<void> {
     this.isRunning = true;
     this.exec = exec;
-    this.listenQueueNames = listenQueuesArg ? new Set(listenQueuesArg.map((q) => q.name)) : null;
+    this.listenQueueNames = listenQueuesArg
+      ? new Set(listenQueuesArg.map((entry) => (typeof entry === 'string' ? entry : entry.name)))
+      : null;
     this.stopPromise = new Promise<void>((resolve) => {
       this.stopResolve = resolve;
     });
 
-    let listenQueues: WorkflowQueue[];
+    // Always run the internal queue worker — it is process-private and not
+    // subject to the user's listenQueues filter.
+    const internal = this.wfQueuesByName.get(INTERNAL_QUEUE_NAME);
+    if (internal) this.launchQueueLoop(internal);
+
+    // Resolve the user-supplied listen list against the in-memory registry.
+    // String entries that don't match an in-memory queue are deferred — a
+    // database-backed queue with that name will be picked up by the
+    // supervisor below.
+    let inMemoryToLaunch: WorkflowQueue[];
     if (listenQueuesArg !== null) {
-      listenQueues = [...listenQueuesArg, this.wfQueuesByName.get(INTERNAL_QUEUE_NAME)!];
+      inMemoryToLaunch = [];
+      for (const entry of listenQueuesArg) {
+        if (typeof entry === 'string') {
+          const q = this.wfQueuesByName.get(entry);
+          if (q) inMemoryToLaunch.push(q);
+        } else {
+          inMemoryToLaunch.push(entry);
+        }
+      }
     } else {
-      listenQueues = Array.from(this.wfQueuesByName.values());
+      inMemoryToLaunch = Array.from(this.wfQueuesByName.values()).filter((q) => q.name !== INTERNAL_QUEUE_NAME);
     }
 
-    // Start one loop per in-memory queue
-    for (const q of listenQueues) {
+    for (const q of inMemoryToLaunch) {
       this.launchQueueLoop(q);
     }
 

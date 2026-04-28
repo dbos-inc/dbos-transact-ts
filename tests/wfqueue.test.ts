@@ -2204,6 +2204,46 @@ describe('database-backed-queue-crud', () => {
     await DBOS.deleteQueue(queueName);
   });
 
+  test('listenQueues-mixed-instances-and-strings', async () => {
+    // beforeEach already launched DBOS with the default config; reset it so
+    // we can launch with a custom listenQueues filter.
+    await DBOS.shutdown();
+
+    const inMemQueueName = `inmem_${randomUUID()}`;
+    const allowedDbName = `allowed_db_${randomUUID()}`;
+    const filteredOutDbName = `filtered_db_${randomUUID()}`;
+
+    const inMemQueue = new WorkflowQueue(inMemQueueName, { minPollingIntervalMs: 100 });
+
+    const cfg = generateDBOSTestConfig();
+    cfg.listenQueues = [inMemQueue, allowedDbName];
+    DBOS.setConfig(cfg);
+    await DBOS.launch();
+
+    // Register both DB-backed queues. The supervisor must launch a worker
+    // for the allowed name and skip the filtered one.
+    await DBOS.registerQueue(allowedDbName, { minPollingIntervalMs: 100 });
+    await DBOS.registerQueue(filteredOutDbName, { minPollingIntervalMs: 100 });
+
+    // The in-memory queue (passed as an instance) processes its workflow.
+    const h1 = await DBOS.startWorkflow(TestWFs, { queueName: inMemQueueName }).testWorkflowSimple('a', '1');
+    expect(await h1.getResult()).toBe('a1');
+
+    // The DB-backed queue (passed as a string name) also processes.
+    const h2 = await DBOS.startWorkflow(TestWFs, { queueName: allowedDbName }).testWorkflowSimple('b', '2');
+    expect(await h2.getResult()).toBe('b2');
+
+    // The filtered-out DB-backed queue gets no worker; its workflow stays
+    // ENQUEUED. Wait long enough for several supervisor cycles to confirm
+    // the filter holds.
+    const h3 = await DBOS.startWorkflow(TestWFs, { queueName: filteredOutDbName }).testWorkflowSimple('c', '3');
+    await sleepms(2500);
+    expect((await h3.getStatus())?.status).toBe(StatusString.ENQUEUED);
+
+    await DBOS.deleteQueue(allowedDbName);
+    await DBOS.deleteQueue(filteredOutDbName);
+  });
+
   test('async-getters-reflect-cross-process-changes', async () => {
     const queueName = `test_freshness_${randomUUID()}`;
     await DBOS.registerQueue(queueName, { concurrency: 5 });
