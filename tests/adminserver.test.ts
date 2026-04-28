@@ -354,6 +354,20 @@ describe('running-admin-server-tests', () => {
       }
     }
 
+    // Database-backed queues should also appear in the metadata endpoint.
+    await DBOS.registerQueue('admin-db-backed-queue', { concurrency: 7, workerConcurrency: 3 });
+    try {
+      const dbResponse = await fetch(`http://localhost:3001${WorkflowQueuesMetadataUrl}`, { method: 'GET' });
+      expect(dbResponse.status).toBe(200);
+      const dbMetadata = (await dbResponse.json()) as QueueMetadataResponse[];
+      const dbQueue = dbMetadata.find((q) => q.name === 'admin-db-backed-queue');
+      expect(dbQueue).toBeDefined();
+      expect(dbQueue!.concurrency).toBe(7);
+      expect(dbQueue!.workerConcurrency).toBe(3);
+    } finally {
+      await DBOS.deleteQueue('admin-db-backed-queue').catch(() => {});
+    }
+
     // Test GET not found
     const getNotFoundResponse = await fetch('http://localhost:3001/stuff', {
       method: 'GET',

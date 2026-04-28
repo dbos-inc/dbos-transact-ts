@@ -565,10 +565,28 @@ class WFQueueRunner {
     }
   }
 
-  logRegisteredEndpoints(exec: DBOSExecutor) {
+  async logRegisteredEndpoints(exec: DBOSExecutor): Promise<void> {
     const logger = exec.logger;
     logger.info('Workflow queues:');
+
+    // Build a unified view: DB-backed queues first, then overlay in-memory
+    // entries so a same-named in-memory queue wins on collision.
+    const merged = new Map<string, WorkflowQueue>();
+    try {
+      const records = await exec.systemDatabase.listQueues();
+      for (const record of records) {
+        if (record.name === INTERNAL_QUEUE_NAME) continue;
+        if (this.listenQueueNames !== null && !this.listenQueueNames.has(record.name)) continue;
+        merged.set(record.name, WorkflowQueue._fromRecord(record));
+      }
+    } catch (e) {
+      logger.warn(`Error listing database-backed queues for endpoint logging: ${(e as Error).message}`);
+    }
     for (const [qn, q] of this.wfQueuesByName) {
+      merged.set(qn, q);
+    }
+
+    for (const [qn, q] of merged) {
       const conc =
         q.concurrency !== undefined ? `global concurrency limit: ${q.concurrency}` : 'No concurrency limit set';
       logger.info(`    ${qn}: ${conc}`);
