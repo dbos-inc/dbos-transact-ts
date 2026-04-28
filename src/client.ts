@@ -49,6 +49,7 @@ import {
   backfillSchedule,
 } from './scheduler/scheduler';
 import { validateCrontab, validateTimezone } from './scheduler/crontab';
+import { RegisterQueueOptions, WorkflowQueue } from './wfqueue';
 
 /**
  * EnqueueOptions defines the options that can be passed to the `enqueue` method of the DBOSClient.
@@ -332,6 +333,47 @@ export class DBOSClient {
     await this.systemDatabase.initWorkflowStatus(internalStatus, null);
 
     return new ClientHandle<T>(this.systemDatabase, workflowUUID);
+  }
+
+  /**
+   * Register a workflow queue and persist its configuration in the system
+   * database. The returned queue's `set` methods write through this
+   * client's database.
+   *
+   * Defaults `onConflict` to `'always_update'` because clients are not
+   * associated with an application version.
+   */
+  async registerQueue(name: string, options: RegisterQueueOptions = {}): Promise<WorkflowQueue> {
+    const { onConflict = 'always_update', ...params } = options;
+    if (onConflict === 'update_if_latest_version') {
+      throw new Error(
+        "DBOSClient.registerQueue does not support onConflict='update_if_latest_version' " +
+          'because clients are not associated with an application version. ' +
+          "Use 'always_update' or 'never_update'.",
+      );
+    }
+    WorkflowQueue.validateQueueParams(params);
+
+    const updateExisting = onConflict === 'always_update';
+    const record = WorkflowQueue.recordFromParams(name, params);
+    await this.systemDatabase.upsertQueue(record, updateExisting);
+
+    const persisted = await this.systemDatabase.getQueue(name);
+    if (persisted === null) {
+      throw new Error(`Queue '${name}' missing from database after upsert`);
+    }
+    return WorkflowQueue._fromRecord(persisted, this.systemDatabase);
+  }
+
+  /** Retrieve a database-backed queue by name, or `null` if no row exists. */
+  async retrieveQueue(name: string): Promise<WorkflowQueue | null> {
+    const record = await this.systemDatabase.getQueue(name);
+    return record === null ? null : WorkflowQueue._fromRecord(record, this.systemDatabase);
+  }
+
+  /** Delete a database-backed queue by name. No-op if the queue does not exist. */
+  async deleteQueue(name: string): Promise<void> {
+    await this.systemDatabase.deleteQueue(name);
   }
 
   /**

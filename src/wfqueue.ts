@@ -37,6 +37,24 @@ export interface QueueParameters {
 }
 
 /**
+ * Behavior of `DBOS.registerQueue` / `DBOSClient.registerQueue` when a queue
+ * with the same name already has a row in the `queues` table.
+ *
+ * - `update_if_latest_version`: overwrite the existing row only when the
+ *   running application version is the latest registered version. Older
+ *   versions in a rolling deploy will not overwrite a newer config.
+ * - `always_update`: always overwrite the existing row.
+ * - `never_update`: leave the existing row unchanged. The returned queue
+ *   reflects the persisted config, not the supplied parameters.
+ */
+export type QueueConflictResolution = 'update_if_latest_version' | 'always_update' | 'never_update';
+
+export interface RegisterQueueOptions extends QueueParameters {
+  /** How to behave when a queue with the same name already exists. */
+  onConflict?: QueueConflictResolution;
+}
+
+/**
  * Settings structure for a named workflow queue.
  * Workflow queues limit the rate and concurrency at which DBOS executes workflows.
  * Queue policies apply to workflows started by `DBOS.startWorkflow`,
@@ -118,6 +136,20 @@ export class WorkflowQueue {
     if (rateLimit !== undefined && (rateLimit.limitPerPeriod === undefined || rateLimit.periodSec === undefined)) {
       throw new Error('rateLimit must specify both limitPerPeriod and periodSec');
     }
+  }
+
+  /** Build a persistable record from user-supplied registration parameters. */
+  static recordFromParams(name: string, params: QueueParameters): QueueRecord {
+    return {
+      name,
+      concurrency: params.concurrency ?? null,
+      workerConcurrency: params.workerConcurrency ?? null,
+      rateLimitMax: params.rateLimit ? params.rateLimit.limitPerPeriod : null,
+      rateLimitPeriodSec: params.rateLimit ? params.rateLimit.periodSec : null,
+      priorityEnabled: params.priorityEnabled ?? false,
+      partitionQueue: params.partitionQueue ?? false,
+      pollingIntervalSec: (params.minPollingIntervalMs ?? 1000) / 1000,
+    };
   }
 
   /**

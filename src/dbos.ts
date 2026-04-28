@@ -123,7 +123,7 @@ import {
   backfillSchedule as backfillScheduleImpl,
 } from './scheduler/scheduler';
 import { validateCrontab, validateTimezone } from './scheduler/crontab';
-import { wfQueueRunner } from './wfqueue';
+import { RegisterQueueOptions, WorkflowQueue, wfQueueRunner } from './wfqueue';
 import { registerAuthChecker } from './authdecorators';
 import assert from 'node:assert';
 
@@ -2312,5 +2312,56 @@ export class DBOS {
   static async setLatestApplicationVersion(versionName: string): Promise<void> {
     ensureDBOSIsLaunched('setLatestApplicationVersion');
     await DBOSExecutor.globalInstance!.systemDatabase.updateApplicationVersionTimestamp(versionName, Date.now());
+  }
+
+  /**
+   * Register a workflow queue and persist its configuration in the system
+   * database. Returns a `WorkflowQueue` whose `setX` methods write through
+   * to the database so the queue can be reconfigured at runtime.
+   *
+   * @param name - Unique name of the queue.
+   * @param options - Queue parameters plus an `onConflict` policy that
+   *   controls what happens when a row with this name already exists.
+   *   Defaults to `update_if_latest_version`, which only overwrites when the
+   *   running application version matches the latest registered version —
+   *   safe for rolling deploys.
+   */
+  static async registerQueue(name: string, options: RegisterQueueOptions = {}): Promise<WorkflowQueue> {
+    ensureDBOSIsLaunched('registerQueue');
+    const { onConflict = 'update_if_latest_version', ...params } = options;
+    WorkflowQueue.validateQueueParams(params);
+
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    let updateExisting: boolean;
+    if (onConflict === 'always_update') {
+      updateExisting = true;
+    } else if (onConflict === 'never_update') {
+      updateExisting = false;
+    } else {
+      const latest = await sysdb.getLatestApplicationVersion();
+      updateExisting = latest.versionName === globalParams.appVersion;
+    }
+
+    const record = WorkflowQueue.recordFromParams(name, params);
+    await sysdb.upsertQueue(record, updateExisting);
+
+    const persisted = await sysdb.getQueue(name);
+    if (persisted === null) {
+      throw new Error(`Queue '${name}' missing from database after upsert`);
+    }
+    return WorkflowQueue._fromRecord(persisted);
+  }
+
+  /** Retrieve a database-backed queue by name, or `null` if no row exists. */
+  static async retrieveQueue(name: string): Promise<WorkflowQueue | null> {
+    ensureDBOSIsLaunched('retrieveQueue');
+    const record = await DBOSExecutor.globalInstance!.systemDatabase.getQueue(name);
+    return record === null ? null : WorkflowQueue._fromRecord(record);
+  }
+
+  /** Delete a database-backed queue by name. No-op if the queue does not exist. */
+  static async deleteQueue(name: string): Promise<void> {
+    ensureDBOSIsLaunched('deleteQueue');
+    await DBOSExecutor.globalInstance!.systemDatabase.deleteQueue(name);
   }
 }
