@@ -2167,4 +2167,43 @@ describe('database-backed-queue-crud', () => {
 
     await DBOS.deleteQueue(queueName);
   });
+
+  test('async-getters-reflect-cross-process-changes', async () => {
+    const queueName = `test_freshness_${randomUUID()}`;
+    await DBOS.registerQueue(queueName, { concurrency: 5 });
+
+    // Two independent handles to the same row simulate two processes each
+    // holding their own snapshot.
+    const q1 = await DBOS.retrieveQueue(queueName);
+    const q2 = await DBOS.retrieveQueue(queueName);
+    expect(q1!.concurrency).toBe(5);
+    expect(q2!.concurrency).toBe(5);
+
+    // q2 mutates the row; q1's local cache is now stale.
+    await q2!.setConcurrency(10);
+    expect(q1!.concurrency).toBe(5);
+
+    // Async getter on q1 re-reads from the DB and refreshes the cache.
+    expect(await q1!.getConcurrency()).toBe(10);
+    expect(q1!.concurrency).toBe(10);
+
+    // A single async getter call refreshes every cached field in one query.
+    await q2!.setRateLimit({ limitPerPeriod: 3, periodSec: 1 });
+    await q2!.setPriorityEnabled(true);
+    expect(q1!.rateLimit).toBeUndefined();
+    expect(q1!.priorityEnabled).toBe(false);
+    await q1!.getConcurrency();
+    expect(q1!.rateLimit).toEqual({ limitPerPeriod: 3, periodSec: 1 });
+    expect(q1!.priorityEnabled).toBe(true);
+
+    // Async getters throw when the row is gone.
+    await DBOS.deleteQueue(queueName);
+    await expect(q1!.getConcurrency()).rejects.toThrow(/not found in the database/);
+
+    // In-memory queues: getters return cached values without a DB roundtrip.
+    const memName = `test_mem_freshness_${randomUUID()}`;
+    const mem = new WorkflowQueue(memName, { concurrency: 7, priorityEnabled: true });
+    expect(await mem.getConcurrency()).toBe(7);
+    expect(await mem.getPriorityEnabled()).toBe(true);
+  });
 });

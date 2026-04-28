@@ -62,6 +62,10 @@ export interface RegisterQueueOptions extends QueueParameters {
  */
 export class WorkflowQueue {
   readonly name: string;
+  /**
+   * Last-known cached values. May be stale for database-backed queues if
+   * another process has modified the row. Use getters instead.
+   */
   concurrency?: number;
   rateLimit?: QueueRateLimit;
   workerConcurrency?: number;
@@ -243,6 +247,57 @@ export class WorkflowQueue {
     }
     await this.sysDB().updateQueue(this.name, { pollingIntervalSec: value / 1000 });
     this.minPollingIntervalMs = value;
+  }
+
+  /**
+   * Re-read the queue's row from the database and update the cached fields
+   * in place. No-op for in-memory queues. Throws if the row has been deleted.
+   */
+  private async refreshFromDb(): Promise<void> {
+    if (!this.databaseBacked) return;
+    const record = await this.sysDB().getQueue(this.name);
+    if (record === null) {
+      throw new Error(`Queue '${this.name}' was not found in the database.`);
+    }
+    this.concurrency = record.concurrency ?? undefined;
+    this.workerConcurrency = record.workerConcurrency ?? undefined;
+    this.rateLimit =
+      record.rateLimitMax !== null && record.rateLimitPeriodSec !== null
+        ? { limitPerPeriod: record.rateLimitMax, periodSec: record.rateLimitPeriodSec }
+        : undefined;
+    this.priorityEnabled = record.priorityEnabled;
+    this.partitionQueue = record.partitionQueue;
+    this.minPollingIntervalMs = record.pollingIntervalSec * 1000;
+  }
+
+  async getConcurrency(): Promise<number | undefined> {
+    await this.refreshFromDb();
+    return this.concurrency;
+  }
+
+  async getWorkerConcurrency(): Promise<number | undefined> {
+    await this.refreshFromDb();
+    return this.workerConcurrency;
+  }
+
+  async getRateLimit(): Promise<QueueRateLimit | undefined> {
+    await this.refreshFromDb();
+    return this.rateLimit;
+  }
+
+  async getPriorityEnabled(): Promise<boolean> {
+    await this.refreshFromDb();
+    return this.priorityEnabled;
+  }
+
+  async getPartitionQueue(): Promise<boolean> {
+    await this.refreshFromDb();
+    return this.partitionQueue;
+  }
+
+  async getMinPollingIntervalMs(): Promise<number | undefined> {
+    await this.refreshFromDb();
+    return this.minPollingIntervalMs;
   }
 }
 
