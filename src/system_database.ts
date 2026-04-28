@@ -21,6 +21,7 @@ import {
   event_dispatch_kv,
   workflow_schedules,
   application_versions,
+  queues,
   SysDBSerializationFormat,
 } from '../schemas/system_db_schema';
 import { globalParams, cancellableSleep, INTERNAL_QUEUE_NAME, sleepConfig, sleepms } from './utils';
@@ -85,6 +86,43 @@ export interface VersionInfo {
   versionName: string;
   versionTimestamp: number;
   createdAt: number;
+}
+
+export interface QueueRecord {
+  name: string;
+  concurrency: number | null;
+  workerConcurrency: number | null;
+  rateLimitMax: number | null;
+  rateLimitPeriodSec: number | null;
+  priorityEnabled: boolean;
+  partitionQueue: boolean;
+  pollingIntervalSec: number;
+}
+
+/** Subset of a queue record that may be updated after creation. */
+export type QueueRecordUpdate = Partial<Omit<QueueRecord, 'name'>>;
+
+const QUEUE_COLUMN_BY_FIELD: Record<keyof QueueRecordUpdate, string> = {
+  concurrency: 'concurrency',
+  workerConcurrency: 'worker_concurrency',
+  rateLimitMax: 'rate_limit_max',
+  rateLimitPeriodSec: 'rate_limit_period_sec',
+  priorityEnabled: 'priority_enabled',
+  partitionQueue: 'partition_queue',
+  pollingIntervalSec: 'polling_interval_sec',
+};
+
+function queueRecordFromRow(row: queues): QueueRecord {
+  return {
+    name: row.name,
+    concurrency: row.concurrency,
+    workerConcurrency: row.worker_concurrency,
+    rateLimitMax: row.rate_limit_max,
+    rateLimitPeriodSec: row.rate_limit_period_sec,
+    priorityEnabled: row.priority_enabled,
+    partitionQueue: row.partition_queue,
+    pollingIntervalSec: row.polling_interval_sec,
+  };
 }
 
 export interface WorkflowAggregateRow {
@@ -3108,6 +3146,84 @@ export class SystemDatabase {
       versionTimestamp: Number(r.version_timestamp),
       createdAt: Number(r.created_at),
     };
+  }
+
+  // ==================== Queues ====================
+
+  async getQueue(name: string): Promise<QueueRecord | null> {
+    const { rows } = await this.pool.query<queues>(
+      `SELECT name, concurrency, worker_concurrency, rate_limit_max, rate_limit_period_sec,
+              priority_enabled, partition_queue, polling_interval_sec
+         FROM "${this.schemaName}".queues
+        WHERE name = $1`,
+      [name],
+    );
+    return rows.length === 0 ? null : queueRecordFromRow(rows[0]);
+  }
+
+  async listQueues(): Promise<QueueRecord[]> {
+    const { rows } = await this.pool.query<queues>(
+      `SELECT name, concurrency, worker_concurrency, rate_limit_max, rate_limit_period_sec,
+              priority_enabled, partition_queue, polling_interval_sec
+         FROM "${this.schemaName}".queues`,
+    );
+    return rows.map(queueRecordFromRow);
+  }
+
+  async deleteQueue(name: string): Promise<void> {
+    await this.pool.query(`DELETE FROM "${this.schemaName}".queues WHERE name = $1`, [name]);
+  }
+
+  async updateQueue(name: string, fields: QueueRecordUpdate): Promise<void> {
+    const setClauses: string[] = [];
+    const params: unknown[] = [];
+    let idx = 1;
+    for (const [key, value] of Object.entries(fields) as [keyof QueueRecordUpdate, unknown][]) {
+      const column = QUEUE_COLUMN_BY_FIELD[key];
+      setClauses.push(`"${column}" = $${idx++}`);
+      params.push(value);
+    }
+    if (setClauses.length === 0) return;
+    setClauses.push(`"updated_at" = $${idx++}`);
+    params.push(Date.now());
+    params.push(name);
+    await this.pool.query(
+      `UPDATE "${this.schemaName}".queues SET ${setClauses.join(', ')} WHERE name = $${idx}`,
+      params,
+    );
+  }
+
+  async upsertQueue(record: QueueRecord, updateExisting: boolean): Promise<void> {
+    const now = Date.now();
+    const onConflict = updateExisting
+      ? `ON CONFLICT (name) DO UPDATE SET
+          concurrency = EXCLUDED.concurrency,
+          worker_concurrency = EXCLUDED.worker_concurrency,
+          rate_limit_max = EXCLUDED.rate_limit_max,
+          rate_limit_period_sec = EXCLUDED.rate_limit_period_sec,
+          priority_enabled = EXCLUDED.priority_enabled,
+          partition_queue = EXCLUDED.partition_queue,
+          polling_interval_sec = EXCLUDED.polling_interval_sec,
+          updated_at = EXCLUDED.updated_at`
+      : `ON CONFLICT (name) DO NOTHING`;
+    await this.pool.query(
+      `INSERT INTO "${this.schemaName}".queues
+        (name, concurrency, worker_concurrency, rate_limit_max, rate_limit_period_sec,
+         priority_enabled, partition_queue, polling_interval_sec, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       ${onConflict}`,
+      [
+        record.name,
+        record.concurrency,
+        record.workerConcurrency,
+        record.rateLimitMax,
+        record.rateLimitPeriodSec,
+        record.priorityEnabled,
+        record.partitionQueue,
+        record.pollingIntervalSec,
+        now,
+      ],
+    );
   }
 
   // ==================== Internal ====================
