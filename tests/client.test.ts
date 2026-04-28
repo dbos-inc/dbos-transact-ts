@@ -768,4 +768,68 @@ describe('DBOSClient', () => {
       await client.destroy();
     }
   });
+
+  test('queue-crud', async () => {
+    await DBOS.launch();
+    const client = await DBOSClient.create({ systemDatabaseUrl });
+    const queueName = `test_client_queue_${randomUUID()}`;
+
+    try {
+      expect(await client.retrieveQueue(queueName)).toBeNull();
+
+      // Register persists configuration without a launched DBOS executor
+      // ever having seen the queue name.
+      const registered = await client.registerQueue(queueName, {
+        concurrency: 4,
+        rateLimit: { limitPerPeriod: 5, periodSec: 1.5 },
+        workerConcurrency: 2,
+        priorityEnabled: true,
+        minPollingIntervalMs: 2500,
+      });
+      expect(registered.name).toBe(queueName);
+      expect(registered.databaseBacked).toBe(true);
+      // Client-bound queues carry a SystemDatabase handle so their setters
+      // route through the client's database, not the global executor's.
+      expect(registered.clientSystemDatabase).toBeDefined();
+
+      const retrieved = await client.retrieveQueue(queueName);
+      expect(retrieved).not.toBeNull();
+      expect(retrieved!.clientSystemDatabase).toBeDefined();
+      expect(retrieved!.concurrency).toBe(4);
+      expect(retrieved!.workerConcurrency).toBe(2);
+      expect(retrieved!.rateLimit).toEqual({ limitPerPeriod: 5, periodSec: 1.5 });
+      expect(retrieved!.priorityEnabled).toBe(true);
+      expect(retrieved!.minPollingIntervalMs).toBe(2500);
+
+      // Setters write through the client's database; the launched DBOS
+      // executor sees the same row.
+      await retrieved!.setConcurrency(8);
+      const fromDbos = await DBOS.retrieveQueue(queueName);
+      expect(fromDbos).not.toBeNull();
+      expect(fromDbos!.concurrency).toBe(8);
+      // Queues retrieved through DBOS are not client-bound.
+      expect(fromDbos!.clientSystemDatabase).toBeUndefined();
+
+      // Clients have no application version, so update_if_latest_version
+      // is rejected.
+      await expect(
+        client.registerQueue(queueName, { concurrency: 1, onConflict: 'update_if_latest_version' }),
+      ).rejects.toThrow(/update_if_latest_version/);
+
+      // Default for clients is always_update: re-registering with new config
+      // overwrites the existing row.
+      await client.registerQueue(queueName, { concurrency: 99 });
+      const overwritten = await DBOS.retrieveQueue(queueName);
+      expect(overwritten!.concurrency).toBe(99);
+
+      // delete removes the row; subsequent retrievals from either side
+      // return null, and a second delete is a no-op.
+      await client.deleteQueue(queueName);
+      expect(await client.retrieveQueue(queueName)).toBeNull();
+      expect(await DBOS.retrieveQueue(queueName)).toBeNull();
+      await client.deleteQueue(queueName);
+    } finally {
+      await client.destroy();
+    }
+  });
 });

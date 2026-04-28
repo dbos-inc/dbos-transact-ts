@@ -1,5 +1,6 @@
 import { StatusString, WorkflowHandle, DBOS, ConfiguredInstance, DBOSClient } from '../src';
-import { DBOSConfig, DBOS_QUEUE_MAX_PRIORITY, DBOS_QUEUE_MIN_PRIORITY } from '../src/dbos-executor';
+import { DBOSConfig, DBOSExecutor, DBOS_QUEUE_MAX_PRIORITY, DBOS_QUEUE_MIN_PRIORITY } from '../src/dbos-executor';
+import { wfQueueRunner } from '../src/wfqueue';
 import {
   generateDBOSTestConfig,
   setUpDBOSTestSysDb,
@@ -2032,5 +2033,138 @@ describe('delay-tests', () => {
     expect(status2?.status).toBe(StatusString.DELAYED);
     expect(status2!.delayUntilEpochMS).toBe(deadline);
     expect(await handle2.getResult()).toBe('done');
+  });
+});
+
+describe('database-backed-queue-crud', () => {
+  let config: DBOSConfig;
+
+  beforeAll(async () => {
+    config = generateDBOSTestConfig();
+    await setUpDBOSTestSysDb(config);
+    DBOS.setConfig(config);
+  });
+
+  beforeEach(async () => {
+    await DBOS.launch();
+  });
+
+  afterEach(async () => {
+    await DBOS.shutdown();
+  });
+
+  test('register-retrieve-delete-and-conflict-resolution', async () => {
+    const queueName = `test_crud_queue_${randomUUID()}`;
+
+    expect(await DBOS.retrieveQueue(queueName)).toBeNull();
+
+    const registered = await DBOS.registerQueue(queueName, {
+      concurrency: 10,
+      rateLimit: { limitPerPeriod: 5, periodSec: 1.5 },
+      workerConcurrency: 2,
+      priorityEnabled: true,
+      minPollingIntervalMs: 2500,
+    });
+    expect(registered.name).toBe(queueName);
+    expect(registered.databaseBacked).toBe(true);
+    // Database-backed queues are not added to the in-memory registry.
+    expect(wfQueueRunner.wfQueuesByName.has(queueName)).toBe(false);
+
+    let retrieved = await DBOS.retrieveQueue(queueName);
+    expect(retrieved).not.toBeNull();
+    expect(retrieved!.name).toBe(queueName);
+    expect(retrieved!.concurrency).toBe(10);
+    expect(retrieved!.workerConcurrency).toBe(2);
+    expect(retrieved!.rateLimit).toEqual({ limitPerPeriod: 5, periodSec: 1.5 });
+    expect(retrieved!.priorityEnabled).toBe(true);
+    expect(retrieved!.partitionQueue).toBe(false);
+    expect(retrieved!.minPollingIntervalMs).toBe(2500);
+    expect(retrieved!.databaseBacked).toBe(true);
+
+    // never_update leaves the existing row alone.
+    await DBOS.registerQueue(queueName, { concurrency: 99, onConflict: 'never_update' });
+    retrieved = await DBOS.retrieveQueue(queueName);
+    expect(retrieved!.concurrency).toBe(10);
+    expect(retrieved!.rateLimit).toEqual({ limitPerPeriod: 5, periodSec: 1.5 });
+
+    // always_update overwrites every column, including clearing those that
+    // were previously set but are now omitted.
+    await DBOS.registerQueue(queueName, { concurrency: 20, onConflict: 'always_update' });
+    retrieved = await DBOS.retrieveQueue(queueName);
+    expect(retrieved!.concurrency).toBe(20);
+    expect(retrieved!.workerConcurrency).toBeUndefined();
+    expect(retrieved!.rateLimit).toBeUndefined();
+    expect(retrieved!.priorityEnabled).toBe(false);
+    expect(retrieved!.minPollingIntervalMs).toBe(1000);
+
+    // update_if_latest_version updates when the running version is the latest.
+    await DBOS.registerQueue(queueName, { concurrency: 30, onConflict: 'update_if_latest_version' });
+    retrieved = await DBOS.retrieveQueue(queueName);
+    expect(retrieved!.concurrency).toBe(30);
+
+    // If a newer registered version exists, update_if_latest_version no-ops.
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    const newerVersion = `newer-${randomUUID()}`;
+    await sysdb.createApplicationVersion(newerVersion);
+    await sysdb.updateApplicationVersionTimestamp(newerVersion, Date.now() + 1_000_000);
+
+    await DBOS.registerQueue(queueName, { concurrency: 999, onConflict: 'update_if_latest_version' });
+    retrieved = await DBOS.retrieveQueue(queueName);
+    expect(retrieved!.concurrency).toBe(30);
+
+    // delete removes the row; subsequent retrievals return null and a
+    // second delete is a harmless no-op.
+    await DBOS.deleteQueue(queueName);
+    expect(await DBOS.retrieveQueue(queueName)).toBeNull();
+    await DBOS.deleteQueue(queueName);
+  });
+
+  test('dynamic-config-via-setters', async () => {
+    const queueName = `test_dyn_queue_${randomUUID()}`;
+    const queue = await DBOS.registerQueue(queueName, {
+      concurrency: 4,
+      workerConcurrency: 2,
+      priorityEnabled: false,
+      minPollingIntervalMs: 1000,
+    });
+
+    await queue.setConcurrency(8);
+    await queue.setWorkerConcurrency(3);
+    await queue.setRateLimit({ limitPerPeriod: 7, periodSec: 2.0 });
+    await queue.setPriorityEnabled(true);
+    await queue.setPartitionQueue(true);
+    await queue.setMinPollingIntervalMs(500);
+
+    const fresh = await DBOS.retrieveQueue(queueName);
+    for (const q of [queue, fresh]) {
+      expect(q).not.toBeNull();
+      expect(q!.concurrency).toBe(8);
+      expect(q!.workerConcurrency).toBe(3);
+      expect(q!.rateLimit).toEqual({ limitPerPeriod: 7, periodSec: 2.0 });
+      expect(q!.priorityEnabled).toBe(true);
+      expect(q!.partitionQueue).toBe(true);
+      expect(q!.minPollingIntervalMs).toBe(500);
+    }
+
+    // Cross-validation: workerConcurrency cannot exceed concurrency.
+    await expect(queue.setWorkerConcurrency(100)).rejects.toThrow(
+      'workerConcurrency must be less than or equal to concurrency',
+    );
+    // Polling interval must be positive.
+    await expect(queue.setMinPollingIntervalMs(0)).rejects.toThrow('minPollingIntervalMs must be positive');
+
+    // Rate limit can be cleared.
+    await queue.setRateLimit(undefined);
+    const cleared = await DBOS.retrieveQueue(queueName);
+    expect(cleared!.rateLimit).toBeUndefined();
+
+    // In-memory queues do not support setters.
+    const legacyName = `legacy_dyn_queue_${randomUUID()}`;
+    const legacy = new WorkflowQueue(legacyName, { concurrency: 2 });
+    expect(legacy.concurrency).toBe(2);
+    expect(legacy.databaseBacked).toBe(false);
+    await expect(legacy.setConcurrency(5)).rejects.toThrow(/dynamic configuration is only supported/);
+
+    await DBOS.deleteQueue(queueName);
   });
 });
