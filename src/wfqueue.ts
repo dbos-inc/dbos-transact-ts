@@ -359,12 +359,35 @@ class WFQueueRunner {
     await Promise.all(this.activeLoops);
   }
 
-  private async runQueue(exec: DBOSExecutor, queue: WorkflowQueue): Promise<void> {
-    const minPollingMs = queue.minPollingIntervalMs ?? WFQueueRunner.defaultMinPollingIntervalMs;
+  private async runQueue(exec: DBOSExecutor, initialQueue: WorkflowQueue): Promise<void> {
+    let queue = initialQueue;
     const maxPollingMs = WFQueueRunner.defaultMaxPollingIntervalMs;
-    let currentPollingMs = minPollingMs;
+    let currentPollingMs = queue.minPollingIntervalMs ?? WFQueueRunner.defaultMinPollingIntervalMs;
 
     while (this.isRunning) {
+      // For database-backed queues, refresh config from the row each
+      // iteration so changes to concurrency, polling interval, etc. take
+      // effect without a restart. If the row is gone, this worker exits.
+      if (queue.databaseBacked) {
+        try {
+          const record = await exec.systemDatabase.getQueue(queue.name);
+          if (record === null) {
+            exec.logger.info(`Queue '${queue.name}' has been deleted from the database; stopping its worker.`);
+            return;
+          }
+          queue = WorkflowQueue._fromRecord(record);
+        } catch (e) {
+          exec.logger.warn(`Error reloading queue '${queue.name}' from the database: ${(e as Error).message}`);
+        }
+      }
+
+      // Recompute min/max each iteration so a setMinPollingIntervalMs takes
+      // effect on the very next tick. Clamp the running value into the new
+      // range to avoid sleeping longer than the configured maximum after a
+      // shrink, or shorter than the minimum after a grow.
+      const minPollingMs = queue.minPollingIntervalMs ?? WFQueueRunner.defaultMinPollingIntervalMs;
+      currentPollingMs = Math.max(minPollingMs, Math.min(currentPollingMs, maxPollingMs));
+
       // Sleep with jitter, racing against the stop signal
       const jitter = this.jitterMin + Math.random() * (this.jitterMax - this.jitterMin);
       const sleepMs = currentPollingMs * jitter;
