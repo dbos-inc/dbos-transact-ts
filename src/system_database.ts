@@ -3198,38 +3198,30 @@ export class SystemDatabase {
    * whether it was updated. */
   async upsertQueue(record: QueueRecord, updateExisting: boolean): Promise<boolean> {
     const now = Date.now();
-    const insertResult = await this.pool.query<{ name: string }>(
-      `INSERT INTO "${this.schemaName}".queues
-        (name, concurrency, worker_concurrency, rate_limit_max, rate_limit_period_sec,
-         priority_enabled, partition_queue, polling_interval_sec, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-       ON CONFLICT (name) DO NOTHING
-       RETURNING name`,
-      [
-        record.name,
-        record.concurrency,
-        record.workerConcurrency,
-        record.rateLimitMax,
-        record.rateLimitPeriodSec,
-        record.priorityEnabled,
-        record.partitionQueue,
-        record.pollingIntervalSec,
-        now,
-      ],
-    );
-    const inserted = insertResult.rowCount !== null && insertResult.rowCount > 0;
-    if (!inserted && updateExisting) {
-      await this.pool.query(
-        `UPDATE "${this.schemaName}".queues SET
-           concurrency = $2,
-           worker_concurrency = $3,
-           rate_limit_max = $4,
-           rate_limit_period_sec = $5,
-           priority_enabled = $6,
-           partition_queue = $7,
-           polling_interval_sec = $8,
-           updated_at = $9
-         WHERE name = $1`,
+    const onConflict = updateExisting
+      ? `ON CONFLICT (name) DO UPDATE SET
+          concurrency = EXCLUDED.concurrency,
+          worker_concurrency = EXCLUDED.worker_concurrency,
+          rate_limit_max = EXCLUDED.rate_limit_max,
+          rate_limit_period_sec = EXCLUDED.rate_limit_period_sec,
+          priority_enabled = EXCLUDED.priority_enabled,
+          partition_queue = EXCLUDED.partition_queue,
+          polling_interval_sec = EXCLUDED.polling_interval_sec,
+          updated_at = EXCLUDED.updated_at`
+      : `ON CONFLICT (name) DO NOTHING`;
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const existed = await client.query<{ name: string }>(
+        `SELECT name FROM "${this.schemaName}".queues WHERE name = $1`,
+        [record.name],
+      );
+      await client.query(
+        `INSERT INTO "${this.schemaName}".queues
+          (name, concurrency, worker_concurrency, rate_limit_max, rate_limit_period_sec,
+           priority_enabled, partition_queue, polling_interval_sec, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         ${onConflict}`,
         [
           record.name,
           record.concurrency,
@@ -3242,8 +3234,14 @@ export class SystemDatabase {
           now,
         ],
       );
+      await client.query('COMMIT');
+      return existed.rowCount === 0;
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
     }
-    return inserted;
   }
 
   // ==================== Internal ====================
