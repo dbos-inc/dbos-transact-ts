@@ -663,13 +663,15 @@ describe('portable-serizlization-tests', () => {
 
   test('test-portable-client', async () => {
     const client = await DBOSClient.create({ systemDatabaseUrl: config.systemDatabaseUrl! });
+    const queueName = 'test-portable-client-queue';
     try {
+      await client.registerQueue(queueName);
       for (const calltype of ['regular', 'portable']) {
         // Run WF with custom serialization
         const wfhr = await client.enqueue<typeof simpleRecv>(
           {
             workflowName: 'simpleRecv',
-            queueName: 'testq',
+            queueName,
             serializationType: 'portable',
           },
           'portable',
@@ -680,7 +682,7 @@ describe('portable-serizlization-tests', () => {
             {
               workflowName: 'workflowDef',
               workflowClassName: 'workflows',
-              queueName: 'testq',
+              queueName,
             },
             ['s', 1, { k: 'k', v: ['v'] }, wfhr.workflowID],
           );
@@ -689,7 +691,7 @@ describe('portable-serizlization-tests', () => {
             {
               workflowName: 'workflowDef',
               workflowClassName: 'workflows',
-              queueName: 'testq',
+              queueName,
               serializationType: 'portable',
             },
             's',
@@ -699,9 +701,9 @@ describe('portable-serizlization-tests', () => {
           );
         }
         await client.send(wfhs.workflowID, 'm', 'incoming', undefined, { serializationType: 'portable' });
-        expect(await client.getEvent(wfhs.workflowID, 'defstat', 2)).toStrictEqual({ status: 'Happy' });
-        expect(await client.getEvent(wfhs.workflowID, 'nstat', 2)).toStrictEqual({ status: 'Happy' });
-        expect(await client.getEvent(wfhs.workflowID, 'pstat', 2)).toStrictEqual({ status: 'Happy' });
+        expect(await client.getEvent(wfhs.workflowID, 'defstat', 10)).toStrictEqual({ status: 'Happy' });
+        expect(await client.getEvent(wfhs.workflowID, 'nstat', 10)).toStrictEqual({ status: 'Happy' });
+        expect(await client.getEvent(wfhs.workflowID, 'pstat', 10)).toStrictEqual({ status: 'Happy' });
         const { value: ddread } = await client.readStream(wfhs.workflowID, 'defstream').next();
         expect(ddread).toStrictEqual({ stream: 'OhYeah' });
         const { value: dnread } = await client.readStream(wfhs.workflowID, 'nstream').next();
