@@ -2,7 +2,24 @@ import { DBOSExecutor } from './dbos-executor';
 import { DBOS } from './dbos';
 import { DEBUG_TRIGGER_WORKFLOW_QUEUE_START, debugTriggerPoint } from './debugpoint';
 import type { QueueRecord, SystemDatabase } from './system_database';
+import type { GlobalLogger } from './telemetry/logs';
 import { globalParams, INTERNAL_QUEUE_NAME } from './utils';
+
+/**
+ * Log a single queue's name and its set parameters. Unset parameters are
+ * omitted, matching `Queue: <name> (concurrency=…, worker_concurrency=…,
+ * limit=N/Ts, priority, partitioned)`.
+ */
+export function logQueue(logger: GlobalLogger, q: WorkflowQueue): void {
+  const opts: string[] = [];
+  if (q.concurrency !== undefined) opts.push(`concurrency=${q.concurrency}`);
+  if (q.workerConcurrency !== undefined) opts.push(`worker_concurrency=${q.workerConcurrency}`);
+  if (q.rateLimit !== undefined) opts.push(`limit=${q.rateLimit.limitPerPeriod}/${q.rateLimit.periodSec}s`);
+  if (q.priorityEnabled) opts.push('priority');
+  if (q.partitionQueue) opts.push('partitioned');
+  const optsStr = opts.length > 0 ? ` (${opts.join(', ')})` : '';
+  logger.info(`Queue: ${q.name}${optsStr}`);
+}
 
 /**
  * Limit the maximum number of functions started from a `WorkflowQueue`
@@ -442,14 +459,7 @@ class WFQueueRunner {
 
     logger.info(`Listening to ${merged.size} queues:`);
     for (const q of merged.values()) {
-      const opts: string[] = [];
-      if (q.concurrency !== undefined) opts.push(`concurrency=${q.concurrency}`);
-      if (q.workerConcurrency !== undefined) opts.push(`worker_concurrency=${q.workerConcurrency}`);
-      if (q.rateLimit !== undefined) opts.push(`limit=${q.rateLimit.limitPerPeriod}/${q.rateLimit.periodSec}s`);
-      if (q.priorityEnabled) opts.push('priority');
-      if (q.partitionQueue) opts.push('partitioned');
-      const optsStr = opts.length > 0 ? ` (${opts.join(', ')})` : '';
-      logger.info(`Queue: ${q.name}${optsStr}`);
+      logQueue(logger, q);
     }
   }
 

@@ -49,7 +49,7 @@ import {
   backfillSchedule,
 } from './scheduler/scheduler';
 import { validateCrontab, validateTimezone } from './scheduler/crontab';
-import { RegisterQueueOptions, WorkflowQueue } from './wfqueue';
+import { logQueue, RegisterQueueOptions, WorkflowQueue } from './wfqueue';
 
 /**
  * EnqueueOptions defines the options that can be passed to the `enqueue` method of the DBOSClient.
@@ -356,13 +356,17 @@ export class DBOSClient {
 
     const updateExisting = onConflict === 'always_update';
     const record = WorkflowQueue.recordFromParams(name, params);
-    await this.systemDatabase.upsertQueue(record, updateExisting);
+    const inserted = await this.systemDatabase.upsertQueue(record, updateExisting);
 
     const persisted = await this.systemDatabase.getQueue(name);
     if (persisted === null) {
       throw new Error(`Queue '${name}' missing from database after upsert`);
     }
-    return WorkflowQueue._fromRecord(persisted, this.systemDatabase);
+    const queue = WorkflowQueue._fromRecord(persisted, this.systemDatabase);
+    if (inserted) {
+      logQueue(this.logger, queue);
+    }
+    return queue;
   }
 
   /** Retrieve a database-backed queue by name, or `null` if no row exists. */

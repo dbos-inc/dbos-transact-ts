@@ -3193,7 +3193,10 @@ export class SystemDatabase {
     );
   }
 
-  async upsertQueue(record: QueueRecord, updateExisting: boolean): Promise<void> {
+  /** Returns true iff this call inserted a new row (i.e. the queue did not
+   * previously exist). False if the row already existed, regardless of
+   * whether it was updated. */
+  async upsertQueue(record: QueueRecord, updateExisting: boolean): Promise<boolean> {
     const now = Date.now();
     const onConflict = updateExisting
       ? `ON CONFLICT (name) DO UPDATE SET
@@ -3204,9 +3207,11 @@ export class SystemDatabase {
           priority_enabled = EXCLUDED.priority_enabled,
           partition_queue = EXCLUDED.partition_queue,
           polling_interval_sec = EXCLUDED.polling_interval_sec,
-          updated_at = EXCLUDED.updated_at`
-      : `ON CONFLICT (name) DO NOTHING`;
-    await this.pool.query(
+          updated_at = EXCLUDED.updated_at
+         RETURNING (xmax = 0) AS inserted`
+      : `ON CONFLICT (name) DO NOTHING
+         RETURNING TRUE AS inserted`;
+    const { rows } = await this.pool.query<{ inserted: boolean }>(
       `INSERT INTO "${this.schemaName}".queues
         (name, concurrency, worker_concurrency, rate_limit_max, rate_limit_period_sec,
          priority_enabled, partition_queue, polling_interval_sec, updated_at)
@@ -3224,6 +3229,7 @@ export class SystemDatabase {
         now,
       ],
     );
+    return rows.length > 0 && rows[0].inserted === true;
   }
 
   // ==================== Internal ====================

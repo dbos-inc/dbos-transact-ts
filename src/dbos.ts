@@ -123,7 +123,7 @@ import {
   backfillSchedule as backfillScheduleImpl,
 } from './scheduler/scheduler';
 import { validateCrontab, validateTimezone } from './scheduler/crontab';
-import { RegisterQueueOptions, WorkflowQueue, wfQueueRunner } from './wfqueue';
+import { logQueue, RegisterQueueOptions, WorkflowQueue, wfQueueRunner } from './wfqueue';
 import { registerAuthChecker } from './authdecorators';
 import assert from 'node:assert';
 
@@ -2360,13 +2360,18 @@ export class DBOS {
     }
 
     const record = WorkflowQueue.recordFromParams(name, params);
-    await sysdb.upsertQueue(record, updateExisting);
+    const inserted = await sysdb.upsertQueue(record, updateExisting);
 
     const persisted = await sysdb.getQueue(name);
     if (persisted === null) {
       throw new Error(`Queue '${name}' missing from database after upsert`);
     }
-    return WorkflowQueue._fromRecord(persisted);
+    const queue = WorkflowQueue._fromRecord(persisted);
+    if (inserted) {
+      DBOSExecutor.globalInstance!.logger.info(`Registered new queue:`);
+      logQueue(DBOSExecutor.globalInstance!.logger, queue);
+    }
+    return queue;
   }
 
   /** Retrieve a database-backed queue by name, or `null` if no row exists. */
