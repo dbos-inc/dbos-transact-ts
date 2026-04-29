@@ -1,4 +1,4 @@
-import { DBOS, Debouncer, DBOSConfig, WorkflowQueue, StatusString, DBOSClient, DebouncerClient } from '../src';
+import { DBOS, Debouncer, DBOSConfig, StatusString, DBOSClient, DebouncerClient } from '../src';
 import { generateDBOSTestConfig, reexecuteWorkflowById, setUpDBOSTestSysDb } from './helpers';
 import assert from 'node:assert';
 
@@ -13,6 +13,7 @@ describe('debouncer-tests', () => {
   beforeEach(async () => {
     await setUpDBOSTestSysDb(config);
     await DBOS.launch();
+    await DBOS.registerQueue(queue.name, { onConflict: 'always_update' });
   });
 
   afterEach(async () => {
@@ -27,7 +28,7 @@ describe('debouncer-tests', () => {
     { name: 'debouncerWorkflow' },
   );
 
-  const queue = new WorkflowQueue('test-queue');
+  const queue = { name: 'test-queue' };
 
   test('test-debouncer-workflow', async () => {
     const firstValue = 0;
@@ -72,6 +73,7 @@ describe('debouncer-tests', () => {
     await DBOS.shutdown();
     const testWorkflow = DBOS.registerWorkflow(test);
     await DBOS.launch();
+    await DBOS.registerQueue(queue.name, { onConflict: 'always_update' });
     const originalHandle = await DBOS.startWorkflow(testWorkflow)();
     await originalHandle.getResult();
 

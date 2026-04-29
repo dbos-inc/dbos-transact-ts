@@ -123,7 +123,7 @@ import {
   backfillSchedule as backfillScheduleImpl,
 } from './scheduler/scheduler';
 import { validateCrontab, validateTimezone } from './scheduler/crontab';
-import { wfQueueRunner } from './wfqueue';
+import { RegisterQueueOptions, WorkflowQueue, wfQueueRunner } from './wfqueue';
 import { registerAuthChecker } from './authdecorators';
 import assert from 'node:assert';
 
@@ -466,7 +466,6 @@ export class DBOS {
    */
   static logRegisteredEndpoints(): void {
     if (!DBOSExecutor.globalInstance) return;
-    wfQueueRunner.logRegisteredEndpoints(DBOSExecutor.globalInstance);
     for (const lcl of getLifecycleListeners()) {
       lcl.logRegisteredEndpoints?.();
     }
@@ -1220,17 +1219,12 @@ export class DBOS {
     }
 
     if (params && params.queueName) {
-      // Validate partition key usage
-      const wfqueue = this.#executor.getQueueByName(params.queueName);
+      // Partition flag checks (queue partitioned ↔ key supplied) require
+      // reading the queue config and may need a DB roundtrip for
+      // database-backed queues, so they live in `#invokeWorkflow`. The
+      // dedup-with-partition check is purely from supplied params and is
+      // safe to do synchronously here.
       const queuePartitionKey = params.enqueueOptions?.queuePartitionKey;
-      if (wfqueue.partitionQueue && !queuePartitionKey) {
-        throw Error(`A workflow cannot be enqueued on partitioned queue ${params.queueName} without a partition key`);
-      }
-      if (queuePartitionKey && !wfqueue.partitionQueue) {
-        throw Error(
-          `You can only use a partition key on a partition-enabled queue. Key ${queuePartitionKey} was used with non-partitioned queue ${params.queueName}`,
-        );
-      }
       if (queuePartitionKey && params.enqueueOptions?.deduplicationID) {
         throw Error('Deduplication is not supported for partitioned queues');
       }
@@ -1646,6 +1640,29 @@ export class DBOS {
       throw new DBOSInvalidWorkflowTransitionError(
         'Attempt to call a `workflow` function on an object that is not a `ConfiguredInstance`',
       );
+    }
+
+    // Validate that a partition key is consistent with the target queue's
+    // partition flag. Falls back to a database lookup so database-backed
+    // queues are checked too.
+    if (queueName) {
+      const queuePartitionKey = params.enqueueOptions?.queuePartitionKey;
+      let partitionEnabled: boolean | undefined;
+      const inMem = this.#executor.getQueueByName(queueName);
+      if (inMem) {
+        partitionEnabled = inMem.partitionQueue;
+      } else {
+        const record = await this.#executor.systemDatabase.getQueue(queueName);
+        if (record !== null) partitionEnabled = record.partitionQueue;
+      }
+      if (partitionEnabled === true && !queuePartitionKey) {
+        throw Error(`A workflow cannot be enqueued on partitioned queue ${queueName} without a partition key`);
+      }
+      if (queuePartitionKey && partitionEnabled === false) {
+        throw Error(
+          `You can only use a partition key on a partition-enabled queue. Key ${queuePartitionKey} was used with non-partitioned queue ${queueName}`,
+        );
+      }
     }
 
     // If this is called from within a workflow, this is a child workflow,
@@ -2312,5 +2329,56 @@ export class DBOS {
   static async setLatestApplicationVersion(versionName: string): Promise<void> {
     ensureDBOSIsLaunched('setLatestApplicationVersion');
     await DBOSExecutor.globalInstance!.systemDatabase.updateApplicationVersionTimestamp(versionName, Date.now());
+  }
+
+  /**
+   * Register a workflow queue and persist its configuration in the system
+   * database. Returns a `WorkflowQueue` whose `setX` methods write through
+   * to the database so the queue can be reconfigured at runtime.
+   *
+   * @param name - Unique name of the queue.
+   * @param options - Queue parameters plus an `onConflict` policy that
+   *   controls what happens when a row with this name already exists.
+   *   Defaults to `update_if_latest_version`, which only overwrites when the
+   *   running application version matches the latest registered version —
+   *   safe for rolling deploys.
+   */
+  static async registerQueue(name: string, options: RegisterQueueOptions = {}): Promise<WorkflowQueue> {
+    ensureDBOSIsLaunched('registerQueue');
+    const { onConflict = 'update_if_latest_version', ...params } = options;
+    WorkflowQueue.validateQueueParams(params);
+
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    let updateExisting: boolean;
+    if (onConflict === 'always_update') {
+      updateExisting = true;
+    } else if (onConflict === 'never_update') {
+      updateExisting = false;
+    } else {
+      const latest = await sysdb.getLatestApplicationVersion();
+      updateExisting = latest.versionName === globalParams.appVersion;
+    }
+
+    const record = WorkflowQueue.recordFromParams(name, params);
+    await sysdb.upsertQueue(record, updateExisting);
+
+    const persisted = await sysdb.getQueue(name);
+    if (persisted === null) {
+      throw new Error(`Queue '${name}' missing from database after upsert`);
+    }
+    return WorkflowQueue._fromRecord(persisted);
+  }
+
+  /** Retrieve a database-backed queue by name, or `null` if no row exists. */
+  static async retrieveQueue(name: string): Promise<WorkflowQueue | null> {
+    ensureDBOSIsLaunched('retrieveQueue');
+    const record = await DBOSExecutor.globalInstance!.systemDatabase.getQueue(name);
+    return record === null ? null : WorkflowQueue._fromRecord(record);
+  }
+
+  /** Delete a database-backed queue. Pending workflows on it are unrecoverable. */
+  static async deleteQueue(name: string): Promise<void> {
+    ensureDBOSIsLaunched('deleteQueue');
+    await DBOSExecutor.globalInstance!.systemDatabase.deleteQueue(name);
   }
 }

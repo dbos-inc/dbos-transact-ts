@@ -1,4 +1,4 @@
-import { GetWorkflowsInput, StatusString, DBOS, DBOSClient, WorkflowQueue } from '../src';
+import { GetWorkflowsInput, StatusString, DBOS, DBOSClient } from '../src';
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import {
   generateDBOSTestConfig,
@@ -461,6 +461,8 @@ describe('test-list-queues', () => {
 
   beforeEach(async () => {
     await DBOS.launch();
+    await DBOS.registerQueue(TestListQueues.queue.name, { onConflict: 'always_update' });
+    await DBOS.registerQueue(TestGarbageCollection.queue.name, { onConflict: 'always_update' });
   });
 
   afterEach(async () => {
@@ -471,7 +473,7 @@ describe('test-list-queues', () => {
     static queuedSteps = 5;
     static event = new Event();
     static taskEvents = Array.from({ length: TestListQueues.queuedSteps }, () => new Event());
-    static queue = new WorkflowQueue('testQueueRecovery');
+    static queue = { name: 'testQueueRecovery' };
 
     @DBOS.workflow()
     static async testWorkflow() {
@@ -658,7 +660,7 @@ describe('test-list-queues', () => {
 
   class TestGarbageCollection {
     static event = new Event();
-    static readonly queue = new WorkflowQueue('gc-test-queue');
+    static readonly queue = { name: 'gc-test-queue' };
 
     @DBOS.step()
     static async testStep(x: number) {
@@ -784,7 +786,7 @@ describe('test-list-queues', () => {
 
 describe('test-list-steps', () => {
   let config: DBOSConfig;
-  const queue = new WorkflowQueue('child_queue');
+  const queue = { name: 'child_queue' };
   beforeAll(() => {
     config = generateDBOSTestConfig();
     DBOS.setConfig(config);
@@ -792,6 +794,7 @@ describe('test-list-steps', () => {
   beforeEach(async () => {
     await setUpDBOSTestSysDb(config);
     await DBOS.launch();
+    await DBOS.registerQueue(queue.name, { onConflict: 'always_update' });
   });
   afterEach(async () => {
     await DBOS.shutdown();
@@ -1377,7 +1380,6 @@ describe('test-list-steps', () => {
 
 describe('test-fork', () => {
   let config: DBOSConfig;
-  const _queue = new WorkflowQueue('test_resume_fork_queue');
   beforeAll(() => {
     config = generateDBOSTestConfig();
     DBOS.setConfig(config);
@@ -1394,6 +1396,7 @@ describe('test-fork', () => {
     ExampleWorkflow.childWorkflowCount = 0;
     await setUpDBOSTestSysDb(config);
     await DBOS.launch();
+    await DBOS.registerQueue('test_resume_fork_queue', { onConflict: 'always_update' });
   });
   afterEach(async () => {
     await DBOS.shutdown();
@@ -1966,7 +1969,7 @@ describe('test-fork', () => {
     const wfid = randomUUID();
     const handle = await DBOS.startWorkflow(ResumeForkQueueWorkflow, {
       workflowID: wfid,
-      queueName: _queue.name,
+      queueName: 'test_resume_fork_queue',
     }).simpleWorkflow(input);
     await ResumeForkQueueWorkflow.step1Started.wait();
     await DBOS.cancelWorkflow(wfid);
@@ -2701,14 +2704,13 @@ describe('test-workflow-aggregates', () => {
     process.env.DBOS__APPVERSION = 'v0';
     await setUpDBOSTestSysDb(config);
     await DBOS.launch();
+    await DBOS.registerQueue('agg-test-queue', { onConflict: 'always_update' });
   });
 
   afterEach(async () => {
     await DBOS.shutdown();
     process.env.DBOS__APPVERSION = undefined;
   });
-
-  const _aggQueue = new WorkflowQueue('agg-test-queue');
 
   class AggWorkflows {
     @DBOS.workflow()

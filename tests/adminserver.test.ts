@@ -1,6 +1,5 @@
 import { DBOS, StatusString } from '../src';
 import { DBOSConfig } from '../src/dbos-executor';
-import { WorkflowQueue } from '../src';
 import { generateDBOSTestConfig, queueEntriesAreCleanedUp, setUpDBOSTestSysDb } from './helpers';
 import { QueueMetadataResponse } from '../src/adminserver';
 import { HealthUrl, WorkflowQueuesMetadataUrl, WorkflowRecoveryUrl } from '../src/adminserver';
@@ -78,6 +77,19 @@ describe('running-admin-server-tests', () => {
     DBOS.setConfig({ ...config, runAdminServer: true, adminPort: 3001 });
     await setUpDBOSTestSysDb(config);
     await DBOS.launch();
+    await DBOS.registerQueue(testQueueOne.name, { onConflict: 'always_update' });
+    await DBOS.registerQueue(testQueueTwo.name, { onConflict: 'always_update', concurrency: 1 });
+    await DBOS.registerQueue(testQueueThree.name, {
+      onConflict: 'always_update',
+      concurrency: 1,
+      workerConcurrency: 1,
+    });
+    await DBOS.registerQueue(testQueueFour.name, {
+      onConflict: 'always_update',
+      concurrency: 1,
+      workerConcurrency: 1,
+      rateLimit: { limitPerPeriod: 0, periodSec: 0 },
+    });
     systemDBClient = new Client({
       connectionString: config.systemDatabaseUrl,
     });
@@ -90,14 +102,10 @@ describe('running-admin-server-tests', () => {
     await DBOS.shutdown();
   });
 
-  const testQueueOne = new WorkflowQueue('test-queue-1');
-  const testQueueTwo = new WorkflowQueue('test-queue-2', { concurrency: 1 });
-  const testQueueThree = new WorkflowQueue('test-queue-3', { concurrency: 1, workerConcurrency: 1 });
-  const testQueueFour = new WorkflowQueue('test-queue-4', {
-    concurrency: 1,
-    workerConcurrency: 1,
-    rateLimit: { limitPerPeriod: 0, periodSec: 0 },
-  });
+  const testQueueOne = { name: 'test-queue-1' };
+  const testQueueTwo = { name: 'test-queue-2' };
+  const testQueueThree = { name: 'test-queue-3' };
+  const testQueueFour = { name: 'test-queue-4' };
 
   class TestAdminWorkflow {
     static counter = 0;
@@ -333,7 +341,8 @@ describe('running-admin-server-tests', () => {
     });
     expect(metadataResponse.status).toBe(200);
     const queueMetadata: QueueMetadataResponse[] = (await metadataResponse.json()) as QueueMetadataResponse[];
-    expect(queueMetadata.length).toBe(6);
+    // 4 user-registered DB-backed queues + INTERNAL_QUEUE_NAME (in-memory).
+    expect(queueMetadata.length).toBe(5);
     for (const q of queueMetadata) {
       if (q.name === testQueueOne.name) {
         expect(q.concurrency).toBeUndefined();
@@ -354,6 +363,20 @@ describe('running-admin-server-tests', () => {
       }
     }
 
+    // Database-backed queues should also appear in the metadata endpoint.
+    await DBOS.registerQueue('admin-db-backed-queue', { concurrency: 7, workerConcurrency: 3 });
+    try {
+      const dbResponse = await fetch(`http://localhost:3001${WorkflowQueuesMetadataUrl}`, { method: 'GET' });
+      expect(dbResponse.status).toBe(200);
+      const dbMetadata = (await dbResponse.json()) as QueueMetadataResponse[];
+      const dbQueue = dbMetadata.find((q) => q.name === 'admin-db-backed-queue');
+      expect(dbQueue).toBeDefined();
+      expect(dbQueue!.concurrency).toBe(7);
+      expect(dbQueue!.workerConcurrency).toBe(3);
+    } finally {
+      await DBOS.deleteQueue('admin-db-backed-queue').catch(() => {});
+    }
+
     // Test GET not found
     const getNotFoundResponse = await fetch('http://localhost:3001/stuff', {
       method: 'GET',
@@ -367,9 +390,10 @@ describe('running-admin-server-tests', () => {
     expect(postNotFoundResponse.status).toBe(404);
   });
 
-  const queue = new WorkflowQueue('test-admin-deactivate', {});
+  const queue = { name: 'test-admin-deactivate' };
 
   test('test-admin-deactivate', async () => {
+    await DBOS.registerQueue(queue.name, { onConflict: 'always_update' });
     const value = 5;
     let handle = await DBOS.startWorkflow(TestAdminWorkflow, { queueName: queue.name }).exampleWorkflow(value);
     await expect(handle.getResult()).resolves.toBe(value);
@@ -734,7 +758,10 @@ describe('running-admin-server-tests', () => {
 
   test('test-admin-list-queued-workflows', async () => {
     // Create a queue for testing
-    const testQueue = new WorkflowQueue('test-admin-list-queue', { concurrency: 1 });
+    const testQueue = await DBOS.registerQueue('test-admin-list-queue', {
+      onConflict: 'always_update',
+      concurrency: 1,
+    });
 
     // Enqueue some workflows that will be blocked
     const handle1 = await DBOS.startWorkflow(TestAdminWorkflow, { queueName: testQueue.name }).blockedWorkflow();

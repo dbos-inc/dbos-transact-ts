@@ -1,5 +1,6 @@
 import { StatusString, WorkflowHandle, DBOS, ConfiguredInstance, DBOSClient } from '../src';
-import { DBOSConfig, DBOS_QUEUE_MAX_PRIORITY, DBOS_QUEUE_MIN_PRIORITY } from '../src/dbos-executor';
+import { DBOSConfig, DBOSExecutor, DBOS_QUEUE_MAX_PRIORITY, DBOS_QUEUE_MIN_PRIORITY } from '../src/dbos-executor';
+import { QueueParameters, wfQueueRunner } from '../src/wfqueue';
 import {
   generateDBOSTestConfig,
   setUpDBOSTestSysDb,
@@ -38,21 +39,44 @@ import {
 import assert from 'node:assert';
 
 const testPolling = { minPollingIntervalMs: 100 };
-const queue = new WorkflowQueue('testQ', { ...testPolling });
-const serialqueue = new WorkflowQueue('serialQ', { concurrency: 1, ...testPolling });
-const serialqueueLimited = new WorkflowQueue('serialQL', {
-  concurrency: 1,
-  rateLimit: { limitPerPeriod: 10, periodSec: 1 },
-  ...testPolling,
-});
-const childqueue = new WorkflowQueue('childQ', { concurrency: 3, ...testPolling });
-const workerConcurrencyQueue = new WorkflowQueue('workerQ', { workerConcurrency: 1, ...testPolling });
+
+// Queue descriptors. The actual database-backed queues are registered in
+// `beforeEach` via `DBOS.registerQueue` once DBOS has launched. These objects
+// keep `queue.name` available for use in `DBOS.startWorkflow` calls.
+type QueueRef = { name: string; config: QueueParameters };
+const queue: QueueRef = { name: 'testQ', config: { ...testPolling } };
+const serialqueue: QueueRef = { name: 'serialQ', config: { concurrency: 1, ...testPolling } };
+const serialqueueLimited: QueueRef = {
+  name: 'serialQL',
+  config: { concurrency: 1, rateLimit: { limitPerPeriod: 10, periodSec: 1 }, ...testPolling },
+};
+const childqueue: QueueRef = { name: 'childQ', config: { concurrency: 3, ...testPolling } };
+const workerConcurrencyQueue: QueueRef = {
+  name: 'workerQ',
+  config: { workerConcurrency: 1, ...testPolling },
+};
 
 const qlimit = 5;
 const qperiod = 2;
-const rlqueue = new WorkflowQueue('limited_queue', {
-  rateLimit: { limitPerPeriod: qlimit, periodSec: qperiod },
-});
+const rlqueue: QueueRef = {
+  name: 'limited_queue',
+  config: { rateLimit: { limitPerPeriod: qlimit, periodSec: qperiod } },
+};
+
+const sharedQueueRefs: QueueRef[] = [
+  queue,
+  serialqueue,
+  serialqueueLimited,
+  childqueue,
+  workerConcurrencyQueue,
+  rlqueue,
+];
+
+async function registerSharedQueues() {
+  for (const ref of sharedQueueRefs) {
+    await DBOS.registerQueue(ref.name, { onConflict: 'always_update', ...ref.config });
+  }
+}
 
 describe('queued-wf-tests-simple', () => {
   let config: DBOSConfig;
@@ -67,6 +91,19 @@ describe('queued-wf-tests-simple', () => {
     TestWFs.reset();
     TestWFs2.reset();
     await DBOS.launch();
+    await registerSharedQueues();
+    // Class-level queues used inside this describe block.
+    for (const ref of [
+      TestQueueRecovery.queue,
+      TestQueueRecovery.recoveryQueue,
+      TestCancelQueues.queue,
+      TestResumeQueues.queue,
+      TestResumeQueuesPartitioned.queue,
+      TestConcurrencyAcrossVersions.queue,
+      waitFirstQueue,
+    ]) {
+      await DBOS.registerQueue(ref.name, { onConflict: 'always_update', ...ref.config });
+    }
   });
 
   afterEach(async () => {
@@ -353,8 +390,8 @@ describe('queued-wf-tests-simple', () => {
     static queuedSteps = 5;
     static taskEvents = Array.from({ length: TestQueueRecovery.queuedSteps }, () => new Event());
     static taskCount = 0;
-    static queue = new WorkflowQueue('testQueueRecovery', { ...testPolling });
-    static recoveryQueue = new WorkflowQueue('recoveryQ', { concurrency: 2, ...testPolling });
+    static queue: QueueRef = { name: 'testQueueRecovery', config: { ...testPolling } };
+    static recoveryQueue: QueueRef = { name: 'recoveryQ', config: { concurrency: 2, ...testPolling } };
 
     @DBOS.workflow()
     static async testWorkflow() {
@@ -525,7 +562,7 @@ describe('queued-wf-tests-simple', () => {
   class TestCancelQueues {
     static startEvent = new Event();
     static blockingEvent = new Event();
-    static queue = new WorkflowQueue('TestCancelQueues', { concurrency: 1, ...testPolling });
+    static queue: QueueRef = { name: 'TestCancelQueues', config: { concurrency: 1, ...testPolling } };
 
     @DBOS.workflow()
     static async stuckWorkflow() {
@@ -578,7 +615,7 @@ describe('queued-wf-tests-simple', () => {
   class TestResumeQueues {
     static startEvent = new Event();
     static blockingEvent = new Event();
-    static queue = new WorkflowQueue('TestResumeQueues', { concurrency: 1, ...testPolling });
+    static queue: QueueRef = { name: 'TestResumeQueues', config: { concurrency: 1, ...testPolling } };
 
     @DBOS.workflow()
     static async stuckWorkflow() {
@@ -635,11 +672,10 @@ describe('queued-wf-tests-simple', () => {
   class TestResumeQueuesPartitioned {
     static startEvent = new Event();
     static blockingEvent = new Event();
-    static queue = new WorkflowQueue('TestResumeQueuesPartitioned', {
-      concurrency: 1,
-      partitionQueue: true,
-      ...testPolling,
-    });
+    static queue: QueueRef = {
+      name: 'TestResumeQueuesPartitioned',
+      config: { concurrency: 1, partitionQueue: true, ...testPolling },
+    };
 
     @DBOS.workflow()
     static async stuckWorkflow() {
@@ -699,7 +735,10 @@ describe('queued-wf-tests-simple', () => {
   });
 
   class TestConcurrencyAcrossVersions {
-    static queue = new WorkflowQueue('TestAcrossVersions', { workerConcurrency: 1, ...testPolling });
+    static queue: QueueRef = {
+      name: 'TestAcrossVersions',
+      config: { workerConcurrency: 1, ...testPolling },
+    };
 
     @DBOS.workflow()
     static async testWorkflow() {
@@ -776,7 +815,7 @@ describe('queued-wf-tests-simple', () => {
   });
 });
 
-const waitFirstQueue = new WorkflowQueue('wait_first_queue', { concurrency: 5, ...testPolling });
+const waitFirstQueue: QueueRef = { name: 'wait_first_queue', config: { concurrency: 5, ...testPolling } };
 
 class WaitFirstQueueTest {
   static numTasks = 5;
@@ -835,11 +874,12 @@ export class InterProcessWorkflowTask {
   }
 }
 
-// This queue cannot dequeue
-const IPWQueue = new WorkflowQueue('IPWQueue', {
-  rateLimit: { limitPerPeriod: 0, periodSec: 30 },
-  ...testPolling,
-});
+// Single DB-backed queue shared between the parent process and the worker
+// child processes. The parent does not listen on it (see `listenQueues: []`
+// in the test); only the workers dequeue. Concurrency is filled in from
+// `InterProcessWorkflow`'s class constants when the queue is registered.
+const IPWQueueName = 'IPWQueue';
+
 class InterProcessWorkflow {
   static localConcurrencyLimit = 5;
   static globalConcurrencyLimit = InterProcessWorkflow.localConcurrencyLimit * 2;
@@ -849,7 +889,7 @@ class InterProcessWorkflow {
     // First, start local concurrency limit tasks
     let handles = [];
     for (let i = 0; i < InterProcessWorkflow.localConcurrencyLimit; ++i) {
-      handles.push(await DBOS.startWorkflow(InterProcessWorkflowTask, { queueName: IPWQueue.name }).task(i));
+      handles.push(await DBOS.startWorkflow(InterProcessWorkflowTask, { queueName: IPWQueueName }).task(i));
     }
     // Start two workers
     const workerPromises = await InterProcessWorkflow.startWorkerProcesses(2);
@@ -874,7 +914,7 @@ class InterProcessWorkflow {
       // Now enqueue less than the local concurrency limit. Check that the 2nd worker acquired them.
       handles = [];
       for (let i = 0; i < InterProcessWorkflow.localConcurrencyLimit - 1; ++i) {
-        handles.push(await DBOS.startWorkflow(InterProcessWorkflowTask, { queueName: IPWQueue.name }).task(i));
+        handles.push(await DBOS.startWorkflow(InterProcessWorkflowTask, { queueName: IPWQueueName }).task(i));
       }
       n_dequeued = 0;
       while (n_dequeued < InterProcessWorkflow.localConcurrencyLimit - 1) {
@@ -898,7 +938,7 @@ class InterProcessWorkflow {
       handles = [];
       for (let i = 0; i < 2; ++i) {
         handles.push(
-          await DBOS.startWorkflow(InterProcessWorkflowTask, { queueName: IPWQueue.name }).task(
+          await DBOS.startWorkflow(InterProcessWorkflowTask, { queueName: IPWQueueName }).task(
             InterProcessWorkflow.localConcurrencyLimit - 1 + i,
           ),
         );
@@ -932,7 +972,7 @@ class InterProcessWorkflow {
       try {
         const result = await systemDBClient.query<{ count: string }>(
           'SELECT COUNT(*) FROM dbos.workflow_status WHERE status = $1 AND queue_name = $2',
-          [StatusString.PENDING, IPWQueue.name],
+          [StatusString.PENDING, IPWQueueName],
         );
         const count = Number(result.rows[0].count);
         expect(count).toBe(InterProcessWorkflow.globalConcurrencyLimit);
@@ -960,7 +1000,7 @@ class InterProcessWorkflow {
             `${InterProcessWorkflow.localConcurrencyLimit}`,
             `${InterProcessWorkflow.globalConcurrencyLimit}`,
             `${DBOS.workflowID}`,
-            `${IPWQueue.name}`,
+            `${IPWQueueName}`,
           ],
           {
             cwd: process.cwd(),
@@ -994,11 +1034,19 @@ describe('queued-wf-tests-concurrent-workers', () => {
   beforeAll(async () => {
     config = generateDBOSTestConfig();
     await setUpDBOSTestSysDb(config);
-    DBOS.setConfig(config);
   });
 
   beforeEach(async () => {
+    // The parent does not dispatch IPWQueue — only the spawned workers do.
+    // listenQueues: [] disables every user queue on this process.
+    DBOS.setConfig({ ...config, listenQueues: [] });
     await DBOS.launch();
+    await DBOS.registerQueue(IPWQueueName, {
+      onConflict: 'always_update',
+      workerConcurrency: InterProcessWorkflow.localConcurrencyLimit,
+      concurrency: InterProcessWorkflow.globalConcurrencyLimit,
+      ...testPolling,
+    });
   });
 
   afterEach(async () => {
@@ -1109,7 +1157,7 @@ class TestChildWFs {
   }
 }
 
-async function runOneAtATime(queue: WorkflowQueue) {
+async function runOneAtATime(queue: QueueRef) {
   let wfRes: () => void = () => {};
   TestWFs2.wfPromise = new Promise<void>((resolve, _rj) => {
     wfRes = resolve;
@@ -1143,6 +1191,17 @@ describe('enqueue-options', () => {
 
   beforeEach(async () => {
     await DBOS.launch();
+    // childqueue is shared with the simple block; the others are local.
+    for (const ref of [
+      childqueue,
+      TestExample.queue,
+      TestExample.queue2,
+      TestPriority.queue,
+      TestPriority.childqueue,
+      SetPriorityTest.setPriorityQueue,
+    ]) {
+      await DBOS.registerQueue(ref.name, { onConflict: 'always_update', ...ref.config });
+    }
   });
 
   afterEach(async () => {
@@ -1155,8 +1214,8 @@ describe('enqueue-options', () => {
       TestExample.resolveEvent = resolve;
     });
 
-    static queue = new WorkflowQueue('test_dedup_queue', { concurrency: 1, ...testPolling });
-    static queue2 = new WorkflowQueue('queue2', { concurrency: 1, ...testPolling });
+    static queue: QueueRef = { name: 'test_dedup_queue', config: { concurrency: 1, ...testPolling } };
+    static queue2: QueueRef = { name: 'queue2', config: { concurrency: 1, ...testPolling } };
 
     @DBOS.workflow()
     static async parentWorkflow(input: string): Promise<string> {
@@ -1255,8 +1314,14 @@ describe('enqueue-options', () => {
 
     static wfPriorityList: number[] = [];
 
-    static queue = new WorkflowQueue('test_queue_prority', { concurrency: 1, priorityEnabled: true, ...testPolling });
-    static childqueue = new WorkflowQueue('child_queue', { concurrency: 1, priorityEnabled: true, ...testPolling });
+    static queue: QueueRef = {
+      name: 'test_queue_prority',
+      config: { concurrency: 1, priorityEnabled: true, ...testPolling },
+    };
+    static childqueue: QueueRef = {
+      name: 'child_queue',
+      config: { concurrency: 1, priorityEnabled: true, ...testPolling },
+    };
 
     @DBOS.workflow()
     static async parentWorkflow(input: number): Promise<number> {
@@ -1328,11 +1393,10 @@ describe('enqueue-options', () => {
   });
 
   class SetPriorityTest {
-    static setPriorityQueue = new WorkflowQueue('test_set_priority_queue', {
-      concurrency: 1,
-      priorityEnabled: true,
-      ...testPolling,
-    });
+    static setPriorityQueue: QueueRef = {
+      name: 'test_set_priority_queue',
+      config: { concurrency: 1, priorityEnabled: true, ...testPolling },
+    };
 
     static resolveBlocker: () => void;
     static blockerPromise = new Promise<void>((resolve) => {
@@ -1405,7 +1469,7 @@ describe('enqueue-options', () => {
 });
 
 // Timeout tests rely on the 1s default polling delay for timing assumptions
-const timeoutQueue = new WorkflowQueue('timeout-test-queue');
+const timeoutQueue: QueueRef = { name: 'timeout-test-queue', config: {} };
 
 describe('queue-time-outs', () => {
   let config: DBOSConfig;
@@ -1479,6 +1543,9 @@ describe('queue-time-outs', () => {
 
   beforeEach(async () => {
     await DBOS.launch();
+    for (const ref of [timeoutQueue, dedupRecoveryQueue, partitionQueue]) {
+      await DBOS.registerQueue(ref.name, { onConflict: 'always_update', ...ref.config });
+    }
   });
 
   afterEach(async () => {
@@ -1651,7 +1718,7 @@ describe('queue-time-outs', () => {
   });
 
   const dedupRecoveryEvent = new Event();
-  const dedupRecoveryQueue = new WorkflowQueue('dedup-recovery-queue', { ...testPolling });
+  const dedupRecoveryQueue: QueueRef = { name: 'dedup-recovery-queue', config: { ...testPolling } };
   const dedupRecoveryKey = 'my-dedup-id';
   const dedupRecoveryParentWorkflow = DBOS.registerWorkflow(
     async () => {
@@ -1697,7 +1764,10 @@ describe('queue-time-outs', () => {
 
   const partitionBlockingEvent = new Event();
   const partitionWaitingEvent = new Event();
-  const partitionQueue = new WorkflowQueue('partition-queue', { partitionQueue: true, concurrency: 1, ...testPolling });
+  const partitionQueue: QueueRef = {
+    name: 'partition-queue',
+    config: { partitionQueue: true, concurrency: 1, ...testPolling },
+  };
 
   const partitionBlockedWorkflow = DBOS.registerWorkflow(
     async () => {
@@ -1782,7 +1852,10 @@ describe('queue-time-outs', () => {
     }, Error);
 
     // You can only enqueue with a partition key on a partitioned queue
-    const partitionlessQueue = new WorkflowQueue('partitionless-queue', { ...testPolling });
+    const partitionlessQueue = await DBOS.registerQueue('partitionless-queue', {
+      onConflict: 'always_update',
+      ...testPolling,
+    });
     await assert.rejects(async () => {
       await DBOS.startWorkflow(partitionNormalWorkflow, {
         queueName: partitionlessQueue.name,
@@ -1797,8 +1870,6 @@ describe('queue-time-outs', () => {
     // Reset the test database
     await setUpDBOSTestSysDb(config);
 
-    const queueOne = new WorkflowQueue('queue-one', { ...testPolling });
-    const queueTwo = new WorkflowQueue('queue-two', { ...testPolling });
     const workflow = DBOS.registerWorkflow(
       async () => {
         return Promise.resolve(DBOS.workflowID);
@@ -1806,18 +1877,23 @@ describe('queue-time-outs', () => {
       { name: 'explicit-queue-listen-test' },
     );
 
-    config.listenQueues = [queueOne];
+    config.listenQueues = ['queue-one'];
     DBOS.setConfig(config);
     await DBOS.launch();
 
-    const handleOne = await DBOS.startWorkflow(workflow, { queueName: queueOne.name })();
-    const handleTwo = await DBOS.startWorkflow(workflow, { queueName: queueTwo.name })();
+    // Both queues are persisted in the database; only the one in
+    // listenQueues will have a worker on this process.
+    await DBOS.registerQueue('queue-one', { onConflict: 'always_update', ...testPolling });
+    await DBOS.registerQueue('queue-two', { onConflict: 'always_update', ...testPolling });
+
+    const handleOne = await DBOS.startWorkflow(workflow, { queueName: 'queue-one' })();
+    const handleTwo = await DBOS.startWorkflow(workflow, { queueName: 'queue-two' })();
     assert.equal(await handleOne.getResult(), handleOne.workflowID);
     const status = await handleTwo.getStatus();
     assert.equal(status?.status, 'ENQUEUED');
 
     await DBOS.shutdown();
-    config.listenQueues = [queueOne, queueTwo];
+    config.listenQueues = ['queue-one', 'queue-two'];
     DBOS.setConfig(config);
     await DBOS.launch();
 
@@ -1839,6 +1915,10 @@ describe('delay-tests', () => {
 
   beforeEach(async () => {
     await DBOS.launch();
+    await DBOS.registerQueue(TestDelayWFs.queue.name, {
+      onConflict: 'always_update',
+      ...TestDelayWFs.queue.config,
+    });
   });
 
   afterEach(async () => {
@@ -1846,7 +1926,7 @@ describe('delay-tests', () => {
   });
 
   class TestDelayWFs {
-    static readonly queue = new WorkflowQueue('delay-test-queue', { ...testPolling });
+    static readonly queue: QueueRef = { name: 'delay-test-queue', config: { ...testPolling } };
 
     @DBOS.workflow()
     static async testWorkflow(): Promise<void> {
@@ -2032,5 +2112,357 @@ describe('delay-tests', () => {
     expect(status2?.status).toBe(StatusString.DELAYED);
     expect(status2!.delayUntilEpochMS).toBe(deadline);
     expect(await handle2.getResult()).toBe('done');
+  });
+});
+
+describe('database-backed-queue-crud', () => {
+  beforeAll(async () => {
+    await setUpDBOSTestSysDb(generateDBOSTestConfig());
+  });
+
+  beforeEach(async () => {
+    // Reset the config every test so a prior test's listenQueues filter
+    // doesn't leak across the suite.
+    DBOS.setConfig(generateDBOSTestConfig());
+    await DBOS.launch();
+  });
+
+  afterEach(async () => {
+    await DBOS.shutdown();
+  });
+
+  test('register-retrieve-delete-and-conflict-resolution', async () => {
+    const queueName = `test_crud_queue_${randomUUID()}`;
+
+    expect(await DBOS.retrieveQueue(queueName)).toBeNull();
+
+    const registered = await DBOS.registerQueue(queueName, {
+      concurrency: 10,
+      rateLimit: { limitPerPeriod: 5, periodSec: 1.5 },
+      workerConcurrency: 2,
+      priorityEnabled: true,
+      minPollingIntervalMs: 2500,
+    });
+    expect(registered.name).toBe(queueName);
+    expect(registered.databaseBacked).toBe(true);
+    // Database-backed queues are not added to the in-memory registry.
+    expect(wfQueueRunner.wfQueuesByName.has(queueName)).toBe(false);
+
+    let retrieved = await DBOS.retrieveQueue(queueName);
+    expect(retrieved).not.toBeNull();
+    expect(retrieved!.name).toBe(queueName);
+    expect(retrieved!.concurrency).toBe(10);
+    expect(retrieved!.workerConcurrency).toBe(2);
+    expect(retrieved!.rateLimit).toEqual({ limitPerPeriod: 5, periodSec: 1.5 });
+    expect(retrieved!.priorityEnabled).toBe(true);
+    expect(retrieved!.partitionQueue).toBe(false);
+    expect(retrieved!.minPollingIntervalMs).toBe(2500);
+    expect(retrieved!.databaseBacked).toBe(true);
+
+    // never_update leaves the existing row alone.
+    await DBOS.registerQueue(queueName, { concurrency: 99, onConflict: 'never_update' });
+    retrieved = await DBOS.retrieveQueue(queueName);
+    expect(retrieved!.concurrency).toBe(10);
+    expect(retrieved!.rateLimit).toEqual({ limitPerPeriod: 5, periodSec: 1.5 });
+
+    // always_update overwrites every column, including clearing those that
+    // were previously set but are now omitted.
+    await DBOS.registerQueue(queueName, { concurrency: 20, onConflict: 'always_update' });
+    retrieved = await DBOS.retrieveQueue(queueName);
+    expect(retrieved!.concurrency).toBe(20);
+    expect(retrieved!.workerConcurrency).toBeUndefined();
+    expect(retrieved!.rateLimit).toBeUndefined();
+    expect(retrieved!.priorityEnabled).toBe(false);
+    expect(retrieved!.minPollingIntervalMs).toBe(1000);
+
+    // update_if_latest_version updates when the running version is the latest.
+    await DBOS.registerQueue(queueName, { concurrency: 30, onConflict: 'update_if_latest_version' });
+    retrieved = await DBOS.retrieveQueue(queueName);
+    expect(retrieved!.concurrency).toBe(30);
+
+    // If a newer registered version exists, update_if_latest_version no-ops.
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    const newerVersion = `newer-${randomUUID()}`;
+    await sysdb.createApplicationVersion(newerVersion);
+    await sysdb.updateApplicationVersionTimestamp(newerVersion, Date.now() + 1_000_000);
+
+    await DBOS.registerQueue(queueName, { concurrency: 999, onConflict: 'update_if_latest_version' });
+    retrieved = await DBOS.retrieveQueue(queueName);
+    expect(retrieved!.concurrency).toBe(30);
+
+    // delete removes the row; subsequent retrievals return null and a
+    // second delete is a harmless no-op.
+    await DBOS.deleteQueue(queueName);
+    expect(await DBOS.retrieveQueue(queueName)).toBeNull();
+    await DBOS.deleteQueue(queueName);
+  });
+
+  test('dynamic-config-via-setters', async () => {
+    const queueName = `test_dyn_queue_${randomUUID()}`;
+    const queue = await DBOS.registerQueue(queueName, {
+      concurrency: 4,
+      workerConcurrency: 2,
+      priorityEnabled: false,
+      minPollingIntervalMs: 1000,
+    });
+
+    await queue.setConcurrency(8);
+    await queue.setWorkerConcurrency(3);
+    await queue.setRateLimit({ limitPerPeriod: 7, periodSec: 2.0 });
+    await queue.setPriorityEnabled(true);
+    await queue.setPartitionQueue(true);
+    await queue.setMinPollingIntervalMs(500);
+
+    const fresh = await DBOS.retrieveQueue(queueName);
+    for (const q of [queue, fresh]) {
+      expect(q).not.toBeNull();
+      expect(q!.concurrency).toBe(8);
+      expect(q!.workerConcurrency).toBe(3);
+      expect(q!.rateLimit).toEqual({ limitPerPeriod: 7, periodSec: 2.0 });
+      expect(q!.priorityEnabled).toBe(true);
+      expect(q!.partitionQueue).toBe(true);
+      expect(q!.minPollingIntervalMs).toBe(500);
+    }
+
+    // Cross-validation: workerConcurrency cannot exceed concurrency.
+    await expect(queue.setWorkerConcurrency(100)).rejects.toThrow(
+      'workerConcurrency must be less than or equal to concurrency',
+    );
+    // Polling interval must be positive.
+    await expect(queue.setMinPollingIntervalMs(0)).rejects.toThrow('minPollingIntervalMs must be positive');
+
+    // Rate limit can be cleared.
+    await queue.setRateLimit(undefined);
+    const cleared = await DBOS.retrieveQueue(queueName);
+    expect(cleared!.rateLimit).toBeUndefined();
+
+    // In-memory queues do not support setters.
+    const legacyName = `legacy_dyn_queue_${randomUUID()}`;
+    const legacy = new WorkflowQueue(legacyName, { concurrency: 2 });
+    expect(legacy.concurrency).toBe(2);
+    expect(legacy.databaseBacked).toBe(false);
+    await expect(legacy.setConcurrency(5)).rejects.toThrow(/dynamic configuration is only supported/);
+
+    await DBOS.deleteQueue(queueName);
+  });
+
+  test('supervisor-launches-worker-for-queue-registered-after-launch', async () => {
+    const queueName = `supervisor_${randomUUID()}`;
+    // Queue is registered AFTER DBOS launches; the supervisor's discovery
+    // cycle must pick it up and start a worker without a process restart.
+    await DBOS.registerQueue(queueName, { minPollingIntervalMs: 100 });
+
+    const wfid = randomUUID();
+    const handle = await DBOS.startWorkflow(TestWFs, { workflowID: wfid, queueName }).testWorkflowSimple('hi', '!');
+    expect(await handle.getResult()).toBe('hi!');
+
+    await DBOS.deleteQueue(queueName);
+  });
+
+  test('worker-exits-and-resumes-on-delete-and-recreate', async () => {
+    const queueName = `recreate_${randomUUID()}`;
+    await DBOS.registerQueue(queueName, { minPollingIntervalMs: 100 });
+
+    // The original worker processes one workflow.
+    const h1 = await DBOS.startWorkflow(TestWFs, { workflowID: randomUUID(), queueName }).testWorkflowSimple('a', '1');
+    expect(await h1.getResult()).toBe('a1');
+
+    // Deleting the row makes the worker exit on its next iteration.
+    await DBOS.deleteQueue(queueName);
+    expect(await DBOS.retrieveQueue(queueName)).toBeNull();
+
+    // Re-registering with new config; the supervisor must start a fresh
+    // worker for the new row.
+    await DBOS.registerQueue(queueName, { minPollingIntervalMs: 100, concurrency: 5 });
+    expect((await DBOS.retrieveQueue(queueName))!.concurrency).toBe(5);
+
+    const h2 = await DBOS.startWorkflow(TestWFs, { workflowID: randomUUID(), queueName }).testWorkflowSimple('b', '2');
+    expect(await h2.getResult()).toBe('b2');
+
+    await DBOS.deleteQueue(queueName);
+  });
+
+  test('listenQueues-mixed-instances-and-strings', async () => {
+    // beforeEach already launched DBOS with the default config; reset it so
+    // we can launch with a custom listenQueues filter.
+    await DBOS.shutdown();
+
+    const inMemQueueName = `inmem_${randomUUID()}`;
+    const allowedDbName = `allowed_db_${randomUUID()}`;
+    const filteredOutDbName = `filtered_db_${randomUUID()}`;
+
+    const inMemQueue = new WorkflowQueue(inMemQueueName, { minPollingIntervalMs: 100 });
+
+    const cfg = generateDBOSTestConfig();
+    cfg.listenQueues = [inMemQueue, allowedDbName];
+    DBOS.setConfig(cfg);
+    await DBOS.launch();
+
+    // Register both DB-backed queues. The supervisor must launch a worker
+    // for the allowed name and skip the filtered one.
+    await DBOS.registerQueue(allowedDbName, { minPollingIntervalMs: 100 });
+    await DBOS.registerQueue(filteredOutDbName, { minPollingIntervalMs: 100 });
+
+    // The in-memory queue (passed as an instance) processes its workflow.
+    const h1 = await DBOS.startWorkflow(TestWFs, { queueName: inMemQueueName }).testWorkflowSimple('a', '1');
+    expect(await h1.getResult()).toBe('a1');
+
+    // The DB-backed queue (passed as a string name) also processes.
+    const h2 = await DBOS.startWorkflow(TestWFs, { queueName: allowedDbName }).testWorkflowSimple('b', '2');
+    expect(await h2.getResult()).toBe('b2');
+
+    // The filtered-out DB-backed queue gets no worker; its workflow stays
+    // ENQUEUED. Wait long enough for several supervisor cycles to confirm
+    // the filter holds.
+    const h3 = await DBOS.startWorkflow(TestWFs, { queueName: filteredOutDbName }).testWorkflowSimple('c', '3');
+    await sleepms(2500);
+    expect((await h3.getStatus())?.status).toBe(StatusString.ENQUEUED);
+
+    await DBOS.deleteQueue(allowedDbName);
+    await DBOS.deleteQueue(filteredOutDbName);
+  });
+
+  test('async-getters-reflect-cross-process-changes', async () => {
+    const queueName = `test_freshness_${randomUUID()}`;
+    await DBOS.registerQueue(queueName, { concurrency: 5 });
+
+    // Two independent handles to the same row simulate two processes each
+    // holding their own snapshot.
+    const q1 = await DBOS.retrieveQueue(queueName);
+    const q2 = await DBOS.retrieveQueue(queueName);
+    expect(q1!.concurrency).toBe(5);
+    expect(q2!.concurrency).toBe(5);
+
+    // q2 mutates the row; q1's local cache is now stale.
+    await q2!.setConcurrency(10);
+    expect(q1!.concurrency).toBe(5);
+
+    // Async getter on q1 re-reads from the DB and refreshes the cache.
+    expect(await q1!.getConcurrency()).toBe(10);
+    expect(q1!.concurrency).toBe(10);
+
+    // A single async getter call refreshes every cached field in one query.
+    await q2!.setRateLimit({ limitPerPeriod: 3, periodSec: 1 });
+    await q2!.setPriorityEnabled(true);
+    expect(q1!.rateLimit).toBeUndefined();
+    expect(q1!.priorityEnabled).toBe(false);
+    await q1!.getConcurrency();
+    expect(q1!.rateLimit).toEqual({ limitPerPeriod: 3, periodSec: 1 });
+    expect(q1!.priorityEnabled).toBe(true);
+
+    // Async getters throw when the row is gone.
+    await DBOS.deleteQueue(queueName);
+    await expect(q1!.getConcurrency()).rejects.toThrow(/not found in the database/);
+
+    // In-memory queues: getters return cached values without a DB roundtrip.
+    const memName = `test_mem_freshness_${randomUUID()}`;
+    const mem = new WorkflowQueue(memName, { concurrency: 7, priorityEnabled: true });
+    expect(await mem.getConcurrency()).toBe(7);
+    expect(await mem.getPriorityEnabled()).toBe(true);
+  });
+
+  test('in-memory-and-db-backed-queues-coexist', async () => {
+    // beforeEach already launched DBOS with the default config; restart it
+    // with a custom listenQueues filter so we can exercise mixed listening.
+    await DBOS.shutdown();
+
+    const listenedMemName = `inmem_listened_${randomUUID()}`;
+    const idleMemName = `inmem_idle_${randomUUID()}`;
+    const dbBackedName = `dbbacked_${randomUUID()}`;
+
+    const listenedMem = new WorkflowQueue(listenedMemName, { minPollingIntervalMs: 100 });
+    new WorkflowQueue(idleMemName, { concurrency: 2, minPollingIntervalMs: 100 });
+
+    // Re-declaring an in-memory queue with the same name throws.
+    expect(() => new WorkflowQueue(listenedMemName)).toThrow(/defined multiple times/);
+
+    // listenQueues accepts a mix of WorkflowQueue instances and string names.
+    const cfg = generateDBOSTestConfig();
+    cfg.listenQueues = [listenedMem, dbBackedName];
+    DBOS.setConfig(cfg);
+    await DBOS.launch();
+
+    // Register the database-backed queue post-launch; the supervisor picks it
+    // up since it matches the listen filter.
+    await DBOS.registerQueue(dbBackedName, { minPollingIntervalMs: 100 });
+
+    // The listened in-memory queue runs workflows.
+    const memHandle = await DBOS.startWorkflow(TestWFs, { queueName: listenedMemName }).testWorkflowSimple('a', '1');
+    expect(await memHandle.getResult()).toBe('a1');
+
+    // The listened database-backed queue runs workflows.
+    const dbHandle = await DBOS.startWorkflow(TestWFs, { queueName: dbBackedName }).testWorkflowSimple('b', '2');
+    expect(await dbHandle.getResult()).toBe('b2');
+
+    // A workflow enqueued on the un-listened in-memory queue stays ENQUEUED.
+    const idleHandle = await DBOS.startWorkflow(TestWFs, { queueName: idleMemName }).testWorkflowSimple('c', '3');
+    await sleepms(2000);
+    expect((await idleHandle.getStatus())?.status).toBe(StatusString.ENQUEUED);
+
+    // Restart DBOS listening to the previously idle queue. The pending
+    // workflow now runs to completion.
+    await DBOS.shutdown();
+    const cfg2 = generateDBOSTestConfig();
+    cfg2.listenQueues = [idleMemName];
+    DBOS.setConfig(cfg2);
+    await DBOS.launch();
+
+    const resumed = DBOS.retrieveWorkflow(idleHandle.workflowID);
+    expect(await resumed.getResult()).toBe('c3');
+
+    await DBOS.deleteQueue(dbBackedName);
+  });
+
+  class DynConcWFs {
+    static startedCount = 0;
+    static releaseEvent = new Event();
+    static reset() {
+      DynConcWFs.startedCount = 0;
+      DynConcWFs.releaseEvent = new Event();
+    }
+    @DBOS.workflow()
+    static async blocking(): Promise<void> {
+      DynConcWFs.startedCount += 1;
+      await DynConcWFs.releaseEvent.wait();
+    }
+  }
+
+  test('dynamic-concurrency-takes-effect-on-running-worker', async () => {
+    DynConcWFs.reset();
+    const queueName = `dyn_conc_${randomUUID()}`;
+    const queue = await DBOS.registerQueue(queueName, { concurrency: 1, minPollingIntervalMs: 100 });
+
+    try {
+      const handles = await Promise.all([0, 1, 2].map(() => DBOS.startWorkflow(DynConcWFs, { queueName }).blocking()));
+
+      // With concurrency=1, exactly one workflow should start. Wait long
+      // enough for several poll iterations to confirm the limit holds.
+      const concDeadline = Date.now() + 5000;
+      while (Date.now() < concDeadline && DynConcWFs.startedCount < 1) {
+        await sleepms(50);
+      }
+      expect(DynConcWFs.startedCount).toBe(1);
+      await sleepms(1000);
+      expect(DynConcWFs.startedCount).toBe(1);
+
+      // Bump concurrency. The worker reloads its config from the database on
+      // its next poll iteration and starts the remaining two workflows.
+      await queue.setConcurrency(3);
+
+      const deadline = Date.now() + 5000;
+      while (Date.now() < deadline && DynConcWFs.startedCount < 3) {
+        await sleepms(50);
+      }
+      expect(DynConcWFs.startedCount).toBe(3);
+
+      // Release everything; all three complete.
+      DynConcWFs.releaseEvent.set();
+      for (const h of handles) {
+        await h.getResult();
+      }
+    } finally {
+      DynConcWFs.releaseEvent.set();
+      await DBOS.deleteQueue(queueName);
+    }
   });
 });

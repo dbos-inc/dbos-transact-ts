@@ -1,4 +1,4 @@
-import { WorkflowHandle, DBOS, DBOSSerializer, WorkflowQueue } from '../src/';
+import { WorkflowHandle, DBOS, DBOSSerializer } from '../src/';
 import { generateDBOSTestConfig, setUpDBOSTestSysDb, Event } from './helpers';
 import { randomUUID } from 'node:crypto';
 import { StatusString } from '../src/workflow';
@@ -557,8 +557,6 @@ describe('dbos-tests', () => {
         },
         { name: 'custom-serializer-test-error' },
       );
-      const queue = new WorkflowQueue('example-queue');
-
       // Configure DBOS with a custom serializer to base64-encoded JSON
       const jsonSerializer: DBOSSerializer = {
         name: () => 'custom_base64',
@@ -578,6 +576,7 @@ describe('dbos-tests', () => {
       config.serializer = jsonSerializer;
       DBOS.setConfig(config);
       await DBOS.launch();
+      const queue = await DBOS.registerQueue('example-queue', { onConflict: 'always_update' });
 
       // Test workflow operations with a custom serializer
       const handle = await DBOS.startWorkflow(workflow, { queueName: queue.name })(value);

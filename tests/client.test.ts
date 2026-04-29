@@ -1,5 +1,5 @@
 import { workflow_status } from '../schemas/system_db_schema';
-import { DBOS, DBOSClient, WorkflowQueue, StatusString } from '../src';
+import { DBOS, DBOSClient, StatusString } from '../src';
 import { globalParams, sleepms } from '../src/utils';
 import { generateDBOSTestConfig, recoverPendingWorkflows, setUpDBOSTestSysDb } from './helpers';
 import { Client, PoolConfig } from 'pg';
@@ -8,7 +8,12 @@ import { DBOSQueueDuplicatedError, DBOSAwaitedWorkflowCancelledError } from '../
 import { randomUUID } from 'crypto';
 import { DBOSConfig } from '../src/dbos-executor';
 
-const _queue = new WorkflowQueue('testQueue', { priorityEnabled: true });
+// Re-register the database-backed queue used by these tests every time DBOS
+// is launched. Many tests in this file launch with their own setup, so this
+// is invoked from each test rather than from a single `beforeEach`.
+async function registerTestQueue(): Promise<void> {
+  await DBOS.registerQueue('testQueue', { onConflict: 'always_update', priorityEnabled: true });
+}
 
 class ClientTest {
   static inorder_results: string[] = [];
@@ -94,7 +99,8 @@ describe('DBOSClient', () => {
   });
 
   test('enqueue-timeout-simple', async () => {
-    await DBOS.launch(); // Before client create as it will create sysdb
+    await DBOS.launch();
+    await registerTestQueue();
 
     const client = await DBOSClient.create({ systemDatabaseUrl });
     const wfid = randomUUID();
@@ -117,7 +123,8 @@ describe('DBOSClient', () => {
   });
 
   test('enqueue-timeout-direct-parent', async () => {
-    await DBOS.launch(); // Before client create as it will create sysdb
+    await DBOS.launch();
+    await registerTestQueue();
 
     const client = await DBOSClient.create({ systemDatabaseUrl });
     const wfid = randomUUID();
@@ -147,7 +154,8 @@ describe('DBOSClient', () => {
   });
 
   test('enqueue-timeout-startwf-parent', async () => {
-    await DBOS.launch(); // Before client create as it will create sysdb
+    await DBOS.launch();
+    await registerTestQueue();
 
     const client = await DBOSClient.create({ systemDatabaseUrl });
     const wfid = randomUUID();
@@ -221,6 +229,7 @@ describe('DBOSClient', () => {
       expect(resultBefore.rows[0].application_version).toBeNull();
 
       await DBOS.launch();
+      await registerTestQueue();
       const handle = DBOS.retrieveWorkflow<ReturnType<EnqueueTest>>(wfid);
       const wfresult = await handle.getResult();
       expect(wfresult).toBe('42-test-{"first":"John","last":"Doe","age":30}');
@@ -239,7 +248,8 @@ describe('DBOSClient', () => {
   });
 
   test('DBOSClient-enqueue-appVer-notSet', async () => {
-    await DBOS.launch(); // Before client create as it will create sysdb
+    await DBOS.launch();
+    await registerTestQueue();
 
     const client = await DBOSClient.create({ systemDatabaseUrl });
     const wfid = `client-enqueue-${Date.now()}`;
@@ -281,7 +291,8 @@ describe('DBOSClient', () => {
   });
 
   test('DBOSClient-enqueue-and-get-result', async () => {
-    await DBOS.launch(); // Before client create as it will create sysdb
+    await DBOS.launch();
+    await registerTestQueue();
 
     const client = await DBOSClient.create({ systemDatabaseUrl });
 
@@ -329,7 +340,8 @@ describe('DBOSClient', () => {
   });
 
   test('DBOSClient-enqueue-and-get-result-portable', async () => {
-    await DBOS.launch(); // Before client create as it will create sysdb
+    await DBOS.launch();
+    await registerTestQueue();
 
     const client = await DBOSClient.create({ systemDatabaseUrl });
 
@@ -378,7 +390,8 @@ describe('DBOSClient', () => {
   });
 
   test('DBOSClient-enqueue-dedupid', async () => {
-    await DBOS.launch(); // Before client create as it will create sysdb
+    await DBOS.launch();
+    await registerTestQueue();
 
     const client = await DBOSClient.create({ systemDatabaseUrl });
 
@@ -421,7 +434,8 @@ describe('DBOSClient', () => {
   });
 
   test('DBOSClient-enqueue-priority', async () => {
-    await DBOS.launch(); // Before client create as it will create sysdb
+    await DBOS.launch();
+    await registerTestQueue();
 
     const client = await DBOSClient.create({ systemDatabaseUrl });
 
@@ -472,7 +486,8 @@ describe('DBOSClient', () => {
   });
 
   test('DBOSClient-enqueue-appVer-set', async () => {
-    await DBOS.launch(); // Before client create as it will create sysdb
+    await DBOS.launch();
+    await registerTestQueue();
 
     const client = await DBOSClient.create({ systemDatabaseUrl });
     const wfid = `client-enqueue-${Date.now()}`;
@@ -534,6 +549,7 @@ describe('DBOSClient', () => {
     }
 
     await DBOS.launch();
+    await registerTestQueue();
     await sleepms(10000);
 
     const dbClient = new Client(poolConfig);
@@ -558,6 +574,7 @@ describe('DBOSClient', () => {
     const message = `Hello, DBOS! (${now})`;
 
     await DBOS.launch();
+    await registerTestQueue();
     const handle = await DBOS.startWorkflow(ClientTest, { workflowID }).sendTest(topic);
 
     const client = await DBOSClient.create({ systemDatabaseUrl });
@@ -577,6 +594,7 @@ describe('DBOSClient', () => {
     const message = `Hello, DBOS! (${now})`;
 
     await DBOS.launch();
+    await registerTestQueue();
     const handle = await DBOS.startWorkflow(ClientTest, { workflowID }).sendTest();
 
     const client = await DBOSClient.create({ systemDatabaseUrl });
@@ -598,6 +616,7 @@ describe('DBOSClient', () => {
     const idempotencyKey = `idempotency-key-${now}`;
 
     await DBOS.launch();
+    await registerTestQueue();
     runClientSendWorker(workflowID, topic, globalParams.appVersion);
 
     const client = await DBOSClient.create({ systemDatabaseUrl });
@@ -630,6 +649,7 @@ describe('DBOSClient', () => {
     const message = `Hello, DBOS! (${now})`;
 
     await DBOS.launch();
+    await registerTestQueue();
     const handle = await DBOS.startWorkflow(ClientTest, { workflowID }).sendTest(topic);
 
     const client = await DBOSClient.create({ systemDatabaseUrl });
@@ -651,6 +671,7 @@ describe('DBOSClient', () => {
     const value = `event-value-${now}`;
 
     await DBOS.launch();
+    await registerTestQueue();
     const client = await DBOSClient.create({ systemDatabaseUrl });
     try {
       const handle = await DBOS.startWorkflow(ClientTest, { workflowID }).eventTest(key, value);
@@ -671,6 +692,7 @@ describe('DBOSClient', () => {
     const value = `event-value-${now}`;
 
     await DBOS.launch();
+    await registerTestQueue();
     const client = await DBOSClient.create({ systemDatabaseUrl });
     try {
       const handle = await DBOS.startWorkflow(ClientTest, { workflowID }).eventTest(key, value);
@@ -692,6 +714,7 @@ describe('DBOSClient', () => {
     const value = `event-value-${now}`;
 
     await DBOS.launch();
+    await registerTestQueue();
     const client = await DBOSClient.create({ systemDatabaseUrl });
     try {
       const handle = await DBOS.startWorkflow(ClientTest, { workflowID }).eventTest(key, value, true);
@@ -714,6 +737,7 @@ describe('DBOSClient', () => {
     const value = `event-value-${now}`;
 
     await DBOS.launch();
+    await registerTestQueue();
     const client = await DBOSClient.create({ systemDatabaseUrl });
     try {
       const handle = await DBOS.startWorkflow(ClientTest, { workflowID }).eventTest(key, value, true);
@@ -731,6 +755,7 @@ describe('DBOSClient', () => {
     const wfid = `client-retrieve-${Date.now()}`;
 
     await DBOS.launch();
+    await registerTestQueue();
     await DBOS.startWorkflow(ClientTest, { workflowID: wfid }).enqueueTest(42, 'test', {
       first: 'John',
       last: 'Doe',
@@ -751,6 +776,7 @@ describe('DBOSClient', () => {
     const wfid = `client-retrieve-done-${Date.now()}`;
 
     await DBOS.launch();
+    await registerTestQueue();
     const handle = await DBOS.startWorkflow(ClientTest, { workflowID: wfid }).enqueueTest(42, 'test', {
       first: 'John',
       last: 'Doe',
@@ -764,6 +790,69 @@ describe('DBOSClient', () => {
       const handle = client.retrieveWorkflow<ReturnType<EnqueueTest>>(wfid);
       const result = await handle.getResult();
       expect(result).toBe('42-test-{"first":"John","last":"Doe","age":30}');
+    } finally {
+      await client.destroy();
+    }
+  });
+
+  test('queue-crud', async () => {
+    await DBOS.launch();
+    await registerTestQueue();
+    const client = await DBOSClient.create({ systemDatabaseUrl });
+    const queueName = `test_client_queue_${randomUUID()}`;
+
+    try {
+      expect(await client.retrieveQueue(queueName)).toBeNull();
+
+      // Register persists configuration without a launched DBOS executor
+      // ever having seen the queue name.
+      const registered = await client.registerQueue(queueName, {
+        concurrency: 4,
+        rateLimit: { limitPerPeriod: 5, periodSec: 1.5 },
+        workerConcurrency: 2,
+        priorityEnabled: true,
+        minPollingIntervalMs: 2500,
+      });
+      expect(registered.name).toBe(queueName);
+      expect(registered.databaseBacked).toBe(true);
+      expect(registered.clientBound).toBe(true);
+
+      const retrieved = await client.retrieveQueue(queueName);
+      expect(retrieved).not.toBeNull();
+      expect(retrieved!.clientBound).toBe(true);
+      expect(retrieved!.concurrency).toBe(4);
+      expect(retrieved!.workerConcurrency).toBe(2);
+      expect(retrieved!.rateLimit).toEqual({ limitPerPeriod: 5, periodSec: 1.5 });
+      expect(retrieved!.priorityEnabled).toBe(true);
+      expect(retrieved!.minPollingIntervalMs).toBe(2500);
+
+      // Setters write through the client's database; the launched DBOS
+      // executor sees the same row.
+      await retrieved!.setConcurrency(8);
+      const fromDbos = await DBOS.retrieveQueue(queueName);
+      expect(fromDbos).not.toBeNull();
+      expect(fromDbos!.concurrency).toBe(8);
+      // Queues retrieved through DBOS are not client-bound.
+      expect(fromDbos!.clientBound).toBe(false);
+
+      // Clients have no application version, so update_if_latest_version
+      // is rejected.
+      await expect(
+        client.registerQueue(queueName, { concurrency: 1, onConflict: 'update_if_latest_version' }),
+      ).rejects.toThrow(/update_if_latest_version/);
+
+      // Default for clients is always_update: re-registering with new config
+      // overwrites the existing row.
+      await client.registerQueue(queueName, { concurrency: 99 });
+      const overwritten = await DBOS.retrieveQueue(queueName);
+      expect(overwritten!.concurrency).toBe(99);
+
+      // delete removes the row; subsequent retrievals from either side
+      // return null, and a second delete is a no-op.
+      await client.deleteQueue(queueName);
+      expect(await client.retrieveQueue(queueName)).toBeNull();
+      expect(await DBOS.retrieveQueue(queueName)).toBeNull();
+      await client.deleteQueue(queueName);
     } finally {
       await client.destroy();
     }

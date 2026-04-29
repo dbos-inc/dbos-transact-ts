@@ -13,7 +13,7 @@
  */
 
 import { Client } from 'pg';
-import { DBOS, DBOSClient, WorkflowQueue } from '../src';
+import { DBOS, DBOSClient } from '../src';
 import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
 import { workflow_events, workflow_events_history, workflow_status, streams } from '../schemas/system_db_schema';
 import { DBOSConfig } from '../src/dbos-executor';
@@ -63,8 +63,6 @@ const CANONICAL_MESSAGE = { sender: 'test', payload: [1, 2, 3] };
 // ============================================================================
 // Canonical workflow registration
 // ============================================================================
-
-const _interopQueue = new WorkflowQueue('interopq');
 
 const _canonicalWorkflow = DBOS.registerWorkflow(
   async (
@@ -123,6 +121,7 @@ describe('interop-tests', () => {
     process.env.DBOS__APPVERSION = 'v0';
     await setUpDBOSTestSysDb(config);
     await DBOS.launch();
+    await DBOS.registerQueue('interopq', { onConflict: 'always_update' });
 
     systemDBClient = new Client({
       connectionString: config.systemDatabaseUrl,

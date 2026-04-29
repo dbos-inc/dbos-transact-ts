@@ -111,6 +111,20 @@ export interface application_versions {
   created_at: number;
 }
 
+export interface queues {
+  queue_id: string;
+  name: string;
+  concurrency: number | null;
+  worker_concurrency: number | null;
+  rate_limit_max: number | null;
+  rate_limit_period_sec: number | null;
+  priority_enabled: boolean;
+  partition_queue: boolean;
+  polling_interval_sec: number;
+  created_at: number;
+  updated_at: number;
+}
+
 // This is the deserialized version of operation_outputs
 export interface step_info {
   function_id: number;

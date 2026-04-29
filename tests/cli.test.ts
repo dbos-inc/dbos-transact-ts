@@ -7,7 +7,7 @@ import { execSync } from 'child_process';
 import { Client } from 'pg';
 import { generateDBOSTestConfig } from './helpers';
 import { ExistenceCheck } from '../src/system_database';
-import { DBOS, WorkflowQueue } from '../src';
+import { DBOS } from '../src';
 import { DBOSConfig } from '../dist/src';
 
 describe('schema-command-tests', () => {
@@ -142,6 +142,7 @@ describe('workflow-management-cli-tests', () => {
     console.log(schemaOutput.toString());
 
     await DBOS.launch();
+    await DBOS.registerQueue(queue.name, { onConflict: 'always_update' });
   });
 
   afterAll(async () => {
@@ -149,7 +150,7 @@ describe('workflow-management-cli-tests', () => {
   });
 
   // Define test workflows
-  const queue = new WorkflowQueue('testQ');
+  const queue = { name: 'testQ' };
   const TestWorkflows = {
     simpleWorkflow: DBOS.registerWorkflow(
       async (input: string) => {

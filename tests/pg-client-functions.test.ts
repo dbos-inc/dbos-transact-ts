@@ -1,10 +1,10 @@
 import { workflow_status } from '../schemas/system_db_schema';
-import { DBOS, WorkflowQueue } from '../src';
+import { DBOS } from '../src';
 import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
 import { Client, PoolConfig } from 'pg';
 import { DBOSConfig } from '../src/dbos-executor';
 
-const testQueue = new WorkflowQueue('test-queue');
+const testQueueName = 'test-queue';
 
 class ClientTest {
   @DBOS.workflow()
@@ -41,6 +41,7 @@ describe('PostgreSQL Client Functions', () => {
 
     try {
       await DBOS.launch();
+      await DBOS.registerQueue(testQueueName, { onConflict: 'always_update' });
 
       const handle = await DBOS.startWorkflow(ClientTest).sendTest(topic);
 
@@ -117,7 +118,7 @@ describe('PostgreSQL Client Functions', () => {
           JSON.stringify(42),
           JSON.stringify('test'),
           JSON.stringify({ first: 'John', last: 'Doe', age: 30 }),
-          testQueue.name,
+          testQueueName,
         ],
       );
 
@@ -139,6 +140,7 @@ describe('PostgreSQL Client Functions', () => {
 
     try {
       await DBOS.launch();
+      await DBOS.registerQueue(testQueueName, { onConflict: 'always_update' });
 
       const handle = DBOS.retrieveWorkflow<string>(wfid);
       const status = await handle.getStatus();
@@ -172,7 +174,7 @@ describe('PostgreSQL Client Functions', () => {
           JSON.stringify(42),
           JSON.stringify('test'),
           JSON.stringify({ first: 'John', last: 'Doe', age: 30 }),
-          testQueue.name,
+          testQueueName,
         ],
       );
 
@@ -194,6 +196,7 @@ describe('PostgreSQL Client Functions', () => {
 
     try {
       await DBOS.launch();
+      await DBOS.registerQueue(testQueueName, { onConflict: 'always_update' });
 
       const handle = DBOS.retrieveWorkflow<string>(wfid);
       const status = await handle.getStatus();

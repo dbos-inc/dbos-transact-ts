@@ -33,6 +33,8 @@ export enum MessageType {
   GET_WORKFLOW_STREAMS = 'get_workflow_streams',
   GET_WORKFLOW_AGGREGATES = 'get_workflow_aggregates',
   FORK_FROM_FAILURE = 'fork_from_failure',
+  LIST_QUEUES = 'list_queues',
+  GET_QUEUE = 'get_queue',
 }
 
 export interface BaseMessage {
@@ -851,6 +853,53 @@ export class GetWorkflowAggregatesResponse extends BaseResponse {
   output: WorkflowAggregateOutput[];
   constructor(request_id: string, output: WorkflowAggregateOutput[], error_message?: string) {
     super(MessageType.GET_WORKFLOW_AGGREGATES, request_id, error_message);
+    this.output = output;
+  }
+}
+
+// --- Queue messages ---
+
+export interface QueueOutput {
+  name: string;
+  concurrency: number | null;
+  worker_concurrency: number | null;
+  rate_limit_max: number | null;
+  rate_limit_period_sec: number | null;
+  priority_enabled: boolean;
+  partition_queue: boolean;
+  polling_interval_sec: number;
+}
+
+export class ListQueuesRequest implements BaseMessage {
+  type = MessageType.LIST_QUEUES;
+  request_id: string;
+  constructor(request_id: string) {
+    this.request_id = request_id;
+  }
+}
+
+export class ListQueuesResponse extends BaseResponse {
+  output: QueueOutput[];
+  constructor(request_id: string, output: QueueOutput[], error_message?: string) {
+    super(MessageType.LIST_QUEUES, request_id, error_message);
+    this.output = output;
+  }
+}
+
+export class GetQueueRequest implements BaseMessage {
+  type = MessageType.GET_QUEUE;
+  request_id: string;
+  name: string;
+  constructor(request_id: string, name: string) {
+    this.request_id = request_id;
+    this.name = name;
+  }
+}
+
+export class GetQueueResponse extends BaseResponse {
+  output: QueueOutput | null;
+  constructor(request_id: string, output: QueueOutput | null, error_message?: string) {
+    super(MessageType.GET_QUEUE, request_id, error_message);
     this.output = output;
   }
 }

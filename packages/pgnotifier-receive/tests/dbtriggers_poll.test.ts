@@ -1,4 +1,4 @@
-import { DBOS, DBOSConfig, WorkflowQueue } from '@dbos-inc/dbos-sdk';
+import { DBOS, DBOSConfig } from '@dbos-inc/dbos-sdk';
 
 import { DBTrigger, TriggerOperation } from '../src';
 import { ClientBase, Pool, PoolClient } from 'pg';
@@ -37,7 +37,7 @@ function sleepms(ms: number) {
 
 const testTableName = 'dbos_test_trig_seq';
 
-const q = new WorkflowQueue('schedQ');
+const q = { name: 'schedQ' };
 
 class DBOSTriggerTestClassSN {
   static nTSUpdates = 0;
@@ -159,6 +159,7 @@ describe('test-db-trigger-polling', () => {
             );`);
     DBOSTriggerTestClassSN.reset();
     await DBOS.launch();
+    await DBOS.registerQueue(q.name, { onConflict: 'always_update' });
   });
 
   afterEach(async () => {

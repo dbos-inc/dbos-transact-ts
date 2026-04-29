@@ -1,4 +1,4 @@
-import { DBOS, ConfiguredInstance, DBOSClient, WorkflowQueue } from '../src';
+import { DBOS, ConfiguredInstance, DBOSClient } from '../src';
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import { generateDBOSTestConfig, setUpDBOSTestSysDb, dropDatabase } from './helpers';
 import { sleepms } from '../src/utils';
@@ -1184,7 +1184,6 @@ describe('dynamic-scheduler-tests', () => {
   // schedule-with-queue-name
   // ---------------------------------------------------------------------------
 
-  const _schedulerTestQueue = new WorkflowQueue('scheduler-test-queue');
   const queuedReceived: unknown[] = [];
   async function queuedWorkflow(_scheduledDate: Date, context: unknown) {
     const status = await DBOS.getWorkflowStatus(DBOS.workflowID!);
@@ -1196,6 +1195,7 @@ describe('dynamic-scheduler-tests', () => {
 
   test('schedule-with-queue-name', async () => {
     queuedReceived.length = 0;
+    await DBOS.registerQueue('scheduler-test-queue', { onConflict: 'always_update' });
 
     // Create a schedule with a valid queue name
     await DBOS.createSchedule({
@@ -1238,5 +1238,45 @@ describe('dynamic-scheduler-tests', () => {
     expect(noQueueSched).not.toBeNull();
     expect(noQueueSched!.queueName).toBeNull();
     await DBOS.deleteSchedule('no-queue-schedule');
+  });
+
+  // ---------------------------------------------------------------------------
+  // schedule-with-database-backed-queue
+  // ---------------------------------------------------------------------------
+
+  const dbQueuedReceived: unknown[] = [];
+  async function dbQueuedWorkflow(_scheduledDate: Date, context: unknown) {
+    const status = await DBOS.getWorkflowStatus(DBOS.workflowID!);
+    expect(status).toBeDefined();
+    expect(status!.queueName).toBe('db-scheduler-queue');
+    dbQueuedReceived.push(context);
+  }
+  const regDbQueuedWf = DBOS.registerWorkflow(dbQueuedWorkflow, { name: 'dbQueuedWorkflow' });
+
+  test('schedule-with-database-backed-queue', async () => {
+    dbQueuedReceived.length = 0;
+
+    // Register a database-backed queue. The supervisor loop will discover it
+    // and start a worker shortly after launch.
+    await DBOS.registerQueue('db-scheduler-queue', { concurrency: 2 });
+
+    try {
+      await DBOS.createSchedule({
+        scheduleName: 'db-queued-schedule',
+        workflowFn: regDbQueuedWf,
+        schedule: '* * * * * *',
+        context: { dbQueued: true },
+        options: { queueName: 'db-scheduler-queue' },
+      });
+
+      // Workflows fire and land on the database-backed queue
+      await retryUntilSuccess(() => {
+        expect(dbQueuedReceived.length).toBeGreaterThanOrEqual(2);
+        expect(dbQueuedReceived.every((c) => (c as { dbQueued: boolean }).dbQueued === true)).toBe(true);
+      });
+    } finally {
+      await DBOS.deleteSchedule('db-queued-schedule').catch(() => {});
+      await DBOS.deleteQueue('db-scheduler-queue').catch(() => {});
+    }
   });
 });

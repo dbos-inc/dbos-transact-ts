@@ -6,8 +6,8 @@ import { DBOSExecutor } from './dbos-executor';
 import { GlobalLogger } from './telemetry/logs';
 import * as net from 'net';
 import { performance } from 'perf_hooks';
-import { globalParams } from './utils';
-import { QueueParameters, wfQueueRunner } from './wfqueue';
+import { globalParams, INTERNAL_QUEUE_NAME } from './utils';
+import { QueueParameters, wfQueueRunner, WorkflowQueue } from './wfqueue';
 import { globalTimeout } from './workflow_management';
 import * as protocol from './conductor/protocol';
 
@@ -240,16 +240,34 @@ export class DBOSAdminServer {
       method: 'GET',
       path: WorkflowQueuesMetadataUrl,
       handler: async (req, res) => {
-        const queueDetailsArray: QueueMetadataResponse[] = [];
+        // Merge DB-backed queues with the in-memory registry. In-memory wins
+        // on collision so a process running with a code-defined queue exposes
+        // its actual configuration even if a stale row exists in the DB.
+        const merged = new Map<string, QueueMetadataResponse>();
+        try {
+          const records = await dbosExec.systemDatabase.listQueues();
+          for (const record of records) {
+            if (record.name === INTERNAL_QUEUE_NAME) continue;
+            const q = WorkflowQueue._fromRecord(record);
+            merged.set(record.name, {
+              name: record.name,
+              concurrency: q.concurrency,
+              workerConcurrency: q.workerConcurrency,
+              rateLimit: q.rateLimit,
+            });
+          }
+        } catch (e) {
+          dbosExec.logger.warn(`Error listing database-backed queues for metadata endpoint: ${(e as Error).message}`);
+        }
         wfQueueRunner.wfQueuesByName.forEach((q, qn) => {
-          queueDetailsArray.push({
+          merged.set(qn, {
             name: qn,
             concurrency: q.concurrency,
             workerConcurrency: q.workerConcurrency,
             rateLimit: q.rateLimit,
           });
         });
-        sendJson(res, 200, queueDetailsArray);
+        sendJson(res, 200, [...merged.values()]);
         return Promise.resolve();
       },
     });

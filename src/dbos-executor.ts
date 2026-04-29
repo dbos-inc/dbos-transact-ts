@@ -118,7 +118,14 @@ export interface DBOSConfig {
 
   serializer?: DBOSSerializer;
   enablePatching?: boolean;
-  listenQueues?: WorkflowQueue[];
+  /**
+   * Restrict this process to only dequeue from the listed queues. Each entry
+   * is either a `WorkflowQueue` instance or the name of a queue (in-memory
+   * or database-backed). Names that match nothing at launch are deferred —
+   * a database-backed queue registered later under that name will be picked
+   * up by the supervisor.
+   */
+  listenQueues?: (WorkflowQueue | string)[];
   schedulerPollingIntervalMs?: number;
   useListenNotify?: boolean;
 }
@@ -394,7 +401,7 @@ export class DBOSExecutor {
     // If the workflow is called on a queue with a priority but the queue is not configured with a priority, print a warning.
     if (params.queueName) {
       const wfqueue = this.getQueueByName(params.queueName);
-      if (!wfqueue.priorityEnabled && priority !== undefined) {
+      if (wfqueue && !wfqueue.priorityEnabled && priority !== undefined) {
         throw Error(
           `Priority is not enabled for queue ${params.queueName}. Setting priority will not have any effect.`,
         );
@@ -681,10 +688,14 @@ export class DBOSExecutor {
     }
   }
 
-  getQueueByName(name: string): WorkflowQueue {
-    const q = wfQueueRunner.wfQueuesByName.get(name);
-    if (!q) throw new DBOSNotRegisteredError(name, `Workflow queue '${name}' is not defined.`);
-    return q;
+  /**
+   * Look up an in-memory workflow queue by name. Returns `undefined` for
+   * names that are not registered in-process; database-backed queues are
+   * not in this map, so callers using this for sync validation should treat
+   * `undefined` as "no in-process information" rather than as an error.
+   */
+  getQueueByName(name: string): WorkflowQueue | undefined {
+    return wfQueueRunner.wfQueuesByName.get(name);
   }
 
   async runStepTempWF<T extends unknown[], R>(
@@ -1017,7 +1028,7 @@ export class DBOSExecutor {
     return handlerArray;
   }
 
-  async initEventReceivers(listenQueues: WorkflowQueue[] | null) {
+  async initEventReceivers(listenQueues: (WorkflowQueue | string)[] | null) {
     this.#wfqEnded = wfQueueRunner.dispatchLoop(this, listenQueues);
 
     for (const lcl of getLifecycleListeners()) {
