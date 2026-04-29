@@ -364,6 +364,7 @@ export class DBOSClient {
     }
     const queue = WorkflowQueue._fromRecord(persisted, this.systemDatabase);
     if (inserted) {
+      this.logger.info(`Registered new queue:`);
       logQueue(this.logger, queue);
     }
     return queue;
