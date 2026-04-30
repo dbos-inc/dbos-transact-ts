@@ -2273,6 +2273,7 @@ describe('database-backed-queue-crud', () => {
 
     // Re-registering with new config; the supervisor must start a fresh
     // worker for the new row.
+    await sleepms(3000);
     await DBOS.registerQueue(queueName, { minPollingIntervalMs: 100, concurrency: 5 });
     expect((await DBOS.retrieveQueue(queueName))!.concurrency).toBe(5);
 

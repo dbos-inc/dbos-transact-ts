@@ -2,7 +2,24 @@ import { DBOSExecutor } from './dbos-executor';
 import { DBOS } from './dbos';
 import { DEBUG_TRIGGER_WORKFLOW_QUEUE_START, debugTriggerPoint } from './debugpoint';
 import type { QueueRecord, SystemDatabase } from './system_database';
+import type { GlobalLogger } from './telemetry/logs';
 import { globalParams, INTERNAL_QUEUE_NAME } from './utils';
+
+/**
+ * Log a single queue's name and its set parameters. Unset parameters are
+ * omitted, matching `Queue: <name> (concurrency=…, worker_concurrency=…,
+ * limit=N/Ts, priority, partitioned)`.
+ */
+export function logQueue(logger: GlobalLogger, q: WorkflowQueue): void {
+  const opts: string[] = [];
+  if (q.concurrency !== undefined) opts.push(`concurrency=${q.concurrency}`);
+  if (q.workerConcurrency !== undefined) opts.push(`worker_concurrency=${q.workerConcurrency}`);
+  if (q.rateLimit !== undefined) opts.push(`limit=${q.rateLimit.limitPerPeriod}/${q.rateLimit.periodSec}s`);
+  if (q.priorityEnabled) opts.push('priority');
+  if (q.partitionQueue) opts.push('partitioned');
+  const optsStr = opts.length > 0 ? ` (${opts.join(', ')})` : '';
+  logger.info(`Queue: ${q.name}${optsStr}`);
+}
 
 /**
  * Limit the maximum number of functions started from a `WorkflowQueue`
@@ -419,30 +436,30 @@ class WFQueueRunner {
   private async logRunningQueues(exec: DBOSExecutor): Promise<void> {
     const logger = exec.logger;
     const merged = new Map<string, WorkflowQueue>();
-    try {
-      const records = await exec.systemDatabase.listQueues();
-      for (const record of records) {
-        if (record.name === INTERNAL_QUEUE_NAME) continue;
-        if (this.listenQueueNames !== null && !this.listenQueueNames.has(record.name)) continue;
-        merged.set(record.name, WorkflowQueue._fromRecord(record));
-      }
-    } catch (e) {
-      logger.warn(`Error listing database-backed queues for endpoint logging: ${(e as Error).message}`);
-    }
     for (const [qn, q] of this.wfQueuesByName) {
       merged.set(qn, q);
     }
+    try {
+      const records = await exec.systemDatabase.listQueues();
+      for (const record of records) {
+        if (!merged.has(record.name)) {
+          merged.set(record.name, WorkflowQueue._fromRecord(record));
+        }
+      }
+    } catch (e) {
+      logger.warn(`Exception listing database-backed queues: ${(e as Error).message}`);
+    }
 
-    logger.info('Workflow queues:');
-    for (const [qn, q] of merged) {
-      const conc =
-        q.concurrency !== undefined ? `global concurrency limit: ${q.concurrency}` : 'No concurrency limit set';
-      logger.info(`    ${qn}: ${conc}`);
-      const workerconc =
-        q.workerConcurrency !== undefined
-          ? `worker concurrency limit: ${q.workerConcurrency}`
-          : 'No worker concurrency limit set';
-      logger.info(`    ${qn}: ${workerconc}`);
+    if (this.listenQueueNames !== null) {
+      for (const name of Array.from(merged.keys())) {
+        if (!this.listenQueueNames.has(name)) merged.delete(name);
+      }
+    }
+    merged.delete(INTERNAL_QUEUE_NAME);
+
+    logger.info(`Listening to ${merged.size} queues:`);
+    for (const q of merged.values()) {
+      logQueue(logger, q);
     }
   }
 

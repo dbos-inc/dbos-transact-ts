@@ -3193,7 +3193,10 @@ export class SystemDatabase {
     );
   }
 
-  async upsertQueue(record: QueueRecord, updateExisting: boolean): Promise<void> {
+  /** Returns true iff this call inserted a new row (i.e. the queue did not
+   * previously exist). False if the row already existed, regardless of
+   * whether it was updated. */
+  async upsertQueue(record: QueueRecord, updateExisting: boolean): Promise<boolean> {
     const now = Date.now();
     const onConflict = updateExisting
       ? `ON CONFLICT (name) DO UPDATE SET
@@ -3206,24 +3209,39 @@ export class SystemDatabase {
           polling_interval_sec = EXCLUDED.polling_interval_sec,
           updated_at = EXCLUDED.updated_at`
       : `ON CONFLICT (name) DO NOTHING`;
-    await this.pool.query(
-      `INSERT INTO "${this.schemaName}".queues
-        (name, concurrency, worker_concurrency, rate_limit_max, rate_limit_period_sec,
-         priority_enabled, partition_queue, polling_interval_sec, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-       ${onConflict}`,
-      [
-        record.name,
-        record.concurrency,
-        record.workerConcurrency,
-        record.rateLimitMax,
-        record.rateLimitPeriodSec,
-        record.priorityEnabled,
-        record.partitionQueue,
-        record.pollingIntervalSec,
-        now,
-      ],
-    );
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const existed = await client.query<{ name: string }>(
+        `SELECT name FROM "${this.schemaName}".queues WHERE name = $1`,
+        [record.name],
+      );
+      await client.query(
+        `INSERT INTO "${this.schemaName}".queues
+          (name, concurrency, worker_concurrency, rate_limit_max, rate_limit_period_sec,
+           priority_enabled, partition_queue, polling_interval_sec, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         ${onConflict}`,
+        [
+          record.name,
+          record.concurrency,
+          record.workerConcurrency,
+          record.rateLimitMax,
+          record.rateLimitPeriodSec,
+          record.priorityEnabled,
+          record.partitionQueue,
+          record.pollingIntervalSec,
+          now,
+        ],
+      );
+      await client.query('COMMIT');
+      return existed.rowCount === 0;
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
   }
 
   // ==================== Internal ====================
