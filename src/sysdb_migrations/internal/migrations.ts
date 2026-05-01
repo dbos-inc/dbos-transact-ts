@@ -6,6 +6,7 @@ export function allMigrations(
 ): ReadonlyArray<DBMigration> {
   const useListenNotify = opts?.useListenNotify ?? true;
   const isCockroach = opts?.isCockroach ?? false;
+  const c = isCockroach ? '' : 'CONCURRENTLY';
   return [
     {
       name: '20240123182943_schema',
@@ -431,6 +432,82 @@ export function allMigrations(
           "updated_at" BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM now()) * 1000.0)::bigint
         )`,
       ],
+    },
+    // Migrations below replace broad indexes on workflow_status with partial
+    // indexes targeted at individual query patterns (recovery, troubleshooting,
+    // dequeue, rate-limit count). Each index DDL runs CONCURRENTLY on Postgres
+    // for safe online deployment; CockroachDB ignores the keyword.
+    {
+      online: true,
+      pg: [`DROP INDEX ${c} IF EXISTS "${schemaName}"."idx_workflow_status_forked_from"`],
+    },
+    {
+      online: true,
+      pg: [
+        `CREATE INDEX ${c} IF NOT EXISTS "idx_workflow_status_forked_from" ON "${schemaName}"."workflow_status" ("forked_from") WHERE "forked_from" IS NOT NULL`,
+      ],
+    },
+    {
+      online: true,
+      pg: [`DROP INDEX ${c} IF EXISTS "${schemaName}"."idx_workflow_status_parent_workflow_id"`],
+    },
+    {
+      online: true,
+      pg: [
+        `CREATE INDEX ${c} IF NOT EXISTS "idx_workflow_status_parent_workflow_id" ON "${schemaName}"."workflow_status" ("parent_workflow_id") WHERE "parent_workflow_id" IS NOT NULL`,
+      ],
+    },
+    {
+      online: true,
+      pg: [`DROP INDEX ${c} IF EXISTS "${schemaName}"."workflow_status_executor_id_index"`],
+    },
+    {
+      online: true,
+      pg: [
+        `CREATE UNIQUE INDEX ${c} IF NOT EXISTS "uq_workflow_status_dedup_id" ON "${schemaName}"."workflow_status" ("queue_name", "deduplication_id") WHERE "deduplication_id" IS NOT NULL`,
+      ],
+    },
+    {
+      pg: [
+        `ALTER TABLE "${schemaName}"."workflow_status" DROP CONSTRAINT IF EXISTS "uq_workflow_status_queue_name_dedup_id"`,
+      ],
+    },
+    {
+      online: true,
+      pg: [
+        `CREATE INDEX ${c} IF NOT EXISTS "idx_workflow_status_pending" ON "${schemaName}"."workflow_status" ("created_at") WHERE "status" = 'PENDING'`,
+      ],
+    },
+    {
+      online: true,
+      pg: [
+        `CREATE INDEX ${c} IF NOT EXISTS "idx_workflow_status_failed" ON "${schemaName}"."workflow_status" ("status", "created_at") WHERE "status" IN ('ERROR', 'CANCELLED', 'MAX_RECOVERY_ATTEMPTS_EXCEEDED')`,
+      ],
+    },
+    {
+      online: true,
+      pg: [`DROP INDEX ${c} IF EXISTS "${schemaName}"."workflow_status_status_index"`],
+    },
+    {
+      online: true,
+      pg: [
+        `CREATE INDEX ${c} IF NOT EXISTS "idx_workflow_status_in_flight" ON "${schemaName}"."workflow_status" ("queue_name", "status", "priority", "created_at") WHERE "status" IN ('ENQUEUED', 'PENDING')`,
+      ],
+    },
+    {
+      pg: [
+        `ALTER TABLE "${schemaName}"."workflow_status" ADD COLUMN IF NOT EXISTS "rate_limited" BOOLEAN NOT NULL DEFAULT FALSE`,
+      ],
+    },
+    {
+      online: true,
+      pg: [
+        `CREATE INDEX ${c} IF NOT EXISTS "idx_workflow_status_rate_limited" ON "${schemaName}"."workflow_status" ("queue_name", "started_at_epoch_ms") WHERE "rate_limited" = TRUE`,
+      ],
+    },
+    {
+      online: true,
+      pg: [`DROP INDEX ${c} IF EXISTS "${schemaName}"."idx_workflow_status_queue_status_started"`],
     },
   ];
 }
