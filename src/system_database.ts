@@ -2513,13 +2513,20 @@ export class SystemDatabase {
       // If there is a rate limit, compute how many functions have started in its period.
       let numRecentQueries = 0;
       if (queue.rateLimit) {
-        const params = [queue.name, startTimeMs - limiterPeriodMS, ...partitionParams];
+        const params = [
+          queue.name,
+          StatusString.ENQUEUED,
+          StatusString.DELAYED,
+          startTimeMs - limiterPeriodMS,
+          ...partitionParams,
+        ];
         const countResult = await client.query<{ count: string }>(
           `SELECT COUNT(*) FROM "${this.schemaName}".workflow_status
            WHERE queue_name = $1
              AND rate_limited = TRUE
-             AND started_at_epoch_ms > $2
-             ${partitionFilter.replace('$PARTITION', '$3')}`,
+             AND status NOT IN ($2, $3)
+             AND started_at_epoch_ms > $4
+             ${partitionFilter.replace('$PARTITION', '$5')}`,
           params,
         );
         numRecentQueries = Number(countResult.rows[0].count);
