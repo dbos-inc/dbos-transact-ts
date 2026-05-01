@@ -178,6 +178,7 @@ export async function runSysMigrationsPg(
     const stmts = m.pg ?? [];
     if (stmts.length === 0) {
       onWarn(`Migration "${m.name}" has no Postgres statements; skipping.`);
+      await bumpMigrationVersion(client, schemaName, v);
       skipped++;
       lastAppliedVersion = v;
       continue;
