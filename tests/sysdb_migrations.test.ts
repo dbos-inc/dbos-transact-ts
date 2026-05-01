@@ -12,11 +12,6 @@ async function getClient(): Promise<Client> {
   return client;
 }
 
-async function isCockroach(client: Client): Promise<boolean> {
-  const v = await client.query<{ version: string }>('SELECT version() AS version');
-  return /cockroachdb/i.test(v.rows[0]?.version ?? '');
-}
-
 async function resetSchema(client: Client): Promise<void> {
   await client.query(`DROP SCHEMA IF EXISTS "${TEST_SCHEMA}" CASCADE`);
 }
@@ -34,11 +29,9 @@ async function indexExists(client: Client, name: string): Promise<boolean> {
 
 describe('sysdb migration runner', () => {
   let client: Client;
-  let cockroach: boolean;
 
   beforeAll(async () => {
     client = await getClient();
-    cockroach = await isCockroach(client);
   });
 
   beforeEach(async () => {
@@ -51,10 +44,9 @@ describe('sysdb migration runner', () => {
   });
 
   test('idempotent re-run of full migration list', async () => {
-    const migrations = allMigrations(TEST_SCHEMA, { useListenNotify: false, isCockroach: cockroach });
+    const migrations = allMigrations(TEST_SCHEMA, { useListenNotify: false });
 
     const first = await runSysMigrationsPg(client, migrations, TEST_SCHEMA, {
-      isCockroach: cockroach,
       onWarn: () => {},
     });
     expect(first.fromVersion).toBe(0);
@@ -62,7 +54,6 @@ describe('sysdb migration runner', () => {
     expect(first.appliedCount).toBeGreaterThan(0);
 
     const second = await runSysMigrationsPg(client, migrations, TEST_SCHEMA, {
-      isCockroach: cockroach,
       onWarn: () => {},
     });
     expect(second.fromVersion).toBe(migrations.length);
@@ -98,9 +89,7 @@ describe('sysdb migration runner', () => {
       { pg: [`CREATE TABLE "${TEST_SCHEMA}"."t2" (id int)`] }, // version 5 — never reached
     ];
 
-    await expect(
-      runSysMigrationsPg(client, failing, TEST_SCHEMA, { isCockroach: cockroach, onWarn: () => {} }),
-    ).rejects.toBeDefined();
+    await expect(runSysMigrationsPg(client, failing, TEST_SCHEMA, { onWarn: () => {} })).rejects.toBeDefined();
 
     expect(await getCurrentSysDBVersion(client, TEST_SCHEMA)).toBe(3);
 
@@ -111,7 +100,6 @@ describe('sysdb migration runner', () => {
     ];
 
     const result = await runSysMigrationsPg(client, fixed, TEST_SCHEMA, {
-      isCockroach: cockroach,
       onWarn: () => {},
     });
     expect(result.fromVersion).toBe(3);
@@ -120,11 +108,6 @@ describe('sysdb migration runner', () => {
   });
 
   test('cleans up invalid indexes left by an interrupted CONCURRENTLY build', async () => {
-    if (cockroach) {
-      // CockroachDB doesn't have the same INVALID-index recovery story.
-      return;
-    }
-
     await client.query(`CREATE SCHEMA "${TEST_SCHEMA}"`);
     await client.query(
       `CREATE TABLE "${TEST_SCHEMA}"."dbos_migrations" ("version" bigint not null, constraint "dbos_migrations_pkey_invalid" primary key ("version"))`,
@@ -142,7 +125,7 @@ describe('sysdb migration runner', () => {
       { online: true, pg: [`CREATE INDEX CONCURRENTLY IF NOT EXISTS "tgt_good_idx" ON "${TEST_SCHEMA}"."tgt" (id)`] },
     ];
 
-    await runSysMigrationsPg(client, migrations, TEST_SCHEMA, { isCockroach: false, onWarn: () => {} });
+    await runSysMigrationsPg(client, migrations, TEST_SCHEMA, { onWarn: () => {} });
 
     expect(await indexExists(client, 'tgt_invalid_idx')).toBe(false);
     expect(await indexExists(client, 'tgt_good_idx')).toBe(true);
