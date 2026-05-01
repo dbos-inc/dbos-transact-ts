@@ -183,8 +183,8 @@ export async function runSysMigrationsPg(
       continue;
     }
 
+    // Run migrations in autocommit
     if (m.online && !isCockroach) {
-      // Run online migrations in autocommit (no surrounding transaction).
       // Drop any indexes left INVALID by a prior interrupted run before
       // attempting the next CONCURRENTLY statement.
       await cleanupInvalidIndexes(client, schemaName, (msg) => onWarn(msg));
