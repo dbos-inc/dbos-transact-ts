@@ -2576,7 +2576,6 @@ export class SystemDatabase {
       // Retrieve the first max_tasks workflows in the queue.
       // Only retrieve workflows of the local version (or without version set)
       const lockMode = queue.concurrency ? 'FOR UPDATE NOWAIT' : 'FOR UPDATE SKIP LOCKED';
-      const orderClause = 'ORDER BY priority ASC, created_at ASC';
       const limitClause = maxTasks !== Infinity ? `LIMIT ${maxTasks}` : '';
 
       const selectParams = [StatusString.ENQUEUED, queue.name, appVersion, ...partitionParams];
@@ -2587,7 +2586,7 @@ export class SystemDatabase {
           AND queue_name = $2
           AND (application_version IS NULL OR application_version = $3)
           ${partitionFilter.replace('$PARTITION', '$4')}
-        ${orderClause}
+        ORDER BY priority ASC, created_at ASC
         ${limitClause}
         ${lockMode}
       `;
