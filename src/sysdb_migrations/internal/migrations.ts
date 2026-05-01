@@ -468,9 +468,13 @@ export function allMigrations(
       ],
     },
     {
-      pg: [
-        `ALTER TABLE "${schemaName}"."workflow_status" DROP CONSTRAINT IF EXISTS "uq_workflow_status_queue_name_dedup_id"`,
-      ],
+      // CockroachDB stores `UNIQUE (...)` constraints as unique indexes, so
+      // they must be dropped with DROP INDEX rather than ALTER TABLE DROP CONSTRAINT.
+      pg: isCockroach
+        ? [`DROP INDEX IF EXISTS "${schemaName}"."uq_workflow_status_queue_name_dedup_id" CASCADE`]
+        : [
+            `ALTER TABLE "${schemaName}"."workflow_status" DROP CONSTRAINT IF EXISTS "uq_workflow_status_queue_name_dedup_id"`,
+          ],
     },
     {
       online: true,
