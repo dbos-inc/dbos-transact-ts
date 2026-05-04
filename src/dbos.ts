@@ -426,13 +426,25 @@ export class DBOS {
           throw new DBOSError(`conductorExecutorMetadata must be JSON-serializable: ${(e as Error).message}`);
         }
       }
+      const appName = DBOSExecutor.globalInstance.appName;
+      assert(appName, 'Application name must be set in configuration in order to use DBOS Conductor');
       DBOS.conductor = new Conductor(
         DBOSExecutor.globalInstance,
+        appName,
         options.conductorKey,
         options.conductorURL,
         executorMetadata,
       );
       DBOS.conductor.dispatchLoop();
+    } else if (process.env.DBOS__CLOUD === 'true') {
+      const cloudAppName = process.env.DBOS__CONDUCTOR_APP_NAME;
+      const cloudConductorKey = process.env.DBOS__CONDUCTOR_KEY;
+      const cloudConductorURL = process.env.DBOS__CONDUCTOR_URL;
+      if (cloudAppName && cloudConductorKey && cloudConductorURL) {
+        DBOS.logger.debug('Starting Conductor connection (DBOS Cloud)');
+        DBOS.conductor = new Conductor(DBOSExecutor.globalInstance, cloudAppName, cloudConductorKey, cloudConductorURL);
+        DBOS.conductor.dispatchLoop();
+      }
     }
 
     // Start the DBOS admin server

@@ -18,6 +18,7 @@ export const WorkflowRecoveryUrl = '/dbos-workflow-recovery';
 export const HealthUrl = '/dbos-healthz';
 export const PerfUrl = '/dbos-perf';
 export const DeactivateUrl = '/deactivate';
+export const ConductorUrl = '/conductor';
 export const WorkflowQueuesMetadataUrl = '/dbos-workflow-queues-metadata';
 
 // Simple router interface
@@ -109,6 +110,7 @@ export class DBOSAdminServer {
     DBOSAdminServer.registerRecoveryEndpoint(dbosExec, routes);
     DBOSAdminServer.registerPerfEndpoint(dbosExec, routes);
     DBOSAdminServer.registerDeactivateEndpoint(dbosExec, routes);
+    DBOSAdminServer.registerConductorEndpoint(dbosExec, routes);
     DBOSAdminServer.registerCancelWorkflowEndpoint(dbosExec, routes);
     DBOSAdminServer.registerResumeWorkflowEndpoint(dbosExec, routes);
     DBOSAdminServer.registerRestartWorkflowEndpoint(dbosExec, routes);
@@ -339,6 +341,22 @@ export class DBOSAdminServer {
       },
     });
     dbosExec.logger.debug(`DBOS Server Registered Deactivate GET ${DeactivateUrl}`);
+  }
+
+  /**
+   * Register Conductor status endpoint.
+   * Indicates that a Conductor connection is enabled for this executor.
+   */
+  static registerConductorEndpoint(dbosExec: DBOSExecutor, routes: Route[]) {
+    routes.push({
+      method: 'GET',
+      path: ConductorUrl,
+      handler: async (req, res) => {
+        sendJson(res, 200, { status: true });
+        return Promise.resolve();
+      },
+    });
+    dbosExec.logger.debug(`DBOS Server Registered Conductor GET ${ConductorUrl}`);
   }
 
   static registerGarbageCollectEndpoint(dbosExec: DBOSExecutor, routes: Route[]) {
