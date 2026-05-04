@@ -294,6 +294,7 @@ export async function ensureSystemDatabase(
     const isCockroach = /cockroachdb/i.test(versionRes.rows[0]?.version ?? '');
     await runSysMigrationsPg(client, allMigrations(schemaName, { useListenNotify, isCockroach }), schemaName, {
       onWarn: (e: string) => logger.info(e),
+      isCockroach,
     });
   } finally {
     try {
@@ -2522,6 +2523,7 @@ export class SystemDatabase {
         const countResult = await client.query<{ count: string }>(
           `SELECT COUNT(*) FROM "${this.schemaName}".workflow_status
            WHERE queue_name = $1
+             AND rate_limited = TRUE
              AND status NOT IN ($2, $3)
              AND started_at_epoch_ms > $4
              ${partitionFilter.replace('$PARTITION', '$5')}`,
@@ -2574,7 +2576,6 @@ export class SystemDatabase {
       // Retrieve the first max_tasks workflows in the queue.
       // Only retrieve workflows of the local version (or without version set)
       const lockMode = queue.concurrency ? 'FOR UPDATE NOWAIT' : 'FOR UPDATE SKIP LOCKED';
-      const orderClause = queue.priorityEnabled ? 'ORDER BY priority ASC, created_at ASC' : 'ORDER BY created_at ASC';
       const limitClause = maxTasks !== Infinity ? `LIMIT ${maxTasks}` : '';
 
       const selectParams = [StatusString.ENQUEUED, queue.name, appVersion, ...partitionParams];
@@ -2585,7 +2586,7 @@ export class SystemDatabase {
           AND queue_name = $2
           AND (application_version IS NULL OR application_version = $3)
           ${partitionFilter.replace('$PARTITION', '$4')}
-        ${orderClause}
+        ORDER BY priority ASC, created_at ASC
         ${limitClause}
         ${lockMode}
       `;
@@ -2610,13 +2611,22 @@ export class SystemDatabase {
                executor_id = $2,
                application_version = $3,
                started_at_epoch_ms = $4,
+               rate_limited = $5,
                workflow_deadline_epoch_ms = CASE
                  WHEN workflow_timeout_ms IS NOT NULL AND workflow_deadline_epoch_ms IS NULL
                  THEN (EXTRACT(epoch FROM now()) * 1000)::bigint + workflow_timeout_ms
                  ELSE workflow_deadline_epoch_ms
                END
-           WHERE workflow_uuid = $5 AND status = $6`,
-          [StatusString.PENDING, executorID, appVersion, startTimeMs, id, StatusString.ENQUEUED],
+           WHERE workflow_uuid = $6 AND status = $7`,
+          [
+            StatusString.PENDING,
+            executorID,
+            appVersion,
+            startTimeMs,
+            queue.rateLimit !== undefined,
+            id,
+            StatusString.ENQUEUED,
+          ],
         );
         if ((updateRes.rowCount ?? 0) > 0) {
           claimedIDs.push(id);

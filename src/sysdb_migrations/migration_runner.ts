@@ -4,6 +4,14 @@ export type DBMigration = {
   name?: string;
   pg?: ReadonlyArray<string>;
   sqlite3?: ReadonlyArray<string>;
+  /**
+   * If true, the migration is executed without wrapping it in any helper that
+   * suppresses errors, and its statements must be safe to run outside a
+   * transaction (e.g. `CREATE INDEX CONCURRENTLY`). The runner also cleans up
+   * indexes left INVALID by a previously interrupted CONCURRENTLY build before
+   * running the migration.
+   */
+  online?: boolean;
 };
 
 /** Get the current DB version, or 0 if table is missing/empty. */
@@ -28,6 +36,7 @@ export async function getCurrentSysDBVersion(client: ClientBase, schemaName: str
 export type PgMigratorOptions = {
   ignoreErrorCodes?: ReadonlySet<string>;
   onWarn?: (msg: string, err?: unknown) => void;
+  isCockroach?: boolean;
 };
 
 const DEFAULT_IGNORABLE_CODES = new Set<string>([
@@ -74,10 +83,48 @@ async function runStatementsIgnoring(
 }
 
 /**
+ * Drop indexes left INVALID by a prior interrupted `CREATE INDEX CONCURRENTLY`.
+ * Postgres marks such indexes invalid; they continue to consume write overhead
+ * without serving reads, so the next online migration cannot succeed by simply
+ * re-running `IF NOT EXISTS` (the name is taken).
+ */
+async function cleanupInvalidIndexes(client: ClientBase, schemaName: string, warn: (m: string) => void): Promise<void> {
+  const res = await client.query<{ relname: string }>(
+    `SELECT i.relname
+       FROM pg_index ix
+       JOIN pg_class i ON i.oid = ix.indexrelid
+       JOIN pg_class t ON t.oid = ix.indrelid
+       JOIN pg_namespace n ON n.oid = t.relnamespace
+      WHERE NOT ix.indisvalid AND n.nspname = $1`,
+    [schemaName],
+  );
+  for (const row of res.rows) {
+    warn(`Dropping invalid index "${schemaName}"."${row.relname}" left by a prior failed migration`);
+    await client.query(`DROP INDEX CONCURRENTLY IF EXISTS "${schemaName}"."${row.relname}"`);
+  }
+}
+
+async function bumpMigrationVersion(client: ClientBase, schemaName: string, version: number): Promise<void> {
+  // The earliest migrations create the schema and the dbos_migrations table itself,
+  // so the table is not available to update on the very first iterations of a fresh DB.
+  const reg = await client.query<{ table_name: string | null }>(
+    "SELECT table_name FROM information_schema.tables WHERE table_schema = $1 AND table_name = 'dbos_migrations'",
+    [schemaName],
+  );
+  if (!reg.rows[0]?.table_name) return;
+
+  const updateRes = await client.query(`UPDATE "${schemaName}"."dbos_migrations" SET "version" = $1`, [version]);
+  if (updateRes.rowCount === 0) {
+    await client.query(`INSERT INTO "${schemaName}"."dbos_migrations" ("version") VALUES ($1)`, [version]);
+  }
+}
+
+/**
  * Apply all migrations greater than the current DB version.
  * - Reads current version (0 if table missing/empty)
  * - Applies migrations in order
- * - Updates dbos_migrations.version at the end
+ * - After each migration, persists `dbos_migrations.version` so partial
+ *   progress is recorded
  * - Warns if current version > max known (likely newer software concurrently)
  */
 export async function runSysMigrationsPg(
@@ -92,7 +139,7 @@ export async function runSysMigrationsPg(
   skippedCount: number;
   notice?: string;
 }> {
-  const { ignoreErrorCodes = DEFAULT_IGNORABLE_CODES, onWarn = (m) => console.info(m) } = opts;
+  const { ignoreErrorCodes = DEFAULT_IGNORABLE_CODES, onWarn = (m) => console.info(m), isCockroach = false } = opts;
 
   const current = await getCurrentSysDBVersion(client, schemaName);
   const maxKnown = allMigrations.length;
@@ -131,24 +178,28 @@ export async function runSysMigrationsPg(
     const stmts = m.pg ?? [];
     if (stmts.length === 0) {
       onWarn(`Migration "${m.name}" has no Postgres statements; skipping.`);
+      await bumpMigrationVersion(client, schemaName, v);
       skipped++;
       lastAppliedVersion = v;
       continue;
     }
 
-    await runStatementsIgnoring(client, stmts, ignoreErrorCodes, (msg, e) =>
-      onWarn(`${msg}${e ? `\n  → ${String((e as { message?: string }).message ?? '')}` : ''}`),
-    );
+    // Run migrations in autocommit
+    if (m.online && !isCockroach) {
+      // Drop any indexes left INVALID by a prior interrupted run before
+      // attempting the next CONCURRENTLY statement.
+      await cleanupInvalidIndexes(client, schemaName, (msg) => onWarn(msg));
+      for (const s of stmts) {
+        await client.query(s, []);
+      }
+    } else {
+      await runStatementsIgnoring(client, stmts, ignoreErrorCodes, (msg, e) =>
+        onWarn(`${msg}${e ? `\n  → ${String((e as { message?: string }).message ?? '')}` : ''}`),
+      );
+    }
+    await bumpMigrationVersion(client, schemaName, v);
     applied++;
     lastAppliedVersion = v;
-  }
-
-  // Update version at the end (insert or update)
-  const updateRes = await client.query(`UPDATE "${schemaName}"."dbos_migrations" SET "version" = $1`, [
-    lastAppliedVersion,
-  ]);
-  if (updateRes.rowCount === 0) {
-    await client.query(`INSERT into "${schemaName}"."dbos_migrations" ("version") values ($1)`, [lastAppliedVersion]);
   }
 
   return {

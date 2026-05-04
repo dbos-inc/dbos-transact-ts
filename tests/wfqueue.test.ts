@@ -183,6 +183,21 @@ describe('queued-wf-tests-simple', () => {
     for (const h of handles) {
       expect((await h.getStatus())!.status).toBe(StatusString.SUCCESS);
     }
+
+    // Workflows dequeued from a rate-limited queue must have rate_limited = TRUE,
+    // so the partial idx_workflow_status_rate_limited index covers the count query.
+    const sysDbUrl = generateDBOSTestConfig().systemDatabaseUrl!;
+    const c = new Client({ connectionString: sysDbUrl });
+    await c.connect();
+    try {
+      const rl = await c.query<{ count: string }>(
+        `SELECT COUNT(*) FROM dbos.workflow_status WHERE queue_name = $1 AND rate_limited = TRUE`,
+        [rlqueue.name],
+      );
+      expect(Number(rl.rows[0].count)).toBe(qlimit * numWaves);
+    } finally {
+      await c.end();
+    }
   });
 
   test('test_multiple_queues', async () => {
