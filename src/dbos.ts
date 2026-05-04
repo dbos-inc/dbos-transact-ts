@@ -412,7 +412,16 @@ export class DBOS {
       await ds.initialize();
     }
 
-    if (options?.conductorKey) {
+    if (globalParams.dbosCloud) {
+      const cloudAppName = process.env.DBOS__CONDUCTOR_APP_NAME;
+      const cloudConductorKey = process.env.DBOS__CONDUCTOR_KEY;
+      const cloudConductorURL = process.env.DBOS__CONDUCTOR_URL;
+      if (cloudAppName && cloudConductorKey && cloudConductorURL) {
+        DBOS.logger.debug('Starting Conductor connection (DBOS Cloud)');
+        DBOS.conductor = new Conductor(DBOSExecutor.globalInstance, cloudAppName, cloudConductorKey, cloudConductorURL);
+        DBOS.conductor.dispatchLoop();
+      }
+    } else if (options?.conductorKey) {
       if (!options.conductorURL) {
         const dbosDomain = process.env.DBOS_DOMAIN || 'cloud.dbos.dev';
         options.conductorURL = `wss://${dbosDomain}/conductor/v1alpha1`;
@@ -436,15 +445,6 @@ export class DBOS {
         executorMetadata,
       );
       DBOS.conductor.dispatchLoop();
-    } else if (process.env.DBOS__CLOUD === 'true') {
-      const cloudAppName = process.env.DBOS__CONDUCTOR_APP_NAME;
-      const cloudConductorKey = process.env.DBOS__CONDUCTOR_KEY;
-      const cloudConductorURL = process.env.DBOS__CONDUCTOR_URL;
-      if (cloudAppName && cloudConductorKey && cloudConductorURL) {
-        DBOS.logger.debug('Starting Conductor connection (DBOS Cloud)');
-        DBOS.conductor = new Conductor(DBOSExecutor.globalInstance, cloudAppName, cloudConductorKey, cloudConductorURL);
-        DBOS.conductor.dispatchLoop();
-      }
     }
 
     // Start the DBOS admin server
