@@ -1290,13 +1290,15 @@ export class DBOS {
     options?: SendOptions,
   ): Promise<void> {
     ensureDBOSIsLaunched('send');
-    const sermsg = await serializeValue(
-      message,
-      DBOS.#executor.serializer,
-      options?.serializationType ?? DBOS.defaultSerializationType,
-    );
     if (DBOS.isInWorkflow()) {
+      // Advance the function ID synchronously before any await, so concurrent step
+      // calls in the same workflow don't race for IDs.
       const functionID: number = functionIDGetIncrement();
+      const sermsg = await serializeValue(
+        message,
+        DBOS.#executor.serializer,
+        options?.serializationType ?? DBOS.defaultSerializationType,
+      );
       return await DBOSExecutor.globalInstance!.systemDatabase.send(
         DBOS.workflowID!,
         functionID,
@@ -1307,6 +1309,11 @@ export class DBOS {
         idempotencyKey,
       );
     } else {
+      const sermsg = await serializeValue(
+        message,
+        DBOS.#executor.serializer,
+        options?.serializationType ?? DBOS.defaultSerializationType,
+      );
       return DBOSExecutor.globalInstance!.systemDatabase.sendDirect(
         destinationID,
         sermsg.serializedValue,
@@ -1433,35 +1440,35 @@ export class DBOS {
    */
   static async writeStream<T>(key: string, value: T, options: WriteStreamOptions = {}): Promise<void> {
     ensureDBOSIsLaunched('writeStream');
-    if (DBOS.isWithinWorkflow()) {
+    if (DBOS.isInWorkflow()) {
+      // Advance the function ID synchronously before any await.
+      const functionID: number = functionIDGetIncrement();
       const serval = await serializeValue(
         value,
         DBOS.#executor.serializer,
         options.serializationType ?? DBOS.defaultSerializationType,
       );
-      if (DBOS.isInWorkflow()) {
-        const functionID: number = functionIDGetIncrement();
-        return await DBOSExecutor.globalInstance!.systemDatabase.writeStreamFromWorkflow(
-          DBOS.workflowID!,
-          functionID,
-          key,
-          serval.serializedValue!,
-          serval.serialization,
-          DBOS_FUNCNAME_WRITESTREAM,
-        );
-      } else if (DBOS.isInStep()) {
-        return await DBOSExecutor.globalInstance!.systemDatabase.writeStreamFromStep(
-          DBOS.workflowID!,
-          DBOS.stepID!,
-          key,
-          serval.serializedValue!,
-          serval.serialization,
-        );
-      } else {
-        throw new DBOSInvalidWorkflowTransitionError(
-          'Invalid call to `DBOS.writeStream` outside of a workflow or step',
-        );
-      }
+      return await DBOSExecutor.globalInstance!.systemDatabase.writeStreamFromWorkflow(
+        DBOS.workflowID!,
+        functionID,
+        key,
+        serval.serializedValue!,
+        serval.serialization,
+        DBOS_FUNCNAME_WRITESTREAM,
+      );
+    } else if (DBOS.isInStep()) {
+      const serval = await serializeValue(
+        value,
+        DBOS.#executor.serializer,
+        options.serializationType ?? DBOS.defaultSerializationType,
+      );
+      return await DBOSExecutor.globalInstance!.systemDatabase.writeStreamFromStep(
+        DBOS.workflowID!,
+        DBOS.stepID!,
+        key,
+        serval.serializedValue!,
+        serval.serialization,
+      );
     } else {
       throw new DBOSInvalidWorkflowTransitionError('Invalid call to `DBOS.writeStream` outside of a workflow or step');
     }
