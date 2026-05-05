@@ -33,11 +33,11 @@ export class Conductor {
 
   constructor(
     readonly dbosExec: DBOSExecutor,
+    readonly appName: string,
     readonly conductorKey: string,
     readonly conductorURL: string,
     readonly executorMetadata?: Record<string, unknown>,
   ) {
-    const appName = dbosExec.appName;
     assert(appName, 'Application name must be set in configuration in order to use DBOS Conductor');
     const cleanConductorURL = conductorURL.replace(/\/+$/, '');
     this.url = `${cleanConductorURL}/websocket/${appName}/${conductorKey}`;

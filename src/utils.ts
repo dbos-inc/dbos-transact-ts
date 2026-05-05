@@ -55,6 +55,7 @@ export const globalParams = {
   enableOTLP: defaultEnableOTLP(), // Whether OTLP is enabled
   tracingEnabled: false, // Whether span creation is active (enableOTLP or external TracerProvider)
   dbosVersion: loadDbosVersion(), // The version of the DBOS library
+  dbosCloud: process.env.DBOS__CLOUD === 'true', // Whether running in DBOS Cloud
 };
 export const sleepms = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
