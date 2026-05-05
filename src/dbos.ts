@@ -1661,6 +1661,17 @@ export class DBOS {
       );
     }
 
+    // If this is called from within a workflow, this is a child workflow.
+    // Reserve the child's function ID synchronously, before any await — otherwise
+    // concurrent step calls in the parent could race for IDs.
+    const isChild = DBOS.isWithinWorkflow();
+    if (isChild && !DBOS.isInWorkflow()) {
+      throw new DBOSInvalidWorkflowTransitionError(
+        'Invalid call to a `workflow` function from within a `step` or `transaction`',
+      );
+    }
+    const funcId = isChild ? (startWfFuncId ?? functionIDGetIncrement()) : undefined;
+
     // Validate that a partition key is consistent with the target queue's
     // partition flag. Falls back to a database lookup so database-backed
     // queues are checked too.
@@ -1684,18 +1695,8 @@ export class DBOS {
       }
     }
 
-    // If this is called from within a workflow, this is a child workflow,
-    //  For OAOO, we will need a consistent ID formed from the parent WF and call number
-    if (DBOS.isWithinWorkflow()) {
-      if (!DBOS.isInWorkflow()) {
-        throw new DBOSInvalidWorkflowTransitionError(
-          'Invalid call to a `workflow` function from within a `step` or `transaction`',
-        );
-      }
-
-      const funcId = startWfFuncId ?? functionIDGetIncrement();
-      const pctx = getCurrentContextStore()!;
-      const pwfid = pctx.workflowId!;
+    if (isChild) {
+      const pwfid = ppctx!.workflowId!;
       const wfParams: WorkflowParams = {
         workflowUUID: wfId || pwfid + '-' + funcId,
         configuredInstance: instance,
@@ -1703,7 +1704,7 @@ export class DBOS {
         timeoutMS,
         // Detach child deadline if a null timeout is configured
         deadlineEpochMS:
-          params.timeoutMS === null || pctx?.workflowTimeoutMS === null ? undefined : pctx?.deadlineEpochMS,
+          params.timeoutMS === null || ppctx?.workflowTimeoutMS === null ? undefined : ppctx?.deadlineEpochMS,
         enqueueOptions: params.enqueueOptions,
       };
 
