@@ -421,7 +421,7 @@ export class DBOSClient {
   async getEvent<T>(workflowID: string, key: string, options?: number | GetEventOptions): Promise<T | null> {
     const timeoutSeconds = resolveTimeoutSeconds(options);
     const evt = await this.systemDatabase.getEvent(workflowID, key, timeoutSeconds ?? 60);
-    return deserializeValue(evt.serializedValue, evt.serialization, this.serializer) as T;
+    return (await deserializeValue(evt.serializedValue, evt.serialization, this.serializer)) as T;
   }
 
   /**
@@ -529,7 +529,7 @@ export class DBOSClient {
         if (value.serializedValue === DBOS_STREAM_CLOSED_SENTINEL) {
           break;
         }
-        yield deserializeValue(value.serializedValue, value.serialization, this.serializer) as T;
+        yield (await deserializeValue(value.serializedValue, value.serialization, this.serializer)) as T;
         offset += 1;
       } catch (error: unknown) {
         if (error instanceof Error && error.message.includes('No value found')) {

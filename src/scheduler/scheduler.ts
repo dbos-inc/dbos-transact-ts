@@ -353,7 +353,7 @@ export async function backfillSchedule(
   if (!sched) {
     throw new DBOSError(`Schedule "${name}" not found`);
   }
-  const context = serializer.parse(sched.context);
+  const context = await serializer.parse(sched.context);
   const timeMatcher = new TimeMatcher(sched.schedule, sched.cronTimezone ?? undefined);
   const workflowIDs: string[] = [];
   let current = start.getTime();
