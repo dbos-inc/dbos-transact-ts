@@ -10,7 +10,7 @@ export { type JSONValue };
  * Implementations must be able to serialize any value to a string and deserialize it back.
  *
  * Both `stringify` and `parse` may return synchronously or asynchronously, so async-only
- * libraries (e.g. `jose`, Web Crypto) can be used to encrypt/decrypt persisted values.
+ * libraries can be used to encrypt/decrypt persisted values.
  */
 export interface DBOSSerializer {
   /**
@@ -188,9 +188,6 @@ function sjstringify(value: unknown) {
  *
  * Backwards compatible - can deserialize both old DBOSJSON format and new SuperJSON format.
  * New serialization uses SuperJSON to handle Sets, Maps, undefined, RegExp, circular refs, etc.
- *
- * Typed as a synchronous serializer (narrower than `DBOSSerializer`'s sync-or-async return)
- * so callers that need a sync string (e.g. log formatting) can use it directly.
  */
 export const DBOSJSON: {
   name: () => string;
@@ -272,9 +269,6 @@ function portableJsonReplacer(_key: string, value: unknown): unknown {
 /**
  * DBOS Portable JSON serializer,
  *   should be something that can be implemented in any language.
- *
- * Typed as synchronous (narrower than `DBOSSerializer`'s sync-or-async return)
- * so internal call sites that need a `string` directly can use it without an `await`.
  */
 export const DBOSPortableJSON: {
   name: () => string;
