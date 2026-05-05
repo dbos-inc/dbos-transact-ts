@@ -294,6 +294,7 @@ async function runTransactionalInternalStep<T>(
       return callback(undefined);
     } else if (DBOS.isInWorkflow()) {
       const executor = DBOSExecutor.globalInstance!;
+      // Reserve the function ID synchronously, before any await.
       const functionID = functionIDGetIncrement();
       let freshResult: T;
 
@@ -760,6 +761,7 @@ export class DBOS {
     ensureDBOSIsLaunched('getResult');
     let timerFuncID: number | undefined = undefined;
     if (DBOS.isWithinWorkflow() && timeoutSeconds !== undefined) {
+      // Reserve the function ID synchronously, before any await.
       timerFuncID = functionIDGetIncrement();
     }
     return await DBOS.getResultInternal(workflowID, timeoutSeconds, timerFuncID, undefined);
@@ -1032,6 +1034,7 @@ export class DBOS {
       if (DBOS.isInTransaction()) {
         throw new DBOSInvalidWorkflowTransitionError('Invalid call to `DBOS.sleep` inside a `transaction`');
       }
+      // Reserve the function ID synchronously, before any await.
       const functionID = functionIDGetIncrement();
       if (durationMS <= 0) {
         return;
@@ -1342,6 +1345,7 @@ export class DBOS {
       if (!DBOS.isInWorkflow()) {
         throw new DBOSInvalidWorkflowTransitionError('Invalid call to `DBOS.recv` inside a `step` or `transaction`');
       }
+      // Reserve the function IDs synchronously, before any await.
       const functionID: number = functionIDGetIncrement();
       const timeoutFunctionID: number = functionIDGetIncrement();
       const timeoutSeconds = resolveTimeoutSeconds(options);
@@ -1376,6 +1380,7 @@ export class DBOS {
           'Invalid call to `DBOS.setEvent` inside a `step` or `transaction`',
         );
       }
+      // Reserve the function ID synchronously, before any await.
       const functionID = functionIDGetIncrement();
       const serevt = await serializeValue(
         value,
@@ -1414,6 +1419,7 @@ export class DBOS {
           'Invalid call to `DBOS.getEvent` inside a `step` or `transaction`',
         );
       }
+      // Reserve the function IDs synchronously, before any await.
       const functionID: number = functionIDGetIncrement();
       const timeoutFunctionID = functionIDGetIncrement();
       const params = {
@@ -1482,6 +1488,7 @@ export class DBOS {
     ensureDBOSIsLaunched('closeStream');
     if (DBOS.isWithinWorkflow()) {
       if (DBOS.isInWorkflow()) {
+        // Reserve the function ID synchronously, before any await.
         const functionID: number = functionIDGetIncrement();
         return await DBOSExecutor.globalInstance!.systemDatabase.closeStream(DBOS.workflowID!, functionID, key);
       } else {
@@ -1752,6 +1759,7 @@ export class DBOS {
     const invoker = async function (this: This, ...rawArgs: Args): Promise<Return> {
       ensureDBOSIsLaunched('workflows');
       if (DBOS.isInWorkflow()) {
+        // Reserve the function IDs synchronously, before any await.
         const startWfFuncId = functionIDGetIncrement();
         const getResFuncID = functionIDGetIncrement();
         const handle = await DBOS.#invokeWorkflow<This, Args, Return>(

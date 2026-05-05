@@ -1154,6 +1154,7 @@ export class DBOSExecutor {
         serialization?: WorkflowSerializationFormat | null,
       ) => {
         const ctx = getCurrentContextStore();
+        // Reserve the function ID synchronously, before any await.
         const functionID: number = functionIDGetIncrement();
         const sermsg = await serializeValue(message, this.serializer, serialization ?? undefined);
         await this.systemDatabase.send(
