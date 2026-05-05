@@ -1,10 +1,12 @@
-import { DBOS, DBOSConfig } from '../src';
+import { DBOS, DBOSClient, DBOSConfig } from '../src';
 import { randomUUID } from 'node:crypto';
 import { sleepms } from '../src/utils';
 import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
 import { KnexDataSource } from '../packages/knex-datasource';
 import { StepInfo } from '../src/workflow';
 import { ensurePGDatabase } from '../src/database_utils';
+
+const dbBackedQueueName = 'concDbBackedQueue';
 
 const config = generateDBOSTestConfig();
 
@@ -229,6 +231,24 @@ const runALotOfThingsAtOnce = DBOS.registerWorkflow(
         expected: 'WF Ran',
       },
       {
+        // DB-backed queue: partition validation hits the DB lookup path.
+        func: async () => {
+          await DBOS.startWorkflow(simpleWF, {
+            workflowID: `${DBOS.workflowID}-cwfq`,
+            queueName: dbBackedQueueName,
+          })();
+          return 'enqueued';
+        },
+        expected: 'enqueued',
+      },
+      {
+        func: async () => {
+          const wfh = DBOS.retrieveWorkflow<string>(`${DBOS.workflowID}-cwfq`);
+          return await wfh.getResult();
+        },
+        expected: 'WF Ran',
+      },
+      {
         // Uses sysdb directly after getting func id
         func: async () => {
           await DBOS.writeStream('stream', 'val');
@@ -416,6 +436,15 @@ describe('concurrency-tests', () => {
 
   beforeEach(async () => {
     await DBOS.launch();
+
+    // Register a DB-backed queue via DBOSClient. Used below to exercise the
+    // partition-lookup fallback in #invokeWorkflow.
+    const client = await DBOSClient.create({ systemDatabaseUrl: config.systemDatabaseUrl! });
+    try {
+      await client.registerQueue(dbBackedQueueName);
+    } finally {
+      await client.destroy();
+    }
 
     await knexds.runTransaction(async () => {
       await knexds.client.raw(`DROP TABLE IF EXISTS ${testTableName};`);
