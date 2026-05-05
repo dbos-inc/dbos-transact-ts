@@ -358,11 +358,11 @@ export class DBOSExecutor {
     return { methReg, configuredInst: getConfiguredInstance(wf.workflowClassName, wf.workflowConfigName) };
   }
 
-  static reviveResultOrError<R = unknown>(r: SystemDatabaseStoredResult, serializer: DBOSSerializer): R {
+  static async reviveResultOrError<R = unknown>(r: SystemDatabaseStoredResult, serializer: DBOSSerializer): Promise<R> {
     if (r.error) {
-      throw deserializeResError(r.error, r.serialization ?? null, serializer);
+      throw await deserializeResError(r.error, r.serialization ?? null, serializer);
     }
-    return deserializeValue(r.output ?? null, r.serialization ?? null, serializer) as R;
+    return (await deserializeValue(r.output ?? null, r.serialization ?? null, serializer)) as R;
   }
 
   async workflow<T extends unknown[], R>(
@@ -443,7 +443,7 @@ export class DBOSExecutor {
     });
 
     let serializationType = wInfo?.workflowConfig?.serialization;
-    const funcArgs = serializeFunctionInputOutput(
+    const funcArgs = await serializeFunctionInputOutput(
       serializationType === 'portable' ? ({ positionalArgs: args } as JsonWorkflowArgs) : args,
       [wfname, '<arguments>'],
       this.serializer,
@@ -505,7 +505,7 @@ export class DBOSExecutor {
       const result = await this.systemDatabase.getOperationResultAndThrowIfCancelled(callerID, callerFunctionID);
       if (result) {
         if (result.error) {
-          throw deserializeResError(result.error, result.serialization ?? null, this.serializer);
+          throw await deserializeResError(result.error, result.serialization ?? null, this.serializer);
         }
         return new RetrievedHandle(this.systemDatabase, result.childWorkflowID!);
       }
@@ -520,7 +520,7 @@ export class DBOSExecutor {
       serializationType = ires.serialization === DBOSPortableJSON.name() ? 'portable' : undefined;
     } catch (e) {
       if (e instanceof DBOSQueueDuplicatedError && callerID && callerFunctionID) {
-        const sererr = serializeResError(e, this.serializer, undefined); // This is a step result
+        const sererr = await serializeResError(e, this.serializer, undefined); // This is a step result
         await this.systemDatabase.recordOperationResult(
           callerID,
           callerFunctionID,
@@ -583,12 +583,12 @@ export class DBOSExecutor {
       const e = err as Error & { dbos_already_logged?: boolean };
       exec.logger.error(e);
       e.dbos_already_logged = true;
-      const sererr = serializeResErrorWithSerializer(e, eserializer, ires.serialization ?? null);
+      const sererr = await serializeResErrorWithSerializer(e, eserializer, ires.serialization ?? null);
       internalStatus.error = sererr.serializedValue;
       internalStatus.status = StatusString.ERROR;
       await exec.systemDatabase.recordWorkflowError(workflowID, internalStatus);
       span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
-      return deserializeResError(sererr.serializedValue, sererr.serialization, eserializer);
+      return await deserializeResError(sererr.serializedValue, sererr.serialization, eserializer);
     }
 
     const runWorkflow = async () => {
@@ -622,7 +622,7 @@ export class DBOSExecutor {
 
         result = callResult!;
 
-        const funcResult = serializeFunctionInputOutputWithSerializer(
+        const funcResult = await serializeFunctionInputOutputWithSerializer(
           result,
           [wfname, '<result>'],
           this.serializer,
@@ -782,7 +782,7 @@ export class DBOSExecutor {
       if (checkr.functionName !== stepFnName) {
         throw new DBOSUnexpectedStepError(wfid, funcID, stepFnName, checkr.functionName ?? '?');
       }
-      const check = DBOSExecutor.reviveResultOrError<R>(checkr, this.serializer);
+      const check = await DBOSExecutor.reviveResultOrError<R>(checkr, this.serializer);
       span.setAttribute('cached', true);
       span.setStatus({ code: SpanStatusCode.OK });
       this.tracer.endSpan(span);
@@ -856,7 +856,7 @@ export class DBOSExecutor {
       // Record the error, then throw it.
       err = err === dbosNull ? new DBOSMaxStepRetriesError(stepFnName, maxAttempts, errors) : err;
       await this.systemDatabase.recordOperationResult(wfid, funcID, stepFnName, true, startTime, Date.now(), {
-        error: this.serializer.stringify(serializeError(err)),
+        error: await this.serializer.stringify(serializeError(err)),
         serialization: this.serializer.name(),
       });
       span.setStatus({ code: SpanStatusCode.ERROR, message: (err as Error).message });
@@ -864,7 +864,7 @@ export class DBOSExecutor {
       throw err as Error;
     } else {
       // Record the execution and return.
-      const funcResult = serializeFunctionInputOutput(result, [stepFnName, '<result>'], this.serializer);
+      const funcResult = await serializeFunctionInputOutput(result, [stepFnName, '<result>'], this.serializer);
       await this.systemDatabase.recordOperationResult(wfid, funcID, stepFnName, true, startTime, Date.now(), {
         output: funcResult.stringified,
         serialization: funcResult.sername,
@@ -884,7 +884,7 @@ export class DBOSExecutor {
     timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec,
   ): Promise<T | null> {
     const evt = await this.systemDatabase.getEvent(workflowUUID, key, timeoutSeconds);
-    return deserializeValue(evt.serializedValue, evt.serialization, this.serializer) as T;
+    return (await deserializeValue(evt.serializedValue, evt.serialization, this.serializer)) as T;
   }
 
   /**
@@ -927,11 +927,11 @@ export class DBOSExecutor {
       if (result.functionName !== functionName) {
         throw new DBOSUnexpectedStepError(workflowID, functionID, functionName, result.functionName!);
       }
-      return DBOSExecutor.reviveResultOrError<T>(result, this.serializer);
+      return await DBOSExecutor.reviveResultOrError<T>(result, this.serializer);
     }
     try {
       const output: T = await callback();
-      const funcOutput = serializeFunctionInputOutput(output, [functionName, '<result>'], this.serializer);
+      const funcOutput = await serializeFunctionInputOutput(output, [functionName, '<result>'], this.serializer);
       await this.systemDatabase.recordOperationResult(
         workflowID,
         functionID,
@@ -954,7 +954,7 @@ export class DBOSExecutor {
         startTime,
         Date.now(),
         {
-          error: this.serializer.stringify(serializeError(e)),
+          error: await this.serializer.stringify(serializeError(e)),
           childWorkflowID: childWfId,
         },
       );
@@ -966,7 +966,7 @@ export class DBOSExecutor {
   async getWorkflowStatus(workflowID: string, callerID?: string, callerFN?: number): Promise<WorkflowStatus | null> {
     // use sysdb getWorkflowStatus directly in order to support caller ID/FN params
     const status = await this.systemDatabase.getWorkflowStatus(workflowID, callerID, callerFN);
-    return status ? toWorkflowStatus(status, this.serializer) : null;
+    return status ? await toWorkflowStatus(status, this.serializer) : null;
   }
 
   async listWorkflows(input: GetWorkflowsInput): Promise<WorkflowStatus[]> {
@@ -1079,12 +1079,12 @@ export class DBOSExecutor {
     }
     let inputs: unknown[];
     try {
-      inputs = deserializePositionalArgs(wfStatus.input, wfStatus.serialization, this.serializer);
+      inputs = await deserializePositionalArgs(wfStatus.input, wfStatus.serialization, this.serializer);
     } catch (err) {
       // If deserialization fails, record the error on the workflow
       // so it transitions to ERROR instead of being stuck in PENDING.
       this.logger.error(`Failed to deserialize inputs for workflow ${workflowID}: ${(err as Error).message}`);
-      const sererr = serializeResErrorWithSerializer(err as Error, this.serializer, wfStatus.serialization);
+      const sererr = await serializeResErrorWithSerializer(err as Error, this.serializer, wfStatus.serialization);
       wfStatus.error = sererr.serializedValue;
       await this.systemDatabase.recordWorkflowError(workflowID, wfStatus);
       throw err;
@@ -1155,7 +1155,7 @@ export class DBOSExecutor {
       ) => {
         const ctx = getCurrentContextStore();
         const functionID: number = functionIDGetIncrement();
-        const sermsg = serializeValue(message, this.serializer, serialization ?? undefined);
+        const sermsg = await serializeValue(message, this.serializer, serialization ?? undefined);
         await this.systemDatabase.send(
           ctx!.workflowId!,
           functionID,
@@ -1207,15 +1207,16 @@ export class DBOSExecutor {
 
   async getWorkflowSteps(workflowID: string): Promise<step_info[]> {
     const outputs = await this.systemDatabase.getAllOperationResults(workflowID);
-    return outputs.map((row) => {
-      return {
+    return await Promise.all(
+      outputs.map(async (row) => ({
         function_id: row.function_id,
         function_name: row.function_name ?? '<unknown>',
         child_workflow_id: row.child_workflow_id,
-        output: row.output !== null ? this.serializer.parse(row.output) : null,
-        error: row.error !== null ? deserializeError(this.serializer.parse(row.error as unknown as string)) : null,
-      };
-    });
+        output: row.output !== null ? await this.serializer.parse(row.output) : null,
+        error:
+          row.error !== null ? deserializeError(await this.serializer.parse(row.error as unknown as string)) : null,
+      })),
+    );
   }
 
   /**

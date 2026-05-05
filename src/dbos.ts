@@ -303,7 +303,7 @@ async function runTransactionalInternalStep<T>(
         funcName,
         async (client) => {
           freshResult = await callback(client);
-          return executor.serializer.stringify(freshResult !== undefined ? freshResult : null);
+          return await executor.serializer.stringify(freshResult !== undefined ? freshResult : null);
         },
       );
 
@@ -311,7 +311,7 @@ async function runTransactionalInternalStep<T>(
         if (stored.functionName !== funcName) {
           throw new DBOSUnexpectedStepError(DBOS.workflowID!, functionID, funcName, stored.functionName!);
         }
-        return DBOSExecutor.reviveResultOrError<T>(stored, executor.serializer);
+        return await DBOSExecutor.reviveResultOrError<T>(stored, executor.serializer);
       }
       return freshResult!;
     } else {
@@ -774,7 +774,7 @@ export class DBOS {
         if (rres?.maxRecoveryAttemptsExceeded) {
           throw new DBOSAwaitedWorkflowExceededMaxRecoveryAttempts(workflowID);
         }
-        return DBOSExecutor.reviveResultOrError<T>(rres, DBOS.#executor.serializer);
+        return await DBOSExecutor.reviveResultOrError<T>(rres, DBOS.#executor.serializer);
       },
       'DBOS.getResult',
       workflowID,
@@ -1278,7 +1278,7 @@ export class DBOS {
     options?: SendOptions,
   ): Promise<void> {
     ensureDBOSIsLaunched('send');
-    const sermsg = serializeValue(
+    const sermsg = await serializeValue(
       message,
       DBOS.#executor.serializer,
       options?.serializationType ?? DBOS.defaultSerializationType,
@@ -1334,7 +1334,7 @@ export class DBOS {
         timeoutSeconds,
       );
 
-      return deserializeValue(msg.serializedValue, msg.serialization, DBOS.#executor.serializer) as T;
+      return (await deserializeValue(msg.serializedValue, msg.serialization, DBOS.#executor.serializer)) as T;
     }
     throw new DBOSInvalidWorkflowTransitionError('Attempt to call `DBOS.recv` outside of a workflow'); // Only workflows can recv
   }
@@ -1358,7 +1358,7 @@ export class DBOS {
         );
       }
       const functionID = functionIDGetIncrement();
-      const serevt = serializeValue(
+      const serevt = await serializeValue(
         value,
         DBOS.#executor.serializer,
         options?.serializationType ?? DBOS.defaultSerializationType,
@@ -1408,7 +1408,7 @@ export class DBOS {
         timeoutSeconds ?? DBOSExecutor.defaultNotificationTimeoutSec,
         params,
       );
-      return deserializeValue(evt.serializedValue, evt.serialization, DBOS.#executor.serializer) as T;
+      return (await deserializeValue(evt.serializedValue, evt.serialization, DBOS.#executor.serializer)) as T;
     }
     return DBOS.#executor.getEvent(workflowID, key, timeoutSeconds);
   }
@@ -1422,7 +1422,7 @@ export class DBOS {
   static async writeStream<T>(key: string, value: T, options: WriteStreamOptions = {}): Promise<void> {
     ensureDBOSIsLaunched('writeStream');
     if (DBOS.isWithinWorkflow()) {
-      const serval = serializeValue(
+      const serval = await serializeValue(
         value,
         DBOS.#executor.serializer,
         options.serializationType ?? DBOS.defaultSerializationType,
@@ -1493,11 +1493,11 @@ export class DBOS {
         if (value.serializedValue === DBOS_STREAM_CLOSED_SENTINEL) {
           break;
         }
-        yield deserializeValue(
+        yield (await deserializeValue(
           value.serializedValue,
           value.serialization,
           DBOSExecutor.globalInstance!.serializer,
-        ) as T;
+        )) as T;
         offset += 1;
       } catch (error: unknown) {
         if (error instanceof Error && error.message.includes('No value found')) {
@@ -2174,7 +2174,7 @@ export class DBOS {
       workflowClassName: className,
       schedule: options.schedule,
       status: 'ACTIVE',
-      context: serializer.stringify(options.context),
+      context: await serializer.stringify(options.context),
       lastFiredAt: null,
       automaticBackfill: options.options?.automaticBackfill ?? false,
       cronTimezone: options.options?.cronTimezone ?? null,
@@ -2198,7 +2198,7 @@ export class DBOS {
       (client) => DBOSExecutor.globalInstance!.systemDatabase.listSchedules(filters, client),
       'DBOS.listSchedules',
     );
-    return results.map((r) => toWorkflowSchedule(r, serializer));
+    return await Promise.all(results.map((r) => toWorkflowSchedule(r, serializer)));
   }
 
   static async getSchedule(name: string): Promise<WorkflowSchedule | null> {
@@ -2208,7 +2208,7 @@ export class DBOS {
       (client) => DBOSExecutor.globalInstance!.systemDatabase.getSchedule(name, client),
       'DBOS.getSchedule',
     );
-    return result ? toWorkflowSchedule(result, serializer) : null;
+    return result ? await toWorkflowSchedule(result, serializer) : null;
   }
 
   static async deleteSchedule(name: string): Promise<void> {
@@ -2272,7 +2272,7 @@ export class DBOS {
         workflowClassName: className,
         schedule: sched.schedule,
         status: 'ACTIVE',
-        context: serializer.stringify(sched.context),
+        context: await serializer.stringify(sched.context),
         lastFiredAt: null,
         automaticBackfill: sched.automaticBackfill ?? false,
         cronTimezone: sched.cronTimezone ?? null,

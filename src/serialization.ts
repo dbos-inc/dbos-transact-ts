@@ -8,6 +8,9 @@ export { type JSONValue };
 /**
  * Generic serializer interface for DBOS.
  * Implementations must be able to serialize any value to a string and deserialize it back.
+ *
+ * Both `stringify` and `parse` may return synchronously or asynchronously, so async-only
+ * libraries (e.g. `jose`, Web Crypto) can be used to encrypt/decrypt persisted values.
  */
 export interface DBOSSerializer {
   /**
@@ -18,14 +21,15 @@ export interface DBOSSerializer {
   /**
    * Serialize a value to a string.
    * @param value - The value to serialize
-   * @returns The serialized string representation
+   * @returns The serialized string representation, or a Promise resolving to it
    */
-  stringify(value: unknown): string;
+  stringify(value: unknown): string | Promise<string>;
 
   /**
    * Deserialize a string back to a value.
    * @param text - A serialized string (potentially null or undefined)
-   * @returns The deserialized value, or null if the input was null/undefined
+   * @returns The deserialized value (or null if the input was null/undefined).
+   *          Implementations may return a Promise; DBOS awaits the result.
    */
   parse(text: string | null | undefined): unknown;
 }
@@ -184,8 +188,15 @@ function sjstringify(value: unknown) {
  *
  * Backwards compatible - can deserialize both old DBOSJSON format and new SuperJSON format.
  * New serialization uses SuperJSON to handle Sets, Maps, undefined, RegExp, circular refs, etc.
+ *
+ * Typed as a synchronous serializer (narrower than `DBOSSerializer`'s sync-or-async return)
+ * so callers that need a sync string (e.g. log formatting) can use it directly.
  */
-export const DBOSJSON: DBOSSerializer = {
+export const DBOSJSON: {
+  name: () => string;
+  parse: (text: string | null | undefined) => unknown;
+  stringify: (value: unknown) => string;
+} = {
   name: () => 'js_superjson',
 
   parse: (text: string | null | undefined): unknown => {
@@ -260,9 +271,16 @@ function portableJsonReplacer(_key: string, value: unknown): unknown {
 
 /**
  * DBOS Portable JSON serializer,
- *   should be something that can be implemented in any language
+ *   should be something that can be implemented in any language.
+ *
+ * Typed as synchronous (narrower than `DBOSSerializer`'s sync-or-async return)
+ * so internal call sites that need a `string` directly can use it without an `await`.
  */
-export const DBOSPortableJSON: DBOSSerializer = {
+export const DBOSPortableJSON: {
+  name: () => string;
+  parse: (text: string | null) => unknown;
+  stringify: (value: unknown) => string;
+} = {
   name: () => 'portable_json',
   parse: (text: string | null) => {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-return
@@ -286,12 +304,12 @@ type AnyObject = { [key: string | symbol]: unknown };
  *   aren't present as functions on the deserialized object.
  * The return is both the deserialized object and its serialized string.
  */
-export function serializeFunctionInputOutput<T>(
+export async function serializeFunctionInputOutput<T>(
   value: T,
   path: PathToMember = [],
   serializer: DBOSSerializer,
   serializationType?: WorkflowSerializationFormat,
-): { deserialized: T; stringified: string; sername: string } {
+): Promise<{ deserialized: T; stringified: string; sername: string }> {
   const serialization =
     serializationType === 'portable'
       ? DBOSPortableJSON.name()
@@ -302,12 +320,12 @@ export function serializeFunctionInputOutput<T>(
   return serializeFunctionInputOutputWithSerializer(value, path, serializer, serialization);
 }
 
-export function serializeFunctionInputOutputWithSerializer<T>(
+export async function serializeFunctionInputOutputWithSerializer<T>(
   value: T,
   path: PathToMember = [],
   serializer: DBOSSerializer,
   serialization: string | null,
-): { deserialized: T; stringified: string; sername: string } {
+): Promise<{ deserialized: T; stringified: string; sername: string }> {
   for (const ser of [DBOSPortableJSON, DBOSJSON]) {
     if (serialization === ser.name()) {
       const stringified = ser.stringify(value);
@@ -325,8 +343,8 @@ export function serializeFunctionInputOutputWithSerializer<T>(
       `Serializer provided (${sername}) is not compatible with the required serialization (${serialization})`,
     );
   }
-  const stringified = serializer.stringify(value);
-  const deserialized = serializer.parse(stringified) as T;
+  const stringified = await serializer.stringify(value);
+  const deserialized = (await serializer.parse(stringified)) as T;
   if (serializer.name() === DBOSJSON.name() && isObjectish(deserialized)) {
     attachFunctionStubs(value as unknown as AnyObject, deserialized as unknown as AnyObject, path);
   }
@@ -473,11 +491,11 @@ function isIndexableKey(k: unknown): k is string | number {
 
 // Deserialize a plain value (not function inputs) using specified serialization,
 //   or the provided default
-export function deserializeValue(
+export async function deserializeValue(
   serializedValue: string | null,
   serialization: string | null,
   serializer: DBOSSerializer,
-): unknown {
+): Promise<unknown> {
   if (serialization === DBOSPortableJSON.name()) {
     return DBOSPortableJSON.parse(serializedValue);
   }
@@ -485,18 +503,18 @@ export function deserializeValue(
     return DBOSJSON.parse(serializedValue);
   }
   if (!serialization || serialization === serializer.name()) {
-    return serializer.parse(serializedValue);
+    return await serializer.parse(serializedValue);
   }
   throw new TypeError(`Value deserialization type ${serialization} is not available`);
 }
 
 // Deserialize a plain value (not function inputs) using specified serialization,
 //   or the provided default
-export function deserializePositionalArgs(
+export async function deserializePositionalArgs(
   serializedValue: string | null,
   serialization: string | null,
   serializer: DBOSSerializer,
-): unknown[] {
+): Promise<unknown[]> {
   if (serialization === DBOSPortableJSON.name()) {
     return (DBOSPortableJSON.parse(serializedValue) as JsonWorkflowArgs).positionalArgs ?? [];
   }
@@ -504,16 +522,16 @@ export function deserializePositionalArgs(
     return DBOSJSON.parse(serializedValue) as unknown[];
   }
   if (!serialization || serialization === serializer.name()) {
-    return serializer.parse(serializedValue) as unknown[];
+    return (await serializer.parse(serializedValue)) as unknown[];
   }
   throw new TypeError(`Value deserialization type ${serialization} is not available`);
 }
 
-export function deserializeResError(
+export async function deserializeResError(
   serializedValue: string | null,
   serialization: string | null,
   serializer: DBOSSerializer,
-): Error {
+): Promise<Error> {
   if (serialization === DBOSPortableJSON.name()) {
     const errdata = DBOSPortableJSON.parse(serializedValue) as JsonWorkflowErrorData;
     throw new PortableWorkflowError(errdata.message, errdata.name, errdata.code, errdata.data);
@@ -522,7 +540,7 @@ export function deserializeResError(
     return deserializeError(DBOSJSON.parse(serializedValue));
   }
   if (!serialization || serialization === serializer.name()) {
-    return deserializeError(serializer.parse(serializedValue));
+    return deserializeError(await serializer.parse(serializedValue));
   }
   throw new TypeError(`Value deserialization type ${serialization} is not available`);
 }
@@ -530,35 +548,39 @@ export function deserializeResError(
 // Attempt to deserialize a value, but if it fails, retun the raw string.
 // Used for "best-effort" in introspection methods which may encounter
 // old undeserializable data.
-export function safeParse(serializer: DBOSSerializer, val: string, serialization: string | null) {
+export async function safeParse(serializer: DBOSSerializer, val: string, serialization: string | null) {
   try {
-    return deserializeValue(val, serialization, serializer);
+    return await deserializeValue(val, serialization, serializer);
   } catch (e) {
     return val;
   }
 }
 
-export function safeParsePositionalArgs(serializer: DBOSSerializer, val: string | null, serialization: string | null) {
+export async function safeParsePositionalArgs(
+  serializer: DBOSSerializer,
+  val: string | null,
+  serialization: string | null,
+) {
   try {
-    return deserializePositionalArgs(val, serialization, serializer);
+    return await deserializePositionalArgs(val, serialization, serializer);
   } catch (e) {
     return val;
   }
 }
 
-export function safeParseError(serializer: DBOSSerializer, val: string, serialization: string | null) {
+export async function safeParseError(serializer: DBOSSerializer, val: string, serialization: string | null) {
   try {
-    return deserializeResError(val, serialization, serializer);
+    return await deserializeResError(val, serialization, serializer);
   } catch (e) {
     return new Error(val);
   }
 }
 
-export function serializeValue(
+export async function serializeValue(
   value: unknown,
   serializer: DBOSSerializer,
   serializationFormat: WorkflowSerializationFormat,
-): { serializedValue: string | null; serialization: string | null } {
+): Promise<{ serializedValue: string | null; serialization: string | null }> {
   if (serializationFormat === 'portable') {
     return {
       serializedValue: DBOSPortableJSON.stringify(value),
@@ -572,17 +594,17 @@ export function serializeValue(
     };
   }
   return {
-    serializedValue: serializer.stringify(value),
+    serializedValue: await serializer.stringify(value),
     serialization: serializer.name(),
   };
 }
 
-export function serializeArgs(
+export async function serializeArgs(
   positionalArgs: unknown[] | undefined,
   namedArgs: { [key: string]: unknown } | undefined,
   serializer: DBOSSerializer,
   serializationFormat: WorkflowSerializationFormat,
-): { serializedValue: string | null; serialization: string | null } {
+): Promise<{ serializedValue: string | null; serialization: string | null }> {
   if (serializationFormat === 'portable') {
     return {
       serializedValue: DBOSPortableJSON.stringify({ positionalArgs, namedArgs } as JsonWorkflowArgs),
@@ -599,16 +621,16 @@ export function serializeArgs(
     };
   }
   return {
-    serializedValue: serializer.stringify(positionalArgs),
+    serializedValue: await serializer.stringify(positionalArgs),
     serialization: serializer.name(),
   };
 }
 
-export function serializeResError(
+export async function serializeResError(
   err: Error,
   serializer: DBOSSerializer,
   serializationType: WorkflowSerializationFormat,
-): { serializedValue: string | null; serialization: string | null } {
+): Promise<{ serializedValue: string | null; serialization: string | null }> {
   const serialization =
     serializationType === 'portable'
       ? DBOSPortableJSON.name()
@@ -618,11 +640,11 @@ export function serializeResError(
   return serializeResErrorWithSerializer(err, serializer, serialization);
 }
 
-export function serializeResErrorWithSerializer(
+export async function serializeResErrorWithSerializer(
   err: Error,
   serializer: DBOSSerializer,
   serialization: string | null,
-): { serializedValue: string | null; serialization: string | null } {
+): Promise<{ serializedValue: string | null; serialization: string | null }> {
   if (serialization === DBOSPortableJSON.name()) {
     return {
       serializedValue: DBOSPortableJSON.stringify({
@@ -641,7 +663,7 @@ export function serializeResErrorWithSerializer(
     };
   }
   return {
-    serializedValue: serializer.stringify(serializeError(err)),
+    serializedValue: await serializer.stringify(serializeError(err)),
     serialization: serializer.name(),
   };
 }

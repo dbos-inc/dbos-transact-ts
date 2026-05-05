@@ -158,12 +158,16 @@ export class ClientHandle<R> implements WorkflowHandle<R> {
     if (res?.cancelled) {
       throw new DBOSAwaitedWorkflowCancelledError(this.workflowID);
     }
-    return DBOSExecutor.reviveResultOrError<R>(res!, this.systemDatabase.getSerializer());
+    return await DBOSExecutor.reviveResultOrError<R>(res!, this.systemDatabase.getSerializer());
   }
 
   async getWorkflowInputs<T extends unknown[]>(): Promise<T> {
     const status = (await this.systemDatabase.getWorkflowStatus(this.workflowUUID)) as WorkflowStatusInternal;
-    return deserializePositionalArgs(status.input, status.serialization, this.systemDatabase.getSerializer()) as T;
+    return (await deserializePositionalArgs(
+      status.input,
+      status.serialization,
+      this.systemDatabase.getSerializer(),
+    )) as T;
   }
 }
 
@@ -240,7 +244,7 @@ export class DBOSClient {
     const { workflowName, workflowClassName, workflowConfigName, queueName, appVersion } = options;
     const workflowUUID = options.workflowID ?? randomUUID();
 
-    const serparam = serializeArgs(args, undefined, this.serializer, options?.serializationType);
+    const serparam = await serializeArgs(args, undefined, this.serializer, options?.serializationType);
     const delayUntilEpochMS =
       options.delaySeconds !== undefined && options.delaySeconds > 0
         ? Date.now() + options.delaySeconds * 1000
@@ -293,7 +297,7 @@ export class DBOSClient {
     const { workflowName, workflowClassName, workflowConfigName, queueName, appVersion } = options;
     const workflowUUID = options.workflowID ?? randomUUID();
 
-    const serparam = serializeArgs(
+    const serparam = await serializeArgs(
       positionalArgs,
       namedArgs,
       this.serializer,
@@ -397,7 +401,7 @@ export class DBOSClient {
     options?: ClientSendOptions,
   ): Promise<void> {
     const messageUUID = idempotencyKey ?? randomUUID();
-    const sermsg = serializeValue(message, this.serializer, options?.serializationType);
+    const sermsg = await serializeValue(message, this.serializer, options?.serializationType);
     await this.systemDatabase.sendDirect(
       destinationID,
       sermsg.serializedValue,
@@ -565,7 +569,7 @@ export class DBOSClient {
       workflowClassName: options.workflowClassName ?? '',
       schedule: options.schedule,
       status: 'ACTIVE',
-      context: this.serializer.stringify(options.context),
+      context: await this.serializer.stringify(options.context),
       lastFiredAt: null,
       automaticBackfill: options.options?.automaticBackfill ?? false,
       cronTimezone: options.options?.cronTimezone ?? null,
@@ -580,12 +584,12 @@ export class DBOSClient {
     scheduleNamePrefix?: string | string[];
   }): Promise<WorkflowSchedule[]> {
     const results = await this.systemDatabase.listSchedules(filters);
-    return results.map((r) => toWorkflowSchedule(r, this.serializer));
+    return await Promise.all(results.map((r) => toWorkflowSchedule(r, this.serializer)));
   }
 
   async getSchedule(name: string): Promise<WorkflowSchedule | null> {
     const result = await this.systemDatabase.getSchedule(name);
-    return result ? toWorkflowSchedule(result, this.serializer) : null;
+    return result ? await toWorkflowSchedule(result, this.serializer) : null;
   }
 
   async deleteSchedule(name: string): Promise<void> {
@@ -625,7 +629,7 @@ export class DBOSClient {
         workflowClassName: sched.workflowClassName ?? '',
         schedule: sched.schedule,
         status: 'ACTIVE',
-        context: this.serializer.stringify(sched.context),
+        context: await this.serializer.stringify(sched.context),
         lastFiredAt: null,
         automaticBackfill: sched.automaticBackfill ?? false,
         cronTimezone: sched.cronTimezone ?? null,

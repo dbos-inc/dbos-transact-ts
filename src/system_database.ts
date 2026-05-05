@@ -2368,7 +2368,7 @@ export class SystemDatabase {
       );
       const events: Record<string, unknown> = {};
       for (const row of result.rows) {
-        events[row.key] = safeParse(this.serializer, row.value, row.serialization);
+        events[row.key] = await safeParse(this.serializer, row.value, row.serialization);
       }
       return events;
     } finally {
@@ -2394,12 +2394,14 @@ export class SystemDatabase {
          ORDER BY created_at_epoch_ms`,
         [workflowID],
       );
-      return result.rows.map((row) => ({
-        topic: row.topic === this.nullTopic ? null : row.topic,
-        message: safeParse(this.serializer, row.message, row.serialization),
-        createdAtEpochMs: Number(row.created_at_epoch_ms),
-        consumed: row.consumed,
-      }));
+      return await Promise.all(
+        result.rows.map(async (row) => ({
+          topic: row.topic === this.nullTopic ? null : row.topic,
+          message: await safeParse(this.serializer, row.message, row.serialization),
+          createdAtEpochMs: Number(row.created_at_epoch_ms),
+          consumed: row.consumed,
+        })),
+      );
     } finally {
       client.release();
     }
@@ -2416,7 +2418,7 @@ export class SystemDatabase {
       );
       const streams: Record<string, unknown[]> = {};
       for (const row of result.rows) {
-        const value = safeParse(this.serializer, row.value, row.serialization);
+        const value = await safeParse(this.serializer, row.value, row.serialization);
         if (value === DBOS_STREAM_CLOSED_SENTINEL) {
           continue;
         }

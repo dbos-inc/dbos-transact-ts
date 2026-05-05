@@ -34,8 +34,11 @@ export interface WorkflowSchedule {
   queueName: string | null;
 }
 
-export function toWorkflowSchedule(internal: WorkflowScheduleInternal, serializer: DBOSSerializer): WorkflowSchedule {
-  const context = serializer.parse(internal.context);
+export async function toWorkflowSchedule(
+  internal: WorkflowScheduleInternal,
+  serializer: DBOSSerializer,
+): Promise<WorkflowSchedule> {
+  const context = await serializer.parse(internal.context);
 
   return {
     scheduleId: internal.scheduleId,
@@ -244,7 +247,7 @@ export class DynamicSchedulerLoop implements DBOSLifecycleCallback {
           lastExec = nextExec;
           continue;
         }
-        const context = serializer.parse(serializedContext);
+        const context = await serializer.parse(serializedContext);
         const systemDatabase = DBOSExecutor.globalInstance!.systemDatabase;
         await enqueueScheduledWorkflow(systemDatabase, serializer, sched, workflowID, date, context);
         await systemDatabase.updateLastFiredAt(scheduleName, date.toISOString());
@@ -293,7 +296,7 @@ async function enqueueScheduledWorkflow(
   scheduledDate: Date,
   context: unknown,
 ): Promise<void> {
-  const serparam = serializeArgs([scheduledDate, context], undefined, serializer, undefined);
+  const serparam = await serializeArgs([scheduledDate, context], undefined, serializer, undefined);
   // Always enqueue scheduled workflows to the latest application version
   const latestVersion = await DBOS.getLatestApplicationVersion();
   const internalStatus: WorkflowStatusInternal = {
@@ -332,7 +335,7 @@ export async function triggerSchedule(
   if (!sched) {
     throw new DBOSError(`Schedule "${name}" not found`);
   }
-  const context = serializer.parse(sched.context);
+  const context = await serializer.parse(sched.context);
   const now = new Date();
   const workflowID = `sched-${name}-trigger-${now.toISOString()}`;
   await enqueueScheduledWorkflow(systemDatabase, serializer, sched, workflowID, now, context);
