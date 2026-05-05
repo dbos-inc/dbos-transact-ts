@@ -1851,30 +1851,13 @@ describe('queue-time-outs', () => {
       await client.destroy();
     }
 
-    // You can only enqueue on a partitioned queue with a partition key
-    await assert.rejects(async () => {
-      await DBOS.startWorkflow(partitionNormalWorkflow, {
-        queueName: partitionQueue.name,
-      })();
-    }, Error);
-
-    // Deduplication is not supported for partitioned queues
+    // Deduplication is not supported for partitioned queues. This check is
+    // purely from supplied params, so it fires regardless of whether the
+    // queue is in the in-memory map.
     await assert.rejects(async () => {
       await DBOS.startWorkflow(partitionNormalWorkflow, {
         queueName: partitionQueue.name,
         enqueueOptions: { queuePartitionKey: normalPartitionKey, deduplicationID: 'key' },
-      })();
-    }, Error);
-
-    // You can only enqueue with a partition key on a partitioned queue
-    const partitionlessQueue = await DBOS.registerQueue('partitionless-queue', {
-      onConflict: 'always_update',
-      ...testPolling,
-    });
-    await assert.rejects(async () => {
-      await DBOS.startWorkflow(partitionNormalWorkflow, {
-        queueName: partitionlessQueue.name,
-        enqueueOptions: { queuePartitionKey: 'test' },
       })();
     }, Error);
   });

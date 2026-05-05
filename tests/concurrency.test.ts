@@ -231,7 +231,7 @@ const runALotOfThingsAtOnce = DBOS.registerWorkflow(
         expected: 'WF Ran',
       },
       {
-        // DB-backed queue: partition validation hits the DB lookup path.
+        // DB-backed queue: enqueue path for a queue not in the in-memory map.
         func: async () => {
           await DBOS.startWorkflow(simpleWF, {
             workflowID: `${DBOS.workflowID}-cwfq`,
@@ -437,8 +437,8 @@ describe('concurrency-tests', () => {
   beforeEach(async () => {
     await DBOS.launch();
 
-    // Register a DB-backed queue via DBOSClient. Used below to exercise the
-    // partition-lookup fallback in #invokeWorkflow.
+    // Register a DB-backed queue via DBOSClient. Used below to confirm
+    // enqueue works for a queue not in this executor's in-memory map.
     const client = await DBOSClient.create({ systemDatabaseUrl: config.systemDatabaseUrl! });
     try {
       await client.registerQueue(dbBackedQueueName);

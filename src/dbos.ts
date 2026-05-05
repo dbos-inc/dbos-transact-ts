@@ -1235,8 +1235,8 @@ export class DBOS {
 
     if (params && params.queueName) {
       // Partition flag checks (queue partitioned ↔ key supplied) require
-      // reading the queue config and may need a DB roundtrip for
-      // database-backed queues, so they live in `#invokeWorkflow`. The
+      // reading the queue config; they live in `#invokeWorkflow` and run
+      // only for queues in this executor's in-memory map. The
       // dedup-with-partition check is purely from supplied params and is
       // safe to do synchronously here.
       const queuePartitionKey = params.enqueueOptions?.queuePartitionKey;
@@ -1679,26 +1679,21 @@ export class DBOS {
     }
     const funcId = isChild ? (startWfFuncId ?? functionIDGetIncrement()) : undefined;
 
-    // Validate that a partition key is consistent with the target queue's
-    // partition flag. Falls back to a database lookup so database-backed
-    // queues are checked too.
+    // Validate partition key consistency only for queues registered in this
+    // executor's in-memory map. Database-backed queues are not checked here
+    // to avoid an extra roundtrip on every enqueue.
     if (queueName) {
       const queuePartitionKey = params.enqueueOptions?.queuePartitionKey;
-      let partitionEnabled: boolean | undefined;
       const inMem = this.#executor.getQueueByName(queueName);
       if (inMem) {
-        partitionEnabled = inMem.partitionQueue;
-      } else {
-        const record = await this.#executor.systemDatabase.getQueue(queueName);
-        if (record !== null) partitionEnabled = record.partitionQueue;
-      }
-      if (partitionEnabled === true && !queuePartitionKey) {
-        throw Error(`A workflow cannot be enqueued on partitioned queue ${queueName} without a partition key`);
-      }
-      if (queuePartitionKey && partitionEnabled === false) {
-        throw Error(
-          `You can only use a partition key on a partition-enabled queue. Key ${queuePartitionKey} was used with non-partitioned queue ${queueName}`,
-        );
+        if (inMem.partitionQueue && !queuePartitionKey) {
+          throw Error(`A workflow cannot be enqueued on partitioned queue ${queueName} without a partition key`);
+        }
+        if (queuePartitionKey && !inMem.partitionQueue) {
+          throw Error(
+            `You can only use a partition key on a partition-enabled queue. Key ${queuePartitionKey} was used with non-partitioned queue ${queueName}`,
+          );
+        }
       }
     }
 
