@@ -6,7 +6,6 @@ import {
   DBOSMaxStepRetriesError,
   DBOSWorkflowCancelledError,
   DBOSUnexpectedStepError,
-  DBOSInvalidQueuePriorityError,
   DBOSAwaitedWorkflowCancelledError,
   DBOSQueueDuplicatedError,
 } from './error';
@@ -394,19 +393,6 @@ export class DBOSExecutor {
         params.deadlineEpochMS;
 
     const priority = params?.enqueueOptions?.priority;
-    if (priority !== undefined && (priority < DBOS_QUEUE_MIN_PRIORITY || priority > DBOS_QUEUE_MAX_PRIORITY)) {
-      throw new DBOSInvalidQueuePriorityError(priority, DBOS_QUEUE_MIN_PRIORITY, DBOS_QUEUE_MAX_PRIORITY);
-    }
-
-    // If the workflow is called on a queue with a priority but the queue is not configured with a priority, print a warning.
-    if (params.queueName) {
-      const wfqueue = this.getQueueByName(params.queueName);
-      if (wfqueue && !wfqueue.priorityEnabled && priority !== undefined) {
-        throw Error(
-          `Priority is not enabled for queue ${params.queueName}. Setting priority will not have any effect.`,
-        );
-      }
-    }
 
     const pctx = { ...getCurrentContextStore() }; // function ID was already incremented...
 

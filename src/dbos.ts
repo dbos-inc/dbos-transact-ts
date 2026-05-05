@@ -1233,18 +1233,6 @@ export class DBOS {
       );
     }
 
-    if (params && params.queueName) {
-      // Partition flag checks (queue partitioned ↔ key supplied) require
-      // reading the queue config; they live in `#invokeWorkflow` and run
-      // only for queues in this executor's in-memory map. The
-      // dedup-with-partition check is purely from supplied params and is
-      // safe to do synchronously here.
-      const queuePartitionKey = params.enqueueOptions?.queuePartitionKey;
-      if (queuePartitionKey && params.enqueueOptions?.deduplicationID) {
-        throw Error('Deduplication is not supported for partitioned queues');
-      }
-    }
-
     const regOps = getRegisteredOperations(target);
 
     const handler: ProxyHandler<object> = {
@@ -1679,11 +1667,20 @@ export class DBOS {
     }
     const funcId = isChild ? (startWfFuncId ?? functionIDGetIncrement()) : undefined;
 
-    // Validate partition key consistency only for queues registered in this
-    // executor's in-memory map. Database-backed queues are not checked here
-    // to avoid an extra roundtrip on every enqueue.
+    // All enqueue-option validation lives here. Param-only checks
+    // (priority range, dedup-with-partition) always run; queue-config
+    // checks (partition flag, priority-enabled flag) run only for queues
+    // in this executor's in-memory map. Database-backed queues skip the
+    // queue-config checks to avoid an extra roundtrip on every enqueue.
     if (queueName) {
       const queuePartitionKey = params.enqueueOptions?.queuePartitionKey;
+      const priority = params.enqueueOptions?.priority;
+      if (priority !== undefined && (priority < DBOS_QUEUE_MIN_PRIORITY || priority > DBOS_QUEUE_MAX_PRIORITY)) {
+        throw new DBOSInvalidQueuePriorityError(priority, DBOS_QUEUE_MIN_PRIORITY, DBOS_QUEUE_MAX_PRIORITY);
+      }
+      if (queuePartitionKey && params.enqueueOptions?.deduplicationID) {
+        throw Error('Deduplication is not supported for partitioned queues');
+      }
       const inMem = this.#executor.getQueueByName(queueName);
       if (inMem) {
         if (inMem.partitionQueue && !queuePartitionKey) {
@@ -1693,6 +1690,9 @@ export class DBOS {
           throw Error(
             `You can only use a partition key on a partition-enabled queue. Key ${queuePartitionKey} was used with non-partitioned queue ${queueName}`,
           );
+        }
+        if (priority !== undefined && !inMem.priorityEnabled) {
+          throw Error(`Priority is not enabled for queue ${queueName}. Setting priority will not have any effect.`);
         }
       }
     }
