@@ -508,19 +508,21 @@ export class Conductor {
                 workflowName: listSchedMsg.body.workflow_name,
                 scheduleNamePrefix: listSchedMsg.body.schedule_name_prefix,
               });
-              schedOutput = scheds.map((s) => ({
-                schedule_id: s.scheduleId,
-                schedule_name: s.scheduleName,
-                workflow_name: s.workflowName,
-                workflow_class_name: s.workflowClassName || undefined,
-                schedule: s.schedule,
-                status: s.status,
-                context: loadContextList ? inspect(this.dbosExec.serializer.parse(s.context)) : undefined,
-                last_fired_at: s.lastFiredAt,
-                automatic_backfill: s.automaticBackfill,
-                cron_timezone: s.cronTimezone,
-                queue_name: s.queueName,
-              }));
+              schedOutput = await Promise.all(
+                scheds.map(async (s) => ({
+                  schedule_id: s.scheduleId,
+                  schedule_name: s.scheduleName,
+                  workflow_name: s.workflowName,
+                  workflow_class_name: s.workflowClassName || undefined,
+                  schedule: s.schedule,
+                  status: s.status,
+                  context: loadContextList ? inspect(await this.dbosExec.serializer.parse(s.context)) : undefined,
+                  last_fired_at: s.lastFiredAt,
+                  automatic_backfill: s.automaticBackfill,
+                  cron_timezone: s.cronTimezone,
+                  queue_name: s.queueName,
+                })),
+              );
             } catch (e) {
               errorMsg = `Exception encountered when listing schedules: ${(e as Error).message}`;
               this.dbosExec.logger.error(errorMsg);
@@ -542,7 +544,7 @@ export class Conductor {
                   workflow_class_name: sched.workflowClassName || undefined,
                   schedule: sched.schedule,
                   status: sched.status,
-                  context: loadContextGet ? inspect(this.dbosExec.serializer.parse(sched.context)) : undefined,
+                  context: loadContextGet ? inspect(await this.dbosExec.serializer.parse(sched.context)) : undefined,
                   last_fired_at: sched.lastFiredAt,
                   automatic_backfill: sched.automaticBackfill,
                   cron_timezone: sched.cronTimezone,

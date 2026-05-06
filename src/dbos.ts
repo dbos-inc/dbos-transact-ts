@@ -294,6 +294,7 @@ async function runTransactionalInternalStep<T>(
       return callback(undefined);
     } else if (DBOS.isInWorkflow()) {
       const executor = DBOSExecutor.globalInstance!;
+      // Reserve the function ID synchronously, before any await.
       const functionID = functionIDGetIncrement();
       let freshResult: T;
 
@@ -303,7 +304,7 @@ async function runTransactionalInternalStep<T>(
         funcName,
         async (client) => {
           freshResult = await callback(client);
-          return executor.serializer.stringify(freshResult !== undefined ? freshResult : null);
+          return await executor.serializer.stringify(freshResult !== undefined ? freshResult : null);
         },
       );
 
@@ -311,7 +312,7 @@ async function runTransactionalInternalStep<T>(
         if (stored.functionName !== funcName) {
           throw new DBOSUnexpectedStepError(DBOS.workflowID!, functionID, funcName, stored.functionName!);
         }
-        return DBOSExecutor.reviveResultOrError<T>(stored, executor.serializer);
+        return await DBOSExecutor.reviveResultOrError<T>(stored, executor.serializer);
       }
       return freshResult!;
     } else {
@@ -760,6 +761,7 @@ export class DBOS {
     ensureDBOSIsLaunched('getResult');
     let timerFuncID: number | undefined = undefined;
     if (DBOS.isWithinWorkflow() && timeoutSeconds !== undefined) {
+      // Reserve the function ID synchronously, before any await.
       timerFuncID = functionIDGetIncrement();
     }
     return await DBOS.getResultInternal(workflowID, timeoutSeconds, timerFuncID, undefined);
@@ -786,7 +788,7 @@ export class DBOS {
         if (rres?.maxRecoveryAttemptsExceeded) {
           throw new DBOSAwaitedWorkflowExceededMaxRecoveryAttempts(workflowID);
         }
-        return DBOSExecutor.reviveResultOrError<T>(rres, DBOS.#executor.serializer);
+        return await DBOSExecutor.reviveResultOrError<T>(rres, DBOS.#executor.serializer);
       },
       'DBOS.getResult',
       workflowID,
@@ -1032,6 +1034,7 @@ export class DBOS {
       if (DBOS.isInTransaction()) {
         throw new DBOSInvalidWorkflowTransitionError('Invalid call to `DBOS.sleep` inside a `transaction`');
       }
+      // Reserve the function ID synchronously, before any await.
       const functionID = functionIDGetIncrement();
       if (durationMS <= 0) {
         return;
@@ -1230,18 +1233,6 @@ export class DBOS {
       );
     }
 
-    if (params && params.queueName) {
-      // Partition flag checks (queue partitioned ↔ key supplied) require
-      // reading the queue config and may need a DB roundtrip for
-      // database-backed queues, so they live in `#invokeWorkflow`. The
-      // dedup-with-partition check is purely from supplied params and is
-      // safe to do synchronously here.
-      const queuePartitionKey = params.enqueueOptions?.queuePartitionKey;
-      if (queuePartitionKey && params.enqueueOptions?.deduplicationID) {
-        throw Error('Deduplication is not supported for partitioned queues');
-      }
-    }
-
     const regOps = getRegisteredOperations(target);
 
     const handler: ProxyHandler<object> = {
@@ -1290,13 +1281,15 @@ export class DBOS {
     options?: SendOptions,
   ): Promise<void> {
     ensureDBOSIsLaunched('send');
-    const sermsg = serializeValue(
-      message,
-      DBOS.#executor.serializer,
-      options?.serializationType ?? DBOS.defaultSerializationType,
-    );
     if (DBOS.isInWorkflow()) {
+      // Advance the function ID synchronously before any await, so concurrent step
+      // calls in the same workflow don't race for IDs.
       const functionID: number = functionIDGetIncrement();
+      const sermsg = await serializeValue(
+        message,
+        DBOS.#executor.serializer,
+        options?.serializationType ?? DBOS.defaultSerializationType,
+      );
       return await DBOSExecutor.globalInstance!.systemDatabase.send(
         DBOS.workflowID!,
         functionID,
@@ -1307,6 +1300,11 @@ export class DBOS {
         idempotencyKey,
       );
     } else {
+      const sermsg = await serializeValue(
+        message,
+        DBOS.#executor.serializer,
+        options?.serializationType ?? DBOS.defaultSerializationType,
+      );
       return DBOSExecutor.globalInstance!.systemDatabase.sendDirect(
         destinationID,
         sermsg.serializedValue,
@@ -1335,6 +1333,7 @@ export class DBOS {
       if (!DBOS.isInWorkflow()) {
         throw new DBOSInvalidWorkflowTransitionError('Invalid call to `DBOS.recv` inside a `step` or `transaction`');
       }
+      // Reserve the function IDs synchronously, before any await.
       const functionID: number = functionIDGetIncrement();
       const timeoutFunctionID: number = functionIDGetIncrement();
       const timeoutSeconds = resolveTimeoutSeconds(options);
@@ -1346,7 +1345,7 @@ export class DBOS {
         timeoutSeconds,
       );
 
-      return deserializeValue(msg.serializedValue, msg.serialization, DBOS.#executor.serializer) as T;
+      return (await deserializeValue(msg.serializedValue, msg.serialization, DBOS.#executor.serializer)) as T;
     }
     throw new DBOSInvalidWorkflowTransitionError('Attempt to call `DBOS.recv` outside of a workflow'); // Only workflows can recv
   }
@@ -1369,8 +1368,9 @@ export class DBOS {
           'Invalid call to `DBOS.setEvent` inside a `step` or `transaction`',
         );
       }
+      // Reserve the function ID synchronously, before any await.
       const functionID = functionIDGetIncrement();
-      const serevt = serializeValue(
+      const serevt = await serializeValue(
         value,
         DBOS.#executor.serializer,
         options?.serializationType ?? DBOS.defaultSerializationType,
@@ -1407,6 +1407,7 @@ export class DBOS {
           'Invalid call to `DBOS.getEvent` inside a `step` or `transaction`',
         );
       }
+      // Reserve the function IDs synchronously, before any await.
       const functionID: number = functionIDGetIncrement();
       const timeoutFunctionID = functionIDGetIncrement();
       const params = {
@@ -1420,7 +1421,7 @@ export class DBOS {
         timeoutSeconds ?? DBOSExecutor.defaultNotificationTimeoutSec,
         params,
       );
-      return deserializeValue(evt.serializedValue, evt.serialization, DBOS.#executor.serializer) as T;
+      return (await deserializeValue(evt.serializedValue, evt.serialization, DBOS.#executor.serializer)) as T;
     }
     return DBOS.#executor.getEvent(workflowID, key, timeoutSeconds);
   }
@@ -1433,35 +1434,35 @@ export class DBOS {
    */
   static async writeStream<T>(key: string, value: T, options: WriteStreamOptions = {}): Promise<void> {
     ensureDBOSIsLaunched('writeStream');
-    if (DBOS.isWithinWorkflow()) {
-      const serval = serializeValue(
+    if (DBOS.isInWorkflow()) {
+      // Advance the function ID synchronously before any await.
+      const functionID: number = functionIDGetIncrement();
+      const serval = await serializeValue(
         value,
         DBOS.#executor.serializer,
         options.serializationType ?? DBOS.defaultSerializationType,
       );
-      if (DBOS.isInWorkflow()) {
-        const functionID: number = functionIDGetIncrement();
-        return await DBOSExecutor.globalInstance!.systemDatabase.writeStreamFromWorkflow(
-          DBOS.workflowID!,
-          functionID,
-          key,
-          serval.serializedValue!,
-          serval.serialization,
-          DBOS_FUNCNAME_WRITESTREAM,
-        );
-      } else if (DBOS.isInStep()) {
-        return await DBOSExecutor.globalInstance!.systemDatabase.writeStreamFromStep(
-          DBOS.workflowID!,
-          DBOS.stepID!,
-          key,
-          serval.serializedValue!,
-          serval.serialization,
-        );
-      } else {
-        throw new DBOSInvalidWorkflowTransitionError(
-          'Invalid call to `DBOS.writeStream` outside of a workflow or step',
-        );
-      }
+      return await DBOSExecutor.globalInstance!.systemDatabase.writeStreamFromWorkflow(
+        DBOS.workflowID!,
+        functionID,
+        key,
+        serval.serializedValue!,
+        serval.serialization,
+        DBOS_FUNCNAME_WRITESTREAM,
+      );
+    } else if (DBOS.isInStep()) {
+      const serval = await serializeValue(
+        value,
+        DBOS.#executor.serializer,
+        options.serializationType ?? DBOS.defaultSerializationType,
+      );
+      return await DBOSExecutor.globalInstance!.systemDatabase.writeStreamFromStep(
+        DBOS.workflowID!,
+        DBOS.stepID!,
+        key,
+        serval.serializedValue!,
+        serval.serialization,
+      );
     } else {
       throw new DBOSInvalidWorkflowTransitionError('Invalid call to `DBOS.writeStream` outside of a workflow or step');
     }
@@ -1475,6 +1476,7 @@ export class DBOS {
     ensureDBOSIsLaunched('closeStream');
     if (DBOS.isWithinWorkflow()) {
       if (DBOS.isInWorkflow()) {
+        // Reserve the function ID synchronously, before any await.
         const functionID: number = functionIDGetIncrement();
         return await DBOSExecutor.globalInstance!.systemDatabase.closeStream(DBOS.workflowID!, functionID, key);
       } else {
@@ -1505,11 +1507,11 @@ export class DBOS {
         if (value.serializedValue === DBOS_STREAM_CLOSED_SENTINEL) {
           break;
         }
-        yield deserializeValue(
+        yield (await deserializeValue(
           value.serializedValue,
           value.serialization,
           DBOSExecutor.globalInstance!.serializer,
-        ) as T;
+        )) as T;
         offset += 1;
       } catch (error: unknown) {
         if (error instanceof Error && error.message.includes('No value found')) {
@@ -1654,41 +1656,49 @@ export class DBOS {
       );
     }
 
-    // Validate that a partition key is consistent with the target queue's
-    // partition flag. Falls back to a database lookup so database-backed
-    // queues are checked too.
+    // If this is called from within a workflow, this is a child workflow.
+    // Reserve the child's function ID synchronously, before any await — otherwise
+    // concurrent step calls in the parent could race for IDs.
+    const isChild = DBOS.isWithinWorkflow();
+    if (isChild && !DBOS.isInWorkflow()) {
+      throw new DBOSInvalidWorkflowTransitionError(
+        'Invalid call to a `workflow` function from within a `step` or `transaction`',
+      );
+    }
+    const funcId = isChild ? (startWfFuncId ?? functionIDGetIncrement()) : undefined;
+
+    // All enqueue-option validation lives here. Param-only checks
+    // (priority range, dedup-with-partition) always run; queue-config
+    // checks (partition flag, priority-enabled flag) run only for queues
+    // in this executor's in-memory map. Database-backed queues skip the
+    // queue-config checks to avoid an extra roundtrip on every enqueue.
     if (queueName) {
       const queuePartitionKey = params.enqueueOptions?.queuePartitionKey;
-      let partitionEnabled: boolean | undefined;
+      const priority = params.enqueueOptions?.priority;
+      if (priority !== undefined && (priority < DBOS_QUEUE_MIN_PRIORITY || priority > DBOS_QUEUE_MAX_PRIORITY)) {
+        throw new DBOSInvalidQueuePriorityError(priority, DBOS_QUEUE_MIN_PRIORITY, DBOS_QUEUE_MAX_PRIORITY);
+      }
+      if (queuePartitionKey && params.enqueueOptions?.deduplicationID) {
+        throw Error('Deduplication is not supported for partitioned queues');
+      }
       const inMem = this.#executor.getQueueByName(queueName);
       if (inMem) {
-        partitionEnabled = inMem.partitionQueue;
-      } else {
-        const record = await this.#executor.systemDatabase.getQueue(queueName);
-        if (record !== null) partitionEnabled = record.partitionQueue;
-      }
-      if (partitionEnabled === true && !queuePartitionKey) {
-        throw Error(`A workflow cannot be enqueued on partitioned queue ${queueName} without a partition key`);
-      }
-      if (queuePartitionKey && partitionEnabled === false) {
-        throw Error(
-          `You can only use a partition key on a partition-enabled queue. Key ${queuePartitionKey} was used with non-partitioned queue ${queueName}`,
-        );
+        if (inMem.partitionQueue && !queuePartitionKey) {
+          throw Error(`A workflow cannot be enqueued on partitioned queue ${queueName} without a partition key`);
+        }
+        if (queuePartitionKey && !inMem.partitionQueue) {
+          throw Error(
+            `You can only use a partition key on a partition-enabled queue. Key ${queuePartitionKey} was used with non-partitioned queue ${queueName}`,
+          );
+        }
+        if (priority !== undefined && !inMem.priorityEnabled) {
+          throw Error(`Priority is not enabled for queue ${queueName}. Setting priority will not have any effect.`);
+        }
       }
     }
 
-    // If this is called from within a workflow, this is a child workflow,
-    //  For OAOO, we will need a consistent ID formed from the parent WF and call number
-    if (DBOS.isWithinWorkflow()) {
-      if (!DBOS.isInWorkflow()) {
-        throw new DBOSInvalidWorkflowTransitionError(
-          'Invalid call to a `workflow` function from within a `step` or `transaction`',
-        );
-      }
-
-      const funcId = startWfFuncId ?? functionIDGetIncrement();
-      const pctx = getCurrentContextStore()!;
-      const pwfid = pctx.workflowId!;
+    if (isChild) {
+      const pwfid = ppctx!.workflowId!;
       const wfParams: WorkflowParams = {
         workflowUUID: wfId || pwfid + '-' + funcId,
         configuredInstance: instance,
@@ -1696,7 +1706,7 @@ export class DBOS {
         timeoutMS,
         // Detach child deadline if a null timeout is configured
         deadlineEpochMS:
-          params.timeoutMS === null || pctx?.workflowTimeoutMS === null ? undefined : pctx?.deadlineEpochMS,
+          params.timeoutMS === null || ppctx?.workflowTimeoutMS === null ? undefined : ppctx?.deadlineEpochMS,
         enqueueOptions: params.enqueueOptions,
       };
 
@@ -1744,6 +1754,7 @@ export class DBOS {
     const invoker = async function (this: This, ...rawArgs: Args): Promise<Return> {
       ensureDBOSIsLaunched('workflows');
       if (DBOS.isInWorkflow()) {
+        // Reserve the function IDs synchronously, before any await.
         const startWfFuncId = functionIDGetIncrement();
         const getResFuncID = functionIDGetIncrement();
         const handle = await DBOS.#invokeWorkflow<This, Args, Return>(
@@ -2186,7 +2197,7 @@ export class DBOS {
       workflowClassName: className,
       schedule: options.schedule,
       status: 'ACTIVE',
-      context: serializer.stringify(options.context),
+      context: await serializer.stringify(options.context),
       lastFiredAt: null,
       automaticBackfill: options.options?.automaticBackfill ?? false,
       cronTimezone: options.options?.cronTimezone ?? null,
@@ -2210,7 +2221,7 @@ export class DBOS {
       (client) => DBOSExecutor.globalInstance!.systemDatabase.listSchedules(filters, client),
       'DBOS.listSchedules',
     );
-    return results.map((r) => toWorkflowSchedule(r, serializer));
+    return await Promise.all(results.map((r) => toWorkflowSchedule(r, serializer)));
   }
 
   static async getSchedule(name: string): Promise<WorkflowSchedule | null> {
@@ -2220,7 +2231,7 @@ export class DBOS {
       (client) => DBOSExecutor.globalInstance!.systemDatabase.getSchedule(name, client),
       'DBOS.getSchedule',
     );
-    return result ? toWorkflowSchedule(result, serializer) : null;
+    return result ? await toWorkflowSchedule(result, serializer) : null;
   }
 
   static async deleteSchedule(name: string): Promise<void> {
@@ -2284,7 +2295,7 @@ export class DBOS {
         workflowClassName: className,
         schedule: sched.schedule,
         status: 'ACTIVE',
-        context: serializer.stringify(sched.context),
+        context: await serializer.stringify(sched.context),
         lastFiredAt: null,
         automaticBackfill: sched.automaticBackfill ?? false,
         cronTimezone: sched.cronTimezone ?? null,

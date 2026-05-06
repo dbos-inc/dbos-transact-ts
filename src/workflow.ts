@@ -260,7 +260,11 @@ export class InvokedHandle<R> implements InternalWFHandle<R> {
 
   async getWorkflowInputs<T extends any[]>(): Promise<T> {
     const status = (await this.systemDatabase.getWorkflowStatus(this.workflowUUID)) as WorkflowStatusInternal;
-    return deserializePositionalArgs(status.input, status.serialization, this.systemDatabase.getSerializer()) as T;
+    return (await deserializePositionalArgs(
+      status.input,
+      status.serialization,
+      this.systemDatabase.getSerializer(),
+    )) as T;
   }
 }
 
@@ -291,7 +295,11 @@ export class RetrievedHandle<R> implements InternalWFHandle<R> {
 
   async getWorkflowInputs<T extends any[]>(): Promise<T> {
     const status = (await this.systemDatabase.getWorkflowStatus(this.workflowUUID)) as WorkflowStatusInternal;
-    return deserializePositionalArgs(status.input, status.serialization, this.systemDatabase.getSerializer()) as T;
+    return (await deserializePositionalArgs(
+      status.input,
+      status.serialization,
+      this.systemDatabase.getSerializer(),
+    )) as T;
   }
 }
 

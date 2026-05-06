@@ -5,19 +5,19 @@ import { randomUUID } from 'node:crypto';
 
 export async function listWorkflows(sysdb: SystemDatabase, input: GetWorkflowsInput): Promise<WorkflowStatus[]> {
   const workflows = await sysdb.listWorkflows(input);
-  return workflows.map((wf) => toWorkflowStatus(wf, sysdb.getSerializer()));
+  return await Promise.all(workflows.map((wf) => toWorkflowStatus(wf, sysdb.getSerializer())));
 }
 
 export async function listQueuedWorkflows(sysdb: SystemDatabase, input: GetWorkflowsInput) {
   input.queuesOnly = true;
   input.loadOutput = false;
   const workflows = await sysdb.listWorkflows(input);
-  return workflows.map((wf) => toWorkflowStatus(wf, sysdb.getSerializer()));
+  return await Promise.all(workflows.map((wf) => toWorkflowStatus(wf, sysdb.getSerializer())));
 }
 
 export async function getWorkflow(sysdb: SystemDatabase, workflowID: string): Promise<WorkflowStatus | undefined> {
   const status = await sysdb.getWorkflowStatus(workflowID);
-  return status ? toWorkflowStatus(status, sysdb.getSerializer()) : undefined;
+  return status ? await toWorkflowStatus(status, sysdb.getSerializer()) : undefined;
 }
 
 export async function listWorkflowSteps(
@@ -33,15 +33,19 @@ export async function listWorkflowSteps(
 
   const $steps = await sysdb.getAllOperationResults(workflowID, options?.limit, options?.offset);
 
-  const steps: StepInfo[] = $steps.map((step) => ({
-    functionID: step.function_id,
-    name: step.function_name ?? '',
-    output: loadOutput && step.output ? safeParse(sysdb.getSerializer(), step.output, step.serialization) : null,
-    error: loadOutput && step.error ? safeParseError(sysdb.getSerializer(), step.error, step.serialization) : null,
-    childWorkflowID: step.child_workflow_id,
-    startedAtEpochMs: step.started_at_epoch_ms,
-    completedAtEpochMs: step.completed_at_epoch_ms,
-  }));
+  const steps: StepInfo[] = await Promise.all(
+    $steps.map(async (step) => ({
+      functionID: step.function_id,
+      name: step.function_name ?? '',
+      output:
+        loadOutput && step.output ? await safeParse(sysdb.getSerializer(), step.output, step.serialization) : null,
+      error:
+        loadOutput && step.error ? await safeParseError(sysdb.getSerializer(), step.error, step.serialization) : null,
+      childWorkflowID: step.child_workflow_id,
+      startedAtEpochMs: step.started_at_epoch_ms,
+      completedAtEpochMs: step.completed_at_epoch_ms,
+    })),
+  );
 
   return steps.toSorted((a, b) => a.functionID - b.functionID);
 }
@@ -64,7 +68,10 @@ export async function forkWorkflow(
   return newWorkflowID;
 }
 
-export function toWorkflowStatus(internal: WorkflowStatusInternal, serializer: DBOSSerializer): WorkflowStatus {
+export async function toWorkflowStatus(
+  internal: WorkflowStatusInternal,
+  serializer: DBOSSerializer,
+): Promise<WorkflowStatus> {
   return {
     workflowID: internal.workflowUUID,
     status: internal.status,
@@ -78,10 +85,10 @@ export function toWorkflowStatus(internal: WorkflowStatusInternal, serializer: D
     authenticatedRoles: internal.authenticatedRoles,
 
     input: internal.input
-      ? (safeParsePositionalArgs(serializer, internal.input, internal.serialization) as unknown[])
+      ? ((await safeParsePositionalArgs(serializer, internal.input, internal.serialization)) as unknown[])
       : undefined,
-    output: internal.output ? safeParse(serializer, internal.output ?? null, internal.serialization) : undefined,
-    error: internal.error ? safeParseError(serializer, internal.error, internal.serialization) : undefined,
+    output: internal.output ? await safeParse(serializer, internal.output ?? null, internal.serialization) : undefined,
+    error: internal.error ? await safeParseError(serializer, internal.error, internal.serialization) : undefined,
 
     request: internal.request,
     executorId: internal.executorId,

@@ -959,3 +959,261 @@ describe('custom-serializer-restart-tests', () => {
     process.env.DBOS__APPVERSION = undefined;
   });
 });
+
+// Workflows for async-serializer tests (registered at module level)
+const asyncSerWorkflow = DBOS.registerWorkflow(
+  async (input: string, peerWfId?: string) => {
+    await DBOS.setEvent('key', input);
+    if (peerWfId) {
+      await DBOS.send(peerWfId, { msg: `from-${input}` }, 'topic');
+    }
+    return `result:${input}`;
+  },
+  { name: 'asyncSerWorkflow' },
+);
+
+const asyncRecvWorkflow = DBOS.registerWorkflow(
+  async () => {
+    const m = await DBOS.recv<{ msg: string }>('topic', 10);
+    return m?.msg ?? 'none';
+  },
+  { name: 'asyncRecvWorkflow' },
+);
+
+const asyncSerErrorWorkflow = DBOS.registerWorkflow(
+  async (msg: string) => {
+    return Promise.reject(new Error(msg));
+  },
+  { name: 'asyncSerErrorWorkflow' },
+);
+
+const asyncStreamWorkflow = DBOS.registerWorkflow(
+  async () => {
+    await DBOS.writeStream('s', { msg: 'first' });
+    await DBOS.writeStream('s', { msg: 'second' });
+    await DBOS.closeStream('s');
+    return 'streamed';
+  },
+  { name: 'asyncStreamWorkflow' },
+);
+
+const _asyncEnqueueWorkflow = DBOS.registerWorkflow(
+  async (input: string) => {
+    await Promise.resolve();
+    return `enqueued:${input}`;
+  },
+  { name: 'asyncEnqueueWorkflow' },
+);
+
+const asyncScheduledResults: { dates: Date[]; contexts: unknown[] } = { dates: [], contexts: [] };
+async function asyncScheduledFn(scheduledDate: Date, context: unknown) {
+  asyncScheduledResults.dates.push(scheduledDate);
+  asyncScheduledResults.contexts.push(context);
+  await Promise.resolve();
+}
+const asyncScheduledWorkflow = DBOS.registerWorkflow(asyncScheduledFn, { name: 'asyncScheduledWorkflow' });
+
+describe('async-serializer-tests', () => {
+  // A serializer that genuinely returns Promises — both stringify and parse
+  // await a microtask before resolving. This catches missing awaits in DBOS
+  // code paths: any unawaited call would surface as `[object Promise]` in the
+  // database or fail to deserialize.
+  let stringifyCalls = 0;
+  let parseCalls = 0;
+  const asyncBase64Serializer: DBOSSerializer = {
+    name: () => 'async_base64',
+    parse: async (text: string | null | undefined): Promise<unknown> => {
+      parseCalls += 1;
+      await Promise.resolve();
+      if (text === null || text === undefined) return null;
+      return JSON.parse(Buffer.from(text, 'base64').toString());
+    },
+    stringify: async (obj: unknown): Promise<string> => {
+      stringifyCalls += 1;
+      await Promise.resolve();
+      if (obj === undefined) obj = null;
+      return Buffer.from(JSON.stringify(obj)).toString('base64');
+    },
+  };
+
+  let config: DBOSConfig;
+  let systemDBClient: Client;
+
+  beforeAll(() => {
+    config = generateDBOSTestConfig();
+  });
+
+  beforeEach(() => {
+    stringifyCalls = 0;
+    parseCalls = 0;
+  });
+
+  afterEach(async () => {
+    if (systemDBClient) {
+      await systemDBClient.end();
+    }
+    await DBOS.shutdown();
+  });
+
+  test('async-serializer round-trips inputs, results, events, send/recv', async () => {
+    await setUpDBOSTestSysDb(config);
+    config.serializer = asyncBase64Serializer;
+    DBOS.setConfig(config);
+    await DBOS.launch();
+
+    systemDBClient = new Client({ connectionString: config.systemDatabaseUrl });
+    await systemDBClient.connect();
+
+    // Start a receiver, then run a sender that setEvents and sends to the receiver.
+    const receiver = await DBOS.startWorkflow(asyncRecvWorkflow)();
+    const sender = await DBOS.startWorkflow(asyncSerWorkflow)('hello', receiver.workflowID);
+
+    // Result, event, and the received message must all round-trip cleanly.
+    expect(await sender.getResult()).toBe('result:hello');
+    expect(await DBOS.getEvent<string>(sender.workflowID, 'key')).toBe('hello');
+    expect(await receiver.getResult()).toBe('from-hello');
+
+    // The async serializer must actually have been invoked.
+    expect(stringifyCalls).toBeGreaterThan(0);
+    expect(parseCalls).toBeGreaterThan(0);
+
+    // The DB must store base64-encoded values, not '[object Promise]'.
+    const status = await systemDBClient.query<workflow_status>(
+      'SELECT * FROM dbos.workflow_status WHERE workflow_uuid = $1',
+      [sender.workflowID],
+    );
+    expect(status.rows[0].serialization).toBe('async_base64');
+    expect(status.rows[0].output).toBe(await asyncBase64Serializer.stringify('result:hello'));
+    expect(status.rows[0].output).not.toContain('[object Promise]');
+
+    // listWorkflows / listWorkflowSteps must also resolve through the async parser.
+    const listed = (await DBOS.listWorkflows({})).find((w) => w.workflowID === sender.workflowID);
+    expect(listed?.output).toBe('result:hello');
+
+    const steps = await DBOS.listWorkflowSteps(sender.workflowID);
+    expect(steps).toBeDefined();
+    expect(steps!.some((s) => s.name.includes('setEvent'))).toBe(true);
+  });
+
+  test('async-serializer surfaces workflow errors', async () => {
+    await setUpDBOSTestSysDb(config);
+    config.serializer = asyncBase64Serializer;
+    DBOS.setConfig(config);
+    await DBOS.launch();
+
+    const errHandle = await DBOS.startWorkflow(asyncSerErrorWorkflow)('boom');
+    await expect(errHandle.getResult()).rejects.toThrow('boom');
+  });
+
+  test('async-serializer round-trips through DBOSClient', async () => {
+    await setUpDBOSTestSysDb(config);
+    config.serializer = asyncBase64Serializer;
+    DBOS.setConfig(config);
+    await DBOS.launch();
+    await DBOS.registerQueue('async-client-q', { onConflict: 'always_update' });
+
+    const client = await DBOSClient.create({
+      systemDatabaseUrl: config.systemDatabaseUrl!,
+      serializer: asyncBase64Serializer,
+    });
+    try {
+      // client.send + workflow.recv: covers serializeValue on the client path.
+      const receiver = await DBOS.startWorkflow(asyncRecvWorkflow)();
+      await client.send(receiver.workflowID, { msg: 'from-client' }, 'topic');
+      expect(await receiver.getResult()).toBe('from-client');
+
+      // setEvent inside a workflow + client.getEvent: client.getEvent must
+      // await deserializeValue (this was one of the bugs).
+      const sender = await DBOS.startWorkflow(asyncSerWorkflow)('hello-client');
+      expect(await sender.getResult()).toBe('result:hello-client');
+      const evt = await client.getEvent<string>(sender.workflowID, 'key');
+      expect(evt).toBe('hello-client');
+      expect(typeof (evt as unknown as { then?: unknown })?.then).not.toBe('function');
+
+      // client.readStream covers deserializeValue inside an async generator —
+      // an unawaited call would yield a Promise instead of the value.
+      const streamWf = await DBOS.startWorkflow(asyncStreamWorkflow)();
+      await streamWf.getResult();
+      const values: { msg: string }[] = [];
+      for await (const v of client.readStream<{ msg: string }>(streamWf.workflowID, 's')) {
+        values.push(v);
+      }
+      expect(values).toEqual([{ msg: 'first' }, { msg: 'second' }]);
+      for (const v of values) {
+        expect(typeof (v as unknown as { then?: unknown })?.then).not.toBe('function');
+      }
+
+      // client.enqueue + handle.getResult: covers serializeArgs on the client
+      // path and reviveResultOrError for the result.
+      const enqHandle = await client.enqueue<typeof _asyncEnqueueWorkflow>(
+        { workflowName: 'asyncEnqueueWorkflow', queueName: 'async-client-q' },
+        'payload',
+      );
+      expect(await enqHandle.getResult()).toBe('enqueued:payload');
+
+      expect(stringifyCalls).toBeGreaterThan(0);
+      expect(parseCalls).toBeGreaterThan(0);
+    } finally {
+      await client.destroy();
+    }
+  });
+
+  test('async-serializer round-trips schedule context (trigger + backfill)', async () => {
+    await setUpDBOSTestSysDb(config);
+    config.serializer = asyncBase64Serializer;
+    DBOS.setConfig(config);
+    await DBOS.launch();
+
+    asyncScheduledResults.dates = [];
+    asyncScheduledResults.contexts = [];
+
+    const ctx = { source: 'async-schedule', nested: { v: 42 } };
+    await DBOS.createSchedule({
+      scheduleName: 'async-sched',
+      workflowFn: asyncScheduledWorkflow,
+      // Hourly so backfill produces multiple firings in a small window. The
+      // far-past window prevents the live scheduler from firing concurrently.
+      schedule: '0 * * * *',
+      context: ctx,
+    });
+    // Pause to keep the live scheduler loop from firing concurrently.
+    await DBOS.pauseSchedule('async-sched');
+
+    // listSchedules / getSchedule both parse the persisted context through
+    // the async serializer.
+    const listed = await DBOS.listSchedules();
+    const me = listed.find((s) => s.scheduleName === 'async-sched');
+    expect(me?.context).toEqual(ctx);
+    const got = await DBOS.getSchedule('async-sched');
+    expect(got?.context).toEqual(ctx);
+
+    // triggerSchedule: parses the stored context, then re-serializes it as
+    // workflow input. The fired workflow must receive the deserialized object.
+    const trigHandle = await DBOS.triggerSchedule('async-sched');
+    await trigHandle.getResult();
+    expect(asyncScheduledResults.contexts.length).toBe(1);
+    expect(asyncScheduledResults.contexts[0]).toEqual(ctx);
+
+    // backfillSchedule was the bug site — an unawaited parse would pass a
+    // Promise as `context` to enqueueScheduledWorkflow, which then serializes
+    // {} (Promises stringify to "{}") as the workflow input.
+    asyncScheduledResults.dates = [];
+    asyncScheduledResults.contexts = [];
+    // nextWakeupTime is strictly after `current`; loop ends when next >= end.
+    // Window 00:00 → 03:00:01 gives firings at 01:00, 02:00, 03:00.
+    const start = new Date(2025, 0, 1, 0, 0, 0);
+    const end = new Date(2025, 0, 1, 3, 0, 1);
+    const handles = await DBOS.backfillSchedule('async-sched', start, end);
+    expect(handles.length).toBe(3);
+    for (const h of handles) {
+      await h.getResult();
+    }
+    expect(asyncScheduledResults.contexts.length).toBe(3);
+    for (const received of asyncScheduledResults.contexts) {
+      expect(received).toEqual(ctx);
+      expect(typeof (received as { then?: unknown })?.then).not.toBe('function');
+    }
+
+    await DBOS.deleteSchedule('async-sched');
+  });
+});
