@@ -809,9 +809,7 @@ export class DBOSExecutor {
               const shouldRetry = await stepConfig.shouldRetry(e);
               if (!shouldRetry) {
                 err = e;
-                this.logger.warn(
-                  `Step retry predicate stopped retries. Attempt ${attemptNum} of ${maxAttempts}. ${e.stack}`,
-                );
+                this.logger.warn(`Non-retryable error in step. Attempt ${attemptNum} of ${maxAttempts}. ${e.stack}`);
                 span.addEvent(
                   `Step attempt ${attemptNum + 1} failed`,
                   { retryIntervalSeconds: intervalSeconds, error: e.message, shouldRetry: false },

@@ -59,36 +59,6 @@ async function workflowFunction() {
 const workflow = DBOS.registerWorkflow(workflowFunction);
 ```
 
-Steps can also be retried. If a retried step sees a permanent failure, use `shouldRetry` to stop retrying immediately and propagate the original error to the workflow:
-
-```ts
-import { DBOS } from '@dbos-inc/dbos-sdk';
-
-class ResourceNotFoundError extends Error {}
-
-async function getResourceWorkflow(resourceId: string) {
-  const resource = await DBOS.runStep(
-    async () => {
-      const resource = await flakeyThirdParty.getResourceById(resourceId);
-
-      if (!resource) {
-        throw new ResourceNotFoundError('Resource not found');
-      }
-
-      return resource;
-    },
-    {
-      name: 'get-resource',
-      retriesAllowed: true,
-      maxAttempts: 3,
-      shouldRetry: (error) => !(error instanceof ResourceNotFoundError),
-    },
-  );
-
-  return resource;
-}
-```
-
 Workflows are particularly useful for
 
 - Orchestrating business processes so they seamlessly recover from any failure.
