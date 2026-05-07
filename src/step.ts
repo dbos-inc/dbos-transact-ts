@@ -2,7 +2,7 @@
  * Configuration options for a `DBOS.step` function
  */
 export interface StepConfig {
-  /** If `true`, the step will be retried if it throws an exception (default false) */
+  /** If `true`, the step will be retried if it throws an exception (default false). Throw `DBOSNonRetryableError` to stop retrying immediately. */
   retriesAllowed?: boolean;
   /** seconds to wait before the first retry attempt (default 1). */
   intervalSeconds?: number;

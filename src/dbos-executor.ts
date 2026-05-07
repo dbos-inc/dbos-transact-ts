@@ -8,6 +8,7 @@ import {
   DBOSUnexpectedStepError,
   DBOSAwaitedWorkflowCancelledError,
   DBOSQueueDuplicatedError,
+  isNonRetryableError,
 } from './error';
 import {
   InvokedHandle,
@@ -804,6 +805,16 @@ export class DBOSExecutor {
           result = cresult!;
         } catch (error) {
           const e = error as Error;
+          if (isNonRetryableError(e)) {
+            err = e;
+            this.logger.warn(`Non-retryable error in step. Attempt ${attemptNum} of ${maxAttempts}. ${e.stack}`);
+            span.addEvent(
+              `Step attempt ${attemptNum + 1} failed`,
+              { retryIntervalSeconds: intervalSeconds, error: e.message, nonRetryable: true },
+              performance.now(),
+            );
+            break;
+          }
           errors.push(e);
           this.logger.warn(
             `Error in step being automatically retried. Attempt ${attemptNum} of ${maxAttempts}. ${e.stack}`,

@@ -1,8 +1,16 @@
-import { DBOS, ConfiguredInstance } from '../src/';
+import { DBOS, ConfiguredInstance, DBOSNonRetryableError } from '../src/';
 import { generateDBOSTestConfig, reexecuteWorkflowById, setUpDBOSTestSysDb } from './helpers';
 import { randomUUID } from 'node:crypto';
 import { StatusString } from '../src/workflow';
-import { DBOSError, DBOSMaxStepRetriesError, DBOSNotRegisteredError, DBOSUnexpectedStepError } from '../src/error';
+import {
+  DBOSError,
+  DBOSMaxStepRetriesError,
+  DBOSNonRetryableError as DBOSNonRetryableErrorFromError,
+  DBOSNotRegisteredError,
+  DBOSUnexpectedStepError,
+  getDBOSErrorCode,
+  isNonRetryableError,
+} from '../src/error';
 import { DBOSConfig } from '../src/dbos-executor';
 
 describe('failures-tests', () => {
@@ -76,6 +84,72 @@ describe('failures-tests', () => {
       await expect(FailureTestClass.testNoRetry()).rejects.toThrow(new Error('failed no retry'));
     });
     expect(FailureTestClass.cnt).toBe(1);
+  });
+
+  test('non-retryable-error-stops-retried-runStep', async () => {
+    expect(DBOSNonRetryableError).toBe(DBOSNonRetryableErrorFromError);
+
+    const workflowUUID = randomUUID();
+
+    await DBOS.withNextWorkflowID(workflowUUID, async () => {
+      await expect(FailureTestClass.testNonRetryableRunStep()).rejects.toThrow('permanent');
+    });
+    expect(FailureTestClass.cnt).toBe(1);
+
+    const steps = (await DBOS.listWorkflowSteps(workflowUUID))!;
+    expect(steps.length).toBe(1);
+    expect(steps[0].name).toBe('non-retryable-run-step');
+    expect(steps[0].output).toBeNull();
+    expect(steps[0].error).not.toBeNull();
+    expect(steps[0].error!.message).toBe('permanent');
+    expect(isNonRetryableError(steps[0].error!)).toBe(true);
+
+    await DBOS.withNextWorkflowID(workflowUUID, async () => {
+      try {
+        await FailureTestClass.testNonRetryableRunStep();
+        expect(true).toBe(false); // An exception should be thrown first
+      } catch (error) {
+        const e = error as Error;
+        expect(e.message).toBe('permanent');
+        expect(isNonRetryableError(e)).toBe(true);
+        expect(getDBOSErrorCode(e)).toBe(getDBOSErrorCode(new DBOSNonRetryableError('code check')));
+      }
+    });
+    expect(FailureTestClass.cnt).toBe(1);
+  });
+
+  test('non-retryable-error-stops-retried-decorated-step', async () => {
+    const workflowUUID = randomUUID();
+
+    await DBOS.withNextWorkflowID(workflowUUID, async () => {
+      await expect(FailureTestClass.testNonRetryableDecoratedStepWorkflow()).rejects.toThrow('decorated permanent');
+    });
+    expect(FailureTestClass.cnt).toBe(1);
+
+    const steps = (await DBOS.listWorkflowSteps(workflowUUID))!;
+    expect(steps.length).toBe(1);
+    expect(steps[0].name).toBe('testNonRetryableDecoratedStep');
+    expect(steps[0].error).not.toBeNull();
+    expect(steps[0].error!.message).toBe('decorated permanent');
+    expect(isNonRetryableError(steps[0].error!)).toBe(true);
+  });
+
+  test('ordinary-error-exhausts-retried-runStep', async () => {
+    const workflowUUID = randomUUID();
+
+    await DBOS.withNextWorkflowID(workflowUUID, async () => {
+      try {
+        await FailureTestClass.testOrdinaryRetriedRunStep();
+        expect(true).toBe(false); // An exception should be thrown first
+      } catch (error) {
+        const e = error as DBOSMaxStepRetriesError;
+        expect(e).toBeInstanceOf(DBOSMaxStepRetriesError);
+        expect(e.message).toContain('Step ordinary-retried-run-step has exceeded its maximum of 3 retries.');
+        expect(e.errors.length).toBe(3);
+        expect(e.errors.every((err) => err.message === 'temporary')).toBe(true);
+      }
+    });
+    expect(FailureTestClass.cnt).toBe(3);
   });
 
   test('no-registration-startwf', async () => {
@@ -205,6 +279,39 @@ class FailureTestClass extends ConfiguredInstance {
   static async testNoRetry() {
     FailureTestClass.cnt++;
     return Promise.reject(new Error('failed no retry'));
+  }
+
+  @DBOS.workflow()
+  static async testNonRetryableRunStep() {
+    return await DBOS.runStep(
+      () => {
+        FailureTestClass.cnt++;
+        return Promise.reject(new DBOSNonRetryableError('permanent'));
+      },
+      { name: 'non-retryable-run-step', retriesAllowed: true, maxAttempts: 3, intervalSeconds: 0 },
+    );
+  }
+
+  @DBOS.workflow()
+  static async testOrdinaryRetriedRunStep() {
+    return await DBOS.runStep(
+      () => {
+        FailureTestClass.cnt++;
+        return Promise.reject(new Error('temporary'));
+      },
+      { name: 'ordinary-retried-run-step', retriesAllowed: true, maxAttempts: 3, intervalSeconds: 0 },
+    );
+  }
+
+  @DBOS.step({ retriesAllowed: true, maxAttempts: 3, intervalSeconds: 0 })
+  static async testNonRetryableDecoratedStep() {
+    FailureTestClass.cnt++;
+    return Promise.reject(new DBOSNonRetryableError('decorated permanent'));
+  }
+
+  @DBOS.workflow()
+  static async testNonRetryableDecoratedStepWorkflow() {
+    return await FailureTestClass.testNonRetryableDecoratedStep();
   }
 
   static async noRegWorkflow2(code: number) {
