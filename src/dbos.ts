@@ -1781,8 +1781,6 @@ export class DBOS {
    *   A durable checkpoint will be made after the step completes
    *   This ensures "at least once" execution of the step, and that the step will not
    *    be executed again once the checkpoint is recorded
-   *   If retries are enabled, `StepConfig.shouldRetry` can decide whether a thrown
-   *    error should be retried.
    *
    * @param config - Configuration information for the step, particularly the retry policy
    */
@@ -1866,8 +1864,6 @@ export class DBOS {
    *   A durable checkpoint will be made after the step completes
    *   This ensures "at least once" execution of the step, and that the step will not
    *    be executed again once the checkpoint is recorded
-   *   If retries are enabled, `StepConfig.shouldRetry` can decide whether a thrown
-   *    error should be retried.
    * @param func - The function to register as a step
    * @param config - Configuration information for the step, particularly the retry policy and name
    */
@@ -1919,7 +1915,6 @@ export class DBOS {
 
   /**
    * Run the enclosed `callback` as a checkpointed step within a DBOS workflow
-   * If retries are enabled, `StepConfig.shouldRetry` can decide whether a thrown error should be retried.
    * @param callback - function containing code to run
    * @param config - Configuration information for the step, particularly the retry policy
    * @param config.name - The name of the step; if not provided, the function name will be used
