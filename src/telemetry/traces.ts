@@ -9,6 +9,39 @@ import type { SpanContext } from '@opentelemetry/api';
 import { TelemetryCollector } from './collector';
 import { globalParams } from '../utils';
 import type { BasicTracerProvider as BasicTracerProviderType } from '@opentelemetry/sdk-trace-base';
+import type { OtelAttributeFormat } from '../dbos-executor';
+
+// Legacy DBOS attribute name -> OpenTelemetry semconv-style equivalent.
+// Names align with `dbos-transact-py` (Python SDK) so the two SDKs converge
+// on the same attribute schema once `otelAttributeFormat: 'semconv'` is
+// selected on both sides.
+//
+// Design note: the conversion lives in the dedicated `resolveAttributeName`
+// method below, not in `startSpan`/`startSpanWithContext`. Those entry
+// points pass attributes through verbatim. We deliberately do NOT sweep
+// every attributes dict for known legacy keys, because:
+//   1. Callers can pass arbitrary user-defined attributes that happen to
+//      collide with a DBOS legacy name; we don't want to silently rewrite
+//      those.
+//   2. The conversion should be visible at each DBOS-owned call site, not
+//      hidden in a generic helper. Reviewers can grep for
+//      `resolveAttributeName` to see every place a legacy name is touched.
+const LEGACY_TO_SEMCONV: Readonly<Record<string, string>> = {
+  operationUUID: 'dbos.operation.uuid',
+  operationType: 'dbos.operation.type',
+  operationName: 'dbos.operation.name',
+  applicationID: 'dbos.application.id',
+  applicationVersion: 'dbos.application.version',
+  executorID: 'dbos.executor.id',
+  queueName: 'dbos.queue.name',
+  authenticatedUser: 'dbos.user.name',
+  authenticatedRoles: 'dbos.user.roles',
+  assumedRole: 'dbos.user.assumed_role',
+  requestID: 'dbos.request.id',
+  requestIP: 'dbos.request.ip',
+  requestURL: 'dbos.request.url',
+  requestMethod: 'dbos.request.method',
+};
 
 // As DBOS OTLP is optional, OTLP objects must only be dynamically imported
 // and only when OTLP is enabled. Importing OTLP types is fine as long
@@ -135,9 +168,32 @@ export function installTraceContextManager(appName: string = 'dbos'): void {
 export class Tracer {
   readonly applicationID: string;
   readonly executorID: string;
-  constructor(private readonly telemetryCollector: TelemetryCollector) {
+  private readonly otelAttributeFormat: OtelAttributeFormat;
+
+  constructor(
+    private readonly telemetryCollector: TelemetryCollector,
+    otelAttributeFormat: OtelAttributeFormat = 'legacy',
+  ) {
     this.applicationID = globalParams.appID;
     this.executorID = globalParams.executorID;
+    this.otelAttributeFormat = otelAttributeFormat;
+  }
+
+  /**
+   * Map a legacy DBOS attribute name to the name that should be emitted on
+   * the span, per `otelAttributeFormat`. Returns the original key for
+   * unknown attributes.
+   *
+   * Call this explicitly at every DBOS-owned call site that writes a known
+   * legacy attribute name (e.g. `operationUUID`, `requestID`). It is NOT
+   * applied automatically to attributes passed through `startSpan` — see
+   * the design note on `LEGACY_TO_SEMCONV`.
+   */
+  resolveAttributeName(key: string): string {
+    if (this.otelAttributeFormat === 'semconv') {
+      return LEGACY_TO_SEMCONV[key] ?? key;
+    }
+    return key;
   }
 
   startSpanWithContext(spanContext: unknown, name: string, attributes?: Attributes): DBOSSpan {
@@ -174,11 +230,12 @@ export class Tracer {
     const { hrTime } = require('@opentelemetry/core');
     const span = inputSpan as Span;
     span.setAttributes({
-      applicationID: this.applicationID,
-      applicationVersion: globalParams.appVersion,
+      [this.resolveAttributeName('applicationID')]: this.applicationID,
+      [this.resolveAttributeName('applicationVersion')]: globalParams.appVersion,
     });
-    if (span.attributes && !('executorID' in span.attributes)) {
-      span.setAttribute('executorID', this.executorID);
+    const executorIDKey = this.resolveAttributeName('executorID');
+    if (span.attributes && !(executorIDKey in span.attributes)) {
+      span.setAttribute(executorIDKey, this.executorID);
     }
     span.end(hrTime(performance.now()));
     // Only push to DBOS's own collector when DBOS manages export.

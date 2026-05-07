@@ -295,18 +295,20 @@ export class DBOSKoa extends DBOSHTTPBase {
             const extractedSpanContext = trace.getSpanContext(
               httpTracer.extract(ROOT_CONTEXT, koaCtxt.request.headers, defaultTextMapGetter),
             );
-            const spanAttributes = {
-              operationType: DBOSHTTPBase.HTTP_OPERATION_TYPE,
-              requestID: requestID,
-              requestIP: koaCtxt.request.ip,
-              requestURL: koaCtxt.request.url,
-              requestMethod: koaCtxt.request.method,
-            };
-            if (extractedSpanContext === undefined) {
-              span = DBOS.tracer?.startSpan(koaCtxt.url, spanAttributes) as Span;
-            } else {
-              extractedSpanContext.isRemote = true;
-              span = DBOS.tracer?.startSpanWithContext(extractedSpanContext, koaCtxt.url, spanAttributes) as Span;
+            if (DBOS.tracer) {
+              const spanAttributes = {
+                [DBOS.tracer.resolveAttributeName('operationType')]: DBOSHTTPBase.HTTP_OPERATION_TYPE,
+                [DBOS.tracer.resolveAttributeName('requestID')]: requestID,
+                [DBOS.tracer.resolveAttributeName('requestIP')]: koaCtxt.request.ip,
+                [DBOS.tracer.resolveAttributeName('requestURL')]: koaCtxt.request.url,
+                [DBOS.tracer.resolveAttributeName('requestMethod')]: koaCtxt.request.method,
+              };
+              if (extractedSpanContext === undefined) {
+                span = DBOS.tracer.startSpan(koaCtxt.url, spanAttributes) as Span;
+              } else {
+                extractedSpanContext.isRemote = true;
+                span = DBOS.tracer.startSpanWithContext(extractedSpanContext, koaCtxt.url, spanAttributes) as Span;
+              }
             }
 
             // Finally, invoke the function and properly set HTTP response.

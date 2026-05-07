@@ -108,6 +108,12 @@ export interface DBOSConfig {
   addContextMetadata?: boolean;
   otlpTracesEndpoints?: string[];
   otlpLogsEndpoints?: string[];
+  /**
+   * How DBOS span attribute names are emitted to OTLP. Defaults to `'legacy'`
+   * for backward compatibility. Set to `'semconv'` to emit OTel-style names
+   * under the `dbos.*` namespace. See {@link OtelAttributeFormat}.
+   */
+  otelAttributeFormat?: OtelAttributeFormat;
 
   adminPort?: number;
   runAdminServer?: boolean;
@@ -139,7 +145,20 @@ export interface DBOSRuntimeConfig {
 export interface TelemetryConfig {
   logs?: LoggerConfig;
   OTLPExporter?: OTLPExporterConfig;
+  otelAttributeFormat?: OtelAttributeFormat;
 }
+
+/**
+ * How DBOS span attribute names are emitted to OTLP.
+ *
+ * - `'legacy'` (default) — original DBOS names (e.g. `operationUUID`, `applicationID`).
+ *   Preserves backward compatibility with existing dashboards and the Python
+ *   `dbos-transact` SDK.
+ * - `'semconv'` — OpenTelemetry-style names under the `dbos.*` namespace (e.g.
+ *   `dbos.operation.uuid`, `dbos.application.id`). Follows
+ *   https://opentelemetry.io/docs/specs/semconv/general/attribute-naming/.
+ */
+export type OtelAttributeFormat = 'legacy' | 'semconv';
 
 export interface OTLPExporterConfig {
   logsEndpoint?: string[];
@@ -257,7 +276,7 @@ export class DBOSExecutor {
     }
     this.logger = new GlobalLogger(this.telemetryCollector, this.config.telemetry.logs, this.appName);
     this.ctxLogger = new DBOSContextualLogger(this.logger, () => getActiveSpan());
-    this.tracer = new Tracer(this.telemetryCollector);
+    this.tracer = new Tracer(this.telemetryCollector, config.telemetry.otelAttributeFormat);
     this.serializer = config.serializer;
 
     if (systemDatabase) {
@@ -420,12 +439,12 @@ export class DBOSExecutor {
 
     const span = this.tracer.startSpan(wfname, {
       status: StatusString.PENDING,
-      operationUUID: workflowID,
-      operationType: OperationType.WORKFLOW,
-      operationName: wInfo?.name ?? wf.name,
-      authenticatedUser: pctx?.authenticatedUser ?? '',
-      authenticatedRoles: pctx?.authenticatedRoles ?? [],
-      assumedRole: pctx?.assumedRole ?? '',
+      [this.tracer.resolveAttributeName('operationUUID')]: workflowID,
+      [this.tracer.resolveAttributeName('operationType')]: OperationType.WORKFLOW,
+      [this.tracer.resolveAttributeName('operationName')]: wInfo?.name ?? wf.name,
+      [this.tracer.resolveAttributeName('authenticatedUser')]: pctx?.authenticatedUser ?? '',
+      [this.tracer.resolveAttributeName('authenticatedRoles')]: pctx?.authenticatedRoles ?? [],
+      [this.tracer.resolveAttributeName('assumedRole')]: pctx?.assumedRole ?? '',
     });
 
     let serializationType = wInfo?.workflowConfig?.serialization;
@@ -750,12 +769,12 @@ export class DBOSExecutor {
     const maxRetryIntervalSec = 3600; // Maximum retry interval: 1 hour
 
     const span = this.tracer.startSpan(stepFnName, {
-      operationUUID: wfid,
-      operationType: OperationType.STEP,
-      operationName: stepFnName,
-      authenticatedUser: lctx.authenticatedUser ?? '',
-      assumedRole: lctx.assumedRole ?? '',
-      authenticatedRoles: lctx.authenticatedRoles ?? [],
+      [this.tracer.resolveAttributeName('operationUUID')]: wfid,
+      [this.tracer.resolveAttributeName('operationType')]: OperationType.STEP,
+      [this.tracer.resolveAttributeName('operationName')]: stepFnName,
+      [this.tracer.resolveAttributeName('authenticatedUser')]: lctx.authenticatedUser ?? '',
+      [this.tracer.resolveAttributeName('assumedRole')]: lctx.assumedRole ?? '',
+      [this.tracer.resolveAttributeName('authenticatedRoles')]: lctx.authenticatedRoles ?? [],
       retriesAllowed: stepConfig.retriesAllowed,
       intervalSeconds: stepConfig.intervalSeconds,
       maxAttempts: stepConfig.maxAttempts,

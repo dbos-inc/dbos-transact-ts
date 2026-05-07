@@ -197,6 +197,7 @@ export function translateDbosConfig(options: DBOSConfig, forceConsole: boolean =
         tracesEndpoint: options.otlpTracesEndpoints,
         logsEndpoint: options.otlpLogsEndpoints,
       },
+      otelAttributeFormat: options.otelAttributeFormat ?? 'legacy',
     },
     schedulerPollingIntervalMs: options.schedulerPollingIntervalMs,
     useListenNotify: options.useListenNotify ?? true,
@@ -267,6 +268,7 @@ export function overwriteConfigForDBOSCloud(
         logsEndpoint: Array.from(logsSet).filter((e) => !!e),
         tracesEndpoint: Array.from(tracesSet).filter((e) => !!e),
       },
+      otelAttributeFormat: providedDBOSConfig.telemetry.otelAttributeFormat,
     },
   };
 
