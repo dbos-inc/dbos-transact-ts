@@ -200,17 +200,6 @@ export class DBOSAwaitedWorkflowExceededMaxRecoveryAttempts extends DBOSError {
   }
 }
 
-const NonRetryableError = 31;
-export class DBOSNonRetryableError extends DBOSError {
-  constructor(msg: string) {
-    super(msg, NonRetryableError);
-  }
-}
-
-export function isNonRetryableError(e: Error): boolean {
-  return getDBOSErrorCode(e) === NonRetryableError;
-}
-
 export function getDBOSErrorCode(e: Error): number | undefined {
   if (e && typeof e === 'object' && 'dbosErrorCode' in e) {
     const code = (e as Record<string, unknown>).dbosErrorCode;

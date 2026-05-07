@@ -21,7 +21,7 @@ export { WorkflowQueue } from './wfqueue';
 
 export * as Error from './error';
 
-export { DBOSNonRetryableError, DBOSWorkflowConflictError } from './error';
+export { DBOSWorkflowConflictError } from './error';
 
 export {
   InputSchema,

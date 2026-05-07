@@ -59,10 +59,12 @@ async function workflowFunction() {
 const workflow = DBOS.registerWorkflow(workflowFunction);
 ```
 
-Steps can also be retried. If a retried step sees a permanent failure, throw `DBOSNonRetryableError` to stop retrying immediately and propagate the original error to the workflow:
+Steps can also be retried. If a retried step sees a permanent failure, use `shouldRetry` to stop retrying immediately and propagate the original error to the workflow:
 
 ```ts
-import { DBOS, DBOSNonRetryableError } from '@dbos-inc/dbos-sdk';
+import { DBOS } from '@dbos-inc/dbos-sdk';
+
+class ResourceNotFoundError extends Error {}
 
 async function getResourceWorkflow(resourceId: string) {
   const resource = await DBOS.runStep(
@@ -70,7 +72,7 @@ async function getResourceWorkflow(resourceId: string) {
       const resource = await flakeyThirdParty.getResourceById(resourceId);
 
       if (!resource) {
-        throw new DBOSNonRetryableError('Resource not found');
+        throw new ResourceNotFoundError('Resource not found');
       }
 
       return resource;
@@ -79,6 +81,7 @@ async function getResourceWorkflow(resourceId: string) {
       name: 'get-resource',
       retriesAllowed: true,
       maxAttempts: 3,
+      shouldRetry: (error) => !(error instanceof ResourceNotFoundError),
     },
   );
 
