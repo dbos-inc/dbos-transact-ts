@@ -10,6 +10,8 @@ export interface StepConfig {
   maxAttempts?: number;
   /** If `retriesAllowed` is true: the multiplier by which the retry interval increases after every retry attempt (default 2) */
   backoffRate?: number;
+  /** If `retriesAllowed` is true: called after a step throws to decide whether to retry that error. Defaults to retrying every error. */
+  shouldRetry?: (error: unknown) => boolean | Promise<boolean>;
   /** If specified, override step function name */
   name?: string;
 }

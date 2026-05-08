@@ -823,6 +823,32 @@ export class DBOSExecutor {
           result = cresult!;
         } catch (error) {
           const e = error as Error;
+          if (stepConfig.shouldRetry) {
+            try {
+              const shouldRetry = await stepConfig.shouldRetry(e);
+              if (!shouldRetry) {
+                err = e;
+                this.logger.warn(`Non-retryable error in step. Attempt ${attemptNum} of ${maxAttempts}. ${e.stack}`);
+                span.addEvent(
+                  `Step attempt ${attemptNum + 1} failed`,
+                  { retryIntervalSeconds: intervalSeconds, error: e.message, shouldRetry: false },
+                  performance.now(),
+                );
+                break;
+              }
+            } catch (retryError) {
+              err = retryError as Error;
+              this.logger.warn(
+                `Step retry predicate failed. Attempt ${attemptNum} of ${maxAttempts}. ${(err as Error).stack}`,
+              );
+              span.addEvent(
+                `Step retry predicate failed after attempt ${attemptNum + 1}`,
+                { error: e.message, shouldRetryError: (err as Error).message },
+                performance.now(),
+              );
+              break;
+            }
+          }
           errors.push(e);
           this.logger.warn(
             `Error in step being automatically retried. Attempt ${attemptNum} of ${maxAttempts}. ${e.stack}`,
