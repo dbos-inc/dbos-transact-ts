@@ -1754,12 +1754,12 @@ export class DBOS {
     params: StartWorkflowParams,
   ): Promise<WorkflowHandle<Return>> {
     if (!params.queueName) {
-      throw new DBOSInvalidWorkflowTransitionError('`enqueueSingletonWorkflow` requires `params.queueName`');
+      throw new DBOSInvalidWorkflowTransitionError('`enqueueOptions.singleton` requires `params.queueName`');
     }
     const dedupID = params.enqueueOptions?.deduplicationID;
     if (!dedupID) {
       throw new DBOSInvalidWorkflowTransitionError(
-        '`enqueueSingletonWorkflow` requires `params.enqueueOptions.deduplicationID`',
+        '`enqueueOptions.singleton` requires `params.enqueueOptions.deduplicationID`',
       );
     }
     const queueName = params.queueName;
