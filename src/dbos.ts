@@ -1236,85 +1236,7 @@ export class DBOS {
 
     const regOps = getRegisteredOperations(target);
 
-    const handler: ProxyHandler<object> = {
-      apply(target, _thisArg, args) {
-        const regOp = getFunctionRegistration(target);
-        if (!regOp) {
-          // eslint-disable-next-line @typescript-eslint/no-base-to-string
-          const name = typeof target === 'function' ? target.name : target.toString();
-          throw new DBOSNotRegisteredError(name, `${name} is not a registered DBOS workflow function`);
-        }
-        return DBOS.#invokeWorkflow(instance, regOp, args, params);
-      },
-      get(target, p, receiver) {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        const func = Reflect.get(target, p, receiver);
-        const regOp = getFunctionRegistration(func) ?? regOps.find((op) => op.name === p);
-        if (regOp) {
-          return (...args: unknown[]) => DBOS.#invokeWorkflow(instance, regOp, args, params);
-        }
-
-        const name = typeof p === 'string' ? p : String(p);
-        throw new DBOSNotRegisteredError(name, `${name} is not a registered DBOS workflow function`);
-      },
-    };
-
-    return new Proxy(target, handler);
-  }
-
-  /**
-   * Enqueue a singleton workflow, returning a handle to either the newly-enqueued
-   * workflow or to an already-running workflow with the same deduplication ID.
-   *
-   * Requires `params.queueName` and `params.enqueueOptions.deduplicationID`. If a
-   * workflow with that deduplication ID is already running on the queue, the existing
-   * workflow's handle is returned. Otherwise, a new workflow is enqueued.
-   *
-   * The call retries indefinitely until it either claims the slot or attaches to a
-   * live workflow, so callers always receive a handle to an active workflow.
-   *
-   * The full syntax is:
-   * `handle = await DBOS.enqueueSingletonWorkflow(<target function>, <params>)(<args>);`
-   * @param func - The function to start.
-   * @param params - `StartWorkflowParams`; must specify `queueName` and `enqueueOptions.deduplicationID`.
-   * @returns `WorkflowHandle` for the singleton workflow.
-   */
-  static enqueueSingletonWorkflow<Args extends unknown[], Return>(
-    target: (...args: Args) => Promise<Return>,
-    params: StartWorkflowParams,
-  ): (...args: Args) => Promise<WorkflowHandle<Return>>;
-  /**
-   * Enqueue a singleton workflow on a `ConfiguredInstance`. See the function-target
-   * overload for details.
-   * The full syntax is:
-   * `handle = await DBOS.enqueueSingletonWorkflow(<target object>, <params>).<target method>(<args>);`
-   */
-  static enqueueSingletonWorkflow<T extends ConfiguredInstance>(
-    target: T,
-    params: StartWorkflowParams,
-  ): InvokeFunctionsAsyncInst<T>;
-  /**
-   * Enqueue a singleton workflow on a class. See the function-target overload for details.
-   * The full syntax is:
-   * `handle = await DBOS.enqueueSingletonWorkflow(<target class>, <params>).<target method>(<args>);`
-   */
-  static enqueueSingletonWorkflow<T extends object>(
-    targetClass: T,
-    params: StartWorkflowParams,
-  ): InvokeFunctionsAsync<T>;
-  static enqueueSingletonWorkflow(
-    target: UntypedAsyncFunction | ConfiguredInstance | object,
-    params: StartWorkflowParams,
-  ): unknown {
-    ensureDBOSIsLaunched('workflows');
-    const instance = typeof target === 'function' ? null : (target as ConfiguredInstance);
-    if (instance && typeof instance !== 'function' && !(instance instanceof ConfiguredInstance)) {
-      throw new DBOSInvalidWorkflowTransitionError(
-        'Attempt to call `enqueueSingletonWorkflow` on an object that is not a `ConfiguredInstance`',
-      );
-    }
-
-    const regOps = getRegisteredOperations(target);
+    const invoke = params?.enqueueOptions?.singleton ? DBOS.#invokeSingletonWorkflow : DBOS.#invokeWorkflow;
 
     const handler: ProxyHandler<object> = {
       apply(target, _thisArg, args) {
@@ -1324,14 +1246,14 @@ export class DBOS {
           const name = typeof target === 'function' ? target.name : target.toString();
           throw new DBOSNotRegisteredError(name, `${name} is not a registered DBOS workflow function`);
         }
-        return DBOS.#invokeSingletonWorkflow(instance, regOp, args, params);
+        return invoke(instance, regOp, args, params);
       },
       get(target, p, receiver) {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const func = Reflect.get(target, p, receiver);
         const regOp = getFunctionRegistration(func) ?? regOps.find((op) => op.name === p);
         if (regOp) {
-          return (...args: unknown[]) => DBOS.#invokeSingletonWorkflow(instance, regOp, args, params);
+          return (...args: unknown[]) => invoke(instance, regOp, args, params);
         }
 
         const name = typeof p === 'string' ? p : String(p);
