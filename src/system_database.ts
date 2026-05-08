@@ -724,6 +724,7 @@ export class SystemDatabase {
         await this.updateWorkflowStatus(client, initStatus.workflowUUID, StatusString.MAX_RECOVERY_ATTEMPTS_EXCEEDED, {
           where: { status: StatusString.PENDING },
           throwOnFailure: false,
+          update: { resetDeduplicationID: true },
         });
         throw new DBOSMaxRecoveryAttemptsExceededError(initStatus.workflowUUID, options.maxRetries);
       }
