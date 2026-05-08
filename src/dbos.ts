@@ -1235,8 +1235,7 @@ export class DBOS {
     }
 
     const regOps = getRegisteredOperations(target);
-
-    const invoke = params?.enqueueOptions?.singleton ? DBOS.#invokeSingletonWorkflow : DBOS.#invokeWorkflow;
+    const isSingleton = params?.enqueueOptions?.singleton;
 
     const handler: ProxyHandler<object> = {
       apply(target, _thisArg, args) {
@@ -1246,14 +1245,19 @@ export class DBOS {
           const name = typeof target === 'function' ? target.name : target.toString();
           throw new DBOSNotRegisteredError(name, `${name} is not a registered DBOS workflow function`);
         }
-        return invoke(instance, regOp, args, params);
+        return isSingleton
+          ? DBOS.#invokeSingletonWorkflow(instance, regOp, args, params)
+          : DBOS.#invokeWorkflow(instance, regOp, args, params);
       },
       get(target, p, receiver) {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const func = Reflect.get(target, p, receiver);
         const regOp = getFunctionRegistration(func) ?? regOps.find((op) => op.name === p);
         if (regOp) {
-          return (...args: unknown[]) => invoke(instance, regOp, args, params);
+          return (...args: unknown[]) =>
+            isSingleton
+              ? DBOS.#invokeSingletonWorkflow(instance, regOp, args, params)
+              : DBOS.#invokeWorkflow(instance, regOp, args, params);
         }
 
         const name = typeof p === 'string' ? p : String(p);

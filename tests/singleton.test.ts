@@ -1,5 +1,5 @@
 import { DBOS } from '../src';
-import { DBOSConfig } from '../src/dbos-executor';
+import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
 
 const testPolling = { minPollingIntervalMs: 100 };
@@ -110,5 +110,42 @@ describe('singleton workflows', () => {
         enqueueOptions: { deduplicationID: 'some_id', singleton: true },
       }).gatedWorkflow('y'),
     ).rejects.toThrow(/queueName/);
+  });
+
+  // Exercises the loop: the dedup_id was cleared between our failed INSERT
+  // and the lookup (i.e. the prior workflow completed mid-flight). We force
+  // the lookup to return null on its first call so the loop must retry.
+  test('retries when dedup lookup races with prior completion', async () => {
+    const dedupID = 'race_id';
+
+    const wfh1 = await DBOS.startWorkflow(SingletonTest, {
+      queueName: SingletonTest.queue.name,
+      enqueueOptions: { deduplicationID: dedupID, singleton: true },
+    }).gatedWorkflow('first');
+
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    const original = sysdb.getDeduplicatedWorkflow.bind(sysdb);
+    let calls = 0;
+    sysdb.getDeduplicatedWorkflow = async (queueName: string, dID: string) => {
+      calls++;
+      if (calls === 1) return null;
+      return original(queueName, dID);
+    };
+
+    try {
+      const wfh2 = await DBOS.startWorkflow(SingletonTest, {
+        queueName: SingletonTest.queue.name,
+        enqueueOptions: { deduplicationID: dedupID, singleton: true },
+      }).gatedWorkflow('second');
+
+      expect(calls).toBeGreaterThanOrEqual(2);
+      expect(wfh2.workflowID).toBe(wfh1.workflowID);
+
+      SingletonTest.resolveEvent();
+      expect(await wfh1.getResult()).toBe('first-done');
+      expect(await wfh2.getResult()).toBe('first-done');
+    } finally {
+      sysdb.getDeduplicatedWorkflow = original;
+    }
   });
 });
