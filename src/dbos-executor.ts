@@ -502,6 +502,10 @@ export class DBOSExecutor {
         maxRetries: maxRecoveryAttempts,
         isDequeuedRequest: params.isQueueDispatch,
         isRecoveryRequest: params.isRecoveryDispatch,
+        returnExistingOnDeduplication:
+          params.enqueueOptions?.duplicationPolicy === 'return-existing' &&
+          params.queueName !== undefined &&
+          params.enqueueOptions.deduplicationID !== undefined,
       });
       serializationType = ires.serialization === DBOSPortableJSON.name() ? 'portable' : undefined;
     } catch (e) {
@@ -520,6 +524,8 @@ export class DBOSExecutor {
       throw e;
     }
 
+    const handleWorkflowID = ires.workflowUUID;
+
     if (callerFunctionID !== undefined && callerID !== undefined) {
       await this.systemDatabase.recordOperationResult(
         callerID,
@@ -529,9 +535,13 @@ export class DBOSExecutor {
         Date.now(),
         Date.now(),
         {
-          childWorkflowID: workflowID,
+          childWorkflowID: handleWorkflowID,
         },
       );
+    }
+
+    if (handleWorkflowID !== workflowID) {
+      return this.retrieveWorkflow<R>(handleWorkflowID);
     }
 
     $deadlineEpochMS = ires.deadlineEpochMS;

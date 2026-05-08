@@ -529,6 +529,80 @@ describe('DBOSClient', () => {
     }
   });
 
+  test('DBOSClient-enqueue-dedupid-return-existing', async () => {
+    await DBOS.launch();
+    await registerTestQueue();
+
+    const client = await DBOSClient.create({ systemDatabaseUrl });
+    const deduplicationID = randomUUID();
+
+    try {
+      const handle = await client.enqueue<typeof ClientTest.sendTest>(
+        {
+          workflowName: 'sendTest',
+          workflowClassName: 'ClientTest',
+          queueName: 'testQueue',
+          deduplicationID,
+        },
+        undefined,
+      );
+
+      const existing = await client.enqueue<typeof ClientTest.sendTest>(
+        {
+          workflowName: 'sendTest',
+          workflowClassName: 'ClientTest',
+          queueName: 'testQueue',
+          deduplicationID,
+          duplicationPolicy: 'return-existing',
+        },
+        'ignored-topic',
+      );
+
+      expect(existing.workflowID).toBe(handle.workflowID);
+      await DBOS.send(handle.workflowID, 'client-return-existing');
+      await expect(existing.getResult()).resolves.toBe('client-return-existing');
+    } finally {
+      await client.destroy();
+    }
+  });
+
+  test('DBOSClient-enqueuePortable-dedupid-return-existing', async () => {
+    await DBOS.launch();
+    await registerTestQueue();
+
+    const client = await DBOSClient.create({ systemDatabaseUrl });
+    const deduplicationID = randomUUID();
+
+    try {
+      const handle = await client.enqueuePortable<string>(
+        {
+          workflowName: 'sendTest',
+          workflowClassName: 'ClientTest',
+          queueName: 'testQueue',
+          deduplicationID,
+        },
+        [],
+      );
+
+      const existing = await client.enqueuePortable<string>(
+        {
+          workflowName: 'sendTest',
+          workflowClassName: 'ClientTest',
+          queueName: 'testQueue',
+          deduplicationID,
+          duplicationPolicy: 'return-existing',
+        },
+        ['ignored-topic'],
+      );
+
+      expect(existing.workflowID).toBe(handle.workflowID);
+      await DBOS.send(handle.workflowID, 'portable-return-existing');
+      await expect(existing.getResult()).resolves.toBe('portable-return-existing');
+    } finally {
+      await client.destroy();
+    }
+  });
+
   test('DBOSClient-enqueue-wrong-appVer', async () => {
     const client = await DBOSClient.create({ systemDatabaseUrl });
 

@@ -1211,6 +1211,8 @@ describe('enqueue-options', () => {
       childqueue,
       TestExample.queue,
       TestExample.queue2,
+      TestReturnExisting.queue,
+      TestReturnExisting.queue2,
       TestPriority.queue,
       TestPriority.childqueue,
       SetPriorityTest.setPriorityQueue,
@@ -1246,6 +1248,42 @@ describe('enqueue-options', () => {
     static async childWorkflow(input: string): Promise<string> {
       await TestExample.workflowEvent;
       return Promise.resolve(input + '-c');
+    }
+  }
+
+  class TestReturnExisting {
+    static queue: QueueRef = { name: 'test_return_existing_queue', config: { concurrency: 1, ...testPolling } };
+    static queue2: QueueRef = { name: 'test_return_existing_queue_2', config: { concurrency: 1, ...testPolling } };
+    static blockerStarted = new Event();
+    static releaseBlocker = new Event();
+    static keyedStarted = new Event();
+    static releaseKeyed = new Event();
+
+    static reset() {
+      TestReturnExisting.blockerStarted.clear();
+      TestReturnExisting.releaseBlocker.clear();
+      TestReturnExisting.keyedStarted.clear();
+      TestReturnExisting.releaseKeyed.clear();
+    }
+
+    @DBOS.workflow()
+    static async blocker(): Promise<string> {
+      TestReturnExisting.blockerStarted.set();
+      await TestReturnExisting.releaseBlocker.wait();
+      return 'blocker';
+    }
+
+    @DBOS.workflow()
+    static async keyed(input: string): Promise<string> {
+      TestReturnExisting.keyedStarted.set();
+      await TestReturnExisting.releaseKeyed.wait();
+      return `${input}-result`;
+    }
+
+    @DBOS.workflow()
+    static async alternate(input: string): Promise<string> {
+      await Promise.resolve();
+      return `${input}-alternate`;
     }
   }
 
@@ -1319,6 +1357,86 @@ describe('enqueue-options', () => {
 
     const result4 = await wfh4.getResult();
     expect(result4).toBe('xyz-c-p');
+  });
+
+  test('test_deduplication_return_existing_pending', async () => {
+    TestReturnExisting.reset();
+    const dedupID = randomUUID();
+    const original = await DBOS.startWorkflow(TestReturnExisting, {
+      queueName: TestReturnExisting.queue.name,
+      enqueueOptions: { deduplicationID: dedupID },
+    }).keyed('original');
+    await TestReturnExisting.keyedStarted.wait();
+    expect((await original.getStatus())?.status).toBe(StatusString.PENDING);
+
+    const existing = await DBOS.startWorkflow(TestReturnExisting, {
+      queueName: TestReturnExisting.queue.name,
+      enqueueOptions: { deduplicationID: dedupID, duplicationPolicy: 'return-existing' },
+    }).keyed('duplicate');
+    expect(existing.workflowID).toBe(original.workflowID);
+
+    const existingFromDifferentTarget = await DBOS.startWorkflow(TestReturnExisting, {
+      queueName: TestReturnExisting.queue.name,
+      enqueueOptions: { deduplicationID: dedupID, duplicationPolicy: 'return-existing' },
+    }).alternate('duplicate-target');
+    expect(existingFromDifferentTarget.workflowID).toBe(original.workflowID);
+
+    TestReturnExisting.releaseKeyed.set();
+    await expect(existing.getResult()).resolves.toBe('original-result');
+    await expect(existingFromDifferentTarget.getResult()).resolves.toBe('original-result');
+  });
+
+  test('test_deduplication_return_existing_enqueued', async () => {
+    TestReturnExisting.reset();
+    const blocker = await DBOS.startWorkflow(TestReturnExisting, {
+      queueName: TestReturnExisting.queue.name,
+    }).blocker();
+    await TestReturnExisting.blockerStarted.wait();
+
+    const dedupID = randomUUID();
+    const original = await DBOS.startWorkflow(TestReturnExisting, {
+      queueName: TestReturnExisting.queue.name,
+      enqueueOptions: { deduplicationID: dedupID },
+    }).keyed('enqueued');
+    expect((await original.getStatus())?.status).toBe(StatusString.ENQUEUED);
+
+    const existing = await DBOS.startWorkflow(TestReturnExisting, {
+      queueName: TestReturnExisting.queue.name,
+      enqueueOptions: { deduplicationID: dedupID, duplicationPolicy: 'return-existing' },
+    }).keyed('duplicate');
+    expect(existing.workflowID).toBe(original.workflowID);
+
+    TestReturnExisting.releaseBlocker.set();
+    await expect(blocker.getResult()).resolves.toBe('blocker');
+    await TestReturnExisting.keyedStarted.wait();
+    TestReturnExisting.releaseKeyed.set();
+    await expect(existing.getResult()).resolves.toBe('enqueued-result');
+  });
+
+  test('test_deduplication_return_existing_delayed', async () => {
+    TestReturnExisting.reset();
+    const dedupID = randomUUID();
+    const original = await DBOS.startWorkflow(TestReturnExisting, {
+      queueName: TestReturnExisting.queue.name,
+      enqueueOptions: { delaySeconds: 60, deduplicationID: dedupID },
+    }).keyed('delayed');
+    expect((await original.getStatus())?.status).toBe(StatusString.DELAYED);
+
+    const existing = await DBOS.startWorkflow(TestReturnExisting, {
+      queueName: TestReturnExisting.queue.name,
+      enqueueOptions: { deduplicationID: dedupID, duplicationPolicy: 'return-existing' },
+    }).keyed('duplicate');
+    expect(existing.workflowID).toBe(original.workflowID);
+
+    const otherQueue = await DBOS.startWorkflow(TestReturnExisting, {
+      queueName: TestReturnExisting.queue2.name,
+      enqueueOptions: { deduplicationID: dedupID, duplicationPolicy: 'return-existing' },
+    }).keyed('other-queue');
+    expect(otherQueue.workflowID).not.toBe(original.workflowID);
+
+    await DBOS.cancelWorkflow(original.workflowID);
+    TestReturnExisting.releaseKeyed.set();
+    await expect(otherQueue.getResult()).resolves.toBe('other-queue-result');
   });
 
   class TestPriority {
@@ -1759,6 +1877,34 @@ describe('queue-time-outs', () => {
     { name: 'dedupRecoveryChildWorkflow' },
   );
 
+  const dedupReturnExistingRecoveryEvent = new Event();
+  const dedupReturnExistingRecoveryKey = 'my-return-existing-dedup-id';
+  const dedupReturnExistingRecoveryParentWorkflow = DBOS.registerWorkflow(
+    async () => {
+      const handle = await DBOS.startWorkflow(dedupReturnExistingRecoveryChildWorkflow, {
+        queueName: dedupRecoveryQueue.name,
+        enqueueOptions: { deduplicationID: dedupReturnExistingRecoveryKey },
+      })();
+      const existingHandle = await DBOS.startWorkflow(dedupReturnExistingRecoveryChildWorkflow, {
+        queueName: dedupRecoveryQueue.name,
+        enqueueOptions: {
+          deduplicationID: dedupReturnExistingRecoveryKey,
+          duplicationPolicy: 'return-existing',
+        },
+      })();
+      assert.equal(existingHandle.workflowID, handle.workflowID);
+      return existingHandle.workflowID;
+    },
+    { name: 'dedupReturnExistingRecoveryParentWorkflow' },
+  );
+
+  const dedupReturnExistingRecoveryChildWorkflow = DBOS.registerWorkflow(
+    async () => {
+      await dedupReturnExistingRecoveryEvent.wait();
+    },
+    { name: 'dedupReturnExistingRecoveryChildWorkflow' },
+  );
+
   test('dedup-recovery', async () => {
     const handle = await DBOS.startWorkflow(dedupRecoveryParentWorkflow)();
     const childID = await handle.getResult();
@@ -1775,6 +1921,23 @@ describe('queue-time-outs', () => {
     // Verify it still works on recovery
     const recoveredHandle = await reexecuteWorkflowById(handle.workflowID);
     await recoveredHandle!.getResult();
+  });
+
+  test('dedup-return-existing-recovery', async () => {
+    dedupReturnExistingRecoveryEvent.clear();
+    const handle = await DBOS.startWorkflow(dedupReturnExistingRecoveryParentWorkflow)();
+    const childID = await handle.getResult();
+    const steps = await DBOS.listWorkflowSteps(handle.workflowID);
+    assert.ok(steps !== undefined);
+    assert.equal(steps.length, 2);
+    assert.equal(steps[0].childWorkflowID, childID);
+    assert.equal(steps[1].childWorkflowID, childID);
+
+    dedupReturnExistingRecoveryEvent.set();
+    await DBOS.retrieveWorkflow(childID).getResult();
+
+    const recoveredHandle = await reexecuteWorkflowById(handle.workflowID);
+    assert.equal(await recoveredHandle!.getResult(), childID);
   });
 
   const partitionBlockingEvent = new Event();

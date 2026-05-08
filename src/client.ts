@@ -3,6 +3,7 @@ import {
   type WorkflowStatusInternal,
   type WorkflowScheduleInternal,
   type VersionInfo,
+  type DuplicationPolicy,
   DBOS_STREAM_CLOSED_SENTINEL,
   DEFAULT_POOL_SIZE,
 } from './system_database';
@@ -95,6 +96,11 @@ export interface ClientEnqueueOptions {
    * If not provided, no de-duplication will be performed.
    */
   deduplicationID?: string;
+  /**
+   * Policy for handling another active workflow with the same queue deduplication ID.
+   * Defaults to "reject".
+   */
+  duplicationPolicy?: DuplicationPolicy;
 
   /**
    * Serialization to use for enqueued request
@@ -276,9 +282,12 @@ export class DBOSClient {
       delayUntilEpochMS,
     };
 
-    await this.systemDatabase.initWorkflowStatus(internalStatus, null);
+    const initResult = await this.systemDatabase.initWorkflowStatus(internalStatus, null, {
+      returnExistingOnDeduplication:
+        options.duplicationPolicy === 'return-existing' && options.deduplicationID !== undefined,
+    });
 
-    return new ClientHandle<Awaited<ReturnType<T>>>(this.systemDatabase, workflowUUID);
+    return new ClientHandle<Awaited<ReturnType<T>>>(this.systemDatabase, initResult.workflowUUID);
   }
 
   /**
@@ -334,9 +343,12 @@ export class DBOSClient {
       delayUntilEpochMS,
     };
 
-    await this.systemDatabase.initWorkflowStatus(internalStatus, null);
+    const initResult = await this.systemDatabase.initWorkflowStatus(internalStatus, null, {
+      returnExistingOnDeduplication:
+        options.duplicationPolicy === 'return-existing' && options.deduplicationID !== undefined,
+    });
 
-    return new ClientHandle<T>(this.systemDatabase, workflowUUID);
+    return new ClientHandle<T>(this.systemDatabase, initResult.workflowUUID);
   }
 
   /**

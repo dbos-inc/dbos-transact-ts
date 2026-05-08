@@ -180,9 +180,13 @@ export interface WorkflowStatusInternal {
   delayUntilEpochMS?: number;
 }
 
+export type DuplicationPolicy = 'reject' | 'return-existing';
+
 export interface EnqueueOptions {
   // Unique ID for deduplication on a queue
   deduplicationID?: string;
+  // Policy for handling another active workflow with the same queue deduplication ID. Defaults to "reject".
+  duplicationPolicy?: DuplicationPolicy;
   // Priority of the workflow on the queue, starting from 1 ~ 2,147,483,647. Default 0 (highest priority).
   priority?: number;
   // Partition key for partitioned queues
@@ -340,16 +344,19 @@ class NotificationMap<T> {
 }
 
 interface InsertWorkflowResult {
+  workflow_uuid: string;
   recovery_attempts: number;
   status: string;
   name: string;
   class_name: string;
   config_name: string;
   queue_name: string | null;
+  deduplication_id?: string | null;
   workflow_deadline_epoch_ms: number | null;
   executor_id: string | null;
   owner_xid: string | null;
   serialization: string | null;
+  returned_existing_workflow?: boolean;
 }
 
 function mapWorkflowStatus(row: workflow_status): WorkflowStatusInternal {
@@ -663,8 +670,10 @@ export class SystemDatabase {
       isRecoveryRequest?: boolean;
       isDequeuedRequest?: boolean;
       maxRetries?: number;
+      returnExistingOnDeduplication?: boolean;
     },
   ): Promise<{
+    workflowUUID: string;
     status: string;
     shouldExecuteOnThisExecutor: boolean;
     deadlineEpochMS?: number;
@@ -682,7 +691,17 @@ export class SystemDatabase {
         initStatus,
         ownerXid,
         !!options?.isRecoveryRequest || !!options?.isDequeuedRequest,
+        !!options?.returnExistingOnDeduplication && !options?.isRecoveryRequest && !options?.isDequeuedRequest,
       );
+      if (resRow.returned_existing_workflow) {
+        return {
+          workflowUUID: resRow.workflow_uuid,
+          status: resRow.status,
+          deadlineEpochMS: resRow.workflow_deadline_epoch_ms ?? undefined,
+          shouldExecuteOnThisExecutor: false,
+          serialization: resRow.serialization,
+        };
+      }
       if (resRow.name !== initStatus.workflowName) {
         const msg = `Workflow already exists with a different function name: ${resRow.name}, but the provided function name is: ${initStatus.workflowName}`;
         throw new DBOSConflictingWorkflowError(initStatus.workflowUUID, msg);
@@ -710,7 +729,13 @@ export class SystemDatabase {
         if (status === StatusString.MAX_RECOVERY_ATTEMPTS_EXCEEDED) {
           throw new DBOSMaxRecoveryAttemptsExceededError(initStatus.workflowUUID, options?.maxRetries ?? -1);
         }
-        return { status, deadlineEpochMS, shouldExecuteOnThisExecutor: false, serialization: resRow.serialization };
+        return {
+          workflowUUID: resRow.workflow_uuid,
+          status,
+          deadlineEpochMS,
+          shouldExecuteOnThisExecutor: false,
+          serialization: resRow.serialization,
+        };
       }
 
       // Upsert above already set executor assignment and incremented the recovery attempt
@@ -733,6 +758,7 @@ export class SystemDatabase {
         deadlineEpochMS,
         shouldExecuteOnThisExecutor: true,
         serialization: resRow.serialization,
+        workflowUUID: resRow.workflow_uuid,
       };
     } finally {
       try {
@@ -3262,7 +3288,32 @@ export class SystemDatabase {
     initStatus: WorkflowStatusInternal,
     ownerXid: string | null,
     incrementAttempts: boolean = false,
+    returnExistingOnDeduplication: boolean = false,
   ): Promise<InsertWorkflowResult> {
+    const shouldReturnExistingOnDeduplication =
+      returnExistingOnDeduplication && initStatus.queueName && initStatus.deduplicationID;
+
+    if (shouldReturnExistingOnDeduplication) {
+      const existingByWorkflowID = await client.query<InsertWorkflowResult>(
+        `SELECT workflow_uuid, recovery_attempts, status, name, class_name, config_name, queue_name, deduplication_id,
+                workflow_deadline_epoch_ms, executor_id, owner_xid, serialization
+         FROM "${this.schemaName}".workflow_status
+         WHERE workflow_uuid = $1`,
+        [initStatus.workflowUUID],
+      );
+      if (existingByWorkflowID.rows.length !== 0) {
+        const ret = existingByWorkflowID.rows[0];
+        ret.class_name = ret.class_name ?? '';
+        ret.config_name = ret.config_name ?? '';
+        ret.returned_existing_workflow =
+          ret.queue_name === initStatus.queueName && ret.deduplication_id === initStatus.deduplicationID;
+        initStatus.serialization = ret.serialization;
+        return ret;
+      }
+
+      return await this.insertWorkflowStatusOrReturnDeduplicatedWorkflow(client, initStatus, ownerXid);
+    }
+
     try {
       const { rows } = await client.query<InsertWorkflowResult>(
         `INSERT INTO "${this.schemaName}".workflow_status (
@@ -3307,7 +3358,7 @@ export class SystemDatabase {
               THEN EXCLUDED.executor_id
               ELSE workflow_status.executor_id
             END
-          RETURNING recovery_attempts, status, name, class_name, config_name, queue_name, workflow_deadline_epoch_ms, executor_id, owner_xid, serialization`,
+          RETURNING workflow_uuid, recovery_attempts, status, name, class_name, config_name, queue_name, workflow_deadline_epoch_ms, executor_id, owner_xid, serialization`,
         [
           initStatus.workflowUUID,
           initStatus.status,
@@ -3359,6 +3410,86 @@ export class SystemDatabase {
       }
       throw error;
     }
+  }
+
+  private async insertWorkflowStatusOrReturnDeduplicatedWorkflow(
+    client: PoolClient,
+    initStatus: WorkflowStatusInternal,
+    ownerXid: string | null,
+  ): Promise<InsertWorkflowResult> {
+    const { rows } = await client.query<InsertWorkflowResult>(
+      `INSERT INTO "${this.schemaName}".workflow_status (
+        workflow_uuid,
+        status,
+        name,
+        class_name,
+        config_name,
+        queue_name,
+        authenticated_user,
+        assumed_role,
+        authenticated_roles,
+        request,
+        executor_id,
+        application_version,
+        application_id,
+        created_at,
+        recovery_attempts,
+        updated_at,
+        workflow_timeout_ms,
+        workflow_deadline_epoch_ms,
+        inputs,
+        deduplication_id,
+        priority,
+        queue_partition_key,
+        forked_from,
+        parent_workflow_id,
+        serialization,
+        owner_xid,
+        delay_until_epoch_ms
+      ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)
+      ON CONFLICT (queue_name, deduplication_id) WHERE deduplication_id IS NOT NULL
+        DO UPDATE SET deduplication_id = EXCLUDED.deduplication_id
+      RETURNING workflow_uuid, recovery_attempts, status, name, class_name, config_name, queue_name, workflow_deadline_epoch_ms, executor_id, owner_xid, serialization`,
+      [
+        initStatus.workflowUUID,
+        initStatus.status,
+        initStatus.workflowName,
+        // For cross-language compatibility, these variables MUST be NULL in the database when not set
+        initStatus.workflowClassName === '' ? null : initStatus.workflowClassName,
+        initStatus.workflowConfigName === '' ? null : initStatus.workflowConfigName,
+        initStatus.queueName ?? null,
+        initStatus.authenticatedUser,
+        initStatus.assumedRole,
+        JSON.stringify(initStatus.authenticatedRoles),
+        JSON.stringify(initStatus.request),
+        initStatus.executorId,
+        initStatus.applicationVersion ?? null,
+        initStatus.applicationID,
+        initStatus.createdAt,
+        initStatus.status === StatusString.ENQUEUED || initStatus.status === StatusString.DELAYED ? 0 : 1,
+        initStatus.updatedAt ?? Date.now(),
+        initStatus.timeoutMS ?? null,
+        initStatus.deadlineEpochMS ?? null,
+        initStatus.input ?? null,
+        initStatus.deduplicationID ?? null,
+        initStatus.priority,
+        initStatus.queuePartitionKey ?? null,
+        initStatus.forkedFrom ?? null,
+        initStatus.parentWorkflowID ?? null,
+        initStatus.serialization,
+        ownerXid,
+        initStatus.delayUntilEpochMS ?? null,
+      ],
+    );
+    if (rows.length === 0) {
+      throw new Error(`Attempt to insert workflow ${initStatus.workflowUUID} failed`);
+    }
+    const ret = rows[0];
+    ret.class_name = ret.class_name ?? '';
+    ret.config_name = ret.config_name ?? '';
+    ret.returned_existing_workflow = ret.workflow_uuid !== initStatus.workflowUUID;
+    initStatus.serialization = ret.serialization;
+    return ret;
   }
 
   private async getWorkflowStatusValue(client: PoolClient, workflowID: string): Promise<string | undefined> {
