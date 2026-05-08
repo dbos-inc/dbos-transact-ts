@@ -49,12 +49,13 @@ describe('singleton workflows', () => {
     }
 
     @DBOS.workflow()
-    static async parentWithSingleton(dedupID: string): Promise<string> {
+    static async parentWithSingleton(dedupID: string, childInput: string): Promise<string> {
       const handle = await DBOS.startWorkflow(SingletonTest, {
         queueName: SingletonTest.queue.name,
         enqueueOptions: { deduplicationID: dedupID },
         singleton: true,
-      }).gatedWorkflow('attached');
+      }).gatedWorkflow(childInput);
+      const result = await handle.getResult();
       await DBOS.runStep(
         () => {
           SingletonTest.markerStepRuns++;
@@ -62,7 +63,7 @@ describe('singleton workflows', () => {
         },
         { name: 'marker_step' },
       );
-      return handle.workflowID;
+      return result;
     }
   }
 
@@ -180,12 +181,13 @@ describe('singleton workflows', () => {
   test('singleton from within a parent workflow consumes one funcID across retries', async () => {
     const dedupID = 'parent_singleton_id';
 
-    // Pre-enqueue a child that holds the dedup slot.
-    const blockingHandle = await DBOS.startWorkflow(SingletonTest, {
+    // First child holds the dedup slot. Subsequent attaches should resolve
+    // to this child's output regardless of what input they passed.
+    const firstChildHandle = await DBOS.startWorkflow(SingletonTest, {
       queueName: SingletonTest.queue.name,
       enqueueOptions: { deduplicationID: dedupID },
       singleton: true,
-    }).gatedWorkflow('blocking');
+    }).gatedWorkflow('first');
 
     SingletonTest.markerStepRuns = 0;
 
@@ -200,49 +202,72 @@ describe('singleton workflows', () => {
       return original(qn, dID);
     };
 
-    let parentID: string;
+    let parentAID: string;
+    let parentBID: string;
+    let resultA: string;
+    let resultB: string;
     try {
-      const parentHandle = await DBOS.startWorkflow(SingletonTest).parentWithSingleton(dedupID);
-      await parentHandle.getResult();
-      parentID = parentHandle.workflowID;
+      // Start two parents in flight with different child inputs. Both should
+      // attach to the blocking child via the same dedup slot and end up
+      // returning that child's output ('first-done'), not the input they
+      // themselves passed.
+      const parentA = await DBOS.startWorkflow(SingletonTest).parentWithSingleton(dedupID, 'second');
+      const parentB = await DBOS.startWorkflow(SingletonTest).parentWithSingleton(dedupID, 'third');
+      parentAID = parentA.workflowID;
+      parentBID = parentB.workflowID;
+
+      // Release the gate so the blocking child can complete; then both
+      // parents' `await handle.getResult()` resolves.
+      SingletonTest.resolveEvent();
+      resultA = await parentA.getResult();
+      resultB = await parentB.getResult();
     } finally {
       sysdb.getDeduplicatedWorkflow = original;
     }
 
-    expect(SingletonTest.markerStepRuns).toBe(1);
+    // Each parent attaches to the first child and returns its output.
+    expect(resultA).toBe('first-done');
+    expect(resultB).toBe('first-done');
 
-    const steps = await DBOS.listWorkflowSteps(parentID);
-    // The parent records two operations: the singleton attach (with
-    // childWorkflowID pointing at the blocking child) at functionID 0, and
-    // marker_step at functionID 1.
-    expect(steps?.length).toBe(2);
-    const attachStep = steps?.find((s) => s.childWorkflowID === blockingHandle.workflowID);
+    // marker_step ran exactly once per parent.
+    expect(SingletonTest.markerStepRuns).toBe(2);
+
+    const steps = await DBOS.listWorkflowSteps(parentAID);
+    // Parent A records three operations: the singleton attach (childWorkflowID
+    // points at the blocking child), the awaited child result, and marker_step.
+    expect(steps?.length).toBe(3);
+    const attachStep = steps?.find(
+      (s) => s.name !== 'marker_step' && s.childWorkflowID === firstChildHandle.workflowID,
+    );
     expect(attachStep).toBeDefined();
+    // With the fix the singleton consumes one funcID (0). Without the fix the
+    // retry burns an extra funcID and the attach lands later.
     expect(attachStep!.functionID).toBe(0);
     const markerStep = steps?.find((s) => s.name === 'marker_step');
     expect(markerStep).toBeDefined();
-    // With the fix the singleton consumes one funcID (0) and marker_step lands
-    // at functionID 1. Without the fix the retry burns an extra funcID and
-    // marker_step lands at functionID 2.
-    expect(markerStep!.functionID).toBe(1);
+    expect(markerStep!.functionID).toBe(2);
 
-    // Fork past the final recorded step. Replay should reuse the cached
-    // marker_step output rather than re-executing it. Without the funcID fix,
-    // the original run recorded marker_step at functionID 2, but replay (no
-    // mock) burns only one funcID for the singleton and probes functionID 1 —
-    // missing the cache and re-running the step body, which would bump
-    // markerStepRuns.
-    const forkedHandle = await DBOS.forkWorkflow(parentID, markerStep!.functionID + 1);
-    await forkedHandle.getResult();
-    expect(SingletonTest.markerStepRuns).toBe(1);
+    // Fork parent A past its final step. Replay should reuse all three cached
+    // operations — singleton attach, awaited result, marker_step — rather than
+    // re-executing them.
+    const forkedHandle = await DBOS.forkWorkflow<string>(parentAID, markerStep!.functionID + 1);
+    const forkedResult = await forkedHandle.getResult();
+    expect(forkedResult).toBe('first-done');
+    expect(SingletonTest.markerStepRuns).toBe(2);
 
     const forkedSteps = await DBOS.listWorkflowSteps(forkedHandle.workflowID);
-    expect(forkedSteps?.length).toBe(2);
-    const forkedAttachStep = forkedSteps?.find((s) => s.childWorkflowID === blockingHandle.workflowID);
+    expect(forkedSteps?.length).toBe(3);
+    const forkedAttachStep = forkedSteps?.find(
+      (s) => s.name !== 'marker_step' && s.childWorkflowID === firstChildHandle.workflowID,
+    );
     expect(forkedAttachStep).toBeDefined();
     expect(forkedAttachStep!.functionID).toBe(attachStep!.functionID);
     const forkedMarkerStep = forkedSteps?.find((s) => s.name === 'marker_step');
     expect(forkedMarkerStep).toBeDefined();
     expect(forkedMarkerStep!.functionID).toBe(markerStep!.functionID);
+
+    // Sanity: parent B is not used in fork checks, but its output and step
+    // count are still asserted via earlier resultB / markerStepRuns checks.
+    expect(parentBID).toBeDefined();
   });
 });
