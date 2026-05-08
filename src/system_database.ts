@@ -682,8 +682,8 @@ export class SystemDatabase {
     let shouldCommit = false;
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
-      const returnExistingOnDeduplication =
-        !!options?.returnExistingOnDeduplication && !options?.isRecoveryRequest && !options?.isDequeuedRequest;
+      const isRecoveryOrDequeuedRequest = !!options?.isRecoveryRequest || !!options?.isDequeuedRequest;
+      const returnExistingOnDeduplication = !!options?.returnExistingOnDeduplication && !isRecoveryOrDequeuedRequest;
 
       // Moving from enqueued to pending asks to increment recovery attempts... rather than in the recovery process
       //  where it moves from pending back to enqueued.
@@ -691,7 +691,7 @@ export class SystemDatabase {
         client,
         initStatus,
         ownerXid,
-        !!options?.isRecoveryRequest || !!options?.isDequeuedRequest,
+        isRecoveryOrDequeuedRequest,
         returnExistingOnDeduplication,
       );
       if (
