@@ -181,7 +181,7 @@ describe('singleton workflows', () => {
     const dedupID = 'parent_singleton_id';
 
     // Pre-enqueue a child that holds the dedup slot.
-    await DBOS.startWorkflow(SingletonTest, {
+    const blockingHandle = await DBOS.startWorkflow(SingletonTest, {
       queueName: SingletonTest.queue.name,
       enqueueOptions: { deduplicationID: dedupID },
       singleton: true,
@@ -212,9 +212,13 @@ describe('singleton workflows', () => {
     expect(SingletonTest.markerStepRuns).toBe(1);
 
     const steps = await DBOS.listWorkflowSteps(parentID);
-    // Singleton attach doesn't record a child mapping, so the parent's only
-    // recorded operation is marker_step.
-    expect(steps?.length).toBe(1);
+    // The parent records two operations: the singleton attach (with
+    // childWorkflowID pointing at the blocking child) at functionID 0, and
+    // marker_step at functionID 1.
+    expect(steps?.length).toBe(2);
+    const attachStep = steps?.find((s) => s.childWorkflowID === blockingHandle.workflowID);
+    expect(attachStep).toBeDefined();
+    expect(attachStep!.functionID).toBe(0);
     const markerStep = steps?.find((s) => s.name === 'marker_step');
     expect(markerStep).toBeDefined();
     // With the fix the singleton consumes one funcID (0) and marker_step lands
@@ -233,7 +237,10 @@ describe('singleton workflows', () => {
     expect(SingletonTest.markerStepRuns).toBe(1);
 
     const forkedSteps = await DBOS.listWorkflowSteps(forkedHandle.workflowID);
-    expect(forkedSteps?.length).toBe(1);
+    expect(forkedSteps?.length).toBe(2);
+    const forkedAttachStep = forkedSteps?.find((s) => s.childWorkflowID === blockingHandle.workflowID);
+    expect(forkedAttachStep).toBeDefined();
+    expect(forkedAttachStep!.functionID).toBe(attachStep!.functionID);
     const forkedMarkerStep = forkedSteps?.find((s) => s.name === 'marker_step');
     expect(forkedMarkerStep).toBeDefined();
     expect(forkedMarkerStep!.functionID).toBe(markerStep!.functionID);

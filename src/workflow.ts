@@ -14,6 +14,10 @@ export interface WorkflowParams {
   timeoutMS?: number | null;
   deadlineEpochMS?: number;
   enqueueOptions?: EnqueueOptions; // Options for the workflow queue
+  // Set when the caller is `DBOS.startWorkflow({singleton: true})`. Tells the executor not to
+  // pre-record the dedup error at the parent's funcID — the singleton wrapper will record the
+  // child mapping itself after attaching to the existing workflow.
+  singleton?: boolean;
 }
 
 export const DEFAULT_MAX_RECOVERY_ATTEMPTS = 100;

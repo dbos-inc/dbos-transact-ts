@@ -1719,6 +1719,7 @@ export class DBOS {
         deadlineEpochMS:
           params.timeoutMS === null || ppctx?.workflowTimeoutMS === null ? undefined : ppctx?.deadlineEpochMS,
         enqueueOptions: params.enqueueOptions,
+        singleton: params.singleton,
       };
 
       return await invokeRegOp(wfParams, pwfid, funcId);
@@ -1729,6 +1730,7 @@ export class DBOS {
         enqueueOptions: params.enqueueOptions,
         configuredInstance: instance,
         timeoutMS,
+        singleton: params.singleton,
       };
 
       return await invokeRegOp(wfParams, undefined, undefined);
@@ -1782,6 +1784,21 @@ export class DBOS {
           dedupID,
         );
         if (existingID) {
+          // Record the parent->child mapping at the reserved funcID so that on replay
+          // the parent short-circuits to the same child instead of re-evaluating the
+          // (potentially-different) live dedup state.
+          if (childFuncId !== undefined) {
+            const now = Date.now();
+            await DBOSExecutor.globalInstance!.systemDatabase.recordOperationResult(
+              DBOS.workflowID!,
+              childFuncId,
+              regOP.name,
+              false,
+              now,
+              now,
+              { childWorkflowID: existingID },
+            );
+          }
           return new RetrievedHandle<Return>(DBOSExecutor.globalInstance!.systemDatabase, existingID);
         }
         // The prior workflow's deduplication_id was cleared between our INSERT and
