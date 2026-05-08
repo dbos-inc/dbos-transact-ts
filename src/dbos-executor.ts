@@ -519,6 +519,7 @@ export class DBOSExecutor {
           { error: sererr.serializedValue, serialization: sererr.serialization },
         );
       }
+      this.tracer.endSpan(span);
       throw e;
     }
 

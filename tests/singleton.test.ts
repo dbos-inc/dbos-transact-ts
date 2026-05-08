@@ -1,5 +1,6 @@
 import { DBOS } from '../src';
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
+import { DBOSQueueDuplicatedError } from '../src/error';
 import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
 
 const testPolling = { minPollingIntervalMs: 100 };
@@ -270,5 +271,49 @@ describe('singleton workflows', () => {
     // Sanity: parent B is not used in fork checks, but its output and step
     // count are still asserted via earlier resultB / markerStepRuns checks.
     expect(parentBID).toBeDefined();
+  });
+
+  // Regression test: a withNextWorkflowID reservation must survive across the singleton
+  // retry loop. Otherwise iter 1 consumes idAssignedForNextWorkflow, iter 2 falls back
+  // to a random UUID, and an iter-2 win silently creates a workflow with the wrong ID.
+  test('singleton honors withNextWorkflowID across retry iterations', async () => {
+    const dedupID = 'reservation_dedup_id';
+    const reservedChildID = 'my-reserved-child-id';
+
+    // Force iter 1's INSERT to fail with a dedup violation, then succeed on iter 2.
+    // Pair with getDeduplicatedWorkflow returning null so the wrapper falls through
+    // to "loop and try to claim the slot."
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    const originalInit = sysdb.initWorkflowStatus.bind(sysdb);
+    const originalLookup = sysdb.getDeduplicatedWorkflow.bind(sysdb);
+    let initCalls = 0;
+    sysdb.initWorkflowStatus = async (...args) => {
+      initCalls++;
+      if (initCalls === 1) {
+        throw new DBOSQueueDuplicatedError(args[0].workflowUUID, SingletonTest.queue.name, dedupID);
+      }
+      return originalInit(...args);
+    };
+    sysdb.getDeduplicatedWorkflow = () => Promise.resolve(null);
+
+    try {
+      const handle = await DBOS.withNextWorkflowID(reservedChildID, () =>
+        DBOS.startWorkflow(SingletonTest, {
+          queueName: SingletonTest.queue.name,
+          enqueueOptions: { deduplicationID: dedupID },
+          singleton: true,
+        }).gatedWorkflow('reserved'),
+      );
+
+      // The new workflow created by iter 2 must use the reserved ID.
+      expect(handle.workflowID).toBe(reservedChildID);
+      expect(initCalls).toBe(2);
+
+      SingletonTest.resolveEvent();
+      expect(await handle.getResult()).toBe('reserved-done');
+    } finally {
+      sysdb.initWorkflowStatus = originalInit;
+      sysdb.getDeduplicatedWorkflow = originalLookup;
+    }
   });
 });

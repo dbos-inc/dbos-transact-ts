@@ -1772,9 +1772,15 @@ export class DBOS {
     // passes it through so invokeSingletonWorkflow consumes a single funcID instead of one per try.
     const childFuncId = DBOS.isInWorkflow() ? functionIDGetIncrement() : undefined;
 
+    // Resolve the workflow ID once: if the caller supplied one explicitly or via
+    // `withNextWorkflowID`, reuse it on every iteration.
+    const resolvedWorkflowID = getNextWFID(params.workflowID);
+    const callParams: StartWorkflowParams =
+      resolvedWorkflowID !== undefined ? { ...params, workflowID: resolvedWorkflowID } : params;
+
     while (true) {
       try {
-        return await DBOS.#invokeWorkflow<This, Args, Return>($this, regOP, args, params, childFuncId);
+        return await DBOS.#invokeWorkflow<This, Args, Return>($this, regOP, args, callParams, childFuncId);
       } catch (e) {
         if (!(e instanceof DBOSQueueDuplicatedError)) {
           throw e;
@@ -1785,8 +1791,7 @@ export class DBOS {
         );
         if (existingID) {
           // Record the parent->child mapping at the reserved funcID so that on replay
-          // the parent short-circuits to the same child instead of re-evaluating the
-          // (potentially-different) live dedup state.
+          // the parent uses the same child.
           if (childFuncId !== undefined) {
             const now = Date.now();
             await DBOSExecutor.globalInstance!.systemDatabase.recordOperationResult(
