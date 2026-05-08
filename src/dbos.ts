@@ -1804,7 +1804,7 @@ export class DBOS {
               DBOS.workflowID!,
               childFuncId,
               regOP.name,
-              false,
+              true,
               now,
               now,
               { childWorkflowID: existingID },
