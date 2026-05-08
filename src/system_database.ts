@@ -694,12 +694,7 @@ export class SystemDatabase {
         isRecoveryOrDequeuedRequest,
         returnExistingOnDeduplication,
       );
-      if (
-        returnExistingOnDeduplication &&
-        resRow.workflow_uuid !== initStatus.workflowUUID &&
-        resRow.queue_name === initStatus.queueName &&
-        resRow.deduplication_id === initStatus.deduplicationID
-      ) {
+      if (returnExistingOnDeduplication && resRow.workflow_uuid !== initStatus.workflowUUID) {
         return {
           workflowUUID: resRow.workflow_uuid,
           status: resRow.status,
@@ -3297,9 +3292,54 @@ export class SystemDatabase {
     returnExistingOnDeduplication: boolean = false,
   ): Promise<InsertWorkflowResult> {
     try {
-      const onConflict = returnExistingOnDeduplication
-        ? `ON CONFLICT DO NOTHING`
-        : `ON CONFLICT (workflow_uuid)
+      const returningCols = `workflow_uuid, recovery_attempts, status, name, class_name, config_name, queue_name, deduplication_id,
+        workflow_deadline_epoch_ms, executor_id, owner_xid, serialization`;
+      const insertSql = `INSERT INTO "${this.schemaName}".workflow_status (
+        workflow_uuid,
+        status,
+        name,
+        class_name,
+        config_name,
+        queue_name,
+        authenticated_user,
+        assumed_role,
+        authenticated_roles,
+        request,
+        executor_id,
+        application_version,
+        application_id,
+        created_at,
+        recovery_attempts,
+        updated_at,
+        workflow_timeout_ms,
+        workflow_deadline_epoch_ms,
+        inputs,
+        deduplication_id,
+        priority,
+        queue_partition_key,
+        forked_from,
+        parent_workflow_id,
+        serialization,
+        owner_xid,
+        delay_until_epoch_ms
+      ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $26, $27, $28)`;
+      const insertWorkflowStatusSql = returnExistingOnDeduplication
+        ? `WITH ins AS (
+            ${insertSql}
+            ON CONFLICT (queue_name, deduplication_id) WHERE deduplication_id IS NOT NULL
+            DO NOTHING
+            RETURNING ${returningCols}
+          )
+          SELECT ${returningCols} FROM ins
+          UNION ALL
+          SELECT ${returningCols}
+            FROM "${this.schemaName}".workflow_status
+            WHERE NOT EXISTS (SELECT 1 FROM ins)
+              AND queue_name = $6
+              AND deduplication_id = $20
+          LIMIT 1`
+        : `${insertSql}
+          ON CONFLICT (workflow_uuid)
           DO UPDATE SET
             recovery_attempts = CASE
               WHEN workflow_status.status != '${StatusString.ENQUEUED}' AND workflow_status.status != '${StatusString.DELAYED}'
@@ -3311,85 +3351,41 @@ export class SystemDatabase {
               WHEN EXCLUDED.status != '${StatusString.ENQUEUED}' AND EXCLUDED.status != '${StatusString.DELAYED}'
               THEN EXCLUDED.executor_id
               ELSE workflow_status.executor_id
-            END`;
+            END
+          RETURNING ${returningCols}`;
 
-      const { rows } = await client.query<InsertWorkflowResult>(
-        `INSERT INTO "${this.schemaName}".workflow_status (
-          workflow_uuid,
-          status,
-          name,
-          class_name,
-          config_name,
-          queue_name,
-          authenticated_user,
-          assumed_role,
-          authenticated_roles,
-          request,
-          executor_id,
-          application_version,
-          application_id,
-          created_at,
-          recovery_attempts,
-          updated_at,
-          workflow_timeout_ms,
-          workflow_deadline_epoch_ms,
-          inputs,
-          deduplication_id,
-          priority,
-          queue_partition_key,
-          forked_from,
-          parent_workflow_id,
-          serialization,
-          owner_xid,
-          delay_until_epoch_ms
-        ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $26, $27, $28)
-        ${onConflict}
-          RETURNING workflow_uuid, recovery_attempts, status, name, class_name, config_name, queue_name, deduplication_id, workflow_deadline_epoch_ms, executor_id, owner_xid, serialization`,
-        [
-          initStatus.workflowUUID,
-          initStatus.status,
-          initStatus.workflowName,
-          // For cross-language compatibility, these variables MUST be NULL in the database when not set
-          initStatus.workflowClassName === '' ? null : initStatus.workflowClassName,
-          initStatus.workflowConfigName === '' ? null : initStatus.workflowConfigName,
-          initStatus.queueName ?? null,
-          initStatus.authenticatedUser,
-          initStatus.assumedRole,
-          JSON.stringify(initStatus.authenticatedRoles),
-          JSON.stringify(initStatus.request),
-          initStatus.executorId,
-          initStatus.applicationVersion ?? null,
-          initStatus.applicationID,
-          initStatus.createdAt,
-          initStatus.status === StatusString.ENQUEUED || initStatus.status === StatusString.DELAYED ? 0 : 1,
-          initStatus.updatedAt ?? Date.now(),
-          initStatus.timeoutMS ?? null,
-          initStatus.deadlineEpochMS ?? null,
-          initStatus.input ?? null,
-          initStatus.deduplicationID ?? null,
-          initStatus.priority,
-          initStatus.queuePartitionKey ?? null,
-          initStatus.forkedFrom ?? null,
-          initStatus.parentWorkflowID ?? null,
-          (incrementAttempts ?? false) ? 1 : 0,
-          initStatus.serialization,
-          ownerXid,
-          initStatus.delayUntilEpochMS ?? null,
-        ],
-      );
-      let ret = rows[0];
-      if (!ret && returnExistingOnDeduplication) {
-        const existing = await client.query<InsertWorkflowResult>(
-          `SELECT workflow_uuid, recovery_attempts, status, name, class_name, config_name, queue_name, deduplication_id,
-                  workflow_deadline_epoch_ms, executor_id, owner_xid, serialization
-           FROM "${this.schemaName}".workflow_status
-           WHERE workflow_uuid = $1 OR (queue_name = $2 AND deduplication_id = $3)
-           ORDER BY CASE WHEN workflow_uuid = $1 THEN 0 ELSE 1 END
-           LIMIT 1`,
-          [initStatus.workflowUUID, initStatus.queueName, initStatus.deduplicationID],
-        );
-        ret = existing.rows[0];
-      }
+      const { rows } = await client.query<InsertWorkflowResult>(insertWorkflowStatusSql, [
+        initStatus.workflowUUID,
+        initStatus.status,
+        initStatus.workflowName,
+        // For cross-language compatibility, these variables MUST be NULL in the database when not set
+        initStatus.workflowClassName === '' ? null : initStatus.workflowClassName,
+        initStatus.workflowConfigName === '' ? null : initStatus.workflowConfigName,
+        initStatus.queueName ?? null,
+        initStatus.authenticatedUser,
+        initStatus.assumedRole,
+        JSON.stringify(initStatus.authenticatedRoles),
+        JSON.stringify(initStatus.request),
+        initStatus.executorId,
+        initStatus.applicationVersion ?? null,
+        initStatus.applicationID,
+        initStatus.createdAt,
+        initStatus.status === StatusString.ENQUEUED || initStatus.status === StatusString.DELAYED ? 0 : 1,
+        initStatus.updatedAt ?? Date.now(),
+        initStatus.timeoutMS ?? null,
+        initStatus.deadlineEpochMS ?? null,
+        initStatus.input ?? null,
+        initStatus.deduplicationID ?? null,
+        initStatus.priority,
+        initStatus.queuePartitionKey ?? null,
+        initStatus.forkedFrom ?? null,
+        initStatus.parentWorkflowID ?? null,
+        (incrementAttempts ?? false) ? 1 : 0,
+        initStatus.serialization,
+        ownerXid,
+        initStatus.delayUntilEpochMS ?? null,
+      ]);
+      const ret = rows[0];
       if (!ret) {
         throw new Error(`Attempt to insert workflow ${initStatus.workflowUUID} failed`);
       }
