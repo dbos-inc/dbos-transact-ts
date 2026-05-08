@@ -1764,14 +1764,12 @@ export class DBOS {
     params: StartWorkflowParams,
   ): Promise<WorkflowHandle<Return>> {
     if (!params.queueName) {
-      throw new DBOSInvalidWorkflowTransitionError(
-        "`duplicationPolicy: 'return-existing'` requires `params.queueName`",
-      );
+      throw new DBOSInvalidWorkflowTransitionError("`duplicationPolicy: 'return-existing'` requires a `queueName`");
     }
     const dedupID = params.enqueueOptions?.deduplicationID;
     if (!dedupID) {
       throw new DBOSInvalidWorkflowTransitionError(
-        "`duplicationPolicy: 'return-existing'` requires `params.enqueueOptions.deduplicationID`",
+        "`duplicationPolicy: 'return-existing'` requires `enqueueOptions.deduplicationID`",
       );
     }
     const queueName = params.queueName;
