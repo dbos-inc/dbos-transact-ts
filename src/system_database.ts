@@ -672,16 +672,18 @@ export class SystemDatabase {
       returnExistingOnDeduplication?: boolean;
     },
   ): Promise<{
+    workflowUUID: string;
     status: string;
     shouldExecuteOnThisExecutor: boolean;
     deadlineEpochMS?: number;
     serialization: SysDBSerializationFormat | null;
-    workflowUUID: string;
   }> {
     const client = await this.pool.connect();
     let shouldCommit = false;
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
+      const returnExistingOnDeduplication =
+        !!options?.returnExistingOnDeduplication && !options?.isRecoveryRequest && !options?.isDequeuedRequest;
 
       // Moving from enqueued to pending asks to increment recovery attempts... rather than in the recovery process
       //  where it moves from pending back to enqueued.
@@ -690,20 +692,20 @@ export class SystemDatabase {
         initStatus,
         ownerXid,
         !!options?.isRecoveryRequest || !!options?.isDequeuedRequest,
-        !!options?.returnExistingOnDeduplication && !options?.isRecoveryRequest && !options?.isDequeuedRequest,
+        returnExistingOnDeduplication,
       );
       if (
-        options?.returnExistingOnDeduplication &&
+        returnExistingOnDeduplication &&
         resRow.workflow_uuid !== initStatus.workflowUUID &&
         resRow.queue_name === initStatus.queueName &&
         resRow.deduplication_id === initStatus.deduplicationID
       ) {
         return {
+          workflowUUID: resRow.workflow_uuid,
           status: resRow.status,
           deadlineEpochMS: resRow.workflow_deadline_epoch_ms ?? undefined,
           shouldExecuteOnThisExecutor: false,
           serialization: resRow.serialization,
-          workflowUUID: resRow.workflow_uuid,
         };
       }
       if (resRow.name !== initStatus.workflowName) {
@@ -734,11 +736,11 @@ export class SystemDatabase {
           throw new DBOSMaxRecoveryAttemptsExceededError(initStatus.workflowUUID, options?.maxRetries ?? -1);
         }
         return {
+          workflowUUID: resRow.workflow_uuid,
           status,
           deadlineEpochMS,
           shouldExecuteOnThisExecutor: false,
           serialization: resRow.serialization,
-          workflowUUID: resRow.workflow_uuid,
         };
       }
 
@@ -758,11 +760,11 @@ export class SystemDatabase {
       }
       this.logger.debug(`Workflow ${initStatus.workflowUUID} attempt number: ${attempts}.`);
       return {
+        workflowUUID: resRow.workflow_uuid,
         status,
         deadlineEpochMS,
         shouldExecuteOnThisExecutor: true,
         serialization: resRow.serialization,
-        workflowUUID: resRow.workflow_uuid,
       };
     } finally {
       try {
