@@ -191,10 +191,6 @@ export interface EnqueueOptions {
   applicationVersion?: string;
   // Number of seconds to delay the workflow before it starts executing. The workflow will be in DELAYED status until the delay expires.
   delaySeconds?: number;
-  // If true, treat this as a singleton workflow. Requires `deduplicationID` and a queueName.
-  // On collision, returns a handle to the existing workflow instead of throwing; the colliding
-  // caller's arguments are discarded and the handle resolves with the original workflow's result.
-  singleton?: boolean;
 }
 
 export interface ExistenceCheck {

@@ -53,12 +53,14 @@ describe('singleton workflows', () => {
 
     const wfh1 = await DBOS.startWorkflow(SingletonTest, {
       queueName: SingletonTest.queue.name,
-      enqueueOptions: { deduplicationID: dedupID, singleton: true },
+      enqueueOptions: { deduplicationID: dedupID },
+      singleton: true,
     }).gatedWorkflow('first');
 
     const wfh2 = await DBOS.startWorkflow(SingletonTest, {
       queueName: SingletonTest.queue.name,
-      enqueueOptions: { deduplicationID: dedupID, singleton: true },
+      enqueueOptions: { deduplicationID: dedupID },
+      singleton: true,
     }).gatedWorkflow('second');
 
     expect(wfh2.workflowID).toBe(wfh1.workflowID);
@@ -76,7 +78,8 @@ describe('singleton workflows', () => {
 
     const wfh1 = await DBOS.startWorkflow(SingletonTest, {
       queueName: SingletonTest.queue.name,
-      enqueueOptions: { deduplicationID: dedupID, singleton: true },
+      enqueueOptions: { deduplicationID: dedupID },
+      singleton: true,
     }).gatedWorkflow('first');
 
     SingletonTest.resolveEvent();
@@ -86,7 +89,8 @@ describe('singleton workflows', () => {
 
     const wfh2 = await DBOS.startWorkflow(SingletonTest, {
       queueName: SingletonTest.queue.name,
-      enqueueOptions: { deduplicationID: dedupID, singleton: true },
+      enqueueOptions: { deduplicationID: dedupID },
+      singleton: true,
     }).gatedWorkflow('second');
 
     expect(wfh2.workflowID).not.toBe(wfh1.workflowID);
@@ -99,7 +103,7 @@ describe('singleton workflows', () => {
     await expect(
       DBOS.startWorkflow(SingletonTest, {
         queueName: SingletonTest.queue.name,
-        enqueueOptions: { singleton: true },
+        singleton: true,
       }).gatedWorkflow('x'),
     ).rejects.toThrow(/deduplicationID/);
   });
@@ -107,7 +111,8 @@ describe('singleton workflows', () => {
   test('missing queueName throws', async () => {
     await expect(
       DBOS.startWorkflow(SingletonTest, {
-        enqueueOptions: { deduplicationID: 'some_id', singleton: true },
+        enqueueOptions: { deduplicationID: 'some_id' },
+        singleton: true,
       }).gatedWorkflow('y'),
     ).rejects.toThrow(/queueName/);
   });
@@ -120,7 +125,8 @@ describe('singleton workflows', () => {
 
     const wfh1 = await DBOS.startWorkflow(SingletonTest, {
       queueName: SingletonTest.queue.name,
-      enqueueOptions: { deduplicationID: dedupID, singleton: true },
+      enqueueOptions: { deduplicationID: dedupID },
+      singleton: true,
     }).gatedWorkflow('first');
 
     const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
@@ -135,7 +141,8 @@ describe('singleton workflows', () => {
     try {
       const wfh2 = await DBOS.startWorkflow(SingletonTest, {
         queueName: SingletonTest.queue.name,
-        enqueueOptions: { deduplicationID: dedupID, singleton: true },
+        enqueueOptions: { deduplicationID: dedupID },
+        singleton: true,
       }).gatedWorkflow('second');
 
       expect(calls).toBe(2);

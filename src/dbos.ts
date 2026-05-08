@@ -163,6 +163,10 @@ export interface StartWorkflowParams {
   queueName?: string;
   timeoutMS?: number | null;
   enqueueOptions?: EnqueueOptions;
+  // If true, treat this as a singleton workflow. Requires `queueName` and `enqueueOptions.deduplicationID`.
+  // On collision, returns a handle to the existing workflow instead of throwing; the colliding caller's
+  // arguments are discarded and the handle resolves with the original workflow's result.
+  singleton?: boolean;
 }
 
 /**
@@ -1235,7 +1239,7 @@ export class DBOS {
     }
 
     const regOps = getRegisteredOperations(target);
-    const isSingleton = params?.enqueueOptions?.singleton;
+    const isSingleton = params?.singleton;
 
     const handler: ProxyHandler<object> = {
       apply(target, _thisArg, args) {
@@ -1754,13 +1758,11 @@ export class DBOS {
     params: StartWorkflowParams,
   ): Promise<WorkflowHandle<Return>> {
     if (!params.queueName) {
-      throw new DBOSInvalidWorkflowTransitionError('`enqueueOptions.singleton` requires `params.queueName`');
+      throw new DBOSInvalidWorkflowTransitionError('`singleton` requires `params.queueName`');
     }
     const dedupID = params.enqueueOptions?.deduplicationID;
     if (!dedupID) {
-      throw new DBOSInvalidWorkflowTransitionError(
-        '`enqueueOptions.singleton` requires `params.enqueueOptions.deduplicationID`',
-      );
+      throw new DBOSInvalidWorkflowTransitionError('`singleton` requires `params.enqueueOptions.deduplicationID`');
     }
     const queueName = params.queueName;
 
