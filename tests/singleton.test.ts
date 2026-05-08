@@ -1,4 +1,4 @@
-import { DBOS } from '../src';
+import { DBOS, DBOSClient } from '../src';
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import { DBOSQueueDuplicatedError } from '../src/error';
 import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
@@ -7,9 +7,12 @@ const testPolling = { minPollingIntervalMs: 100 };
 
 describe('singleton workflows', () => {
   let config: DBOSConfig;
+  let systemDatabaseUrl: string;
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
+    expect(config.systemDatabaseUrl).toBeDefined();
+    systemDatabaseUrl = config.systemDatabaseUrl!;
     await setUpDBOSTestSysDb(config);
     DBOS.setConfig(config);
   });
@@ -314,6 +317,62 @@ describe('singleton workflows', () => {
     } finally {
       sysdb.initWorkflowStatus = originalInit;
       sysdb.getDeduplicatedWorkflow = originalLookup;
+    }
+  });
+
+  test('client enqueue with duplicationPolicy: return-existing attaches', async () => {
+    const dedupID = `client_return_existing_${Date.now()}`;
+    const client = await DBOSClient.create({ systemDatabaseUrl });
+
+    try {
+      const handle1 = await client.enqueue<typeof SingletonTest.gatedWorkflow>(
+        {
+          workflowName: 'gatedWorkflow',
+          workflowClassName: 'SingletonTest',
+          queueName: SingletonTest.queue.name,
+          deduplicationID: dedupID,
+          duplicationPolicy: 'return-existing',
+        },
+        'first',
+      );
+
+      const handle2 = await client.enqueue<typeof SingletonTest.gatedWorkflow>(
+        {
+          workflowName: 'gatedWorkflow',
+          workflowClassName: 'SingletonTest',
+          queueName: SingletonTest.queue.name,
+          deduplicationID: dedupID,
+          duplicationPolicy: 'return-existing',
+        },
+        'second',
+      );
+
+      expect(handle2.workflowID).toBe(handle1.workflowID);
+
+      SingletonTest.resolveEvent();
+      expect(await handle1.getResult()).toBe('first-done');
+      expect(await handle2.getResult()).toBe('first-done');
+    } finally {
+      await client.destroy();
+    }
+  });
+
+  test('client enqueue with duplicationPolicy: return-existing requires deduplicationID', async () => {
+    const client = await DBOSClient.create({ systemDatabaseUrl });
+    try {
+      await expect(
+        client.enqueue<typeof SingletonTest.gatedWorkflow>(
+          {
+            workflowName: 'gatedWorkflow',
+            workflowClassName: 'SingletonTest',
+            queueName: SingletonTest.queue.name,
+            duplicationPolicy: 'return-existing',
+          },
+          'x',
+        ),
+      ).rejects.toThrow(/deduplicationID/);
+    } finally {
+      await client.destroy();
     }
   });
 });
