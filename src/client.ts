@@ -284,7 +284,7 @@ export class DBOSClient {
 
     const initResult = await this.systemDatabase.initWorkflowStatus(internalStatus, null, {
       returnExistingOnDeduplication:
-        options.duplicationPolicy === 'return-existing' && options.deduplicationID !== undefined,
+        options.deduplicationID !== undefined && options.duplicationPolicy === 'return-existing',
     });
 
     return new ClientHandle<Awaited<ReturnType<T>>>(this.systemDatabase, initResult.workflowUUID);
@@ -345,7 +345,7 @@ export class DBOSClient {
 
     const initResult = await this.systemDatabase.initWorkflowStatus(internalStatus, null, {
       returnExistingOnDeduplication:
-        options.duplicationPolicy === 'return-existing' && options.deduplicationID !== undefined,
+        options.deduplicationID !== undefined && options.duplicationPolicy === 'return-existing',
     });
 
     return new ClientHandle<T>(this.systemDatabase, initResult.workflowUUID);

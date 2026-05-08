@@ -356,7 +356,6 @@ interface InsertWorkflowResult {
   executor_id: string | null;
   owner_xid: string | null;
   serialization: string | null;
-  returned_existing_workflow?: boolean;
 }
 
 function mapWorkflowStatus(row: workflow_status): WorkflowStatusInternal {
@@ -693,7 +692,12 @@ export class SystemDatabase {
         !!options?.isRecoveryRequest || !!options?.isDequeuedRequest,
         !!options?.returnExistingOnDeduplication && !options?.isRecoveryRequest && !options?.isDequeuedRequest,
       );
-      if (resRow.returned_existing_workflow) {
+      if (
+        options?.returnExistingOnDeduplication &&
+        resRow.workflow_uuid !== initStatus.workflowUUID &&
+        resRow.queue_name === initStatus.queueName &&
+        resRow.deduplication_id === initStatus.deduplicationID
+      ) {
         return {
           status: resRow.status,
           deadlineEpochMS: resRow.workflow_deadline_epoch_ms ?? undefined,
@@ -3389,11 +3393,6 @@ export class SystemDatabase {
       }
       ret.class_name = ret.class_name ?? '';
       ret.config_name = ret.config_name ?? '';
-      ret.returned_existing_workflow =
-        returnExistingOnDeduplication &&
-        ret.workflow_uuid !== initStatus.workflowUUID &&
-        ret.queue_name === initStatus.queueName &&
-        ret.deduplication_id === initStatus.deduplicationID;
       initStatus.serialization = ret.serialization;
       return ret;
     } catch (error) {
