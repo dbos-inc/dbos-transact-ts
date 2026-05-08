@@ -1243,7 +1243,7 @@ export class DBOS {
     }
 
     const regOps = getRegisteredOperations(target);
-    const returnExisting = params?.duplicationPolicy === 'return-existing';
+    const singletonWorkflow = params?.duplicationPolicy === 'return-existing';
 
     const handler: ProxyHandler<object> = {
       apply(target, _thisArg, args) {
@@ -1253,8 +1253,8 @@ export class DBOS {
           const name = typeof target === 'function' ? target.name : target.toString();
           throw new DBOSNotRegisteredError(name, `${name} is not a registered DBOS workflow function`);
         }
-        return returnExisting
-          ? DBOS.#invokeReturnExistingWorkflow(instance, regOp, args, params)
+        return singletonWorkflow
+          ? DBOS.#invokeSingletonWorkflow(instance, regOp, args, params)
           : DBOS.#invokeWorkflow(instance, regOp, args, params);
       },
       get(target, p, receiver) {
@@ -1263,8 +1263,8 @@ export class DBOS {
         const regOp = getFunctionRegistration(func) ?? regOps.find((op) => op.name === p);
         if (regOp) {
           return (...args: unknown[]) =>
-            returnExisting
-              ? DBOS.#invokeReturnExistingWorkflow(instance, regOp, args, params)
+            singletonWorkflow
+              ? DBOS.#invokeSingletonWorkflow(instance, regOp, args, params)
               : DBOS.#invokeWorkflow(instance, regOp, args, params);
         }
 
@@ -1757,7 +1757,7 @@ export class DBOS {
     }
   }
 
-  static async #invokeReturnExistingWorkflow<This, Args extends unknown[], Return>(
+  static async #invokeSingletonWorkflow<This, Args extends unknown[], Return>(
     $this: This,
     regOP: MethodRegistrationBase,
     args: Args,

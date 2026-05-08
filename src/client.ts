@@ -292,7 +292,7 @@ export class DBOSClient {
 
     let finalID: string;
     if (options.duplicationPolicy === 'return-existing') {
-      finalID = await this.#initReturnExisting(internalStatus, options);
+      finalID = await this.#initSingletonWorkflow(internalStatus, options);
     } else {
       await this.systemDatabase.initWorkflowStatus(internalStatus, null);
       finalID = internalStatus.workflowUUID;
@@ -307,7 +307,7 @@ export class DBOSClient {
    * dedup slot, and returns its UUID. Falls back to retry if the slot was cleared between
    * INSERT and lookup (the prior workflow completed or was cancelled mid-flight).
    */
-  async #initReturnExisting(internalStatus: WorkflowStatusInternal, options: ClientEnqueueOptions): Promise<string> {
+  async #initSingletonWorkflow(internalStatus: WorkflowStatusInternal, options: ClientEnqueueOptions): Promise<string> {
     if (!options.deduplicationID) {
       throw new DBOSInvalidWorkflowTransitionError("`duplicationPolicy: 'return-existing'` requires `deduplicationID`");
     }
@@ -381,7 +381,7 @@ export class DBOSClient {
 
     let finalID: string;
     if (options.duplicationPolicy === 'return-existing') {
-      finalID = await this.#initReturnExisting(internalStatus, options);
+      finalID = await this.#initSingletonWorkflow(internalStatus, options);
     } else {
       await this.systemDatabase.initWorkflowStatus(internalStatus, null);
       finalID = internalStatus.workflowUUID;
