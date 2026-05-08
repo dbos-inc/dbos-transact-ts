@@ -1766,9 +1766,13 @@ export class DBOS {
     }
     const queueName = params.queueName;
 
+    // Reserve the parent's child-funcID once, before any await. Each loop iteration
+    // passes it through so invokeSingletonWorkflow consumes a single funcID instead of one per try.
+    const childFuncId = DBOS.isInWorkflow() ? functionIDGetIncrement() : undefined;
+
     while (true) {
       try {
-        return await DBOS.#invokeWorkflow<This, Args, Return>($this, regOP, args, params);
+        return await DBOS.#invokeWorkflow<This, Args, Return>($this, regOP, args, params, childFuncId);
       } catch (e) {
         if (!(e instanceof DBOSQueueDuplicatedError)) {
           throw e;

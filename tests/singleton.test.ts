@@ -35,6 +35,7 @@ describe('singleton workflows', () => {
 
     static resolveEvent: () => void = () => {};
     static workflowEvent: Promise<void> = Promise.resolve();
+    static markerStepRuns = 0;
     static resetEvent() {
       SingletonTest.workflowEvent = new Promise<void>((resolve) => {
         SingletonTest.resolveEvent = resolve;
@@ -45,6 +46,23 @@ describe('singleton workflows', () => {
     static async gatedWorkflow(input: string): Promise<string> {
       await SingletonTest.workflowEvent;
       return `${input}-done`;
+    }
+
+    @DBOS.workflow()
+    static async parentWithSingleton(dedupID: string): Promise<string> {
+      const handle = await DBOS.startWorkflow(SingletonTest, {
+        queueName: SingletonTest.queue.name,
+        enqueueOptions: { deduplicationID: dedupID },
+        singleton: true,
+      }).gatedWorkflow('attached');
+      await DBOS.runStep(
+        () => {
+          SingletonTest.markerStepRuns++;
+          return Promise.resolve('after-singleton');
+        },
+        { name: 'marker_step' },
+      );
+      return handle.workflowID;
     }
   }
 
@@ -154,5 +172,70 @@ describe('singleton workflows', () => {
     } finally {
       sysdb.getDeduplicatedWorkflow = original;
     }
+  });
+
+  // Regression test: when called from inside a parent workflow, the singleton retry
+  // loop must consume exactly one parent funcID, not one per iteration. Otherwise
+  // subsequent operations land at funcIDs that don't match what replay expects.
+  test('singleton from within a parent workflow consumes one funcID across retries', async () => {
+    const dedupID = 'parent_singleton_id';
+
+    // Pre-enqueue a child that holds the dedup slot.
+    await DBOS.startWorkflow(SingletonTest, {
+      queueName: SingletonTest.queue.name,
+      enqueueOptions: { deduplicationID: dedupID },
+      singleton: true,
+    }).gatedWorkflow('blocking');
+
+    SingletonTest.markerStepRuns = 0;
+
+    // Force the dedup lookup to miss once so the retry loop iterates twice on the
+    // original run.
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    const original = sysdb.getDeduplicatedWorkflow.bind(sysdb);
+    let calls = 0;
+    sysdb.getDeduplicatedWorkflow = async (qn: string, dID: string) => {
+      calls++;
+      if (calls === 1) return null;
+      return original(qn, dID);
+    };
+
+    let parentID: string;
+    try {
+      const parentHandle = await DBOS.startWorkflow(SingletonTest).parentWithSingleton(dedupID);
+      await parentHandle.getResult();
+      parentID = parentHandle.workflowID;
+    } finally {
+      sysdb.getDeduplicatedWorkflow = original;
+    }
+
+    expect(SingletonTest.markerStepRuns).toBe(1);
+
+    const steps = await DBOS.listWorkflowSteps(parentID);
+    // Singleton attach doesn't record a child mapping, so the parent's only
+    // recorded operation is marker_step.
+    expect(steps?.length).toBe(1);
+    const markerStep = steps?.find((s) => s.name === 'marker_step');
+    expect(markerStep).toBeDefined();
+    // With the fix the singleton consumes one funcID (0) and marker_step lands
+    // at functionID 1. Without the fix the retry burns an extra funcID and
+    // marker_step lands at functionID 2.
+    expect(markerStep!.functionID).toBe(1);
+
+    // Fork past the final recorded step. Replay should reuse the cached
+    // marker_step output rather than re-executing it. Without the funcID fix,
+    // the original run recorded marker_step at functionID 2, but replay (no
+    // mock) burns only one funcID for the singleton and probes functionID 1 —
+    // missing the cache and re-running the step body, which would bump
+    // markerStepRuns.
+    const forkedHandle = await DBOS.forkWorkflow(parentID, markerStep!.functionID + 1);
+    await forkedHandle.getResult();
+    expect(SingletonTest.markerStepRuns).toBe(1);
+
+    const forkedSteps = await DBOS.listWorkflowSteps(forkedHandle.workflowID);
+    expect(forkedSteps?.length).toBe(1);
+    const forkedMarkerStep = forkedSteps?.find((s) => s.name === 'marker_step');
+    expect(forkedMarkerStep).toBeDefined();
+    expect(forkedMarkerStep!.functionID).toBe(markerStep!.functionID);
   });
 });
