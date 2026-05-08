@@ -503,9 +503,9 @@ export class DBOSExecutor {
         isDequeuedRequest: params.isQueueDispatch,
         isRecoveryRequest: params.isRecoveryDispatch,
         returnExistingOnDeduplication:
-          params.enqueueOptions?.duplicationPolicy === 'return-existing' &&
           params.queueName !== undefined &&
-          params.enqueueOptions.deduplicationID !== undefined,
+          params.enqueueOptions?.deduplicationID !== undefined &&
+          params.enqueueOptions.duplicationPolicy === 'return-existing',
       });
       serializationType = ires.serialization === DBOSPortableJSON.name() ? 'portable' : undefined;
     } catch (e) {

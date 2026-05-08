@@ -673,11 +673,11 @@ export class SystemDatabase {
       returnExistingOnDeduplication?: boolean;
     },
   ): Promise<{
-    workflowUUID: string;
     status: string;
-    deadlineEpochMS?: number;
     shouldExecuteOnThisExecutor: boolean;
+    deadlineEpochMS?: number;
     serialization: SysDBSerializationFormat | null;
+    workflowUUID: string;
   }> {
     const client = await this.pool.connect();
     let shouldCommit = false;
@@ -695,11 +695,11 @@ export class SystemDatabase {
       );
       if (resRow.returned_existing_workflow) {
         return {
-          workflowUUID: resRow.workflow_uuid,
           status: resRow.status,
           deadlineEpochMS: resRow.workflow_deadline_epoch_ms ?? undefined,
           shouldExecuteOnThisExecutor: false,
           serialization: resRow.serialization,
+          workflowUUID: resRow.workflow_uuid,
         };
       }
       if (resRow.name !== initStatus.workflowName) {
@@ -730,11 +730,11 @@ export class SystemDatabase {
           throw new DBOSMaxRecoveryAttemptsExceededError(initStatus.workflowUUID, options?.maxRetries ?? -1);
         }
         return {
-          workflowUUID: resRow.workflow_uuid,
           status,
           deadlineEpochMS,
           shouldExecuteOnThisExecutor: false,
           serialization: resRow.serialization,
+          workflowUUID: resRow.workflow_uuid,
         };
       }
 
@@ -754,11 +754,11 @@ export class SystemDatabase {
       }
       this.logger.debug(`Workflow ${initStatus.workflowUUID} attempt number: ${attempts}.`);
       return {
-        workflowUUID: resRow.workflow_uuid,
         status,
         deadlineEpochMS,
         shouldExecuteOnThisExecutor: true,
         serialization: resRow.serialization,
+        workflowUUID: resRow.workflow_uuid,
       };
     } finally {
       try {
@@ -3290,11 +3290,8 @@ export class SystemDatabase {
     incrementAttempts: boolean = false,
     returnExistingOnDeduplication: boolean = false,
   ): Promise<InsertWorkflowResult> {
-    const shouldReturnExistingOnDeduplication =
-      returnExistingOnDeduplication && initStatus.queueName && initStatus.deduplicationID;
-
     try {
-      if (shouldReturnExistingOnDeduplication) {
+      if (returnExistingOnDeduplication) {
         const existingByWorkflowID = await client.query<InsertWorkflowResult>(
           `SELECT workflow_uuid, recovery_attempts, status, name, class_name, config_name, queue_name, deduplication_id,
                   workflow_deadline_epoch_ms, executor_id, owner_xid, serialization
@@ -3313,11 +3310,9 @@ export class SystemDatabase {
         }
       }
 
-      const onConflict = shouldReturnExistingOnDeduplication
+      const onConflict = returnExistingOnDeduplication
         ? `ON CONFLICT (queue_name, deduplication_id) WHERE deduplication_id IS NOT NULL
-          DO UPDATE SET
-            deduplication_id = EXCLUDED.deduplication_id,
-            recovery_attempts = workflow_status.recovery_attempts + ($25 * 0)`
+          DO UPDATE SET deduplication_id = EXCLUDED.deduplication_id`
         : `ON CONFLICT (workflow_uuid)
           DO UPDATE SET
             recovery_attempts = CASE
@@ -3402,8 +3397,7 @@ export class SystemDatabase {
       const ret = rows[0];
       ret.class_name = ret.class_name ?? '';
       ret.config_name = ret.config_name ?? '';
-      ret.returned_existing_workflow =
-        !!shouldReturnExistingOnDeduplication && ret.workflow_uuid !== initStatus.workflowUUID;
+      ret.returned_existing_workflow = returnExistingOnDeduplication && ret.workflow_uuid !== initStatus.workflowUUID;
       initStatus.serialization = ret.serialization;
       return ret;
     } catch (error) {
