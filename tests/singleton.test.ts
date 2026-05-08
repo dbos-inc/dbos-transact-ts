@@ -228,6 +228,7 @@ describe('singleton workflows', () => {
     // Each parent attaches to the first child and returns its output.
     expect(resultA).toBe('first-done');
     expect(resultB).toBe('first-done');
+    expect(await firstChildHandle.getResult()).toBe('first-done');
 
     // marker_step ran exactly once per parent.
     expect(SingletonTest.markerStepRuns).toBe(2);
