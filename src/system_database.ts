@@ -193,6 +193,13 @@ export interface EnqueueOptions {
   delaySeconds?: number;
 }
 
+// How to handle a collision with another workflow that has the same `enqueueOptions.deduplicationID`
+// on the same queue.
+//   'reject' (default): throw `DBOSQueueDuplicatedError`.
+//   'return-existing': return a handle to the existing workflow; arguments passed by the colliding
+//     caller are discarded and the handle resolves with the original workflow's result.
+export type DuplicationPolicy = 'reject' | 'return-existing';
+
 export interface ExistenceCheck {
   exists: boolean;
 }

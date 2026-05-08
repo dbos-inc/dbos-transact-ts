@@ -107,6 +107,7 @@ import { randomUUID } from 'node:crypto';
 import { StepConfig } from './step';
 import { Conductor } from './conductor/conductor';
 import {
+  DuplicationPolicy,
   EnqueueOptions,
   DBOS_STREAM_CLOSED_SENTINEL,
   DBOS_FUNCNAME_WRITESTREAM,
@@ -163,10 +164,13 @@ export interface StartWorkflowParams {
   queueName?: string;
   timeoutMS?: number | null;
   enqueueOptions?: EnqueueOptions;
-  // If true, treat this as a singleton workflow. Requires `queueName` and `enqueueOptions.deduplicationID`.
-  // On collision, returns a handle to the existing workflow instead of throwing; the colliding caller's
-  // arguments are discarded and the handle resolves with the original workflow's result.
-  singleton?: boolean;
+  // How to handle a collision with another workflow that has the same
+  // `enqueueOptions.deduplicationID` on the same queue.
+  //   'reject' (default): throw `DBOSQueueDuplicatedError`.
+  //   'return-existing': return a handle to the existing workflow instead of throwing.
+  //     Requires `queueName` and `enqueueOptions.deduplicationID`. Arguments passed by the
+  //     colliding caller are discarded and the handle resolves with the original workflow's result.
+  duplicationPolicy?: DuplicationPolicy;
 }
 
 /**
@@ -1239,7 +1243,7 @@ export class DBOS {
     }
 
     const regOps = getRegisteredOperations(target);
-    const isSingleton = params?.singleton;
+    const returnExisting = params?.duplicationPolicy === 'return-existing';
 
     const handler: ProxyHandler<object> = {
       apply(target, _thisArg, args) {
@@ -1249,8 +1253,8 @@ export class DBOS {
           const name = typeof target === 'function' ? target.name : target.toString();
           throw new DBOSNotRegisteredError(name, `${name} is not a registered DBOS workflow function`);
         }
-        return isSingleton
-          ? DBOS.#invokeSingletonWorkflow(instance, regOp, args, params)
+        return returnExisting
+          ? DBOS.#invokeReturnExistingWorkflow(instance, regOp, args, params)
           : DBOS.#invokeWorkflow(instance, regOp, args, params);
       },
       get(target, p, receiver) {
@@ -1259,8 +1263,8 @@ export class DBOS {
         const regOp = getFunctionRegistration(func) ?? regOps.find((op) => op.name === p);
         if (regOp) {
           return (...args: unknown[]) =>
-            isSingleton
-              ? DBOS.#invokeSingletonWorkflow(instance, regOp, args, params)
+            returnExisting
+              ? DBOS.#invokeReturnExistingWorkflow(instance, regOp, args, params)
               : DBOS.#invokeWorkflow(instance, regOp, args, params);
         }
 
@@ -1719,7 +1723,7 @@ export class DBOS {
         deadlineEpochMS:
           params.timeoutMS === null || ppctx?.workflowTimeoutMS === null ? undefined : ppctx?.deadlineEpochMS,
         enqueueOptions: params.enqueueOptions,
-        singleton: params.singleton,
+        duplicationPolicy: params.duplicationPolicy,
       };
 
       return await invokeRegOp(wfParams, pwfid, funcId);
@@ -1730,7 +1734,7 @@ export class DBOS {
         enqueueOptions: params.enqueueOptions,
         configuredInstance: instance,
         timeoutMS,
-        singleton: params.singleton,
+        duplicationPolicy: params.duplicationPolicy,
       };
 
       return await invokeRegOp(wfParams, undefined, undefined);
@@ -1753,23 +1757,27 @@ export class DBOS {
     }
   }
 
-  static async #invokeSingletonWorkflow<This, Args extends unknown[], Return>(
+  static async #invokeReturnExistingWorkflow<This, Args extends unknown[], Return>(
     $this: This,
     regOP: MethodRegistrationBase,
     args: Args,
     params: StartWorkflowParams,
   ): Promise<WorkflowHandle<Return>> {
     if (!params.queueName) {
-      throw new DBOSInvalidWorkflowTransitionError('`singleton` requires `params.queueName`');
+      throw new DBOSInvalidWorkflowTransitionError(
+        "`duplicationPolicy: 'return-existing'` requires `params.queueName`",
+      );
     }
     const dedupID = params.enqueueOptions?.deduplicationID;
     if (!dedupID) {
-      throw new DBOSInvalidWorkflowTransitionError('`singleton` requires `params.enqueueOptions.deduplicationID`');
+      throw new DBOSInvalidWorkflowTransitionError(
+        "`duplicationPolicy: 'return-existing'` requires `params.enqueueOptions.deduplicationID`",
+      );
     }
     const queueName = params.queueName;
 
-    // Reserve the parent's child-funcID once, before any await. Each loop iteration
-    // passes it through so invokeSingletonWorkflow consumes a single funcID instead of one per try.
+    // Reserve the parent's child-funcID once, before any await. Each loop iteration passes it
+    // through so the return-existing retry loop consumes a single funcID instead of one per try.
     const childFuncId = DBOS.isInWorkflow() ? functionIDGetIncrement() : undefined;
 
     // Resolve the workflow ID once: if the caller supplied one explicitly or via
