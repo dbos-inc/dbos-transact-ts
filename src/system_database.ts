@@ -3291,28 +3291,8 @@ export class SystemDatabase {
     returnExistingOnDeduplication: boolean = false,
   ): Promise<InsertWorkflowResult> {
     try {
-      if (returnExistingOnDeduplication) {
-        const existingByWorkflowID = await client.query<InsertWorkflowResult>(
-          `SELECT workflow_uuid, recovery_attempts, status, name, class_name, config_name, queue_name, deduplication_id,
-                  workflow_deadline_epoch_ms, executor_id, owner_xid, serialization
-           FROM "${this.schemaName}".workflow_status
-           WHERE workflow_uuid = $1`,
-          [initStatus.workflowUUID],
-        );
-        if (existingByWorkflowID.rows.length !== 0) {
-          const ret = existingByWorkflowID.rows[0];
-          ret.class_name = ret.class_name ?? '';
-          ret.config_name = ret.config_name ?? '';
-          ret.returned_existing_workflow =
-            ret.queue_name === initStatus.queueName && ret.deduplication_id === initStatus.deduplicationID;
-          initStatus.serialization = ret.serialization;
-          return ret;
-        }
-      }
-
       const onConflict = returnExistingOnDeduplication
-        ? `ON CONFLICT (queue_name, deduplication_id) WHERE deduplication_id IS NOT NULL
-          DO UPDATE SET deduplication_id = EXCLUDED.deduplication_id`
+        ? `ON CONFLICT DO NOTHING`
         : `ON CONFLICT (workflow_uuid)
           DO UPDATE SET
             recovery_attempts = CASE
@@ -3358,7 +3338,7 @@ export class SystemDatabase {
           delay_until_epoch_ms
         ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $26, $27, $28)
         ${onConflict}
-          RETURNING workflow_uuid, recovery_attempts, status, name, class_name, config_name, queue_name, workflow_deadline_epoch_ms, executor_id, owner_xid, serialization`,
+          RETURNING workflow_uuid, recovery_attempts, status, name, class_name, config_name, queue_name, deduplication_id, workflow_deadline_epoch_ms, executor_id, owner_xid, serialization`,
         [
           initStatus.workflowUUID,
           initStatus.status,
@@ -3391,13 +3371,29 @@ export class SystemDatabase {
           initStatus.delayUntilEpochMS ?? null,
         ],
       );
-      if (rows.length === 0) {
+      let ret = rows[0];
+      if (!ret && returnExistingOnDeduplication) {
+        const existing = await client.query<InsertWorkflowResult>(
+          `SELECT workflow_uuid, recovery_attempts, status, name, class_name, config_name, queue_name, deduplication_id,
+                  workflow_deadline_epoch_ms, executor_id, owner_xid, serialization
+           FROM "${this.schemaName}".workflow_status
+           WHERE workflow_uuid = $1 OR (queue_name = $2 AND deduplication_id = $3)
+           ORDER BY CASE WHEN workflow_uuid = $1 THEN 0 ELSE 1 END
+           LIMIT 1`,
+          [initStatus.workflowUUID, initStatus.queueName, initStatus.deduplicationID],
+        );
+        ret = existing.rows[0];
+      }
+      if (!ret) {
         throw new Error(`Attempt to insert workflow ${initStatus.workflowUUID} failed`);
       }
-      const ret = rows[0];
       ret.class_name = ret.class_name ?? '';
       ret.config_name = ret.config_name ?? '';
-      ret.returned_existing_workflow = returnExistingOnDeduplication && ret.workflow_uuid !== initStatus.workflowUUID;
+      ret.returned_existing_workflow =
+        returnExistingOnDeduplication &&
+        ret.workflow_uuid !== initStatus.workflowUUID &&
+        ret.queue_name === initStatus.queueName &&
+        ret.deduplication_id === initStatus.deduplicationID;
       initStatus.serialization = ret.serialization;
       return ret;
     } catch (error) {
