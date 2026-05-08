@@ -138,7 +138,7 @@ describe('singleton workflows', () => {
         enqueueOptions: { deduplicationID: dedupID, singleton: true },
       }).gatedWorkflow('second');
 
-      expect(calls).toBeGreaterThanOrEqual(2);
+      expect(calls).toBe(2);
       expect(wfh2.workflowID).toBe(wfh1.workflowID);
 
       SingletonTest.resolveEvent();
