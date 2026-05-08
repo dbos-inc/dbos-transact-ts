@@ -541,6 +541,9 @@ export class DBOSExecutor {
     }
 
     if (handleWorkflowID !== workflowID) {
+      span.setAttribute('operationUUID', handleWorkflowID);
+      span.setStatus({ code: SpanStatusCode.OK });
+      this.tracer.endSpan(span);
       return this.retrieveWorkflow<R>(handleWorkflowID);
     }
 
