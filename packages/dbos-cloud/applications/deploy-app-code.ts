@@ -201,9 +201,15 @@ export async function deployAppCode(
   }
   logger.debug(`  ... app name is ${appName}.`);
 
-  const appLanguage = retrieveApplicationLanguage(deployConfigFile);
+  // When restoring a previous version, the archive is already stored server-side,
+  // so the local dbos-config.yaml and language-specific build artifacts are not needed.
+  const restoringPreviousVersion = previousVersion !== null;
 
-  if (appLanguage === (AppLanguages.Node as string)) {
+  const appLanguage = restoringPreviousVersion ? undefined : retrieveApplicationLanguage(deployConfigFile);
+
+  if (restoringPreviousVersion) {
+    // No local checks needed.
+  } else if (appLanguage === (AppLanguages.Node as string)) {
     logger.debug('Checking for package.json...');
     const packageJsonExists = existsSync(path.join(process.cwd(), 'package.json'));
     logger.debug(`  ... package.json found: ${packageJsonExists}`);
@@ -284,8 +290,9 @@ export async function deployAppCode(
   const appRegistered = await isAppRegistered(logger, host, appName, userCredentials);
 
   // If the app is not registered, register it.
-  const interpolatedConfig = readInterpolatedConfig(deployConfigFile, logger);
-  const dbosConfig = YAML.parse(interpolatedConfig) as ConfigFile;
+  const dbosConfig: ConfigFile | undefined = restoringPreviousVersion
+    ? undefined
+    : (YAML.parse(readInterpolatedConfig(deployConfigFile, logger)) as ConfigFile);
 
   if (appRegistered === undefined) {
     try {
@@ -319,7 +326,7 @@ export async function deployAppCode(
     // Make sure the app database is the same.
     if (
       appRegistered.ApplicationDatabaseName &&
-      dbosConfig.database?.app_db_name &&
+      dbosConfig?.database?.app_db_name &&
       dbosConfig.database.app_db_name !== appRegistered.ApplicationDatabaseName
     ) {
       logger.error(
@@ -334,7 +341,6 @@ export async function deployAppCode(
     if (previousVersion === null) {
       logger.debug('Creating application zip ...');
 
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-enum-comparison
       if (appLanguage === AppLanguages.Java) {
         logger.info('Java application, creating JAR zip archive...');
         body.application_archive = await createJavaZipData(logger, deployConfigFile);
