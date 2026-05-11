@@ -183,7 +183,6 @@ export async function deployAppCode(
   appName: string | undefined,
   deployConfigFile: string,
   userDBName: string | undefined = undefined, // Used for registering the app
-  enableTimeTravel: boolean = false,
 ): Promise<number> {
   const startTime = Date.now();
   const logger = getLogger(verbose);
@@ -306,12 +305,7 @@ export async function deployAppCode(
     }
 
     // Register the app
-    if (enableTimeTravel) {
-      logger.info('Enabling time travel for this application');
-    } else {
-      logger.info('Time travel is disabled for this application');
-    }
-    const ret = await registerApp(userDBName, host, enableTimeTravel, appName, undefined, undefined, deployConfigFile);
+    const ret = await registerApp(userDBName, host, false, appName, undefined, undefined, deployConfigFile);
     if (ret !== 0) {
       return 1;
     }

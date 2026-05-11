@@ -209,11 +209,6 @@ applicationCommands
     '-d, --database <string>',
     'Specify a Postgres database instance for this application. This cannot be changed after the application is first deployed.',
   )
-  .option(
-    '--enable-timetravel',
-    'Enable time travel for the application. This cannot be changed after the application is first deployed.',
-    false,
-  )
   .option('--verbose', 'Verbose log of deployment step')
   .option('--configFile <string>', 'DBOS Config file path', defaultConfigFilePath)
   .action(
@@ -223,7 +218,6 @@ applicationCommands
         verbose?: boolean;
         previousVersion?: string;
         database?: string;
-        enableTimetravel: boolean;
         configFile: string;
       },
     ) => {
@@ -236,7 +230,6 @@ applicationCommands
         appName,
         options.configFile,
         options.database,
-        options.enableTimetravel,
       );
       process.exit(exitCode);
     },
