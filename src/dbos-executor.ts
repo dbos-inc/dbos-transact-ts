@@ -505,7 +505,14 @@ export class DBOSExecutor {
       });
       serializationType = ires.serialization === DBOSPortableJSON.name() ? 'portable' : undefined;
     } catch (e) {
-      if (e instanceof DBOSQueueDuplicatedError && callerID && callerFunctionID) {
+      // For 'return-existing' enqueues we don't pre-record the dedup error: the wrapper will
+      // catch it, attach to the existing workflow, and record the child mapping itself.
+      if (
+        e instanceof DBOSQueueDuplicatedError &&
+        callerID &&
+        callerFunctionID &&
+        params.duplicationPolicy !== 'return-existing'
+      ) {
         const sererr = await serializeResError(e, this.serializer, undefined); // This is a step result
         await this.systemDatabase.recordOperationResult(
           callerID,
@@ -517,6 +524,7 @@ export class DBOSExecutor {
           { error: sererr.serializedValue, serialization: sererr.serialization },
         );
       }
+      this.tracer.endSpan(span);
       throw e;
     }
 

@@ -3,7 +3,7 @@ import { type SystemDatabase, WorkflowStatusInternal } from './system_database';
 import { ConfiguredInstance } from './decorators';
 import { deserializePositionalArgs, registerSerializationRecipe } from './serialization';
 import { DBOS, runInternalStep } from './dbos';
-import { EnqueueOptions } from './system_database';
+import { DuplicationPolicy, EnqueueOptions } from './system_database';
 import { DBOSExecutor } from './dbos-executor';
 
 export interface WorkflowParams {
@@ -14,6 +14,10 @@ export interface WorkflowParams {
   timeoutMS?: number | null;
   deadlineEpochMS?: number;
   enqueueOptions?: EnqueueOptions; // Options for the workflow queue
+  // How to react to a collision on `enqueueOptions.deduplicationID`. When 'return-existing', the
+  // executor skips its dedup-error pre-recording at the parent's funcID — the wrapper records the
+  // child mapping itself after attaching to the existing workflow.
+  duplicationPolicy?: DuplicationPolicy;
 }
 
 export const DEFAULT_MAX_RECOVERY_ATTEMPTS = 100;
