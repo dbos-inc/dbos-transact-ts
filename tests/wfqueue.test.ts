@@ -2577,10 +2577,14 @@ describe('partitioned-queue-orphan-pending', () => {
     // Replace the between-partition pause with a no-op so the loop can continue.
     setDebugTrigger(DEBUG_TRIGGER_BETWEEN_PARTITION_DISPATCHES, { callback: () => {} });
 
-    // Phase 3: wait for wf-A (pre-fix: orphaned in PENDING; post-fix: SUCCESS).
+    // Phase 3: wait for both the synthetic 55P03 to fire AND wf-A to finish.
+    // Waiting for SUCCESS alone races: dispatch is now inline, so wf-A can
+    // complete during the 500 ms BETWEEN pause — before iteration 2 has even
+    // run findAndMark. Clearing triggers at that point wipes AFTER_SELECT
+    // before it ever gets the chance to throw, leaving p03Fired=false.
     const deadline = Date.now() + 10000;
     let statusA = await wfA.getStatus();
-    while (statusA?.status !== StatusString.SUCCESS && Date.now() < deadline) {
+    while ((!p03Fired || statusA?.status !== StatusString.SUCCESS) && Date.now() < deadline) {
       await sleepms(100);
       statusA = await wfA.getStatus();
     }
