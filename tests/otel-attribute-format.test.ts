@@ -12,6 +12,47 @@ import { context, trace } from '@opentelemetry/api';
 import { DBOS } from '../src';
 import { Tracer } from '../src/telemetry/traces';
 import { TelemetryCollector } from '../src/telemetry/collector';
+import { DBOSExecutor } from '../src/dbos-executor';
+
+// Source of truth for the legacy -> semconv mapping. Duplicated from
+// `src/telemetry/traces.ts` on purpose: if the production mapping changes,
+// this test must change too, which forces the cross-SDK schema to be a
+// deliberate edit rather than an accidental drift.
+const EXPECTED_LEGACY_TO_SEMCONV: Readonly<Record<string, string>> = {
+  operationUUID: 'dbos.operation.workflow_id',
+  operationType: 'dbos.operation.type',
+  operationName: 'dbos.operation.name',
+  applicationID: 'dbos.application.id',
+  applicationVersion: 'dbos.application.version',
+  executorID: 'dbos.executor.id',
+  queueName: 'dbos.queue.name',
+  authenticatedUser: 'dbos.user.name',
+  authenticatedRoles: 'dbos.user.roles',
+  assumedRole: 'dbos.user.assumed_role',
+  requestID: 'dbos.request.id',
+  requestIP: 'dbos.request.ip',
+  requestURL: 'dbos.request.url',
+  requestMethod: 'dbos.request.method',
+};
+
+// A representative value for each legacy attribute key, used by the
+// end-to-end sweep tests below.
+const ALL_LEGACY_ATTRS = {
+  operationUUID: 'wf-id',
+  operationType: 'workflow',
+  operationName: 'test-op',
+  applicationID: 'app-id',
+  applicationVersion: 'v1',
+  executorID: 'ex-id',
+  queueName: 'my-queue',
+  authenticatedUser: 'alice',
+  authenticatedRoles: ['admin'],
+  assumedRole: 'admin',
+  requestID: 'rid-1',
+  requestIP: '1.2.3.4',
+  requestURL: '/x',
+  requestMethod: 'GET',
+};
 
 function findSpanByName(spans: readonly ReadableSpan[], name: string): ReadableSpan | undefined {
   return spans.find((s) => s.name === name);
@@ -34,25 +75,18 @@ describe('Tracer.resolveAttributeName', () => {
     await collector.destroy();
   });
 
-  test('legacy format passes legacy keys through unchanged', () => {
+  test('legacy format passes every mapped key through unchanged', () => {
     const tracer = new Tracer(collector, 'legacy');
-    expect(tracer.resolveAttributeName('operationUUID')).toBe('operationUUID');
-    expect(tracer.resolveAttributeName('applicationID')).toBe('applicationID');
-    expect(tracer.resolveAttributeName('requestMethod')).toBe('requestMethod');
+    for (const legacy of Object.keys(EXPECTED_LEGACY_TO_SEMCONV)) {
+      expect(tracer.resolveAttributeName(legacy)).toBe(legacy);
+    }
   });
 
-  test('semconv format remaps legacy keys to dbos.* names', () => {
+  test('semconv format remaps every mapped key to its dbos.* name', () => {
     const tracer = new Tracer(collector, 'semconv');
-    expect(tracer.resolveAttributeName('operationUUID')).toBe('dbos.operation.workflow_id');
-    expect(tracer.resolveAttributeName('applicationID')).toBe('dbos.application.id');
-    expect(tracer.resolveAttributeName('applicationVersion')).toBe('dbos.application.version');
-    expect(tracer.resolveAttributeName('executorID')).toBe('dbos.executor.id');
-    expect(tracer.resolveAttributeName('queueName')).toBe('dbos.queue.name');
-    expect(tracer.resolveAttributeName('authenticatedUser')).toBe('dbos.user.name');
-    expect(tracer.resolveAttributeName('authenticatedRoles')).toBe('dbos.user.roles');
-    expect(tracer.resolveAttributeName('assumedRole')).toBe('dbos.user.assumed_role');
-    expect(tracer.resolveAttributeName('requestID')).toBe('dbos.request.id');
-    expect(tracer.resolveAttributeName('requestMethod')).toBe('dbos.request.method');
+    for (const [legacy, semconv] of Object.entries(EXPECTED_LEGACY_TO_SEMCONV)) {
+      expect(tracer.resolveAttributeName(legacy)).toBe(semconv);
+    }
   });
 
   test('unknown attribute names pass through in either mode', () => {
@@ -96,6 +130,25 @@ describe('otelAttributeFormat: legacy (default)', () => {
     expect(attrs['dbos.application.version']).toBeUndefined();
     expect(attrs['dbos.executor.id']).toBeUndefined();
   });
+
+  test('startSpan emits every mapped legacy key under its original name', () => {
+    memoryExporter.reset();
+
+    const tracer = DBOSExecutor.globalInstance!.tracer;
+    const span = tracer.startSpan('all-attrs-legacy', { ...ALL_LEGACY_ATTRS });
+    tracer.endSpan(span);
+
+    const captured = findSpanByName(memoryExporter.getFinishedSpans(), 'all-attrs-legacy');
+    expect(captured).toBeDefined();
+    const attrs = captured!.attributes;
+
+    for (const legacy of Object.keys(EXPECTED_LEGACY_TO_SEMCONV)) {
+      expect(attrs[legacy]).toBeDefined();
+    }
+    for (const semconv of Object.values(EXPECTED_LEGACY_TO_SEMCONV)) {
+      expect(attrs[semconv]).toBeUndefined();
+    }
+  });
 });
 
 describe('otelAttributeFormat: semconv', () => {
@@ -136,5 +189,22 @@ describe('otelAttributeFormat: semconv', () => {
     expect(attrs.applicationID).toBeUndefined();
     expect(attrs.operationUUID).toBeUndefined();
     expect(attrs.operationType).toBeUndefined();
+  });
+
+  test('startSpan remaps every mapped legacy key to its dbos.* name', () => {
+    memoryExporter.reset();
+
+    const tracer = DBOSExecutor.globalInstance!.tracer;
+    const span = tracer.startSpan('all-attrs-semconv', { ...ALL_LEGACY_ATTRS });
+    tracer.endSpan(span);
+
+    const captured = findSpanByName(memoryExporter.getFinishedSpans(), 'all-attrs-semconv');
+    expect(captured).toBeDefined();
+    const attrs = captured!.attributes;
+
+    for (const [legacy, semconv] of Object.entries(EXPECTED_LEGACY_TO_SEMCONV)) {
+      expect(attrs[legacy]).toBeUndefined();
+      expect(attrs[semconv]).toBeDefined();
+    }
   });
 });
