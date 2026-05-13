@@ -562,89 +562,56 @@ class WFQueueRunner {
           exec.logger.warn(`Error transitioning delayed workflows: ${(e as Error).message}`);
         }
 
-        // Dequeue workflows for this queue.
-        //
-        // For partitioned queues each partition key is dispatched independently.
-        // Each call to findAndMarkStartableWorkflows runs its own transaction: it
-        // atomically marks the chosen workflow PENDING and returns its ID. A
-        // concurrent executor running FOR UPDATE NOWAIT can therefore raise 55P03
-        // on partition B *after* partition A's transaction has already committed.
-        //
-        // The fix: wrap each partition's query in its own try/catch so that a
-        // failure on partition B never discards the workflow IDs already committed
-        // PENDING for partition A. Without this, the outer catch resets wfids=[]
-        // and the partition-A workflow is left permanently PENDING with no
-        // executor ever calling executeWorkflowId — an "orphan-PENDING" state.
-        const wfids: string[] = [];
-        if (queue.partitionQueue) {
-          let partitionKeys: string[];
-          try {
-            partitionKeys = await exec.systemDatabase.getQueuePartitions(queue.name);
-          } catch (e) {
-            const err = e as Error;
-            if ('code' in err && (err.code === '40001' || err.code === '55P03')) {
-              contentionDetected = true;
-              exec.logger.warn(`Contention detected in queue ${queue.name}.`);
-            } else {
-              exec.logger.warn(`Error getting partitions for queue ${queue.name}: ${err.message}`);
-            }
-            partitionKeys = [];
+        // Dequeue workflows for this queue. For partitioned queues we dispatch
+        // each partition's workflows as soon as they are marked PENDING — if we
+        // collected all wfids first and then dispatched, a 55P03 thrown by a
+        // later partition's FOR UPDATE NOWAIT would skip the post-catch dispatch
+        // and leave earlier partitions' workflows orphaned in PENDING.
+        // executeWorkflowId starts the workflow asynchronously and returns a
+        // handle, so inline dispatch does not serialize execution.
+        const dispatch = async (wfids: string[]) => {
+          if (wfids.length > 0) {
+            await debugTriggerPoint(DEBUG_TRIGGER_WORKFLOW_QUEUE_START);
           }
-          for (const partitionKey of partitionKeys) {
+          for (const wfid of wfids) {
             try {
+              await exec.executeWorkflowId(wfid, { isQueueDispatch: true });
+            } catch (e) {
+              exec.logger.warn(`Could not execute workflow with id ${wfid}: ${(e as Error).message}`);
+            }
+          }
+        };
+        try {
+          if (queue.partitionQueue) {
+            const partitionKeys = await exec.systemDatabase.getQueuePartitions(queue.name);
+            for (const partitionKey of partitionKeys) {
               const partitionWfids = await exec.systemDatabase.findAndMarkStartableWorkflows(
                 queue,
                 exec.executorID,
                 globalParams.appVersion,
                 partitionKey,
               );
-              wfids.push(...partitionWfids);
-            } catch (e) {
-              const err = e as Error;
-              if ('code' in err && (err.code === '40001' || err.code === '55P03')) {
-                // 40001: serialization_failure, 55P03: lock_not_available
-                contentionDetected = true;
-                exec.logger.warn(`Contention detected in queue ${queue.name} partition ${partitionKey}.`);
-              } else {
-                exec.logger.warn(
-                  `Error getting startable workflows for queue ${queue.name} partition ${partitionKey}: ${err.message}`,
-                );
-              }
-              // Continue to the next partition — do NOT discard wfids already
-              // committed PENDING for earlier partitions.
+              await dispatch(partitionWfids);
+              await debugTriggerPoint(DEBUG_TRIGGER_BETWEEN_PARTITION_DISPATCHES);
             }
-            await debugTriggerPoint(DEBUG_TRIGGER_BETWEEN_PARTITION_DISPATCHES);
-          }
-        } else {
-          try {
-            const found = await exec.systemDatabase.findAndMarkStartableWorkflows(
+          } else {
+            const wfids = await exec.systemDatabase.findAndMarkStartableWorkflows(
               queue,
               exec.executorID,
               globalParams.appVersion,
               undefined,
             );
-            wfids.push(...found);
-          } catch (e) {
-            const err = e as Error;
-            if ('code' in err && (err.code === '40001' || err.code === '55P03')) {
-              // 40001: serialization_failure, 55P03: lock_not_available
-              contentionDetected = true;
-              exec.logger.warn(`Contention detected in queue ${queue.name}.`);
-            } else {
-              exec.logger.warn(`Error getting startable workflows for queue ${queue.name}: ${err.message}`);
-            }
+            await dispatch(wfids);
           }
-        }
-
-        if (wfids.length > 0) {
-          await debugTriggerPoint(DEBUG_TRIGGER_WORKFLOW_QUEUE_START);
-        }
-
-        for (const wfid of wfids) {
-          try {
-            await exec.executeWorkflowId(wfid, { isQueueDispatch: true });
-          } catch (e) {
-            exec.logger.warn(`Could not execute workflow with id ${wfid}: ${(e as Error).message}`);
+        } catch (e) {
+          const err = e as Error;
+          // Handle serialization errors and lock contention with backoff
+          if ('code' in err && (err.code === '40001' || err.code === '55P03')) {
+            // 40001: serialization_failure, 55P03: lock_not_available
+            contentionDetected = true;
+            exec.logger.warn(`Contention detected in queue ${queue.name}.`);
+          } else {
+            exec.logger.warn(`Error getting startable workflows for queue ${queue.name}: ${err.message}`);
           }
         }
       } catch (e) {
