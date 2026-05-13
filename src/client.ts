@@ -1,5 +1,6 @@
 import {
   SystemDatabase,
+  type DuplicationPolicy,
   type WorkflowStatusInternal,
   type WorkflowScheduleInternal,
   type VersionInfo,
@@ -38,7 +39,11 @@ import {
   toWorkflowStatus,
 } from './workflow_management';
 import { DBOSExecutor } from './dbos-executor';
-import { DBOSAwaitedWorkflowCancelledError } from './error';
+import {
+  DBOSAwaitedWorkflowCancelledError,
+  DBOSInvalidWorkflowTransitionError,
+  DBOSQueueDuplicatedError,
+} from './error';
 import { Pool } from 'pg';
 import {
   type WorkflowSchedule,
@@ -119,6 +124,15 @@ export interface ClientEnqueueOptions {
    * The workflow will be in DELAYED status until the delay expires, then transition to ENQUEUED.
    */
   delaySeconds?: number;
+  /**
+   * How to handle a collision with another workflow that has the same `deduplicationID`
+   * on the same queue.
+   *   `'reject'` (default): throw `DBOSQueueDuplicatedError`.
+   *   `'return-existing'`: return a handle to the existing workflow instead of throwing.
+   *     Requires `deduplicationID`. Arguments passed by the colliding caller are discarded
+   *     and the handle resolves with the original workflow's result.
+   */
+  duplicationPolicy?: DuplicationPolicy;
 }
 
 /**
@@ -276,9 +290,40 @@ export class DBOSClient {
       delayUntilEpochMS,
     };
 
-    await this.systemDatabase.initWorkflowStatus(internalStatus, null);
+    let finalID: string;
+    if (options.duplicationPolicy === 'return-existing') {
+      finalID = await this.#initSingletonWorkflow(internalStatus, options);
+    } else {
+      await this.systemDatabase.initWorkflowStatus(internalStatus, null);
+      finalID = internalStatus.workflowUUID;
+    }
 
-    return new ClientHandle<Awaited<ReturnType<T>>>(this.systemDatabase, workflowUUID);
+    return new ClientHandle<Awaited<ReturnType<T>>>(this.systemDatabase, finalID);
+  }
+
+  /**
+   * Insert the workflow status row under the `'return-existing'` duplication policy: a retry
+   * loop that catches `DBOSQueueDuplicatedError`, looks up the active workflow holding the
+   * dedup slot, and returns its UUID. Falls back to retry if the slot was cleared between
+   * INSERT and lookup (the prior workflow completed or was cancelled mid-flight).
+   */
+  async #initSingletonWorkflow(internalStatus: WorkflowStatusInternal, options: ClientEnqueueOptions): Promise<string> {
+    if (!options.deduplicationID) {
+      throw new DBOSInvalidWorkflowTransitionError("`duplicationPolicy: 'return-existing'` requires `deduplicationID`");
+    }
+    while (true) {
+      try {
+        await this.systemDatabase.initWorkflowStatus(internalStatus, null);
+        return internalStatus.workflowUUID;
+      } catch (e) {
+        if (!(e instanceof DBOSQueueDuplicatedError)) throw e;
+        const existingID = await this.systemDatabase.getDeduplicatedWorkflow(
+          options.queueName,
+          options.deduplicationID,
+        );
+        if (existingID) return existingID;
+      }
+    }
   }
 
   /**
@@ -334,9 +379,15 @@ export class DBOSClient {
       delayUntilEpochMS,
     };
 
-    await this.systemDatabase.initWorkflowStatus(internalStatus, null);
+    let finalID: string;
+    if (options.duplicationPolicy === 'return-existing') {
+      finalID = await this.#initSingletonWorkflow(internalStatus, options);
+    } else {
+      await this.systemDatabase.initWorkflowStatus(internalStatus, null);
+      finalID = internalStatus.workflowUUID;
+    }
 
-    return new ClientHandle<T>(this.systemDatabase, workflowUUID);
+    return new ClientHandle<T>(this.systemDatabase, finalID);
   }
 
   /**

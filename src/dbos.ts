@@ -41,6 +41,7 @@ import {
   DBOSAwaitedWorkflowExceededMaxRecoveryAttempts,
   DBOSUnexpectedStepError,
   DBOSInvalidQueuePriorityError,
+  DBOSQueueDuplicatedError,
 } from './error';
 import {
   getDbosConfig,
@@ -106,6 +107,7 @@ import { randomUUID } from 'node:crypto';
 import { StepConfig } from './step';
 import { Conductor } from './conductor/conductor';
 import {
+  DuplicationPolicy,
   EnqueueOptions,
   DBOS_STREAM_CLOSED_SENTINEL,
   DBOS_FUNCNAME_WRITESTREAM,
@@ -162,6 +164,13 @@ export interface StartWorkflowParams {
   queueName?: string;
   timeoutMS?: number | null;
   enqueueOptions?: EnqueueOptions;
+  // How to handle a collision with another workflow that has the same
+  // `enqueueOptions.deduplicationID` on the same queue.
+  //   'reject' (default): throw `DBOSQueueDuplicatedError`.
+  //   'return-existing': return a handle to the existing workflow instead of throwing.
+  //     Requires `queueName` and `enqueueOptions.deduplicationID`. Arguments passed by the
+  //     colliding caller are discarded and the handle resolves with the original workflow's result.
+  duplicationPolicy?: DuplicationPolicy;
 }
 
 /**
@@ -1234,6 +1243,7 @@ export class DBOS {
     }
 
     const regOps = getRegisteredOperations(target);
+    const singletonWorkflow = params?.duplicationPolicy === 'return-existing';
 
     const handler: ProxyHandler<object> = {
       apply(target, _thisArg, args) {
@@ -1243,14 +1253,19 @@ export class DBOS {
           const name = typeof target === 'function' ? target.name : target.toString();
           throw new DBOSNotRegisteredError(name, `${name} is not a registered DBOS workflow function`);
         }
-        return DBOS.#invokeWorkflow(instance, regOp, args, params);
+        return singletonWorkflow
+          ? DBOS.#invokeSingletonWorkflow(instance, regOp, args, params)
+          : DBOS.#invokeWorkflow(instance, regOp, args, params);
       },
       get(target, p, receiver) {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const func = Reflect.get(target, p, receiver);
         const regOp = getFunctionRegistration(func) ?? regOps.find((op) => op.name === p);
         if (regOp) {
-          return (...args: unknown[]) => DBOS.#invokeWorkflow(instance, regOp, args, params);
+          return (...args: unknown[]) =>
+            singletonWorkflow
+              ? DBOS.#invokeSingletonWorkflow(instance, regOp, args, params)
+              : DBOS.#invokeWorkflow(instance, regOp, args, params);
         }
 
         const name = typeof p === 'string' ? p : String(p);
@@ -1708,6 +1723,7 @@ export class DBOS {
         deadlineEpochMS:
           params.timeoutMS === null || ppctx?.workflowTimeoutMS === null ? undefined : ppctx?.deadlineEpochMS,
         enqueueOptions: params.enqueueOptions,
+        duplicationPolicy: params.duplicationPolicy,
       };
 
       return await invokeRegOp(wfParams, pwfid, funcId);
@@ -1718,6 +1734,7 @@ export class DBOS {
         enqueueOptions: params.enqueueOptions,
         configuredInstance: instance,
         timeoutMS,
+        duplicationPolicy: params.duplicationPolicy,
       };
 
       return await invokeRegOp(wfParams, undefined, undefined);
@@ -1737,6 +1754,67 @@ export class DBOS {
         regOP.name,
         `${regOP.name} is not a registered DBOS workflow, step, or transaction function`,
       );
+    }
+  }
+
+  static async #invokeSingletonWorkflow<This, Args extends unknown[], Return>(
+    $this: This,
+    regOP: MethodRegistrationBase,
+    args: Args,
+    params: StartWorkflowParams,
+  ): Promise<WorkflowHandle<Return>> {
+    if (!params.queueName) {
+      throw new DBOSInvalidWorkflowTransitionError("`duplicationPolicy: 'return-existing'` requires a `queueName`");
+    }
+    const dedupID = params.enqueueOptions?.deduplicationID;
+    if (!dedupID) {
+      throw new DBOSInvalidWorkflowTransitionError(
+        "`duplicationPolicy: 'return-existing'` requires `enqueueOptions.deduplicationID`",
+      );
+    }
+    const queueName = params.queueName;
+
+    // Reserve the parent's child-funcID once, before any await. Each loop iteration passes it
+    // through so the return-existing retry loop consumes a single funcID instead of one per try.
+    const childFuncId = DBOS.isInWorkflow() ? functionIDGetIncrement() : undefined;
+
+    // Resolve the workflow ID once: if the caller supplied one explicitly or via
+    // `withNextWorkflowID`, reuse it on every iteration.
+    const resolvedWorkflowID = getNextWFID(params.workflowID);
+    const callParams: StartWorkflowParams =
+      resolvedWorkflowID !== undefined ? { ...params, workflowID: resolvedWorkflowID } : params;
+
+    while (true) {
+      try {
+        return await DBOS.#invokeWorkflow<This, Args, Return>($this, regOP, args, callParams, childFuncId);
+      } catch (e) {
+        if (!(e instanceof DBOSQueueDuplicatedError)) {
+          throw e;
+        }
+        const existingID = await DBOSExecutor.globalInstance!.systemDatabase.getDeduplicatedWorkflow(
+          queueName,
+          dedupID,
+        );
+        if (existingID) {
+          // Record the parent->child mapping at the reserved funcID so that on replay
+          // the parent uses the same child.
+          if (childFuncId !== undefined) {
+            const now = Date.now();
+            await DBOSExecutor.globalInstance!.systemDatabase.recordOperationResult(
+              DBOS.workflowID!,
+              childFuncId,
+              regOP.name,
+              true,
+              now,
+              now,
+              { childWorkflowID: existingID },
+            );
+          }
+          return new RetrievedHandle<Return>(DBOSExecutor.globalInstance!.systemDatabase, existingID);
+        }
+        // The prior workflow's deduplication_id was cleared between our INSERT and
+        // the lookup (it completed or was cancelled). Loop and try to claim the slot.
+      }
     }
   }
 
