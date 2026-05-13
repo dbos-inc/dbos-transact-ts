@@ -384,6 +384,7 @@ describe('dbos-config', () => {
         sysDbPoolSize: undefined,
         systemDatabasePool: undefined,
         systemDatabaseSchemaName: 'dbos',
+        schedulerPollingIntervalMs: undefined,
         serializer: DBOSJSON,
         useListenNotify: true,
         telemetry: {
@@ -396,6 +397,7 @@ describe('dbos-config', () => {
             tracesEndpoint: undefined,
             logsEndpoint: undefined,
           },
+          otelAttributeFormat: 'legacy',
         },
       });
     });
@@ -414,6 +416,7 @@ describe('dbos-config', () => {
         sysDbPoolSize: undefined,
         systemDatabasePool: undefined,
         systemDatabaseSchemaName: 'dbos',
+        schedulerPollingIntervalMs: undefined,
         serializer: DBOSJSON,
         useListenNotify: true,
         telemetry: {
@@ -426,6 +429,7 @@ describe('dbos-config', () => {
             tracesEndpoint: undefined,
             logsEndpoint: undefined,
           },
+          otelAttributeFormat: 'legacy',
         },
       });
     });
@@ -442,6 +446,7 @@ describe('dbos-config', () => {
         sysDbPoolSize: undefined,
         systemDatabasePool: undefined,
         systemDatabaseSchemaName: 'dbos',
+        schedulerPollingIntervalMs: undefined,
         serializer: DBOSJSON,
         useListenNotify: true,
         telemetry: {
@@ -454,6 +459,7 @@ describe('dbos-config', () => {
             tracesEndpoint: undefined,
             logsEndpoint: undefined,
           },
+          otelAttributeFormat: 'legacy',
         },
       });
     });
@@ -468,6 +474,7 @@ describe('dbos-config', () => {
         sysDbPoolSize: undefined,
         systemDatabasePool: undefined,
         systemDatabaseSchemaName: 'dbos',
+        schedulerPollingIntervalMs: undefined,
         serializer: DBOSJSON,
         useListenNotify: true,
         telemetry: {
@@ -480,6 +487,7 @@ describe('dbos-config', () => {
             tracesEndpoint: undefined,
             logsEndpoint: undefined,
           },
+          otelAttributeFormat: 'legacy',
         },
       });
     });
