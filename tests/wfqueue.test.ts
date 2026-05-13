@@ -2639,4 +2639,168 @@ describe('partitioned-queue-orphan-pending', () => {
 
     expect(await queueEntriesAreCleanedUp()).toBe(true);
   }, 20000);
+
+  // ─── Organic parent-child stress test (reproduction aid) ──────────────────
+  // Mirrors the real-world incident: child workflows are enqueued via
+  // DBOS.startWorkflow() called from within a running parent workflow
+  // (isWithinWorkflow=true). Two persistent worker processes race the test
+  // process to dispatch from the same partitioned queue.
+  //
+  // DEBUG_TRIGGER_BETWEEN_PARTITION_DISPATCHES widens the race window so the
+  // bug reproduces in ~6 of 20 iterations instead of requiring ~55+ organic
+  // runs. The worker's stdout is intentionally un-drained (stdio:'pipe') so
+  // the OS pipe buffer fills, stalling write() syscalls and creating additional
+  // timing pressure inside the worker's event loop.
+  //
+  // Run this test to observe the orphan-PENDING bug on unfixed code:
+  //   PGPASSWORD=<pw> npx jest --testNamePattern partition-orphan-parent-child-stress
+  function spawnPartitionWorker(workerId: string, durationMs: number): ReturnType<typeof spawn> {
+    const w = spawn('npx', ['ts-node', './tests/wfqueuepartitionworker.ts', String(durationMs), STRESS_QUEUE_NAME], {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        DBOS__VMID: workerId,
+        DBOS__APPVERSION: globalParams.appVersion,
+      },
+      // stdout intentionally un-drained: when the pipe buffer fills the
+      // worker's event loop stalls on write syscalls, widening the race window.
+      // Only stderr is forwarded for diagnostics.
+      stdio: 'pipe',
+    });
+    w.stderr?.on('data', (d: Buffer) => {
+      for (const line of d.toString().split('\n').filter(Boolean)) {
+        process.stderr.write(`[${workerId}] ${line}\n`);
+      }
+    });
+    return w;
+  }
+
+  test(
+    'partition-orphan-parent-child-stress',
+    async () => {
+      const ITERATIONS = parseInt(process.env['STRESS_ITERATIONS'] ?? '20', 10);
+      const WF_PER_ITER = parseInt(process.env['STRESS_WF_PER_ITER'] ?? '6', 10);
+      const ACCOUNTS = parseInt(process.env['STRESS_ACCOUNTS'] ?? '3', 10);
+      const WF_TIMEOUT_MS = parseInt(process.env['STRESS_WF_TIMEOUT_MS'] ?? '10000', 10);
+      const WORKER_DURATION_MS = ITERATIONS * 5000 + 10000;
+
+      console.log(
+        `[stress] starting: ${ITERATIONS} iter × ${WF_PER_ITER} WF/iter, ` +
+          `${ACCOUNTS} partitions, timeout=${WF_TIMEOUT_MS}ms/workflow`,
+      );
+      console.log(`[stress] Bug: child stuck PENDING when 55P03 fires after ENQUEUED→PENDING commit`);
+
+      // Arm 500 ms delay between partition dispatches.
+      setDebugTrigger(DEBUG_TRIGGER_BETWEEN_PARTITION_DISPATCHES, {
+        asyncCallback: async () => {
+          await sleepms(500);
+        },
+      });
+
+      const accountKeys = Array.from({ length: ACCOUNTS }, () => `pc-acct-${randomUUID()}`);
+      const worker0 = spawnPartitionWorker('pc-worker-0', WORKER_DURATION_MS);
+      const worker1 = spawnPartitionWorker('pc-worker-1', WORKER_DURATION_MS);
+      const workerExited = [
+        new Promise<void>((res) => worker0.on('exit', () => res())),
+        new Promise<void>((res) => worker1.on('exit', () => res())),
+      ];
+
+      console.log(`[stress] workers spawned, waiting 4s for them to boot...`);
+      await sleepms(4000);
+      console.log(`[stress] workers ready — starting iterations`);
+
+      try {
+        for (let iter = 0; iter < ITERATIONS; iter++) {
+          const iterLabel = `[iter ${iter + 1}/${ITERATIONS}]`;
+          const iterStart = Date.now();
+          const batchKeys = Array.from({ length: WF_PER_ITER }, (_, i) => accountKeys[i % ACCOUNTS]);
+
+          console.log(`${iterLabel} enqueueing ${WF_PER_ITER} parent→child workflows across ${ACCOUNTS} partitions`);
+
+          const childHandles: WorkflowHandle<string>[] = [];
+          const enqueueTimestamps: number[] = [];
+
+          for (let i = 0; i < WF_PER_ITER; i++) {
+            const partitionKey = batchKeys[i];
+            const childWorkflowId = `pc-child-${randomUUID()}`;
+
+            const parentHandle = await DBOS.startWorkflow(PartitionWorkerWF).parent(
+              childWorkflowId,
+              partitionKey,
+              STRESS_QUEUE_NAME,
+            );
+            await parentHandle.getResult();
+
+            childHandles.push(DBOS.retrieveWorkflow<string>(childWorkflowId));
+            enqueueTimestamps.push(Date.now());
+
+            await sleepms(Math.floor(Math.random() * 30));
+          }
+
+          // Poll each child with a hard deadline so orphaned PENDING workflows
+          // fail fast with clear diagnostics instead of hanging forever.
+          const deadline = Date.now() + WF_TIMEOUT_MS;
+          const pendingFirstSeenAt: (number | null)[] = new Array(childHandles.length).fill(null);
+
+          for (let i = 0; i < childHandles.length; i++) {
+            const h = childHandles[i];
+            let status = await h.getStatus();
+
+            while (status?.status === StatusString.PENDING || status?.status === StatusString.ENQUEUED) {
+              const now = Date.now();
+
+              if (status.status === StatusString.PENDING && pendingFirstSeenAt[i] === null) {
+                pendingFirstSeenAt[i] = now;
+                console.log(
+                  `${iterLabel}   child ${h.workflowID} → PENDING` +
+                    ` (executor=${status.executorId ?? 'none'}, +${now - enqueueTimestamps[i]}ms since enqueue)` +
+                    ` — watching for stall...`,
+                );
+              }
+
+              if (now > deadline) {
+                const fresh = await h.getStatus();
+                const pendingAt = pendingFirstSeenAt[i];
+                const stalledMs = pendingAt !== null ? now - pendingAt : 'unknown';
+
+                console.error(`${iterLabel} *** BUG REPRODUCED ***`);
+                console.error(`${iterLabel}   workflowID : ${h.workflowID}`);
+                console.error(`${iterLabel}   status     : ${fresh?.status ?? 'null'}`);
+                console.error(`${iterLabel}   partition  : ${batchKeys[i]}`);
+                console.error(`${iterLabel}   executorId : ${fresh?.executorId ?? 'none'}`);
+                console.error(`${iterLabel}   stalledInPENDINGMs: ${stalledMs}`);
+                console.error(`${iterLabel}   Cause: findAndMarkStartableWorkflows committed PENDING`);
+                console.error(`${iterLabel}   but threw 55P03 before executeWorkflowId was called.`);
+                console.error(
+                  `${iterLabel}   Pre-fix: workflow stuck in PENDING indefinitely, requiring manual intervention.`,
+                );
+
+                throw new Error(
+                  `${iterLabel} child ${h.workflowID} stuck after ${WF_TIMEOUT_MS}ms — ` +
+                    `status=${fresh?.status ?? 'null'} partition=${batchKeys[i]} ` +
+                    `executorId=${fresh?.executorId ?? 'none'} stalledInPENDINGMs=${stalledMs}`,
+                );
+              }
+
+              await sleepms(200);
+              status = await h.getStatus();
+            }
+
+            expect(status?.status).toBe(StatusString.SUCCESS);
+          }
+
+          expect(await queueEntriesAreCleanedUp()).toBe(true);
+          console.log(`${iterLabel} all ${WF_PER_ITER} children completed in ${Date.now() - iterStart}ms`);
+        }
+
+        console.log(`[stress] all ${ITERATIONS} iterations passed`);
+      } finally {
+        clearDebugTriggers();
+        worker0.kill('SIGTERM');
+        worker1.kill('SIGTERM');
+        await Promise.all(workerExited);
+      }
+    },
+    20 * 5000 + 60000,
+  );
 });
