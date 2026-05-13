@@ -139,7 +139,8 @@ export async function runTransaction<T>(
 
   const callnum = functionIDGetIncrement();
 
-  const span = DBOSExecutor.globalInstance!.tracer.startSpan(
+  const tracer = DBOSExecutor.globalInstance!.tracer;
+  const span = tracer.startSpan(
     funcName,
     {
       operationUUID: DBOS.workflowID,
@@ -213,7 +214,8 @@ export function registerTransaction<This, Args extends unknown[], Return, Config
       );
     }
 
-    const span = DBOSExecutor.globalInstance!.tracer.startSpan(
+    const tracer = DBOSExecutor.globalInstance!.tracer;
+    const span = tracer.startSpan(
       funcName,
       {
         operationUUID: DBOS.workflowID,

@@ -108,6 +108,12 @@ export interface DBOSConfig {
   addContextMetadata?: boolean;
   otlpTracesEndpoints?: string[];
   otlpLogsEndpoints?: string[];
+  /**
+   * How DBOS span attribute names are emitted to OTLP. Defaults to `'legacy'`
+   * for backward compatibility. Set to `'semconv'` to emit OTel-style names
+   * under the `dbos.*` namespace. See {@link OtelAttributeFormat}.
+   */
+  otelAttributeFormat?: OtelAttributeFormat;
 
   adminPort?: number;
   runAdminServer?: boolean;
@@ -139,7 +145,20 @@ export interface DBOSRuntimeConfig {
 export interface TelemetryConfig {
   logs?: LoggerConfig;
   OTLPExporter?: OTLPExporterConfig;
+  otelAttributeFormat?: OtelAttributeFormat;
 }
+
+/**
+ * How DBOS span attribute names are emitted to OTLP.
+ *
+ * - `'legacy'` (default) — original DBOS names (e.g. `operationUUID`, `applicationID`).
+ *   Preserves backward compatibility with existing dashboards and the Python
+ *   `dbos-transact` SDK.
+ * - `'semconv'` — OpenTelemetry-style names under the `dbos.*` namespace (e.g.
+ *   `dbos.operation.workflow_id`, `dbos.application.id`). Follows
+ *   https://opentelemetry.io/docs/specs/semconv/general/attribute-naming/.
+ */
+export type OtelAttributeFormat = 'legacy' | 'semconv';
 
 export interface OTLPExporterConfig {
   logsEndpoint?: string[];
@@ -257,7 +276,7 @@ export class DBOSExecutor {
     }
     this.logger = new GlobalLogger(this.telemetryCollector, this.config.telemetry.logs, this.appName);
     this.ctxLogger = new DBOSContextualLogger(this.logger, () => getActiveSpan());
-    this.tracer = new Tracer(this.telemetryCollector);
+    this.tracer = new Tracer(this.telemetryCollector, config.telemetry.otelAttributeFormat);
     this.serializer = config.serializer;
 
     if (systemDatabase) {
