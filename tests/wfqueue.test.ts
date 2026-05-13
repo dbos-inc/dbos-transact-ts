@@ -33,6 +33,8 @@ const execFileAsync = promisify(execFile);
 import {
   clearDebugTriggers,
   DEBUG_TRIGGER_WORKFLOW_QUEUE_START,
+  DEBUG_TRIGGER_BETWEEN_PARTITION_DISPATCHES,
+  DEBUG_TRIGGER_FIND_AND_MARK_AFTER_SELECT,
   // DEBUG_TRIGGER_WORKFLOW_ENQUEUE,
   setDebugTrigger,
 } from '../src/debugpoint';
@@ -2464,4 +2466,138 @@ describe('database-backed-queue-crud', () => {
       await DBOS.deleteQueue(queueName);
     }
   });
+});
+
+// Regression test for the "orphan-PENDING" bug in partitioned queue dispatch.
+//
+// Pre-fix: runQueue iterated partition keys, collected wfids from every
+// findAndMarkStartableWorkflows call into a single array, and dispatched them
+// after the loop. Each call committed in its own transaction, so the chosen
+// workflow was already PENDING by the time the call returned. If a concurrent
+// executor's FOR UPDATE NOWAIT raised 55P03 on a later partition, the outer
+// catch cleared the array — the post-loop dispatch was skipped and the
+// already-committed workflows were left orphaned in PENDING.
+//
+// Fix: dispatch each partition's workflows inline, immediately after they are
+// marked PENDING.
+describe('partitioned-queue-orphan-pending', () => {
+  class PartitionWorkerWF {
+    @DBOS.workflow()
+    static async run(partitionKey: string): Promise<string> {
+      await sleepms(150);
+      return partitionKey;
+    }
+  }
+
+  const STRESS_QUEUE_NAME = 'partition-orphan-stress-queue';
+
+  let config: DBOSConfig;
+
+  beforeAll(async () => {
+    config = generateDBOSTestConfig();
+    await setUpDBOSTestSysDb(config);
+    DBOS.setConfig(config);
+  });
+
+  beforeEach(async () => {
+    await DBOS.launch();
+    await DBOS.registerQueue(STRESS_QUEUE_NAME, {
+      partitionQueue: true,
+      concurrency: 1,
+      minPollingIntervalMs: 100,
+      onConflict: 'always_update',
+    });
+  });
+
+  afterEach(async () => {
+    clearDebugTriggers();
+    await DBOS.shutdown();
+  });
+
+  // Coordinate the race using two debug triggers:
+  //   DEBUG_TRIGGER_BETWEEN_PARTITION_DISPATCHES — fires after each partition's
+  //     dispatch. We sleep here so the test has time to arm the 55P03 trigger
+  //     before the next partition's SELECT runs.
+  //   DEBUG_TRIGGER_FIND_AND_MARK_AFTER_SELECT — fires inside
+  //     findAndMarkStartableWorkflows between the SELECT FOR UPDATE NOWAIT and
+  //     COMMIT. We throw a synthetic 55P03 here to simulate a concurrent
+  //     executor winning the lock.
+  //
+  // Pre-fix: the first partition's workflow committed PENDING, the second
+  // threw 55P03, the outer catch cleared wfids, the post-loop dispatch ran
+  // with []  — that workflow was stuck PENDING forever.
+  // Post-fix: the first partition's workflow is dispatched inline before the
+  // second partition is even attempted, so the 55P03 cannot orphan it.
+  test('partition-orphan-deterministic', async () => {
+    const partitionA = `det-a-${randomUUID()}`;
+    const partitionB = `det-b-${randomUUID()}`;
+
+    // Phase 1: arm the between-partition pause so we can coordinate timing.
+    // The trigger fires after partition A's transaction commits and the loop
+    // is between partitions — wf-A is PENDING, wf-B is still ENQUEUED.
+    let betweenFired = false;
+    setDebugTrigger(DEBUG_TRIGGER_BETWEEN_PARTITION_DISPATCHES, {
+      asyncCallback: async () => {
+        betweenFired = true;
+        await sleepms(500);
+      },
+    });
+
+    const wfA = await DBOS.startWorkflow(PartitionWorkerWF, {
+      queueName: STRESS_QUEUE_NAME,
+      enqueueOptions: { queuePartitionKey: partitionA },
+    }).run(partitionA);
+
+    const wfB = await DBOS.startWorkflow(PartitionWorkerWF, {
+      queueName: STRESS_QUEUE_NAME,
+      enqueueOptions: { queuePartitionKey: partitionB },
+    }).run(partitionB);
+
+    // Wait for partition A to commit (between-partition trigger fires).
+    const betweenDeadline = Date.now() + 5000;
+    while (!betweenFired && Date.now() < betweenDeadline) {
+      await sleepms(50);
+    }
+    expect(betweenFired).toBe(true);
+
+    // Phase 2: while the loop is paused between A and B, arm the 55P03 trigger.
+    // It fires once for partition B's SELECT — simulating a concurrent executor
+    // winning the FOR UPDATE NOWAIT race on that row.
+    let p03Fired = false;
+    setDebugTrigger(DEBUG_TRIGGER_FIND_AND_MARK_AFTER_SELECT, {
+      callback: () => {
+        if (!p03Fired) {
+          p03Fired = true;
+          const err = new Error('could not obtain lock on row in relation "workflow_status"') as NodeJS.ErrnoException;
+          err.code = '55P03';
+          throw err;
+        }
+      },
+    });
+    // Replace the between-partition pause with a no-op so the loop can continue.
+    setDebugTrigger(DEBUG_TRIGGER_BETWEEN_PARTITION_DISPATCHES, { callback: () => {} });
+
+    // Phase 3: wait for both the synthetic 55P03 to fire AND wf-A to finish.
+    // Waiting for SUCCESS alone races: dispatch is now inline, so wf-A can
+    // complete during the 500 ms BETWEEN pause — before iteration 2 has even
+    // run findAndMark. Clearing triggers at that point wipes AFTER_SELECT
+    // before it ever gets the chance to throw, leaving p03Fired=false.
+    const deadline = Date.now() + 10000;
+    let statusA = await wfA.getStatus();
+    while ((!p03Fired || statusA?.status !== StatusString.SUCCESS) && Date.now() < deadline) {
+      await sleepms(100);
+      statusA = await wfA.getStatus();
+    }
+
+    clearDebugTriggers();
+
+    expect(p03Fired).toBe(true);
+    expect(statusA?.status).toBe(StatusString.SUCCESS);
+    expect(await wfA.getResult()).toBe(partitionA);
+
+    // wf-B's partition threw 55P03 — retried on the next poll cycle.
+    await expect(wfB.getResult()).resolves.toBe(partitionB);
+
+    expect(await queueEntriesAreCleanedUp()).toBe(true);
+  }, 20000);
 });

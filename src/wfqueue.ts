@@ -1,6 +1,10 @@
 import { DBOSExecutor } from './dbos-executor';
 import { DBOS } from './dbos';
-import { DEBUG_TRIGGER_WORKFLOW_QUEUE_START, debugTriggerPoint } from './debugpoint';
+import {
+  DEBUG_TRIGGER_WORKFLOW_QUEUE_START,
+  DEBUG_TRIGGER_BETWEEN_PARTITION_DISPATCHES,
+  debugTriggerPoint,
+} from './debugpoint';
 import type { QueueRecord, SystemDatabase } from './system_database';
 import type { GlobalLogger } from './telemetry/logs';
 import { globalParams, INTERNAL_QUEUE_NAME } from './utils';
@@ -558,8 +562,21 @@ class WFQueueRunner {
           exec.logger.warn(`Error transitioning delayed workflows: ${(e as Error).message}`);
         }
 
-        // Dequeue workflows for this queue
-        let wfids: string[] = [];
+        // Helper function that starts dequeued workflows
+        const dispatch = async (wfids: string[]) => {
+          if (wfids.length > 0) {
+            await debugTriggerPoint(DEBUG_TRIGGER_WORKFLOW_QUEUE_START);
+          }
+          for (const wfid of wfids) {
+            try {
+              await exec.executeWorkflowId(wfid, { isQueueDispatch: true });
+            } catch (e) {
+              exec.logger.warn(`Could not execute workflow with id ${wfid}: ${(e as Error).message}`);
+            }
+          }
+        };
+        // Dequeue workflows for this queue. If the queue is partitioned, successively dequeue and start
+        // workflows from each active partition.
         try {
           if (queue.partitionQueue) {
             const partitionKeys = await exec.systemDatabase.getQueuePartitions(queue.name);
@@ -570,15 +587,17 @@ class WFQueueRunner {
                 globalParams.appVersion,
                 partitionKey,
               );
-              wfids.push(...partitionWfids);
+              await dispatch(partitionWfids);
+              await debugTriggerPoint(DEBUG_TRIGGER_BETWEEN_PARTITION_DISPATCHES);
             }
           } else {
-            wfids = await exec.systemDatabase.findAndMarkStartableWorkflows(
+            const wfids = await exec.systemDatabase.findAndMarkStartableWorkflows(
               queue,
               exec.executorID,
               globalParams.appVersion,
               undefined,
             );
+            await dispatch(wfids);
           }
         } catch (e) {
           const err = e as Error;
@@ -589,19 +608,6 @@ class WFQueueRunner {
             exec.logger.warn(`Contention detected in queue ${queue.name}.`);
           } else {
             exec.logger.warn(`Error getting startable workflows for queue ${queue.name}: ${err.message}`);
-          }
-          wfids = [];
-        }
-
-        if (wfids.length > 0) {
-          await debugTriggerPoint(DEBUG_TRIGGER_WORKFLOW_QUEUE_START);
-        }
-
-        for (const wfid of wfids) {
-          try {
-            await exec.executeWorkflowId(wfid, { isQueueDispatch: true });
-          } catch (e) {
-            exec.logger.warn(`Could not execute workflow with id ${wfid}: ${(e as Error).message}`);
           }
         }
       } catch (e) {
