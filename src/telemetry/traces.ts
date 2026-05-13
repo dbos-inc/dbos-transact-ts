@@ -27,7 +27,7 @@ import type { OtelAttributeFormat } from '../dbos-executor';
 //      hidden in a generic helper. Reviewers can grep for
 //      `resolveAttributeName` to see every place a legacy name is touched.
 const LEGACY_TO_SEMCONV: Readonly<Record<string, string>> = {
-  operationUUID: 'dbos.operation.uuid',
+  operationUUID: 'dbos.operation.workflow_id',
   operationType: 'dbos.operation.type',
   operationName: 'dbos.operation.name',
   applicationID: 'dbos.application.id',
