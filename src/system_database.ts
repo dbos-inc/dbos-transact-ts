@@ -32,7 +32,12 @@ import { getClientConfig } from './utils';
 import { connectToPGAndReportOutcome, ensurePGDatabase, maskDatabaseUrl } from './database_utils';
 import { runSysMigrationsPg } from './sysdb_migrations/migration_runner';
 import { allMigrations } from './sysdb_migrations/internal/migrations';
-import { DEBUG_TRIGGER_STEP_COMMIT, DEBUG_TRIGGER_INITWF_COMMIT, debugTriggerPoint } from './debugpoint';
+import {
+  DEBUG_TRIGGER_STEP_COMMIT,
+  DEBUG_TRIGGER_INITWF_COMMIT,
+  DEBUG_TRIGGER_FIND_AND_MARK_AFTER_SELECT,
+  debugTriggerPoint,
+} from './debugpoint';
 import { DBOSPortableJSON, DBOSSerializer, safeParse } from './serialization';
 
 /* Result from Sys DB */
@@ -2602,6 +2607,9 @@ export class SystemDatabase {
       `;
 
       const { rows } = await client.query<{ workflow_uuid: string }>(selectQuery, selectParams);
+      // Fires while the SELECT FOR UPDATE lock is held — tests can throw a
+      // synthetic 55P03 here to simulate a concurrent executor winning the race.
+      await debugTriggerPoint(DEBUG_TRIGGER_FIND_AND_MARK_AFTER_SELECT);
 
       // Start the workflows
       const workflowIDs = rows.map((row) => row.workflow_uuid);
