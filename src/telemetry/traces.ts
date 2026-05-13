@@ -16,16 +16,13 @@ import type { OtelAttributeFormat } from '../dbos-executor';
 // on the same attribute schema once `otelAttributeFormat: 'semconv'` is
 // selected on both sides.
 //
-// Design note: the conversion lives in the dedicated `resolveAttributeName`
-// method below, not in `startSpan`/`startSpanWithContext`. Those entry
-// points pass attributes through verbatim. We deliberately do NOT sweep
-// every attributes dict for known legacy keys, because:
-//   1. Callers can pass arbitrary user-defined attributes that happen to
-//      collide with a DBOS legacy name; we don't want to silently rewrite
-//      those.
-//   2. The conversion should be visible at each DBOS-owned call site, not
-//      hidden in a generic helper. Reviewers can grep for
-//      `resolveAttributeName` to see every place a legacy name is touched.
+// `startSpan` / `startSpanWithContext` sweep the supplied attributes dict
+// through `resolveAttributeName`, so call sites can pass legacy DBOS keys
+// directly and have them remapped automatically when
+// `otelAttributeFormat === 'semconv'`. Keys not in this table pass through
+// unchanged. `endSpan` does the same for the few attributes it sets after
+// the span has been created. This mirrors the equivalent loop in
+// `dbos-transact-py`'s `start_span`.
 const LEGACY_TO_SEMCONV: Readonly<Record<string, string>> = {
   operationUUID: 'dbos.operation.workflow_id',
   operationType: 'dbos.operation.type',
@@ -184,16 +181,27 @@ export class Tracer {
    * the span, per `otelAttributeFormat`. Returns the original key for
    * unknown attributes.
    *
-   * Call this explicitly at every DBOS-owned call site that writes a known
-   * legacy attribute name (e.g. `operationUUID`, `requestID`). It is NOT
-   * applied automatically to attributes passed through `startSpan` — see
-   * the design note on `LEGACY_TO_SEMCONV`.
+   * Attributes passed into `startSpan` / `startSpanWithContext` are remapped
+   * automatically via this method, so call sites don't need to invoke it
+   * directly. Exposed for code paths that write attributes after span
+   * creation (e.g. `endSpan`, ad-hoc `setAttribute` calls).
    */
   resolveAttributeName(key: string): string {
     if (this.otelAttributeFormat === 'semconv') {
       return LEGACY_TO_SEMCONV[key] ?? key;
     }
     return key;
+  }
+
+  private remapAttributes(attributes?: Attributes): Attributes | undefined {
+    if (!attributes || this.otelAttributeFormat !== 'semconv') {
+      return attributes;
+    }
+    const remapped: Attributes = {};
+    for (const [k, v] of Object.entries(attributes)) {
+      remapped[LEGACY_TO_SEMCONV[k] ?? k] = v;
+    }
+    return remapped;
   }
 
   startSpanWithContext(spanContext: unknown, name: string, attributes?: Attributes): DBOSSpan {
@@ -203,7 +211,11 @@ export class Tracer {
     const opentelemetry = require('@opentelemetry/api');
     const tracer = opentelemetry.trace.getTracer('dbos-tracer');
     const ctx = opentelemetry.trace.setSpanContext(opentelemetry.context.active(), spanContext as SpanContext);
-    return tracer.startSpan(name, { startTime: performance.now(), attributes: attributes }, ctx) as Span;
+    return tracer.startSpan(
+      name,
+      { startTime: performance.now(), attributes: this.remapAttributes(attributes) },
+      ctx,
+    ) as Span;
   }
 
   startSpan(name: string, attributes?: Attributes, inputSpan?: DBOSSpan): DBOSSpan {
@@ -215,11 +227,12 @@ export class Tracer {
     const { hrTime } = require('@opentelemetry/core');
     const tracer = opentelemetry.trace.getTracer('dbos-tracer');
     const startTime = hrTime(performance.now());
+    const remapped = this.remapAttributes(attributes);
     if (parentSpan) {
       const ctx = opentelemetry.trace.setSpan(opentelemetry.context.active(), parentSpan);
-      return tracer.startSpan(name, { startTime: startTime, attributes: attributes }, ctx) as Span;
+      return tracer.startSpan(name, { startTime: startTime, attributes: remapped }, ctx) as Span;
     } else {
-      return tracer.startSpan(name, { startTime: startTime, attributes: attributes }) as Span;
+      return tracer.startSpan(name, { startTime: startTime, attributes: remapped }) as Span;
     }
   }
 

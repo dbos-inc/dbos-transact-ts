@@ -143,12 +143,12 @@ export async function runTransaction<T>(
   const span = tracer.startSpan(
     funcName,
     {
-      [tracer.resolveAttributeName('operationUUID')]: DBOS.workflowID,
-      [tracer.resolveAttributeName('operationType')]: OperationType.TRANSACTION,
-      [tracer.resolveAttributeName('operationName')]: funcName,
-      [tracer.resolveAttributeName('authenticatedUser')]: DBOS.authenticatedUser ?? '',
-      [tracer.resolveAttributeName('assumedRole')]: DBOS.assumedRole ?? '',
-      [tracer.resolveAttributeName('authenticatedRoles')]: DBOS.authenticatedRoles ?? [],
+      operationUUID: DBOS.workflowID,
+      operationType: OperationType.TRANSACTION,
+      operationName: funcName,
+      authenticatedUser: DBOS.authenticatedUser ?? '',
+      assumedRole: DBOS.assumedRole ?? '',
+      authenticatedRoles: DBOS.authenticatedRoles ?? [],
       // isolationLevel: txnInfo.config.isolationLevel, // TODO: Pluggable
     },
     DBOS.span,
@@ -218,12 +218,12 @@ export function registerTransaction<This, Args extends unknown[], Return, Config
     const span = tracer.startSpan(
       funcName,
       {
-        [tracer.resolveAttributeName('operationUUID')]: DBOS.workflowID,
-        [tracer.resolveAttributeName('operationType')]: OperationType.TRANSACTION,
-        [tracer.resolveAttributeName('operationName')]: funcName,
-        [tracer.resolveAttributeName('authenticatedUser')]: DBOS.authenticatedUser ?? '',
-        [tracer.resolveAttributeName('assumedRole')]: DBOS.assumedRole ?? '',
-        [tracer.resolveAttributeName('authenticatedRoles')]: DBOS.authenticatedRoles ?? [],
+        operationUUID: DBOS.workflowID,
+        operationType: OperationType.TRANSACTION,
+        operationName: funcName,
+        authenticatedUser: DBOS.authenticatedUser ?? '',
+        assumedRole: DBOS.assumedRole ?? '',
+        authenticatedRoles: DBOS.authenticatedRoles ?? [],
         // isolationLevel: txnInfo.config.isolationLevel, // TODO: Pluggable
       },
       DBOS.span,

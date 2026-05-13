@@ -439,12 +439,12 @@ export class DBOSExecutor {
 
     const span = this.tracer.startSpan(wfname, {
       status: StatusString.PENDING,
-      [this.tracer.resolveAttributeName('operationUUID')]: workflowID,
-      [this.tracer.resolveAttributeName('operationType')]: OperationType.WORKFLOW,
-      [this.tracer.resolveAttributeName('operationName')]: wInfo?.name ?? wf.name,
-      [this.tracer.resolveAttributeName('authenticatedUser')]: pctx?.authenticatedUser ?? '',
-      [this.tracer.resolveAttributeName('authenticatedRoles')]: pctx?.authenticatedRoles ?? [],
-      [this.tracer.resolveAttributeName('assumedRole')]: pctx?.assumedRole ?? '',
+      operationUUID: workflowID,
+      operationType: OperationType.WORKFLOW,
+      operationName: wInfo?.name ?? wf.name,
+      authenticatedUser: pctx?.authenticatedUser ?? '',
+      authenticatedRoles: pctx?.authenticatedRoles ?? [],
+      assumedRole: pctx?.assumedRole ?? '',
     });
 
     let serializationType = wInfo?.workflowConfig?.serialization;
@@ -777,12 +777,12 @@ export class DBOSExecutor {
     const maxRetryIntervalSec = 3600; // Maximum retry interval: 1 hour
 
     const span = this.tracer.startSpan(stepFnName, {
-      [this.tracer.resolveAttributeName('operationUUID')]: wfid,
-      [this.tracer.resolveAttributeName('operationType')]: OperationType.STEP,
-      [this.tracer.resolveAttributeName('operationName')]: stepFnName,
-      [this.tracer.resolveAttributeName('authenticatedUser')]: lctx.authenticatedUser ?? '',
-      [this.tracer.resolveAttributeName('assumedRole')]: lctx.assumedRole ?? '',
-      [this.tracer.resolveAttributeName('authenticatedRoles')]: lctx.authenticatedRoles ?? [],
+      operationUUID: wfid,
+      operationType: OperationType.STEP,
+      operationName: stepFnName,
+      authenticatedUser: lctx.authenticatedUser ?? '',
+      assumedRole: lctx.assumedRole ?? '',
+      authenticatedRoles: lctx.authenticatedRoles ?? [],
       retriesAllowed: stepConfig.retriesAllowed,
       intervalSeconds: stepConfig.intervalSeconds,
       maxAttempts: stepConfig.maxAttempts,
