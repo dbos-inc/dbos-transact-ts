@@ -562,13 +562,7 @@ class WFQueueRunner {
           exec.logger.warn(`Error transitioning delayed workflows: ${(e as Error).message}`);
         }
 
-        // Dequeue workflows for this queue. For partitioned queues we dispatch
-        // each partition's workflows as soon as they are marked PENDING — if we
-        // collected all wfids first and then dispatched, a 55P03 thrown by a
-        // later partition's FOR UPDATE NOWAIT would skip the post-catch dispatch
-        // and leave earlier partitions' workflows orphaned in PENDING.
-        // executeWorkflowId starts the workflow asynchronously and returns a
-        // handle, so inline dispatch does not serialize execution.
+        // Helper function that starts dequeued workflows
         const dispatch = async (wfids: string[]) => {
           if (wfids.length > 0) {
             await debugTriggerPoint(DEBUG_TRIGGER_WORKFLOW_QUEUE_START);
@@ -581,6 +575,8 @@ class WFQueueRunner {
             }
           }
         };
+        // Dequeue workflows for this queue. If the queue is partitioned, successively dequeue and start
+        // workflows from each active partition.
         try {
           if (queue.partitionQueue) {
             const partitionKeys = await exec.systemDatabase.getQueuePartitions(queue.name);
