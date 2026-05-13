@@ -155,7 +155,7 @@ export interface TelemetryConfig {
  *   Preserves backward compatibility with existing dashboards and the Python
  *   `dbos-transact` SDK.
  * - `'semconv'` — OpenTelemetry-style names under the `dbos.*` namespace (e.g.
- *   `dbos.operation.uuid`, `dbos.application.id`). Follows
+ *   `dbos.operation.workflow_id`, `dbos.application.id`). Follows
  *   https://opentelemetry.io/docs/specs/semconv/general/attribute-naming/.
  */
 export type OtelAttributeFormat = 'legacy' | 'semconv';
