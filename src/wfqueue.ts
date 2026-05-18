@@ -7,7 +7,7 @@ import {
 } from './debugpoint';
 import type { QueueRecord, SystemDatabase } from './system_database';
 import type { GlobalLogger } from './telemetry/logs';
-import { globalParams, INTERNAL_QUEUE_NAME } from './utils';
+import { globalParams, interruptibleSleep, INTERNAL_QUEUE_NAME, waitForAbort } from './utils';
 
 /**
  * Log a single queue's name and its set parameters. Unset parameters are
@@ -341,8 +341,7 @@ class WFQueueRunner {
   readonly wfQueuesByName: Map<string, WorkflowQueue> = new Map();
 
   private isRunning: boolean = false;
-  private stopResolve?: () => void;
-  private stopPromise?: Promise<void>;
+  private abortController?: AbortController;
   private exec?: DBOSExecutor;
   private listenQueueNames: Set<string> | null = null;
   private readonly activeLoops: Set<Promise<void>> = new Set();
@@ -359,7 +358,7 @@ class WFQueueRunner {
   stop() {
     if (!this.isRunning) return;
     this.isRunning = false;
-    this.stopResolve?.();
+    this.abortController?.abort();
   }
 
   clearRegistrations() {
@@ -383,9 +382,7 @@ class WFQueueRunner {
     this.listenQueueNames = listenQueuesArg
       ? new Set(listenQueuesArg.map((entry) => (typeof entry === 'string' ? entry : entry.name)))
       : null;
-    this.stopPromise = new Promise<void>((resolve) => {
-      this.stopResolve = resolve;
-    });
+    this.abortController = new AbortController();
 
     // Always run the internal queue worker — it is process-private and not
     // subject to the user's listenQueues filter.
@@ -429,7 +426,7 @@ class WFQueueRunner {
     void supervisor.finally(() => this.activeLoops.delete(supervisor));
 
     // Wait until stop() is called, then wait for all loops to drain
-    await this.stopPromise;
+    await waitForAbort(this.abortController.signal);
     await Promise.all(this.activeLoops);
   }
 
@@ -498,13 +495,9 @@ class WFQueueRunner {
   }
 
   private async superviseLoop(exec: DBOSExecutor): Promise<void> {
+    const signal = this.abortController!.signal;
     while (this.isRunning) {
-      let timer: NodeJS.Timeout;
-      const timeoutPromise = new Promise<void>((resolve) => {
-        timer = setTimeout(resolve, WFQueueRunner.supervisorIntervalMs);
-      });
-      await Promise.race([timeoutPromise, this.stopPromise!]);
-      clearTimeout(timer!);
+      await interruptibleSleep(WFQueueRunner.supervisorIntervalMs, signal);
       if (!this.isRunning) return;
 
       await this.discoverAndLaunchDbQueues(exec);
@@ -515,6 +508,7 @@ class WFQueueRunner {
     let queue = initialQueue;
     const maxPollingMs = WFQueueRunner.defaultMaxPollingIntervalMs;
     let currentPollingMs = queue.minPollingIntervalMs ?? WFQueueRunner.defaultMinPollingIntervalMs;
+    const signal = this.abortController!.signal;
 
     while (this.isRunning) {
       // For database-backed queues, refresh config from the row each
@@ -540,16 +534,10 @@ class WFQueueRunner {
       const minPollingMs = queue.minPollingIntervalMs ?? WFQueueRunner.defaultMinPollingIntervalMs;
       currentPollingMs = Math.max(minPollingMs, Math.min(currentPollingMs, maxPollingMs));
 
-      // Sleep with jitter, racing against the stop signal
+      // Sleep with jitter, returning early on the stop signal
       const jitter = this.jitterMin + Math.random() * (this.jitterMax - this.jitterMin);
       const sleepMs = currentPollingMs * jitter;
-      let timer: NodeJS.Timeout;
-      const timeoutPromise = new Promise<void>((resolve) => {
-        timer = setTimeout(resolve, sleepMs);
-      });
-
-      await Promise.race([timeoutPromise, this.stopPromise!]);
-      clearTimeout(timer!);
+      await interruptibleSleep(sleepMs, signal);
 
       if (!this.isRunning) break;
 

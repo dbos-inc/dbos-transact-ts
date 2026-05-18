@@ -100,6 +100,36 @@ export function cancellableSleep(ms: number) {
   return { promise, cancel };
 }
 
+/**
+ * Sleep for `ms` milliseconds, resolving early (without throwing) when
+ * `signal` aborts. The abort listener is detached on every resolution path,
+ * so calling this in a tight loop against a long-lived signal does not
+ * accumulate listeners — unlike a `Promise.race([timer, stopPromise])`
+ * pattern, which leaks a `.then` handler on each iteration.
+ */
+export function interruptibleSleep(ms: number, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.resolve();
+  return new Promise<void>((resolve) => {
+    const onAbort = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+/** Resolve once `signal` aborts. One-shot listener, auto-removed on fire. */
+export function waitForAbort(signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.resolve();
+  return new Promise<void>((resolve) => {
+    signal.addEventListener('abort', () => resolve(), { once: true });
+  });
+}
+
 export type ValuesOf<T> = T[keyof T];
 
 export function exhaustiveCheckGuard(_: never): never {
