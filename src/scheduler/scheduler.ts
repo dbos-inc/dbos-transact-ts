@@ -3,7 +3,7 @@ import { DBOSSerializer, serializeArgs } from '../serialization';
 import { randomUUID } from 'crypto';
 import { DBOS } from '..';
 import { DBOSLifecycleCallback } from '../decorators';
-import { INTERNAL_QUEUE_NAME } from '../utils';
+import { interruptibleSleep, INTERNAL_QUEUE_NAME } from '../utils';
 import { TimeMatcher } from './crontab';
 import { DBOSExecutor } from '../dbos-executor';
 import { DBOSError } from '../error';
@@ -106,7 +106,7 @@ export class DynamicSchedulerLoop implements DBOSLifecycleCallback {
         schedules = await executor.systemDatabase.listSchedules();
       } catch (e) {
         DBOS.logger.warn(`Dynamic scheduler: error listing schedules: ${(e as Error).message}`);
-        await DynamicSchedulerLoop.#cancellableSleep(this.#pollingIntervalMs, signal);
+        await interruptibleSleep(this.#pollingIntervalMs, signal);
         continue;
       }
 
@@ -179,7 +179,7 @@ export class DynamicSchedulerLoop implements DBOSLifecycleCallback {
         }
       }
 
-      await DynamicSchedulerLoop.#cancellableSleep(this.#pollingIntervalMs, signal);
+      await interruptibleSleep(this.#pollingIntervalMs, signal);
     }
   }
 
@@ -223,7 +223,7 @@ export class DynamicSchedulerLoop implements DBOSLifecycleCallback {
       }
 
       if (sleepTime > 0) {
-        await DynamicSchedulerLoop.#cancellableSleep(sleepTime, signal);
+        await interruptibleSleep(sleepTime, signal);
       }
 
       if (signal.aborted) {
@@ -259,32 +259,6 @@ export class DynamicSchedulerLoop implements DBOSLifecycleCallback {
 
       lastExec = nextExec;
     }
-  }
-
-  static async #cancellableSleep(ms: number, signal: AbortSignal): Promise<void> {
-    if (signal.aborted) return;
-    await new Promise<void>((resolve) => {
-      // eslint-disable-next-line prefer-const
-      let timeoutID: NodeJS.Timeout;
-
-      const onAbort = () => {
-        clearTimeout(timeoutID);
-        resolve();
-      };
-
-      signal.addEventListener('abort', onAbort, { once: true });
-
-      if (signal.aborted) {
-        signal.removeEventListener('abort', onAbort);
-        resolve();
-        return;
-      }
-
-      timeoutID = setTimeout(() => {
-        signal.removeEventListener('abort', onAbort);
-        resolve();
-      }, ms);
-    });
   }
 }
 
