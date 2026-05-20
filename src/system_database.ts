@@ -144,6 +144,10 @@ export interface GetWorkflowAggregatesInput {
   status?: string[];
   startTime?: string;
   endTime?: string;
+  completedAfter?: string;
+  completedBefore?: string;
+  dequeuedAfter?: string;
+  dequeuedBefore?: string;
   name?: string[];
   appVersion?: string[];
   executorId?: string[];
@@ -183,6 +187,7 @@ export interface WorkflowStatusInternal {
   parentWorkflowID?: string;
   serialization: string | null;
   delayUntilEpochMS?: number;
+  completedAt?: number;
 }
 
 export interface EnqueueOptions {
@@ -396,6 +401,7 @@ function mapWorkflowStatus(row: workflow_status): WorkflowStatusInternal {
     parentWorkflowID: row.parent_workflow_id ?? undefined,
     serialization: row.serialization,
     delayUntilEpochMS: row.delay_until_epoch_ms ? Number(row.delay_until_epoch_ms) : undefined,
+    completedAt: row.completed_at ? Number(row.completed_at) : undefined,
   };
 }
 
@@ -766,7 +772,7 @@ export class SystemDatabase {
     const client = await this.pool.connect();
     try {
       await this.updateWorkflowStatus(client, workflowID, StatusString.SUCCESS, {
-        update: { output: status.output, resetDeduplicationID: true },
+        update: { output: status.output, resetDeduplicationID: true, setCompletedAt: true },
       });
     } finally {
       client.release();
@@ -778,7 +784,7 @@ export class SystemDatabase {
     const client = await this.pool.connect();
     try {
       await this.updateWorkflowStatus(client, workflowID, StatusString.ERROR, {
-        update: { error: status.error, resetDeduplicationID: true },
+        update: { error: status.error, resetDeduplicationID: true, setCompletedAt: true },
       });
     } finally {
       client.release();
@@ -1004,10 +1010,12 @@ export class SystemDatabase {
   async cancelWorkflows(workflowIDs: string[]): Promise<void> {
     await this.pool.query(
       `UPDATE "${this.schemaName}".workflow_status
-       SET status = $1, queue_name = NULL, deduplication_id = NULL, started_at_epoch_ms = NULL, updated_at = $2
-       WHERE workflow_uuid = ANY($3)
-         AND status NOT IN ($4, $5)`,
-      [StatusString.CANCELLED, Date.now(), workflowIDs, StatusString.SUCCESS, StatusString.ERROR],
+       SET status = $1, queue_name = NULL, deduplication_id = NULL, started_at_epoch_ms = NULL,
+           updated_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint,
+           completed_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint
+       WHERE workflow_uuid = ANY($2)
+         AND status NOT IN ($3, $4)`,
+      [StatusString.CANCELLED, workflowIDs, StatusString.SUCCESS, StatusString.ERROR],
     );
 
     for (const workflowID of workflowIDs) {
@@ -1034,17 +1042,12 @@ export class SystemDatabase {
       `UPDATE "${this.schemaName}".workflow_status
        SET status = $1, queue_name = $2, recovery_attempts = 0,
            workflow_deadline_epoch_ms = NULL, deduplication_id = NULL,
-           started_at_epoch_ms = NULL, updated_at = $3
-       WHERE workflow_uuid = ANY($4)
-         AND status NOT IN ($5, $6)`,
-      [
-        StatusString.ENQUEUED,
-        queueName ?? INTERNAL_QUEUE_NAME,
-        Date.now(),
-        workflowIDs,
-        StatusString.SUCCESS,
-        StatusString.ERROR,
-      ],
+           started_at_epoch_ms = NULL,
+           updated_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint,
+           completed_at = NULL
+       WHERE workflow_uuid = ANY($3)
+         AND status NOT IN ($4, $5)`,
+      [StatusString.ENQUEUED, queueName ?? INTERNAL_QUEUE_NAME, workflowIDs, StatusString.SUCCESS, StatusString.ERROR],
     );
   }
 
@@ -2692,6 +2695,7 @@ export class SystemDatabase {
       'was_forked_from',
       'parent_workflow_id',
       'delay_until_epoch_ms',
+      'completed_at',
     ];
 
     input.loadInput = input.loadInput ?? true;
@@ -2789,6 +2793,28 @@ export class SystemDatabase {
       params.push(new Date(input.endTime).getTime());
       paramCounter++;
     }
+    if (input.completedAfter) {
+      whereClauses.push(`completed_at >= $${paramCounter}`);
+      params.push(new Date(input.completedAfter).getTime());
+      paramCounter++;
+    }
+    if (input.completedBefore) {
+      whereClauses.push(`completed_at <= $${paramCounter}`);
+      params.push(new Date(input.completedBefore).getTime());
+      paramCounter++;
+    }
+    // dequeuedAfter/Before filter on started_at_epoch_ms: that column is
+    // populated on dequeue and surfaced as WorkflowStatus.dequeuedAt.
+    if (input.dequeuedAfter) {
+      whereClauses.push(`started_at_epoch_ms >= $${paramCounter}`);
+      params.push(new Date(input.dequeuedAfter).getTime());
+      paramCounter++;
+    }
+    if (input.dequeuedBefore) {
+      whereClauses.push(`started_at_epoch_ms <= $${paramCounter}`);
+      params.push(new Date(input.dequeuedBefore).getTime());
+      paramCounter++;
+    }
 
     addFilter('status', input.status);
     addFilter('application_version', input.applicationVersion);
@@ -2868,6 +2894,28 @@ export class SystemDatabase {
     if (input.endTime) {
       whereClauses.push(`created_at <= $${paramIdx}`);
       params.push(new Date(input.endTime).getTime());
+      paramIdx++;
+    }
+    if (input.completedAfter) {
+      whereClauses.push(`completed_at >= $${paramIdx}`);
+      params.push(new Date(input.completedAfter).getTime());
+      paramIdx++;
+    }
+    if (input.completedBefore) {
+      whereClauses.push(`completed_at <= $${paramIdx}`);
+      params.push(new Date(input.completedBefore).getTime());
+      paramIdx++;
+    }
+    // dequeuedAfter/Before filter on started_at_epoch_ms: that column is
+    // populated on dequeue and surfaced as WorkflowStatus.dequeuedAt.
+    if (input.dequeuedAfter) {
+      whereClauses.push(`started_at_epoch_ms >= $${paramIdx}`);
+      params.push(new Date(input.dequeuedAfter).getTime());
+      paramIdx++;
+    }
+    if (input.dequeuedBefore) {
+      whereClauses.push(`started_at_epoch_ms <= $${paramIdx}`);
+      params.push(new Date(input.dequeuedBefore).getTime());
       paramIdx++;
     }
 
@@ -3400,6 +3448,8 @@ export class SystemDatabase {
         resetStartedAtEpochMs?: boolean;
         executorId?: string;
         resetNameTo?: string;
+        setCompletedAt?: boolean;
+        clearCompletedAt?: boolean;
       };
       where?: {
         status?: (typeof StatusString)[keyof typeof StatusString];
@@ -3407,9 +3457,12 @@ export class SystemDatabase {
       throwOnFailure?: boolean;
     } = {},
   ): Promise<void> {
-    let setClause = `SET status=$2, updated_at=$3`;
+    // Use SQL now() so updated_at and completed_at (when set together) are
+    // computed in the same statement against the same clock.
+    const nowMsExpr = `(EXTRACT(EPOCH FROM now()) * 1000)::bigint`;
+    let setClause = `SET status=$2, updated_at=${nowMsExpr}`;
     let whereClause = `WHERE workflow_uuid=$1`;
-    const args: (string | number | undefined)[] = [workflowID, status, Date.now()];
+    const args: (string | number | undefined)[] = [workflowID, status];
 
     const update = options.update ?? {};
     if (update.output) {
@@ -3451,6 +3504,12 @@ export class SystemDatabase {
     if (update.resetNameTo !== undefined) {
       const param = args.push(update.resetNameTo ?? undefined);
       setClause += `, name=$${param}`;
+    }
+
+    if (update.setCompletedAt) {
+      setClause += `, completed_at=${nowMsExpr}`;
+    } else if (update.clearCompletedAt) {
+      setClause += `, completed_at = NULL`;
     }
 
     const where = options.where ?? {};

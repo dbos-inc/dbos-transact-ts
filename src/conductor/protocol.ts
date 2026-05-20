@@ -182,6 +182,10 @@ export interface ListWorkflowsBody {
   authenticated_user?: string | string[];
   start_time?: string;
   end_time?: string;
+  completed_after?: string;
+  completed_before?: string;
+  dequeued_after?: string;
+  dequeued_before?: string;
   status?: string | string[];
   application_version?: string | string[];
   forked_from?: string | string[];
@@ -226,6 +230,7 @@ export class WorkflowsOutput {
   WasForkedFrom: boolean;
   ParentWorkflowID?: string;
   DelayUntilEpochMS?: string;
+  CompletedAt?: string;
 
   constructor(info: WorkflowStatus) {
     // Mark empty fields as undefined
@@ -256,6 +261,7 @@ export class WorkflowsOutput {
     this.WasForkedFrom = info.wasForkedFrom ?? false;
     this.ParentWorkflowID = info.parentWorkflowID;
     this.DelayUntilEpochMS = info.delayUntilEpochMS !== undefined ? String(info.delayUntilEpochMS) : undefined;
+    this.CompletedAt = info.completedAt !== undefined ? String(info.completedAt) : undefined;
   }
 }
 
@@ -303,6 +309,10 @@ export interface ListQueuedWorkflowsBody {
   authenticated_user?: string | string[];
   start_time?: string;
   end_time?: string;
+  completed_after?: string;
+  completed_before?: string;
+  dequeued_after?: string;
+  dequeued_before?: string;
   status?: string | string[];
   application_version?: string | string[];
   forked_from?: string | string[];
@@ -827,6 +837,10 @@ export interface GetWorkflowAggregatesBody {
   status?: string[];
   start_time?: string;
   end_time?: string;
+  completed_after?: string;
+  completed_before?: string;
+  dequeued_after?: string;
+  dequeued_before?: string;
   name?: string[];
   app_version?: string[];
   executor_id?: string[];

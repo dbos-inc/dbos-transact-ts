@@ -396,6 +396,74 @@ describe('workflow-management-tests', () => {
     expect(result.rows[0].status).toBe(StatusString.SUCCESS);
   });
 
+  test('getworkflows-with-completed-at', async () => {
+    // Successful workflow gets completedAt set.
+    const beforeSuccess = new Date().toISOString();
+    await expect(TestEndpoints.testWorkflow('alice')).resolves.toBe('alice');
+    // Tight window: stop here so subsequent workflows complete outside it.
+    await sleepms(50);
+    const afterSuccess = new Date().toISOString();
+    await sleepms(50);
+
+    const successList = await DBOS.listWorkflows({ workflowName: 'testWorkflow' });
+    expect(successList.length).toBe(1);
+    const successStatus = successList[0];
+    expect(successStatus.status).toBe(StatusString.SUCCESS);
+    expect(successStatus.completedAt).toBeDefined();
+    expect(successStatus.completedAt!).toBeGreaterThanOrEqual(successStatus.createdAt);
+
+    // Errored workflow gets completedAt set.
+    await expect(TestEndpoints.failWorkflow('bob')).rejects.toThrow();
+    const errorList = await DBOS.listWorkflows({ workflowName: 'failWorkflow' });
+    expect(errorList.length).toBe(1);
+    const errorStatus = errorList[0];
+    expect(errorStatus.status).toBe(StatusString.ERROR);
+    expect(errorStatus.completedAt).toBeDefined();
+
+    // Cancelled workflow gets completedAt set; resumed workflow clears it.
+    const cancelID = randomUUID();
+    const cancelledHandle = await DBOS.startWorkflow(TestEndpoints, { workflowID: cancelID }).waitingWorkflow(42);
+    await DBOS.cancelWorkflow(cancelID);
+    const cancelled = await DBOS.getWorkflowStatus(cancelID);
+    expect(cancelled).toBeDefined();
+    expect(cancelled!.status).toBe(StatusString.CANCELLED);
+    expect(cancelled!.completedAt).toBeDefined();
+
+    const resumedHandle = await DBOS.resumeWorkflow<string>(cancelID);
+    const resumed = await DBOS.getWorkflowStatus(cancelID);
+    expect(resumed).toBeDefined();
+    expect(resumed!.completedAt).toBeUndefined();
+
+    // completedAfter / completedBefore only match terminal workflows in range.
+    const inRange = await DBOS.listWorkflows({
+      completedAfter: beforeSuccess,
+      completedBefore: afterSuccess,
+    });
+    const idsInRange = new Set(inRange.map((w) => w.workflowID));
+    expect(idsInRange.has(successStatus.workflowID)).toBe(true);
+    // The error and resumed-pending workflows complete outside this window.
+    expect(idsInRange.has(errorStatus.workflowID)).toBe(false);
+    expect(idsInRange.has(cancelID)).toBe(false);
+
+    // completedAfter alone excludes never-completed workflows.
+    const onlyCompleted = await DBOS.listWorkflows({ completedAfter: beforeSuccess });
+    const completedIds = new Set(onlyCompleted.map((w) => w.workflowID));
+    expect(completedIds.has(successStatus.workflowID)).toBe(true);
+    expect(completedIds.has(errorStatus.workflowID)).toBe(true);
+    expect(completedIds.has(cancelID)).toBe(false);
+
+    // A window before any work happened matches nothing.
+    const farPast = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const noneYet = await DBOS.listWorkflows({ completedBefore: farPast });
+    expect(noneYet.length).toBe(0);
+
+    // Release the resumed workflow and wait for it to finish.
+    await DBOS.send(cancelID, 'message');
+    await expect(resumedHandle.getResult()).resolves.toEqual(`42-message`);
+    // Suppress unused-variable lint for cancelledHandle.
+    expect(cancelledHandle.workflowID).toBe(cancelID);
+  });
+
   test('systemdb-migration-backward-compatible', async () => {
     // Make sure the system DB migration failure is handled correctly.
     // If there is a migration failure, the system DB should still be able to start.
