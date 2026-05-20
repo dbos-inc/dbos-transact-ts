@@ -3067,4 +3067,59 @@ describe('test-workflow-aggregates', () => {
     const results = await sysdb.getWorkflowAggregates({ groupByStatus: true });
     expect(results.length).toBe(0);
   });
+
+  test('filter-by-completed-and-dequeued', async () => {
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    const beforeAll = new Date().toISOString();
+    await sleepms(50);
+
+    // Three SUCCESS, two ERROR — all run synchronously so started_at_epoch_ms is NULL.
+    for (let i = 0; i < 3; i++) await AggWorkflows.successWorkflow();
+    for (let i = 0; i < 2; i++) await expect(AggWorkflows.failWorkflow()).rejects.toThrow();
+
+    await sleepms(50);
+    const afterSync = new Date().toISOString();
+    await sleepms(50);
+
+    // One enqueued workflow — gets started_at_epoch_ms populated on dequeue.
+    const handle = await DBOS.startWorkflow(AggWorkflows, { queueName: 'agg-test-queue' }).queuedWorkflow();
+    expect(await handle.getResult()).toBe('queued');
+
+    await sleepms(50);
+    const afterAll = new Date().toISOString();
+
+    // completedAfter/completedBefore: window covers all six completions.
+    let results = await sysdb.getWorkflowAggregates({
+      groupByStatus: true,
+      completedAfter: beforeAll,
+      completedBefore: afterAll,
+    });
+    let statusMap = toMap(results);
+    expect(statusMap['SUCCESS']).toBe(4); // 3 sync + 1 queued
+    expect(statusMap['ERROR']).toBe(2);
+
+    // completedBefore before any work: matches nothing.
+    results = await sysdb.getWorkflowAggregates({
+      groupByStatus: true,
+      completedBefore: beforeAll,
+    });
+    expect(results).toEqual([]);
+
+    // dequeuedAfter/dequeuedBefore: only the queued workflow has started_at_epoch_ms.
+    results = await sysdb.getWorkflowAggregates({
+      groupByStatus: true,
+      dequeuedAfter: beforeAll,
+      dequeuedBefore: afterAll,
+    });
+    statusMap = toMap(results);
+    expect(statusMap).toEqual({ SUCCESS: 1 });
+
+    // Dequeued window strictly before the enqueue: matches nothing.
+    results = await sysdb.getWorkflowAggregates({
+      groupByStatus: true,
+      dequeuedAfter: beforeAll,
+      dequeuedBefore: afterSync,
+    });
+    expect(results).toEqual([]);
+  });
 });
