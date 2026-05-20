@@ -107,6 +107,7 @@ export async function toWorkflowStatus(
     wasForkedFrom: internal.wasForkedFrom ?? false,
     parentWorkflowID: internal.parentWorkflowID,
     delayUntilEpochMS: internal.delayUntilEpochMS,
+    completedAt: internal.completedAt,
   };
 }
 

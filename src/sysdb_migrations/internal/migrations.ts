@@ -513,5 +513,19 @@ export function allMigrations(
       online: true,
       pg: [`DROP INDEX ${c} IF EXISTS "${schemaName}"."idx_workflow_status_queue_status_started"`],
     },
+    // ADD COLUMN with no default is catalog-only; the partial index built in
+    // the same transaction covers zero rows, so no CONCURRENTLY is needed.
+    {
+      pg: [
+        `ALTER TABLE "${schemaName}"."workflow_status" ADD COLUMN IF NOT EXISTS "completed_at" BIGINT`,
+        `CREATE INDEX IF NOT EXISTS "idx_workflow_status_completed_at" ON "${schemaName}"."workflow_status" ("completed_at") WHERE "completed_at" IS NOT NULL`,
+      ],
+    },
+    {
+      online: true,
+      pg: [
+        `CREATE INDEX ${c} IF NOT EXISTS "idx_workflow_status_started_at" ON "${schemaName}"."workflow_status" ("started_at_epoch_ms") WHERE "started_at_epoch_ms" IS NOT NULL`,
+      ],
+    },
   ];
 }
