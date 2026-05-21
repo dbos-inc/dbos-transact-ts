@@ -141,6 +141,7 @@ export interface GetWorkflowAggregatesInput {
   groupByQueueName?: boolean;
   groupByExecutorId?: boolean;
   groupByApplicationVersion?: boolean;
+  timeBucketSizeMs?: number;
   status?: string[];
   startTime?: string;
   endTime?: string;
@@ -2839,6 +2840,10 @@ export class SystemDatabase {
   }
 
   async getWorkflowAggregates(input: GetWorkflowAggregatesInput): Promise<WorkflowAggregateRow[]> {
+    if (input.timeBucketSizeMs !== undefined && input.timeBucketSizeMs <= 0) {
+      throw new Error('timeBucketSizeMs must be > 0');
+    }
+
     const groupByFlags: [string, boolean, string][] = [
       ['status', input.groupByStatus ?? false, 'status'],
       ['name', input.groupByName ?? false, 'name'],
@@ -2848,15 +2853,24 @@ export class SystemDatabase {
     ];
 
     const groupNames: string[] = [];
-    const groupColumns: string[] = [];
+    const selectExprs: string[] = [];
+    const groupByExprs: string[] = [];
     for (const [colName, enabled, col] of groupByFlags) {
       if (enabled) {
         groupNames.push(colName);
-        groupColumns.push(col);
+        selectExprs.push(col);
+        groupByExprs.push(col);
       }
     }
 
-    if (groupColumns.length === 0) {
+    if (input.timeBucketSizeMs !== undefined) {
+      const bucketExpr = `(created_at / ${input.timeBucketSizeMs}) * ${input.timeBucketSizeMs}`;
+      groupNames.push('time_bucket');
+      selectExprs.push(`${bucketExpr} AS time_bucket`);
+      groupByExprs.push(bucketExpr);
+    }
+
+    if (groupByExprs.length === 0) {
       throw new Error('At least one group_by flag must be set to True');
     }
 
@@ -2920,13 +2934,15 @@ export class SystemDatabase {
     }
 
     const whereClause = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
-    const groupByClause = groupColumns.join(', ');
+    const selectClause = selectExprs.join(', ');
+    const groupByClause = groupByExprs.join(', ');
 
     const query = `
-      SELECT ${groupByClause}, COUNT(*) as count
+      SELECT ${selectClause}, COUNT(*) as count
       FROM "${this.schemaName}".workflow_status
       ${whereClause}
       GROUP BY ${groupByClause}
+      LIMIT 10000000
     `;
 
     const result = await this.pool.query<Record<string, unknown>>(query, params);

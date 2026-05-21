@@ -834,6 +834,7 @@ export interface GetWorkflowAggregatesBody {
   group_by_queue_name?: boolean;
   group_by_executor_id?: boolean;
   group_by_application_version?: boolean;
+  time_bucket_size_ms?: number;
   status?: string[];
   start_time?: string;
   end_time?: string;

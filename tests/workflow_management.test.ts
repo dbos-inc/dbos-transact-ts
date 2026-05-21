@@ -3122,4 +3122,71 @@ describe('test-workflow-aggregates', () => {
     });
     expect(results).toEqual([]);
   });
+
+  test('time-bucket-hour', async () => {
+    for (let i = 0; i < 3; i++) await AggWorkflows.successWorkflow();
+    for (let i = 0; i < 2; i++) await expect(AggWorkflows.failWorkflow()).rejects.toThrow();
+
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    const bucketSizeMs = 3_600_000; // 1 hour
+    const results = await sysdb.getWorkflowAggregates({ timeBucketSizeMs: bucketSizeMs });
+
+    expect(results.length).toBeGreaterThan(0);
+    let total = 0;
+    for (const r of results) {
+      const bucketVal = Number(r.group['time_bucket']);
+      expect(bucketVal % bucketSizeMs).toBe(0);
+      total += r.count;
+    }
+    expect(total).toBe(5);
+  });
+
+  test('time-bucket-with-status', async () => {
+    for (let i = 0; i < 3; i++) await AggWorkflows.successWorkflow();
+    for (let i = 0; i < 2; i++) await expect(AggWorkflows.failWorkflow()).rejects.toThrow();
+
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    const bucketSizeMs = 3_600_000;
+    const results = await sysdb.getWorkflowAggregates({
+      groupByStatus: true,
+      timeBucketSizeMs: bucketSizeMs,
+    });
+
+    expect(results.length).toBeGreaterThan(0);
+    for (const r of results) {
+      expect(Number(r.group['time_bucket']) % bucketSizeMs).toBe(0);
+      expect(r.group['status']).toBeTruthy();
+    }
+    const map = toMap(results);
+    const successKey = Object.keys(map).find((k) => k.includes('SUCCESS'))!;
+    const errorKey = Object.keys(map).find((k) => k.includes('ERROR'))!;
+    expect(map[successKey]).toBe(3);
+    expect(map[errorKey]).toBe(2);
+  });
+
+  test('time-bucket-minute-with-filter', async () => {
+    for (let i = 0; i < 3; i++) await AggWorkflows.successWorkflow();
+    for (let i = 0; i < 2; i++) await expect(AggWorkflows.failWorkflow()).rejects.toThrow();
+
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    const bucketSizeMs = 60_000; // 1 minute
+    const results = await sysdb.getWorkflowAggregates({
+      timeBucketSizeMs: bucketSizeMs,
+      status: ['ERROR'],
+    });
+
+    expect(results.length).toBeGreaterThan(0);
+    let total = 0;
+    for (const r of results) {
+      expect(Number(r.group['time_bucket']) % bucketSizeMs).toBe(0);
+      total += r.count;
+    }
+    expect(total).toBe(2);
+  });
+
+  test('time-bucket-invalid', async () => {
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    await expect(sysdb.getWorkflowAggregates({ timeBucketSizeMs: 0 })).rejects.toThrow('timeBucketSizeMs must be > 0');
+    await expect(sysdb.getWorkflowAggregates({ timeBucketSizeMs: -1 })).rejects.toThrow('timeBucketSizeMs must be > 0');
+  });
 });

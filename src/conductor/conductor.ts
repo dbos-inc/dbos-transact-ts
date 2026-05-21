@@ -744,6 +744,7 @@ export class Conductor {
                 groupByQueueName: aggBody.group_by_queue_name ?? false,
                 groupByExecutorId: aggBody.group_by_executor_id ?? false,
                 groupByApplicationVersion: aggBody.group_by_application_version ?? false,
+                timeBucketSizeMs: aggBody.time_bucket_size_ms,
                 status: aggBody.status,
                 startTime: aggBody.start_time,
                 endTime: aggBody.end_time,
