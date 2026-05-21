@@ -2799,11 +2799,11 @@ describe('test-workflow-aggregates', () => {
   }
 
   // Helper to build a lookup map from aggregate results
-  function toMap(results: { group: Record<string, string | null>; count: number }[]): Record<string, number> {
+  function toMap(results: { group: Record<string, string | null>; count: number | null }[]): Record<string, number> {
     const map: Record<string, number> = {};
     for (const r of results) {
       const key = Object.values(r.group).join(':');
-      map[key] = r.count;
+      map[key] = r.count ?? 0;
     }
     return map;
   }
@@ -2813,7 +2813,7 @@ describe('test-workflow-aggregates', () => {
     for (let i = 0; i < 2; i++) await expect(AggWorkflows.failWorkflow()).rejects.toThrow();
 
     const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
-    const results = await sysdb.getWorkflowAggregates({ groupByStatus: true });
+    const results = await sysdb.getWorkflowAggregates({ groupByStatus: true, selectCount: true });
     const map = toMap(results);
     expect(map['SUCCESS']).toBe(3);
     expect(map['ERROR']).toBe(2);
@@ -2824,10 +2824,10 @@ describe('test-workflow-aggregates', () => {
     for (let i = 0; i < 2; i++) await expect(AggWorkflows.failWorkflow()).rejects.toThrow();
 
     const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
-    const results = await sysdb.getWorkflowAggregates({ groupByName: true });
+    const results = await sysdb.getWorkflowAggregates({ groupByName: true, selectCount: true });
     const nameMap: Record<string, number> = {};
     for (const r of results) {
-      nameMap[r.group['name']!] = r.count;
+      nameMap[r.group['name']!] = r.count!;
     }
     const successName = Object.keys(nameMap).find((k) => k.includes('successWorkflow'))!;
     const failName = Object.keys(nameMap).find((k) => k.includes('failWorkflow'))!;
@@ -2840,12 +2840,16 @@ describe('test-workflow-aggregates', () => {
     for (let i = 0; i < 2; i++) await expect(AggWorkflows.failWorkflow()).rejects.toThrow();
 
     const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
-    const results = await sysdb.getWorkflowAggregates({ groupByStatus: true, groupByName: true });
+    const results = await sysdb.getWorkflowAggregates({
+      groupByStatus: true,
+      groupByName: true,
+      selectCount: true,
+    });
     expect(results.length).toBe(2);
 
     const comboMap: Record<string, number> = {};
     for (const r of results) {
-      comboMap[`${r.group['status']}:${r.group['name']}`] = r.count;
+      comboMap[`${r.group['status']}:${r.group['name']}`] = r.count!;
     }
     const successKey = Object.keys(comboMap).find((k) => k.startsWith('SUCCESS:'))!;
     const errorKey = Object.keys(comboMap).find((k) => k.startsWith('ERROR:'))!;
@@ -2863,22 +2867,22 @@ describe('test-workflow-aggregates', () => {
     await AggWorkflows.successWorkflow();
 
     const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
-    const results = await sysdb.getWorkflowAggregates({ groupByApplicationVersion: true });
+    const results = await sysdb.getWorkflowAggregates({ groupByApplicationVersion: true, selectCount: true });
     expect(results.length).toBeGreaterThanOrEqual(1);
     const row = results.find((r) => r.group['application_version'] === 'v0');
     expect(row).toBeDefined();
-    expect(row!.count).toBeGreaterThanOrEqual(1);
+    expect(row!.count!).toBeGreaterThanOrEqual(1);
   });
 
   test('group-by-executor-id', async () => {
     await AggWorkflows.successWorkflow();
 
     const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
-    const results = await sysdb.getWorkflowAggregates({ groupByExecutorId: true });
+    const results = await sysdb.getWorkflowAggregates({ groupByExecutorId: true, selectCount: true });
     expect(results.length).toBeGreaterThanOrEqual(1);
     for (const r of results) {
       expect(r.group).toHaveProperty('executor_id');
-      expect(r.count).toBeGreaterThanOrEqual(1);
+      expect(r.count!).toBeGreaterThanOrEqual(1);
     }
   });
 
@@ -2889,10 +2893,10 @@ describe('test-workflow-aggregates', () => {
     await AggWorkflows.successWorkflow();
 
     const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
-    const results = await sysdb.getWorkflowAggregates({ groupByQueueName: true });
+    const results = await sysdb.getWorkflowAggregates({ groupByQueueName: true, selectCount: true });
     const map: Record<string, number> = {};
     for (const r of results) {
-      map[r.group['queue_name'] ?? 'null'] = r.count;
+      map[r.group['queue_name'] ?? 'null'] = r.count!;
     }
     expect(map['agg-test-queue']).toBe(1);
     expect(map['null']).toBe(1);
@@ -2907,6 +2911,7 @@ describe('test-workflow-aggregates', () => {
       groupByStatus: true,
       groupByName: true,
       groupByApplicationVersion: true,
+      selectCount: true,
     });
     expect(results.length).toBe(2);
     for (const r of results) {
@@ -2926,7 +2931,11 @@ describe('test-workflow-aggregates', () => {
     for (let i = 0; i < 2; i++) await expect(AggWorkflows.failWorkflow()).rejects.toThrow();
 
     const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
-    const results = await sysdb.getWorkflowAggregates({ groupByName: true, status: ['SUCCESS'] });
+    const results = await sysdb.getWorkflowAggregates({
+      groupByName: true,
+      status: ['SUCCESS'],
+      selectCount: true,
+    });
     expect(results.length).toBe(1);
     expect(results[0].count).toBe(3);
   });
@@ -2937,10 +2946,14 @@ describe('test-workflow-aggregates', () => {
 
     const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
     // First find the registered fail name
-    const all = await sysdb.getWorkflowAggregates({ groupByName: true });
+    const all = await sysdb.getWorkflowAggregates({ groupByName: true, selectCount: true });
     const failName = all.find((r) => r.group['name']!.includes('failWorkflow'))!.group['name']!;
 
-    const results = await sysdb.getWorkflowAggregates({ groupByStatus: true, name: [failName] });
+    const results = await sysdb.getWorkflowAggregates({
+      groupByStatus: true,
+      name: [failName],
+      selectCount: true,
+    });
     expect(results.length).toBe(1);
     expect(results[0].group['status']).toBe('ERROR');
     expect(results[0].count).toBe(2);
@@ -2951,7 +2964,11 @@ describe('test-workflow-aggregates', () => {
     for (let i = 0; i < 2; i++) await expect(AggWorkflows.failWorkflow()).rejects.toThrow();
 
     const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
-    const results = await sysdb.getWorkflowAggregates({ groupByStatus: true, status: ['SUCCESS', 'ERROR'] });
+    const results = await sysdb.getWorkflowAggregates({
+      groupByStatus: true,
+      status: ['SUCCESS', 'ERROR'],
+      selectCount: true,
+    });
     const map = toMap(results);
     expect(map['SUCCESS']).toBe(3);
     expect(map['ERROR']).toBe(2);
@@ -2961,11 +2978,19 @@ describe('test-workflow-aggregates', () => {
     for (let i = 0; i < 2; i++) await AggWorkflows.successWorkflow();
 
     const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
-    const results = await sysdb.getWorkflowAggregates({ groupByName: true, appVersion: ['v0'] });
+    const results = await sysdb.getWorkflowAggregates({
+      groupByName: true,
+      appVersion: ['v0'],
+      selectCount: true,
+    });
     expect(results.length).toBeGreaterThanOrEqual(1);
 
     // Non-existent version returns no results
-    const empty = await sysdb.getWorkflowAggregates({ groupByName: true, appVersion: ['nonexistent'] });
+    const empty = await sysdb.getWorkflowAggregates({
+      groupByName: true,
+      appVersion: ['nonexistent'],
+      selectCount: true,
+    });
     expect(empty.length).toBe(0);
   });
 
@@ -2981,6 +3006,7 @@ describe('test-workflow-aggregates', () => {
       groupByStatus: true,
       startTime: beforeTime,
       endTime: afterTime,
+      selectCount: true,
     });
     expect(results.length).toBe(1);
     expect(results[0].group['status']).toBe('SUCCESS');
@@ -2990,6 +3016,7 @@ describe('test-workflow-aggregates', () => {
     const empty = await sysdb.getWorkflowAggregates({
       groupByStatus: true,
       endTime: '2000-01-01T00:00:00Z',
+      selectCount: true,
     });
     expect(empty.length).toBe(0);
   });
@@ -3005,6 +3032,7 @@ describe('test-workflow-aggregates', () => {
       groupByStatus: true,
       groupByApplicationVersion: true,
       status: ['SUCCESS'],
+      selectCount: true,
     });
     expect(results.length).toBe(1);
     expect(results[0].group['status']).toBe('SUCCESS');
@@ -3030,6 +3058,7 @@ describe('test-workflow-aggregates', () => {
     const results = await sysdb.getWorkflowAggregates({
       groupByStatus: true,
       workflowIdPrefix: [prefix],
+      selectCount: true,
     });
     expect(results.length).toBe(1);
     expect(results[0].group['status']).toBe('SUCCESS');
@@ -3039,6 +3068,7 @@ describe('test-workflow-aggregates', () => {
     const empty = await sysdb.getWorkflowAggregates({
       groupByStatus: true,
       workflowIdPrefix: ['nonexistent-prefix-'],
+      selectCount: true,
     });
     expect(empty.length).toBe(0);
 
@@ -3050,6 +3080,7 @@ describe('test-workflow-aggregates', () => {
     const multi = await sysdb.getWorkflowAggregates({
       groupByStatus: true,
       workflowIdPrefix: [prefix, prefix2],
+      selectCount: true,
     });
     expect(multi.length).toBe(1);
     expect(multi[0].group['status']).toBe('SUCCESS');
@@ -3058,13 +3089,22 @@ describe('test-workflow-aggregates', () => {
 
   test('no-group-by-flags-throws', async () => {
     const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
-    await expect(sysdb.getWorkflowAggregates({})).rejects.toThrow('At least one group_by flag must be set');
+    await expect(sysdb.getWorkflowAggregates({ selectCount: true })).rejects.toThrow(
+      'At least one group_by flag must be set',
+    );
+  });
+
+  test('no-select-flags-throws', async () => {
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    await expect(sysdb.getWorkflowAggregates({ groupByStatus: true })).rejects.toThrow(
+      'At least one select_ flag must be set',
+    );
   });
 
   test('empty-results', async () => {
     // No workflows run — aggregates should return empty
     const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
-    const results = await sysdb.getWorkflowAggregates({ groupByStatus: true });
+    const results = await sysdb.getWorkflowAggregates({ groupByStatus: true, selectCount: true });
     expect(results.length).toBe(0);
   });
 
@@ -3093,6 +3133,7 @@ describe('test-workflow-aggregates', () => {
       groupByStatus: true,
       completedAfter: beforeAll,
       completedBefore: afterAll,
+      selectCount: true,
     });
     let statusMap = toMap(results);
     expect(statusMap['SUCCESS']).toBe(4); // 3 sync + 1 queued
@@ -3102,6 +3143,7 @@ describe('test-workflow-aggregates', () => {
     results = await sysdb.getWorkflowAggregates({
       groupByStatus: true,
       completedBefore: beforeAll,
+      selectCount: true,
     });
     expect(results).toEqual([]);
 
@@ -3110,6 +3152,7 @@ describe('test-workflow-aggregates', () => {
       groupByStatus: true,
       dequeuedAfter: beforeAll,
       dequeuedBefore: afterAll,
+      selectCount: true,
     });
     statusMap = toMap(results);
     expect(statusMap).toEqual({ SUCCESS: 1 });
@@ -3119,7 +3162,372 @@ describe('test-workflow-aggregates', () => {
       groupByStatus: true,
       dequeuedAfter: beforeAll,
       dequeuedBefore: afterSync,
+      selectCount: true,
     });
     expect(results).toEqual([]);
+  });
+
+  test('select-min-created-at', async () => {
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+
+    // Three successWorkflow runs with a small gap so min(created_at) is unambiguous,
+    // then one queuedWorkflow.
+    const h1 = await DBOS.startWorkflow(AggWorkflows).successWorkflow();
+    await h1.getResult();
+    const aFirstCreatedAt = (await DBOS.getWorkflowStatus(h1.workflowID))!.createdAt;
+
+    await sleepms(50);
+    const h2 = await DBOS.startWorkflow(AggWorkflows).successWorkflow();
+    await h2.getResult();
+    await sleepms(50);
+    const h3 = await DBOS.startWorkflow(AggWorkflows).successWorkflow();
+    await h3.getResult();
+
+    await sleepms(50);
+    const h4 = await DBOS.startWorkflow(AggWorkflows).queuedWorkflow();
+    await h4.getResult();
+    const bCreatedAt = (await DBOS.getWorkflowStatus(h4.workflowID))!.createdAt;
+
+    const all = await sysdb.getWorkflowAggregates({ groupByName: true, selectCount: true });
+    const successName = all.find((r) => r.group['name']!.includes('successWorkflow'))!.group['name']!;
+    const queuedName = all.find((r) => r.group['name']!.includes('queuedWorkflow'))!.group['name']!;
+
+    // selectMinCreatedAt alone — count must be null on every row.
+    let results = await sysdb.getWorkflowAggregates({ groupByName: true, selectMinCreatedAt: true });
+    let byName = Object.fromEntries(results.map((r) => [r.group['name']!, r]));
+    expect(byName[successName].count).toBeNull();
+    expect(byName[queuedName].count).toBeNull();
+    expect(byName[successName].minCreatedAt).toBe(aFirstCreatedAt);
+    expect(byName[queuedName].minCreatedAt).toBe(bCreatedAt);
+
+    // Both flags together — both fields populated on every row.
+    results = await sysdb.getWorkflowAggregates({
+      groupByName: true,
+      selectCount: true,
+      selectMinCreatedAt: true,
+    });
+    byName = Object.fromEntries(results.map((r) => [r.group['name']!, r]));
+    expect(byName[successName].count).toBe(3);
+    expect(byName[successName].minCreatedAt).toBe(aFirstCreatedAt);
+    expect(byName[queuedName].count).toBe(1);
+    expect(byName[queuedName].minCreatedAt).toBe(bCreatedAt);
+
+    // selectCount alone — minCreatedAt must be null on every row.
+    results = await sysdb.getWorkflowAggregates({ groupByName: true, selectCount: true });
+    byName = Object.fromEntries(results.map((r) => [r.group['name']!, r]));
+    expect(byName[successName].count).toBe(3);
+    expect(byName[successName].minCreatedAt).toBeNull();
+    expect(byName[queuedName].minCreatedAt).toBeNull();
+
+    // Queue-oldest-item pattern: group by queue_name with a status filter.
+    const queueName = `agg-min-q-${randomUUID()}`;
+    await DBOS.registerQueue(queueName, { onConflict: 'always_update' });
+    const qh1 = await DBOS.startWorkflow(AggWorkflows, { queueName }).successWorkflow();
+    await qh1.getResult();
+    const qFirstCreatedAt = (await DBOS.getWorkflowStatus(qh1.workflowID))!.createdAt;
+    await sleepms(50);
+    const qh2 = await DBOS.startWorkflow(AggWorkflows, { queueName }).successWorkflow();
+    await qh2.getResult();
+
+    results = await sysdb.getWorkflowAggregates({
+      groupByQueueName: true,
+      queueName: [queueName],
+      selectCount: true,
+      selectMinCreatedAt: true,
+    });
+    expect(results.length).toBe(1);
+    expect(results[0].group['queue_name']).toBe(queueName);
+    expect(results[0].count).toBe(2);
+    expect(results[0].minCreatedAt).toBe(qFirstCreatedAt);
+  });
+
+  test('select-max-durations', async () => {
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+
+    // Two sync workflows: started_at_epoch_ms is NULL, so they are excluded
+    // from max_queue_wait_ms but included in max_total_latency_ms.
+    for (let i = 0; i < 2; i++) await AggWorkflows.successWorkflow();
+
+    // Two queued workflows: started_at_epoch_ms is populated, so they
+    // contribute to both maxes.
+    const qh1 = await DBOS.startWorkflow(AggWorkflows, { queueName: 'agg-test-queue' }).queuedWorkflow();
+    expect(await qh1.getResult()).toBe('queued');
+    const qh2 = await DBOS.startWorkflow(AggWorkflows, { queueName: 'agg-test-queue' }).queuedWorkflow();
+    expect(await qh2.getResult()).toBe('queued');
+
+    // Only maxes selected — counts and timestamps must be null.
+    let results = await sysdb.getWorkflowAggregates({
+      groupByStatus: true,
+      status: ['SUCCESS'],
+      selectMaxQueueWaitMs: true,
+      selectMaxTotalLatencyMs: true,
+    });
+    expect(results.length).toBe(1);
+    const r = results[0];
+    expect(r.count).toBeNull();
+    expect(r.minCreatedAt).toBeNull();
+    // Both queued workflows have a non-negative wait; sync workflows are
+    // NULL-skipped by MAX.
+    expect(r.maxQueueWaitMs).not.toBeNull();
+    expect(r.maxQueueWaitMs!).toBeGreaterThanOrEqual(0);
+    // All four SUCCESS workflows have completed_at - created_at >= 0.
+    expect(r.maxTotalLatencyMs).not.toBeNull();
+    expect(r.maxTotalLatencyMs!).toBeGreaterThanOrEqual(0);
+
+    // Grouped by name: sync group has no maxQueueWaitMs (all rows NULL on
+    // started_at), but does have a total latency. Queued group has both.
+    results = await sysdb.getWorkflowAggregates({
+      groupByName: true,
+      selectCount: true,
+      selectMaxQueueWaitMs: true,
+      selectMaxTotalLatencyMs: true,
+    });
+    const byName = Object.fromEntries(results.map((row) => [row.group['name']!, row]));
+    const syncName = Object.keys(byName).find((k) => k.includes('successWorkflow'))!;
+    const queuedName = Object.keys(byName).find((k) => k.includes('queuedWorkflow'))!;
+
+    const syncRow = byName[syncName];
+    expect(syncRow.count).toBe(2);
+    expect(syncRow.maxQueueWaitMs).toBeNull(); // all NULL → MAX is NULL
+    expect(syncRow.maxTotalLatencyMs).not.toBeNull();
+    expect(syncRow.maxTotalLatencyMs!).toBeGreaterThanOrEqual(0);
+
+    const queuedRow = byName[queuedName];
+    expect(queuedRow.count).toBe(2);
+    expect(queuedRow.maxQueueWaitMs).not.toBeNull();
+    expect(queuedRow.maxQueueWaitMs!).toBeGreaterThanOrEqual(0);
+    expect(queuedRow.maxTotalLatencyMs).not.toBeNull();
+    // For any individual row, total_latency >= queue_wait (since
+    // total = wait + execution). Therefore MAX(total) >= MAX(wait):
+    // the row producing MAX(wait) has total >= its wait, and MAX(total)
+    // is at least that row's total.
+    expect(queuedRow.maxTotalLatencyMs!).toBeGreaterThanOrEqual(queuedRow.maxQueueWaitMs!);
+  });
+});
+
+describe('test-step-aggregates', () => {
+  let config: DBOSConfig;
+
+  beforeAll(() => {
+    config = generateDBOSTestConfig();
+    DBOS.setConfig(config);
+  });
+
+  beforeEach(async () => {
+    process.env.DBOS__APPVERSION = 'v0';
+    await setUpDBOSTestSysDb(config);
+    await DBOS.launch();
+  });
+
+  afterEach(async () => {
+    await DBOS.shutdown();
+    process.env.DBOS__APPVERSION = undefined;
+  });
+
+  class StepAggWorkflows {
+    @DBOS.step()
+    static async stepOk() {
+      return await Promise.resolve();
+    }
+
+    @DBOS.step()
+    static async stepFail(): Promise<void> {
+      await Promise.resolve();
+      throw new Error('step error');
+    }
+
+    @DBOS.workflow()
+    static async wfOk() {
+      await StepAggWorkflows.stepOk();
+    }
+
+    @DBOS.workflow()
+    static async wfTwoSteps() {
+      await StepAggWorkflows.stepOk();
+      await StepAggWorkflows.stepOk();
+    }
+
+    @DBOS.workflow()
+    static async wfFail() {
+      await StepAggWorkflows.stepFail();
+    }
+  }
+
+  class DurationWorkflows {
+    @DBOS.step()
+    static async quickStep() {
+      await Promise.resolve();
+    }
+
+    @DBOS.step()
+    static async slowStep() {
+      await sleepms(50);
+    }
+
+    @DBOS.workflow()
+    static async child() {
+      await Promise.resolve();
+    }
+
+    @DBOS.workflow()
+    static async parent() {
+      // child workflow markers and DBOS.getResult are bookkeeping rows
+      // with NULL timestamps — they should drop out of max_duration_ms.
+      await DurationWorkflows.child();
+      await DurationWorkflows.quickStep();
+      await DurationWorkflows.slowStep();
+    }
+  }
+
+  test('group-and-filter', async () => {
+    // 3 wfOk runs → 3 stepOk rows.
+    for (let i = 0; i < 3; i++) await StepAggWorkflows.wfOk();
+    // 1 wfTwoSteps run → 2 more stepOk rows (5 total).
+    await StepAggWorkflows.wfTwoSteps();
+    // 2 wfFail runs → 2 stepFail rows with error set.
+    for (let i = 0; i < 2; i++) await expect(StepAggWorkflows.wfFail()).rejects.toThrow();
+
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+
+    // Group by function_name + selectCount
+    let results = await sysdb.getStepAggregates({ groupByFunctionName: true, selectCount: true });
+    const byFn = Object.fromEntries(results.map((r) => [r.group['function_name']!, r.count]));
+    const stepOkName = Object.keys(byFn).find((k) => k.includes('stepOk'))!;
+    const stepFailName = Object.keys(byFn).find((k) => k.includes('stepFail'))!;
+    expect(byFn[stepOkName]).toBe(5);
+    expect(byFn[stepFailName]).toBe(2);
+
+    // Group by status (derived from `error IS NULL`)
+    results = await sysdb.getStepAggregates({ groupByStatus: true, selectCount: true });
+    const byStatus = Object.fromEntries(results.map((r) => [r.group['status']!, r.count]));
+    expect(byStatus['SUCCESS']).toBe(5);
+    expect(byStatus['ERROR']).toBe(2);
+
+    // Group by both function_name and status
+    results = await sysdb.getStepAggregates({
+      groupByFunctionName: true,
+      groupByStatus: true,
+      selectCount: true,
+    });
+    const combo = Object.fromEntries(results.map((r) => [`${r.group['function_name']}:${r.group['status']}`, r.count]));
+    expect(combo[`${stepOkName}:SUCCESS`]).toBe(5);
+    expect(combo[`${stepFailName}:ERROR`]).toBe(2);
+
+    // Filter by status
+    results = await sysdb.getStepAggregates({
+      groupByFunctionName: true,
+      status: ['ERROR'],
+      selectCount: true,
+    });
+    expect(results.length).toBe(1);
+    expect(results[0].group['function_name']).toBe(stepFailName);
+    expect(results[0].count).toBe(2);
+
+    // Filter by function_name
+    results = await sysdb.getStepAggregates({
+      groupByStatus: true,
+      functionName: [stepOkName],
+      selectCount: true,
+    });
+    expect(results.length).toBe(1);
+    expect(results[0].group['status']).toBe('SUCCESS');
+    expect(results[0].count).toBe(5);
+
+    // Filter by workflow_id_prefix
+    const h1 = await DBOS.startWorkflow(StepAggWorkflows, { workflowID: 'step-agg-prefix-1' }).wfOk();
+    await h1.getResult();
+    const h2 = await DBOS.startWorkflow(StepAggWorkflows, { workflowID: 'step-agg-prefix-2' }).wfOk();
+    await h2.getResult();
+    results = await sysdb.getStepAggregates({
+      groupByFunctionName: true,
+      workflowIdPrefix: ['step-agg-prefix'],
+      selectCount: true,
+    });
+    expect(results.length).toBe(1);
+    expect(results[0].group['function_name']).toBe(stepOkName);
+    expect(results[0].count).toBe(2);
+
+    results = await sysdb.getStepAggregates({
+      groupByFunctionName: true,
+      workflowIdPrefix: ['nonexistent-prefix'],
+      selectCount: true,
+    });
+    expect(results.length).toBe(0);
+
+    // No group_by flags should raise
+    await expect(sysdb.getStepAggregates({ selectCount: true })).rejects.toThrow(
+      'At least one group_by flag must be set',
+    );
+
+    // No select_ flags should raise
+    await expect(sysdb.getStepAggregates({ groupByFunctionName: true })).rejects.toThrow(
+      'At least one select_ flag must be set',
+    );
+
+    // time_bucket_size_ms <= 0 should raise
+    await expect(sysdb.getStepAggregates({ timeBucketSizeMs: 0, selectCount: true })).rejects.toThrow(
+      'time_bucket_size_ms must be > 0',
+    );
+
+    // time_bucket_size_ms alone (1-hour buckets)
+    const oneHourMs = 3_600_000;
+    results = await sysdb.getStepAggregates({ timeBucketSizeMs: oneHourMs, selectCount: true });
+    expect(results.length).toBeGreaterThanOrEqual(1);
+    for (const r of results) {
+      const tb = r.group['time_bucket']!;
+      expect(typeof tb).toBe('string');
+      expect(Number(tb) % oneHourMs).toBe(0);
+    }
+  });
+
+  test('completed-window-and-max', async () => {
+    const beforeAll = new Date().toISOString();
+    await DurationWorkflows.parent();
+    const afterAll = new Date().toISOString();
+
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+
+    // completedAfter/completedBefore plus the two real step durations.
+    let results = await sysdb.getStepAggregates({
+      groupByFunctionName: true,
+      completedAfter: beforeAll,
+      completedBefore: afterAll,
+      selectCount: true,
+      selectMaxDurationMs: true,
+    });
+    let byFn = Object.fromEntries(results.map((r) => [r.group['function_name']!, r]));
+    const quickName = Object.keys(byFn).find((k) => k.includes('quickStep'))!;
+    const slowName = Object.keys(byFn).find((k) => k.includes('slowStep'))!;
+
+    const quickRow = byFn[quickName];
+    expect(quickRow.count).toBe(1);
+    expect(quickRow.maxDurationMs).not.toBeNull();
+    expect(quickRow.maxDurationMs!).toBeGreaterThanOrEqual(0);
+
+    const slowRow = byFn[slowName];
+    expect(slowRow.count).toBe(1);
+    expect(slowRow.maxDurationMs).not.toBeNull();
+    // slowStep sleeps 50ms — the recorded duration should reflect that.
+    expect(slowRow.maxDurationMs!).toBeGreaterThanOrEqual(40);
+
+    // completedBefore before any work: matches nothing.
+    results = await sysdb.getStepAggregates({
+      groupByFunctionName: true,
+      completedBefore: beforeAll,
+      selectCount: true,
+    });
+    expect(results).toEqual([]);
+
+    // selectMaxDurationMs alone — counts must be null.
+    results = await sysdb.getStepAggregates({
+      groupByFunctionName: true,
+      functionName: [quickName, slowName],
+      selectMaxDurationMs: true,
+    });
+    byFn = Object.fromEntries(results.map((r) => [r.group['function_name']!, r]));
+    expect(byFn[quickName].count).toBeNull();
+    expect(byFn[quickName].maxDurationMs).not.toBeNull();
+    expect(byFn[slowName].count).toBeNull();
+    expect(byFn[slowName].maxDurationMs).not.toBeNull();
   });
 });

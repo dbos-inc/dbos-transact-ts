@@ -32,6 +32,7 @@ export enum MessageType {
   GET_WORKFLOW_NOTIFICATIONS = 'get_workflow_notifications',
   GET_WORKFLOW_STREAMS = 'get_workflow_streams',
   GET_WORKFLOW_AGGREGATES = 'get_workflow_aggregates',
+  GET_STEP_AGGREGATES = 'get_step_aggregates',
   FORK_FROM_FAILURE = 'fork_from_failure',
   LIST_QUEUES = 'list_queues',
   GET_QUEUE = 'get_queue',
@@ -834,6 +835,10 @@ export interface GetWorkflowAggregatesBody {
   group_by_queue_name?: boolean;
   group_by_executor_id?: boolean;
   group_by_application_version?: boolean;
+  select_count?: boolean;
+  select_min_created_at?: boolean;
+  select_max_queue_wait_ms?: boolean;
+  select_max_total_latency_ms?: boolean;
   status?: string[];
   start_time?: string;
   end_time?: string;
@@ -860,13 +865,55 @@ export class GetWorkflowAggregatesRequest implements BaseMessage {
 
 export interface WorkflowAggregateOutput {
   group: Record<string, string | null>;
-  count: number;
+  count?: number | null;
+  min_created_at?: number | null;
+  max_queue_wait_ms?: number | null;
+  max_total_latency_ms?: number | null;
 }
 
 export class GetWorkflowAggregatesResponse extends BaseResponse {
   output: WorkflowAggregateOutput[];
   constructor(request_id: string, output: WorkflowAggregateOutput[], error_message?: string) {
     super(MessageType.GET_WORKFLOW_AGGREGATES, request_id, error_message);
+    this.output = output;
+  }
+}
+
+// --- Step Aggregates ---
+
+export interface GetStepAggregatesBody {
+  group_by_function_name?: boolean;
+  group_by_status?: boolean;
+  select_count?: boolean;
+  select_max_duration_ms?: boolean;
+  time_bucket_size_ms?: number;
+  status?: string[];
+  function_name?: string[];
+  workflow_id_prefix?: string[];
+  completed_after?: string;
+  completed_before?: string;
+}
+
+export class GetStepAggregatesRequest implements BaseMessage {
+  type = MessageType.GET_STEP_AGGREGATES;
+  request_id: string;
+  body: GetStepAggregatesBody;
+  constructor(request_id: string, body: GetStepAggregatesBody) {
+    this.request_id = request_id;
+    this.body = body;
+  }
+}
+
+export interface StepAggregateOutput {
+  group: Record<string, string | null>;
+  count?: number | null;
+  max_duration_ms?: number | null;
+}
+
+export class GetStepAggregatesResponse extends BaseResponse {
+  output: StepAggregateOutput[];
+  constructor(request_id: string, output: StepAggregateOutput[], error_message?: string) {
+    super(MessageType.GET_STEP_AGGREGATES, request_id, error_message);
     this.output = output;
   }
 }
