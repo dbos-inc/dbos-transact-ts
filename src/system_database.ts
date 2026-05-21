@@ -3102,7 +3102,6 @@ export class SystemDatabase {
       FROM "${this.schemaName}".operation_outputs
       ${whereClause}
       GROUP BY ${groupByClause}
-      LIMIT 10000000
     `;
 
     const result = await this.pool.query<Record<string, unknown>>(query, params);
