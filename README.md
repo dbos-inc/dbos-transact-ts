@@ -241,6 +241,10 @@ Then, check out the [programming guide](https://docs.dbos.dev/typescript/program
 
 [https://docs.dbos.dev/examples](https://docs.dbos.dev/examples)
 
+This repository also includes a small [Tuning Engines governed AI workflow](examples/tuning-engines-ai)
+example that shows how to call an OpenAI-compatible AI gateway from a durable
+DBOS step.
+
 ## DBOS vs. Other Systems
 
 <details><summary><strong>DBOS vs. Temporal</strong></summary>
