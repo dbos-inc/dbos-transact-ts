@@ -132,7 +132,16 @@ function queueRecordFromRow(row: queues): QueueRecord {
 
 export interface WorkflowAggregateRow {
   group: Record<string, string | null>;
-  count: number;
+  count: number | null;
+  minCreatedAt: number | null;
+  maxQueueWaitMs: number | null;
+  maxTotalLatencyMs: number | null;
+}
+
+export interface StepAggregateRow {
+  group: Record<string, string | null>;
+  count: number | null;
+  maxDurationMs: number | null;
 }
 
 export interface GetWorkflowAggregatesInput {
@@ -141,6 +150,11 @@ export interface GetWorkflowAggregatesInput {
   groupByQueueName?: boolean;
   groupByExecutorId?: boolean;
   groupByApplicationVersion?: boolean;
+  selectCount?: boolean;
+  selectMinCreatedAt?: boolean;
+  selectMaxQueueWaitMs?: boolean;
+  selectMaxTotalLatencyMs?: boolean;
+  timeBucketSizeMs?: number;
   status?: string[];
   startTime?: string;
   endTime?: string;
@@ -153,6 +167,19 @@ export interface GetWorkflowAggregatesInput {
   executorId?: string[];
   queueName?: string[];
   workflowIdPrefix?: string[];
+}
+
+export interface GetStepAggregatesInput {
+  groupByFunctionName?: boolean;
+  groupByStatus?: boolean;
+  selectCount?: boolean;
+  selectMaxDurationMs?: boolean;
+  timeBucketSizeMs?: number;
+  status?: string[];
+  functionName?: string[];
+  workflowIdPrefix?: string[];
+  completedAfter?: string;
+  completedBefore?: string;
 }
 
 // For internal use, not serialized status.
@@ -2839,6 +2866,10 @@ export class SystemDatabase {
   }
 
   async getWorkflowAggregates(input: GetWorkflowAggregatesInput): Promise<WorkflowAggregateRow[]> {
+    if (input.timeBucketSizeMs !== undefined && input.timeBucketSizeMs <= 0) {
+      throw new Error('time_bucket_size_ms must be > 0');
+    }
+
     const groupByFlags: [string, boolean, string][] = [
       ['status', input.groupByStatus ?? false, 'status'],
       ['name', input.groupByName ?? false, 'name'],
@@ -2849,15 +2880,48 @@ export class SystemDatabase {
 
     const groupNames: string[] = [];
     const groupColumns: string[] = [];
+    const groupSelectColumns: string[] = [];
     for (const [colName, enabled, col] of groupByFlags) {
       if (enabled) {
         groupNames.push(colName);
         groupColumns.push(col);
+        groupSelectColumns.push(col);
       }
+    }
+
+    if (input.timeBucketSizeMs !== undefined) {
+      // Bucket on created_at — the indexed wall-clock timestamp on workflow_status.
+      const bucket = input.timeBucketSizeMs;
+      const bucketExpr = `(CAST(FLOOR(created_at / ${bucket}) AS BIGINT) * ${bucket})`;
+      groupNames.push('time_bucket');
+      groupColumns.push(bucketExpr);
+      groupSelectColumns.push(`${bucketExpr} AS time_bucket`);
     }
 
     if (groupColumns.length === 0) {
       throw new Error('At least one group_by flag must be set to True');
+    }
+
+    // Build select columns from boolean flags. MAX ignores NULLs, so rows
+    // missing started_at_epoch_ms or completed_at naturally drop out of the
+    // latency maxes.
+    const selectFlags: [string, boolean, string][] = [
+      ['count', input.selectCount ?? false, 'COUNT(*)'],
+      ['min_created_at', input.selectMinCreatedAt ?? false, 'MIN(created_at)'],
+      ['max_queue_wait_ms', input.selectMaxQueueWaitMs ?? false, 'MAX(started_at_epoch_ms - created_at)'],
+      ['max_total_latency_ms', input.selectMaxTotalLatencyMs ?? false, 'MAX(completed_at - created_at)'],
+    ];
+    const selectNames: string[] = [];
+    const selectColumns: string[] = [];
+    for (const [name, enabled, expr] of selectFlags) {
+      if (enabled) {
+        selectNames.push(name);
+        selectColumns.push(`${expr} AS ${name}`);
+      }
+    }
+
+    if (selectColumns.length === 0) {
+      throw new Error('At least one select_ flag must be set to True');
     }
 
     const whereClauses: string[] = [];
@@ -2921,9 +2985,10 @@ export class SystemDatabase {
 
     const whereClause = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
     const groupByClause = groupColumns.join(', ');
+    const selectClause = [...groupSelectColumns, ...selectColumns].join(', ');
 
     const query = `
-      SELECT ${groupByClause}, COUNT(*) as count
+      SELECT ${selectClause}
       FROM "${this.schemaName}".workflow_status
       ${whereClause}
       GROUP BY ${groupByClause}
@@ -2931,12 +2996,145 @@ export class SystemDatabase {
 
     const result = await this.pool.query<Record<string, unknown>>(query, params);
 
+    const toIntOrNull = (v: unknown): number | null => (v === null || v === undefined ? null : Number(v));
+
     return result.rows.map((row) => {
       const group: Record<string, string | null> = {};
       for (const name of groupNames) {
-        group[name] = row[name] as string | null;
+        const v = row[name];
+        group[name] = v === null || v === undefined ? null : String(v as string | number | bigint);
       }
-      return { group, count: Number(row.count) };
+      return {
+        group,
+        count: selectNames.includes('count') ? toIntOrNull(row.count) : null,
+        minCreatedAt: selectNames.includes('min_created_at') ? toIntOrNull(row.min_created_at) : null,
+        maxQueueWaitMs: selectNames.includes('max_queue_wait_ms') ? toIntOrNull(row.max_queue_wait_ms) : null,
+        maxTotalLatencyMs: selectNames.includes('max_total_latency_ms') ? toIntOrNull(row.max_total_latency_ms) : null,
+      };
+    });
+  }
+
+  async getStepAggregates(input: GetStepAggregatesInput): Promise<StepAggregateRow[]> {
+    if (input.timeBucketSizeMs !== undefined && input.timeBucketSizeMs <= 0) {
+      throw new Error('time_bucket_size_ms must be > 0');
+    }
+
+    // operation_outputs has no explicit status column; derive it from
+    // whether `error` is populated. Bookkeeping rows from recordChildWorkflow
+    // and DBOS.getResult have NULL error and NULL output, so they appear
+    // as SUCCESS here — callers can filter them by function_name.
+    const statusExpr = `CASE WHEN error IS NULL THEN 'SUCCESS' ELSE 'ERROR' END`;
+
+    const groupByFlags: [string, boolean, string][] = [
+      ['function_name', input.groupByFunctionName ?? false, 'function_name'],
+      ['status', input.groupByStatus ?? false, statusExpr],
+    ];
+
+    const groupNames: string[] = [];
+    const groupColumns: string[] = [];
+    const groupSelectColumns: string[] = [];
+    for (const [colName, enabled, expr] of groupByFlags) {
+      if (enabled) {
+        groupNames.push(colName);
+        groupColumns.push(expr);
+        groupSelectColumns.push(`${expr} AS ${colName}`);
+      }
+    }
+
+    if (input.timeBucketSizeMs !== undefined) {
+      // Bucket on completed_at_epoch_ms — it's the indexed timestamp on
+      // this table.
+      const bucket = input.timeBucketSizeMs;
+      const bucketExpr = `(CAST(FLOOR(completed_at_epoch_ms / ${bucket}) AS BIGINT) * ${bucket})`;
+      groupNames.push('time_bucket');
+      groupColumns.push(bucketExpr);
+      groupSelectColumns.push(`${bucketExpr} AS time_bucket`);
+    }
+
+    if (groupColumns.length === 0) {
+      throw new Error('At least one group_by flag must be set to True');
+    }
+
+    // Build select columns from boolean flags. MAX ignores NULLs, so rows
+    // without start/complete timestamps (child-workflow and getResult
+    // markers) drop out of the duration max.
+    const selectFlags: [string, boolean, string][] = [
+      ['count', input.selectCount ?? false, 'COUNT(*)'],
+      ['max_duration_ms', input.selectMaxDurationMs ?? false, 'MAX(completed_at_epoch_ms - started_at_epoch_ms)'],
+    ];
+    const selectNames: string[] = [];
+    const selectColumns: string[] = [];
+    for (const [name, enabled, expr] of selectFlags) {
+      if (enabled) {
+        selectNames.push(name);
+        selectColumns.push(`${expr} AS ${name}`);
+      }
+    }
+
+    if (selectColumns.length === 0) {
+      throw new Error('At least one select_ flag must be set to True');
+    }
+
+    const whereClauses: string[] = [];
+    const params: unknown[] = [];
+    let paramIdx = 1;
+
+    if (input.status && input.status.length > 0) {
+      const placeholders = input.status.map((_, i) => `$${paramIdx + i}`).join(', ');
+      whereClauses.push(`(${statusExpr}) IN (${placeholders})`);
+      params.push(...input.status);
+      paramIdx += input.status.length;
+    }
+    if (input.functionName && input.functionName.length > 0) {
+      const placeholders = input.functionName.map((_, i) => `$${paramIdx + i}`).join(', ');
+      whereClauses.push(`function_name IN (${placeholders})`);
+      params.push(...input.functionName);
+      paramIdx += input.functionName.length;
+    }
+    if (input.workflowIdPrefix && input.workflowIdPrefix.length > 0) {
+      const likeClauses = input.workflowIdPrefix.map((p) => {
+        params.push(`${p}%`);
+        return `workflow_uuid LIKE $${paramIdx++}`;
+      });
+      whereClauses.push(`(${likeClauses.join(' OR ')})`);
+    }
+    if (input.completedAfter) {
+      whereClauses.push(`completed_at_epoch_ms >= $${paramIdx}`);
+      params.push(new Date(input.completedAfter).getTime());
+      paramIdx++;
+    }
+    if (input.completedBefore) {
+      whereClauses.push(`completed_at_epoch_ms <= $${paramIdx}`);
+      params.push(new Date(input.completedBefore).getTime());
+      paramIdx++;
+    }
+
+    const whereClause = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+    const groupByClause = groupColumns.join(', ');
+    const selectClause = [...groupSelectColumns, ...selectColumns].join(', ');
+
+    const query = `
+      SELECT ${selectClause}
+      FROM "${this.schemaName}".operation_outputs
+      ${whereClause}
+      GROUP BY ${groupByClause}
+    `;
+
+    const result = await this.pool.query<Record<string, unknown>>(query, params);
+
+    const toIntOrNull = (v: unknown): number | null => (v === null || v === undefined ? null : Number(v));
+
+    return result.rows.map((row) => {
+      const group: Record<string, string | null> = {};
+      for (const name of groupNames) {
+        const v = row[name];
+        group[name] = v === null || v === undefined ? null : String(v as string | number | bigint);
+      }
+      return {
+        group,
+        count: selectNames.includes('count') ? toIntOrNull(row.count) : null,
+        maxDurationMs: selectNames.includes('max_duration_ms') ? toIntOrNull(row.max_duration_ms) : null,
+      };
     });
   }
 

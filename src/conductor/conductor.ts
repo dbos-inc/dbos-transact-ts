@@ -737,13 +737,26 @@ export class Conductor {
             const aggMsg = baseMsg as protocol.GetWorkflowAggregatesRequest;
             const aggBody = aggMsg.body;
             let aggOutput: protocol.WorkflowAggregateOutput[] = [];
+            // Backwards compat: older clients send no select_* flags and expect counts.
+            let selectCount = aggBody.select_count ?? false;
+            const selectMinCreatedAt = aggBody.select_min_created_at ?? false;
+            const selectMaxQueueWaitMs = aggBody.select_max_queue_wait_ms ?? false;
+            const selectMaxTotalLatencyMs = aggBody.select_max_total_latency_ms ?? false;
+            if (!(selectCount || selectMinCreatedAt || selectMaxQueueWaitMs || selectMaxTotalLatencyMs)) {
+              selectCount = true;
+            }
             try {
-              aggOutput = await this.dbosExec.systemDatabase.getWorkflowAggregates({
+              const rows = await this.dbosExec.systemDatabase.getWorkflowAggregates({
                 groupByStatus: aggBody.group_by_status ?? false,
                 groupByName: aggBody.group_by_name ?? false,
                 groupByQueueName: aggBody.group_by_queue_name ?? false,
                 groupByExecutorId: aggBody.group_by_executor_id ?? false,
                 groupByApplicationVersion: aggBody.group_by_application_version ?? false,
+                selectCount,
+                selectMinCreatedAt,
+                selectMaxQueueWaitMs,
+                selectMaxTotalLatencyMs,
+                timeBucketSizeMs: aggBody.time_bucket_size_ms ?? undefined,
                 status: aggBody.status,
                 startTime: aggBody.start_time,
                 endTime: aggBody.end_time,
@@ -757,12 +770,54 @@ export class Conductor {
                 queueName: aggBody.queue_name,
                 workflowIdPrefix: aggBody.workflow_id_prefix,
               });
+              aggOutput = rows.map((r) => ({
+                group: r.group,
+                count: r.count,
+                min_created_at: r.minCreatedAt,
+                max_queue_wait_ms: r.maxQueueWaitMs,
+                max_total_latency_ms: r.maxTotalLatencyMs,
+              }));
             } catch (e) {
               errorMsg = `Exception encountered when getting workflow aggregates: ${(e as Error).message}`;
               this.dbosExec.logger.error(errorMsg);
             }
             const aggResp = new protocol.GetWorkflowAggregatesResponse(baseMsg.request_id, aggOutput, errorMsg);
             currWebsocket.send(JSON.stringify(aggResp));
+            break;
+          case protocol.MessageType.GET_STEP_AGGREGATES:
+            const stepAggMsg = baseMsg as protocol.GetStepAggregatesRequest;
+            const stepAggBody = stepAggMsg.body;
+            let stepAggOutput: protocol.StepAggregateOutput[] = [];
+            // Backwards compat: older clients send no select_* flags and expect counts.
+            let stepSelectCount = stepAggBody.select_count ?? false;
+            const stepSelectMaxDurationMs = stepAggBody.select_max_duration_ms ?? false;
+            if (!(stepSelectCount || stepSelectMaxDurationMs)) {
+              stepSelectCount = true;
+            }
+            try {
+              const rows = await this.dbosExec.systemDatabase.getStepAggregates({
+                groupByFunctionName: stepAggBody.group_by_function_name ?? false,
+                groupByStatus: stepAggBody.group_by_status ?? false,
+                selectCount: stepSelectCount,
+                selectMaxDurationMs: stepSelectMaxDurationMs,
+                timeBucketSizeMs: stepAggBody.time_bucket_size_ms ?? undefined,
+                status: stepAggBody.status,
+                functionName: stepAggBody.function_name,
+                workflowIdPrefix: stepAggBody.workflow_id_prefix,
+                completedAfter: stepAggBody.completed_after,
+                completedBefore: stepAggBody.completed_before,
+              });
+              stepAggOutput = rows.map((r) => ({
+                group: r.group,
+                count: r.count,
+                max_duration_ms: r.maxDurationMs,
+              }));
+            } catch (e) {
+              errorMsg = `Exception encountered when getting step aggregates: ${(e as Error).message}`;
+              this.dbosExec.logger.error(errorMsg);
+            }
+            const stepAggResp = new protocol.GetStepAggregatesResponse(baseMsg.request_id, stepAggOutput, errorMsg);
+            currWebsocket.send(JSON.stringify(stepAggResp));
             break;
           case protocol.MessageType.LIST_QUEUES:
             let queueOutputs: protocol.QueueOutput[] = [];
