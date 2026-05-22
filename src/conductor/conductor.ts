@@ -756,6 +756,7 @@ export class Conductor {
                 selectMinCreatedAt,
                 selectMaxQueueWaitMs,
                 selectMaxTotalLatencyMs,
+                timeBucketSizeMs: aggBody.time_bucket_size_ms,
                 status: aggBody.status,
                 startTime: aggBody.start_time,
                 endTime: aggBody.end_time,

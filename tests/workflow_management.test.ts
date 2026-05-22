@@ -3101,6 +3101,56 @@ describe('test-workflow-aggregates', () => {
     );
   });
 
+  test('time-bucket', async () => {
+    for (let i = 0; i < 3; i++) await AggWorkflows.successWorkflow();
+    for (let i = 0; i < 2; i++) await expect(AggWorkflows.failWorkflow()).rejects.toThrow();
+
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+
+    // time_bucket_size_ms alone (1-hour buckets = 3_600_000 ms)
+    const oneHourMs = 3_600_000;
+    let results = await sysdb.getWorkflowAggregates({ timeBucketSizeMs: oneHourMs, selectCount: true });
+    expect(results.length).toBeGreaterThanOrEqual(1);
+    // Each bucket value must be a multiple of the bucket size
+    for (const r of results) {
+      const tb = r.group['time_bucket'];
+      expect(typeof tb).toBe('string');
+      expect(Number(tb) % oneHourMs).toBe(0);
+    }
+    // Total count across all buckets equals total workflows run so far
+    expect(results.reduce((sum, r) => sum + (r.count ?? 0), 0)).toBeGreaterThanOrEqual(5);
+
+    // time_bucket_size_ms combined with groupByStatus
+    results = await sysdb.getWorkflowAggregates({
+      timeBucketSizeMs: oneHourMs,
+      groupByStatus: true,
+      selectCount: true,
+    });
+    const successTotal = results.filter((r) => r.group['status'] === 'SUCCESS').reduce((s, r) => s + (r.count ?? 0), 0);
+    const errorTotal = results.filter((r) => r.group['status'] === 'ERROR').reduce((s, r) => s + (r.count ?? 0), 0);
+    expect(successTotal).toBe(3);
+    expect(errorTotal).toBe(2);
+
+    // time_bucket_size_ms with a status filter (1-minute buckets = 60_000 ms)
+    const oneMinuteMs = 60_000;
+    results = await sysdb.getWorkflowAggregates({
+      timeBucketSizeMs: oneMinuteMs,
+      status: ['ERROR'],
+      selectCount: true,
+    });
+    expect(results.length).toBeGreaterThanOrEqual(1);
+    for (const r of results) {
+      expect(typeof r.group['time_bucket']).toBe('string');
+      expect(Number(r.group['time_bucket']) % oneMinuteMs).toBe(0);
+    }
+    expect(results.reduce((s, r) => s + (r.count ?? 0), 0)).toBe(2);
+
+    // must be > 0
+    await expect(sysdb.getWorkflowAggregates({ timeBucketSizeMs: 0, selectCount: true })).rejects.toThrow(
+      'time_bucket_size_ms must be > 0',
+    );
+  });
+
   test('empty-results', async () => {
     // No workflows run — aggregates should return empty
     const sysdb = DBOSExecutor.globalInstance!.systemDatabase;

@@ -839,6 +839,7 @@ export interface GetWorkflowAggregatesBody {
   select_min_created_at?: boolean;
   select_max_queue_wait_ms?: boolean;
   select_max_total_latency_ms?: boolean;
+  time_bucket_size_ms?: number;
   status?: string[];
   start_time?: string;
   end_time?: string;

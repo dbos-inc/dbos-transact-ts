@@ -154,6 +154,7 @@ export interface GetWorkflowAggregatesInput {
   selectMinCreatedAt?: boolean;
   selectMaxQueueWaitMs?: boolean;
   selectMaxTotalLatencyMs?: boolean;
+  timeBucketSizeMs?: number;
   status?: string[];
   startTime?: string;
   endTime?: string;
@@ -2865,6 +2866,10 @@ export class SystemDatabase {
   }
 
   async getWorkflowAggregates(input: GetWorkflowAggregatesInput): Promise<WorkflowAggregateRow[]> {
+    if (input.timeBucketSizeMs !== undefined && input.timeBucketSizeMs <= 0) {
+      throw new Error('time_bucket_size_ms must be > 0');
+    }
+
     const groupByFlags: [string, boolean, string][] = [
       ['status', input.groupByStatus ?? false, 'status'],
       ['name', input.groupByName ?? false, 'name'],
@@ -2875,11 +2880,22 @@ export class SystemDatabase {
 
     const groupNames: string[] = [];
     const groupColumns: string[] = [];
+    const groupSelectColumns: string[] = [];
     for (const [colName, enabled, col] of groupByFlags) {
       if (enabled) {
         groupNames.push(colName);
         groupColumns.push(col);
+        groupSelectColumns.push(col);
       }
+    }
+
+    if (input.timeBucketSizeMs !== undefined) {
+      // Bucket on created_at — the indexed wall-clock timestamp on workflow_status.
+      const bucket = input.timeBucketSizeMs;
+      const bucketExpr = `(CAST(FLOOR(created_at / ${bucket}) AS BIGINT) * ${bucket})`;
+      groupNames.push('time_bucket');
+      groupColumns.push(bucketExpr);
+      groupSelectColumns.push(`${bucketExpr} AS time_bucket`);
     }
 
     if (groupColumns.length === 0) {
@@ -2969,7 +2985,7 @@ export class SystemDatabase {
 
     const whereClause = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
     const groupByClause = groupColumns.join(', ');
-    const selectClause = [...groupColumns, ...selectColumns].join(', ');
+    const selectClause = [...groupSelectColumns, ...selectColumns].join(', ');
 
     const query = `
       SELECT ${selectClause}
