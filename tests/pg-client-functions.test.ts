@@ -153,6 +153,132 @@ describe('PostgreSQL Client Functions', () => {
     }
   });
 
+  test('pg-enqueue-with-auth-metadata', async () => {
+    const wfid = `pg-auth-test-${Date.now()}`;
+    const user = 'alice';
+    const roles = ['admin', 'reader'];
+    const dbClient = new Client(poolConfig);
+
+    try {
+      await dbClient.connect();
+
+      await dbClient.query(
+        `
+        SELECT dbos.enqueue_workflow(
+          workflow_name => 'enqueueTest',
+          queue_name => $1,
+          class_name => 'ClientTest',
+          workflow_id => $2,
+          positional_args => ARRAY[$3::JSON, $4::JSON, $5::JSON],
+          authenticated_user => $6,
+          authenticated_roles => $7
+        )
+      `,
+        [
+          testQueueName,
+          wfid,
+          JSON.stringify(42),
+          JSON.stringify('test'),
+          JSON.stringify({ first: 'John', last: 'Doe', age: 30 }),
+          user,
+          JSON.stringify(roles),
+        ],
+      );
+    } finally {
+      await dbClient.end();
+    }
+
+    try {
+      await DBOS.launch();
+      await DBOS.registerQueue(testQueueName, { onConflict: 'always_update' });
+
+      const handle = DBOS.retrieveWorkflow<string>(wfid);
+      const status = await handle.getStatus();
+      expect(status).toBeDefined();
+      expect(status!.authenticatedUser).toBe(user);
+      expect(status!.authenticatedRoles).toEqual(roles);
+
+      const result = await handle.getResult();
+      expect(result).toBe('42-test-{"first":"John","last":"Doe","age":30}');
+    } finally {
+      await DBOS.shutdown();
+    }
+  });
+
+  test('pg-enqueue-with-delay', async () => {
+    const wfid = `pg-delay-test-${Date.now()}`;
+    // Far enough in the future that the workflow won't be promoted during the test
+    const delayUntil = Date.now() + 60_000;
+    const dbClient = new Client(poolConfig);
+
+    try {
+      await dbClient.connect();
+
+      await dbClient.query(
+        `
+        SELECT dbos.enqueue_workflow(
+          workflow_name => 'enqueueTest',
+          queue_name => $1,
+          class_name => 'ClientTest',
+          workflow_id => $2,
+          positional_args => ARRAY[$3::JSON, $4::JSON, $5::JSON],
+          delay_until_epoch_ms => $6
+        )
+      `,
+        [
+          testQueueName,
+          wfid,
+          JSON.stringify(42),
+          JSON.stringify('test'),
+          JSON.stringify({ first: 'John', last: 'Doe', age: 30 }),
+          delayUntil,
+        ],
+      );
+    } finally {
+      await dbClient.end();
+    }
+
+    try {
+      await DBOS.launch();
+      await DBOS.registerQueue(testQueueName, { onConflict: 'always_update' });
+
+      const handle = DBOS.retrieveWorkflow<string>(wfid);
+      const status = await handle.getStatus();
+      expect(status).toBeDefined();
+      expect(status!.status).toBe('DELAYED');
+      expect(status!.delayUntilEpochMS).toBe(delayUntil);
+
+      await DBOS.cancelWorkflow(wfid);
+    } finally {
+      await DBOS.shutdown();
+    }
+  });
+
+  test('pg-enqueue-negative-delay-rejected', async () => {
+    const wfid = `pg-negative-delay-${Date.now()}`;
+    const dbClient = new Client(poolConfig);
+
+    try {
+      await dbClient.connect();
+
+      await expect(
+        dbClient.query(
+          `
+          SELECT dbos.enqueue_workflow(
+            workflow_name => 'enqueueTest',
+            queue_name => $1,
+            workflow_id => $2,
+            delay_until_epoch_ms => -1
+          )
+        `,
+          [testQueueName, wfid],
+        ),
+      ).rejects.toThrow(/delay_until_epoch_ms must be >= 0/);
+    } finally {
+      await dbClient.end();
+    }
+  });
+
   test('pg-enqueue-gen-wfid', async () => {
     const dbClient = new Client(poolConfig);
     let wfid: string;
