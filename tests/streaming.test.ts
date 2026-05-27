@@ -345,6 +345,89 @@ describe('dbos-streaming-tests', () => {
     expect(readValues).toEqual(expectedValues);
   });
 
+  test('stream-termination-while-reader-blocked', async () => {
+    // A reader that catches up to an open stream while the writer is still running
+    // must terminate promptly once the workflow completes, even though no value or
+    // close marker wakes it. Unlike the other unclosed-stream tests, which read only
+    // after the workflow finished, this forces the blocking wait path.
+    const streamKey = 'termination_latency_stream';
+
+    const writerWorkflow = DBOS.registerWorkflow(
+      async () => {
+        // Write once, then stay alive without writing or closing, so the reader
+        // catches up and blocks waiting for the workflow to terminate.
+        await DBOS.writeStream(streamKey, 'only_value');
+        await DBOS.sleepms(2000);
+      },
+      { name: 'termination-while-blocked-writer' },
+    );
+
+    await DBOS.launch();
+
+    const wfid = randomUUID();
+    const handle = await DBOS.withNextWorkflowID(wfid, async () => {
+      return DBOS.startWorkflow(writerWorkflow, {})();
+    });
+
+    const start = Date.now();
+    const readValues: unknown[] = [];
+    for await (const value of DBOS.readStream(wfid, streamKey)) {
+      readValues.push(value);
+    }
+    const elapsed = Date.now() - start;
+
+    await handle.getResult();
+    expect(readValues).toEqual(['only_value']);
+    // Termination fires no notification, so the reader only notices once its wait
+    // times out and re-checks the workflow status (one ~1s polling interval).
+    expect(elapsed).toBeLessThan(10000);
+  });
+
+  test('stream-low-latency-delivery', async () => {
+    // Values should reach a blocked reader promptly via LISTEN/NOTIFY rather than
+    // after a fixed polling interval. Each value carries the wall-clock time it was
+    // written; the reader asserts it received the value shortly after.
+    const streamKey = 'latency_stream';
+    const numValues = 3;
+
+    const writerWorkflow = DBOS.registerWorkflow(
+      async () => {
+        for (let i = 0; i < numValues; i++) {
+          // Capture the write time as close to the write as possible, then pause so
+          // the reader is genuinely blocked waiting for the next one.
+          await DBOS.writeStream(streamKey, Date.now());
+          await DBOS.sleepms(1000);
+        }
+        await DBOS.closeStream(streamKey);
+      },
+      { name: 'low-latency-writer' },
+    );
+
+    const measure = async (readIter: AsyncGenerator<unknown>): Promise<{ count: number; maxLatency: number }> => {
+      let maxLatency = 0;
+      let count = 0;
+      for await (const writtenAt of readIter) {
+        maxLatency = Math.max(maxLatency, Date.now() - (writtenAt as number));
+        count += 1;
+      }
+      return { count, maxLatency };
+    };
+
+    await DBOS.launch();
+
+    // In-process DBOS reader: woken by LISTEN/NOTIFY, so delivery is single-digit
+    // milliseconds. A 1s polling fallback would average ~0.5s and frequently exceed
+    // this across several values.
+    const wfid = randomUUID();
+    const handle = await DBOS.withNextWorkflowID(wfid, async () => {
+      return DBOS.startWorkflow(writerWorkflow, {})();
+    });
+    const notifyResult = await measure(DBOS.readStream(wfid, streamKey));
+    await handle.getResult();
+    expect(notifyResult.count).toBe(numValues);
+    expect(notifyResult.maxLatency).toBeLessThan(500);
+  });
+
   test('workflow-recovery', async () => {
     // Test that stream operations are properly recovered during workflow replay
     let callCount = 0;
@@ -617,5 +700,81 @@ describe('dbos-client-streaming-tests', () => {
       streamYValues.push(value);
     }
     expect(streamYValues).toEqual(['y1', 'y2']);
+  });
+
+  test('client-stream-low-latency-polling', async () => {
+    // The client has no notification listener thread, so its registered event is
+    // never signaled and each read falls back to re-reading the offset once the
+    // wait times out (~1s polling interval). Verify it still delivers every value,
+    // confirming it actually polls rather than blocking forever on a notification
+    // that never arrives.
+    const streamKey = 'client_latency_stream';
+    const numValues = 3;
+
+    const writerWorkflow = DBOS.registerWorkflow(
+      async () => {
+        for (let i = 0; i < numValues; i++) {
+          await DBOS.writeStream(streamKey, Date.now());
+          await DBOS.sleepms(1000);
+        }
+        await DBOS.closeStream(streamKey);
+      },
+      { name: 'client-low-latency-writer' },
+    );
+    await DBOS.launch();
+
+    const wfid = randomUUID();
+    const handle = await DBOS.withNextWorkflowID(wfid, async () => {
+      return DBOS.startWorkflow(writerWorkflow, {})();
+    });
+
+    let maxLatency = 0;
+    let count = 0;
+    for await (const writtenAt of client.readStream<number>(wfid, streamKey)) {
+      maxLatency = Math.max(maxLatency, Date.now() - writtenAt);
+      count += 1;
+    }
+    await handle.getResult();
+    expect(count).toBe(numValues);
+    expect(maxLatency).toBeLessThan(2000);
+  });
+
+  test('stream-low-latency-polling-fallback', async () => {
+    // With LISTEN/NOTIFY disabled the in-process reader still receives every value
+    // via the polling fallback. The trigger installed by the migration harmlessly
+    // fires notifications nobody listens for; the reader is woken once its wait
+    // times out instead.
+    const streamKey = 'polling_fallback_stream';
+    const numValues = 3;
+
+    const writerWorkflow = DBOS.registerWorkflow(
+      async () => {
+        for (let i = 0; i < numValues; i++) {
+          await DBOS.writeStream(streamKey, Date.now());
+          await DBOS.sleepms(1000);
+        }
+        await DBOS.closeStream(streamKey);
+      },
+      { name: 'polling-fallback-writer' },
+    );
+
+    config.useListenNotify = false;
+    DBOS.setConfig(config);
+    await DBOS.launch();
+
+    const wfid = randomUUID();
+    const handle = await DBOS.withNextWorkflowID(wfid, async () => {
+      return DBOS.startWorkflow(writerWorkflow, {})();
+    });
+
+    let maxLatency = 0;
+    let count = 0;
+    for await (const writtenAt of DBOS.readStream<number>(wfid, streamKey)) {
+      maxLatency = Math.max(maxLatency, Date.now() - writtenAt);
+      count += 1;
+    }
+    await handle.getResult();
+    expect(count).toBe(numValues);
+    expect(maxLatency).toBeLessThan(2000);
   });
 });
