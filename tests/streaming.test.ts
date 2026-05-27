@@ -758,23 +758,32 @@ describe('dbos-client-streaming-tests', () => {
       { name: 'polling-fallback-writer' },
     );
 
+    const priorUseListenNotify = config.useListenNotify;
     config.useListenNotify = false;
     DBOS.setConfig(config);
-    await DBOS.launch();
+    try {
+      await DBOS.launch();
 
-    const wfid = randomUUID();
-    const handle = await DBOS.withNextWorkflowID(wfid, async () => {
-      return DBOS.startWorkflow(writerWorkflow, {})();
-    });
+      const wfid = randomUUID();
+      const handle = await DBOS.withNextWorkflowID(wfid, async () => {
+        return DBOS.startWorkflow(writerWorkflow, {})();
+      });
 
-    let maxLatency = 0;
-    let count = 0;
-    for await (const writtenAt of DBOS.readStream<number>(wfid, streamKey)) {
-      maxLatency = Math.max(maxLatency, Date.now() - writtenAt);
-      count += 1;
+      let maxLatency = 0;
+      let count = 0;
+      for await (const writtenAt of DBOS.readStream<number>(wfid, streamKey)) {
+        maxLatency = Math.max(maxLatency, Date.now() - writtenAt);
+        count += 1;
+      }
+      await handle.getResult();
+      expect(count).toBe(numValues);
+      expect(maxLatency).toBeLessThan(2000);
+    } finally {
+      // Restore the shared config so a disabled listener does not leak into any
+      // later test that reuses it. setConfig is rejected post-launch, but the
+      // stored config is this same object reference, so mutating it back is enough;
+      // the next test's launch reads the restored value.
+      config.useListenNotify = priorUseListenNotify;
     }
-    await handle.getResult();
-    expect(count).toBe(numValues);
-    expect(maxLatency).toBeLessThan(2000);
   });
 });
