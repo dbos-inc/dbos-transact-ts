@@ -206,6 +206,8 @@ export class DBOSClient {
       DEFAULT_POOL_SIZE,
       systemDatabasePool,
       systemDatabaseSchemaName,
+      // The client does not run a background notifications listener
+      false,
     );
   }
 
