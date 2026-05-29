@@ -15,6 +15,28 @@ async function registerTestQueue(): Promise<void> {
   await DBOS.registerQueue('testQueue', { onConflict: 'always_update', priorityEnabled: true });
 }
 
+// Wait until every workflow under `prefix` reaches CANCELLED. When a parent
+// times out, `handle.getResult()` rejects as soon as the parent is cancelled,
+// but its children are cancelled asynchronously by the cascade, so a child can
+// still read as PENDING immediately afterwards. Poll until the cascade settles.
+async function waitForAllCancelled(
+  client: DBOSClient,
+  prefix: string,
+  expectedCount: number,
+): Promise<Awaited<ReturnType<DBOSClient['listWorkflows']>>> {
+  const deadline = Date.now() + 10000;
+  for (;;) {
+    const statuses = await client.listWorkflows({ workflow_id_prefix: prefix });
+    if (statuses.length === expectedCount && statuses.every((status) => status.status === StatusString.CANCELLED)) {
+      return statuses;
+    }
+    if (Date.now() >= deadline) {
+      return statuses; // Let the caller's assertions report the unsettled state.
+    }
+    await sleepms(100);
+  }
+}
+
 class ClientTest {
   static inorder_results: string[] = [];
 
@@ -139,7 +161,7 @@ describe('DBOSClient', () => {
       });
       await expect(handle.getResult()).rejects.toThrow(new DBOSAwaitedWorkflowCancelledError(wfid));
 
-      const statuses = await client.listWorkflows({ workflow_id_prefix: wfid });
+      const statuses = await waitForAllCancelled(client, wfid, 2);
       expect(statuses.length).toBe(2);
       statuses.forEach((status) => {
         expect(status.status).toBe(StatusString.CANCELLED);
@@ -170,7 +192,7 @@ describe('DBOSClient', () => {
       });
       await expect(handle.getResult()).rejects.toThrow(new DBOSAwaitedWorkflowCancelledError(wfid));
 
-      const statuses = await client.listWorkflows({ workflow_id_prefix: wfid });
+      const statuses = await waitForAllCancelled(client, wfid, 2);
       expect(statuses.length).toBe(2);
       statuses.forEach((status) => {
         expect(status.status).toBe(StatusString.CANCELLED);

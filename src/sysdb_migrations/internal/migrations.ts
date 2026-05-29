@@ -630,5 +630,32 @@ export function allMigrations(
             ]),
       ],
     },
+    {
+      name: '20250527_streams_trigger',
+      // Notify a blocked stream reader as soon as a value is written, mirroring
+      // the notifications/workflow_events triggers above. Gated on useListenNotify
+      // only: deployments without LISTEN/NOTIFY (e.g. CockroachDB) use polling.
+      pg: useListenNotify
+        ? [
+            `
+    CREATE OR REPLACE FUNCTION "${schemaName}".streams_function() RETURNS TRIGGER AS $$
+    DECLARE
+        payload text := NEW.workflow_uuid || '::' || NEW.key;
+    BEGIN
+        PERFORM pg_notify('dbos_streams_channel', payload);
+        RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql;
+
+    ALTER FUNCTION "${schemaName}".streams_function() SET search_path = pg_catalog, pg_temp;
+
+    DROP TRIGGER IF EXISTS dbos_streams_trigger ON "${schemaName}".streams;
+    CREATE TRIGGER dbos_streams_trigger
+    AFTER INSERT ON "${schemaName}".streams
+    FOR EACH ROW EXECUTE FUNCTION "${schemaName}".streams_function();
+  `,
+          ]
+        : [],
+    },
   ];
 }

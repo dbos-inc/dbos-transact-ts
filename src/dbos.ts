@@ -91,7 +91,7 @@ import {
   clearAllRegistrations,
   getRegisteredFunctionFullName,
 } from './decorators';
-import { defaultEnableOTLP, globalParams, sleepConfig, sleepms } from './utils';
+import { cancellableSleep, defaultEnableOTLP, globalParams, sleepConfig, sleepms } from './utils';
 import {
   deserializeValue,
   JSONValue,
@@ -1514,31 +1514,49 @@ export class DBOS {
    */
   static async *readStream<T>(workflowID: string, key: string): AsyncGenerator<T, void, unknown> {
     ensureDBOSIsLaunched('readStream');
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    const payload = `${workflowID}::${key}`;
     let offset = 0;
 
     while (true) {
+      // Register a listener before reading so a notification arriving between the
+      // read and the wait below is not lost; a fresh promise per iteration gives
+      // the "clear before reading" semantics.
+      let resolveNotification: () => void;
+      const messagePromise = new Promise<void>((resolve) => {
+        resolveNotification = resolve;
+      });
+      const cbr = sysdb.streamsMap.registerCallback(payload, resolveNotification!);
       try {
-        const value = await DBOSExecutor.globalInstance!.systemDatabase.readStream(workflowID, key, offset);
+        let value: { serializedValue: string; serialization: string | null };
+        try {
+          value = await sysdb.readStream(workflowID, key, offset);
+        } catch (error: unknown) {
+          if (error instanceof Error && error.message.includes('No value found')) {
+            // No value yet: stop if the workflow is done, else wait for a
+            // notification, bounded by the polling interval so termination
+            // (which fires no notification) is still noticed.
+            const status = await DBOS.getWorkflowStatus(workflowID);
+            if (!status || !isWorkflowActive(status.status)) {
+              break;
+            }
+            const { promise, cancel } = cancellableSleep(1000); // 1 second polling fallback
+            try {
+              await Promise.race([messagePromise, promise]);
+            } finally {
+              cancel();
+            }
+            continue;
+          }
+          throw error;
+        }
         if (value.serializedValue === DBOS_STREAM_CLOSED_SENTINEL) {
           break;
         }
-        yield (await deserializeValue(
-          value.serializedValue,
-          value.serialization,
-          DBOSExecutor.globalInstance!.serializer,
-        )) as T;
+        yield (await deserializeValue(value.serializedValue, value.serialization, sysdb.getSerializer())) as T;
         offset += 1;
-      } catch (error: unknown) {
-        if (error instanceof Error && error.message.includes('No value found')) {
-          // Poll the offset until a value arrives or the workflow terminates
-          const status = await DBOS.getWorkflowStatus(workflowID);
-          if (!status || !isWorkflowActive(status.status)) {
-            break;
-          }
-          await sleepms(1000); // 1 second polling interval
-          continue;
-        }
-        throw error;
+      } finally {
+        sysdb.streamsMap.deregisterCallback(cbr);
       }
     }
   }

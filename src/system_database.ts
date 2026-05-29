@@ -625,6 +625,7 @@ export class SystemDatabase {
   shouldUseDBNotifications: boolean = true;
   readonly notificationsMap: NotificationMap<void> = new NotificationMap();
   readonly workflowEventsMap: NotificationMap<void> = new NotificationMap();
+  readonly streamsMap: NotificationMap<void> = new NotificationMap();
   readonly cancelWakeupMap: NotificationMap<void> = new NotificationMap();
   customPool: boolean = false;
 
@@ -3929,6 +3930,7 @@ export class SystemDatabase {
         client = await this.pool.connect();
         await client.query('LISTEN dbos_notifications_channel;');
         await client.query('LISTEN dbos_workflow_events_channel;');
+        await client.query('LISTEN dbos_streams_channel;');
 
         // Self-test: verify LISTEN actually works by sending a NOTIFY and checking it arrives.
         // If a transaction-mode pooler (e.g. PgBouncer pool_mode=transaction) is in the path,
@@ -3961,6 +3963,8 @@ export class SystemDatabase {
             this.notificationsMap.callCallbacks(msg.payload);
           } else if (msg.channel === 'dbos_workflow_events_channel' && msg.payload) {
             this.workflowEventsMap.callCallbacks(msg.payload);
+          } else if (msg.channel === 'dbos_streams_channel' && msg.payload) {
+            this.streamsMap.callCallbacks(msg.payload);
           }
         };
 
