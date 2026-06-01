@@ -1035,7 +1035,9 @@ export class SystemDatabase {
   }
 
   // ==================== Workflow Management ====================
-  async cancelWorkflows(workflowIDs: string[]): Promise<void> {
+  async cancelWorkflows(workflowIDs: string[], cancelChildren: boolean = false): Promise<void> {
+    // TODO: honor cancelChildren to cascade cancellation to descendant workflows.
+    void cancelChildren;
     await this.pool.query(
       `UPDATE "${this.schemaName}".workflow_status
        SET status = $1, queue_name = NULL, deduplication_id = NULL, started_at_epoch_ms = NULL,

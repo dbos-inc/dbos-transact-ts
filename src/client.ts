@@ -21,7 +21,13 @@ import {
   type WorkflowStatus,
 } from './workflow';
 import { cancellableSleep } from './utils';
-import { type GetEventOptions, type SetWorkflowDelayOptions, resolveTimeoutSeconds, resolveDelayEpochMS } from './dbos';
+import {
+  type GetEventOptions,
+  type SetWorkflowDelayOptions,
+  type CancelWorkflowsOptions,
+  resolveTimeoutSeconds,
+  resolveDelayEpochMS,
+} from './dbos';
 import {
   DBOSJSON,
   DBOSSerializer,
@@ -486,12 +492,12 @@ export class DBOSClient {
     return new ClientHandle(this.systemDatabase, workflowID);
   }
 
-  cancelWorkflow(workflowID: string): Promise<void> {
-    return this.systemDatabase.cancelWorkflows([workflowID]);
+  cancelWorkflow(workflowID: string, options?: CancelWorkflowsOptions): Promise<void> {
+    return this.systemDatabase.cancelWorkflows([workflowID], options?.cancelChildren);
   }
 
-  cancelWorkflows(workflowIDs: string[]): Promise<void> {
-    return this.systemDatabase.cancelWorkflows(workflowIDs);
+  cancelWorkflows(workflowIDs: string[], options?: CancelWorkflowsOptions): Promise<void> {
+    return this.systemDatabase.cancelWorkflows(workflowIDs, options?.cancelChildren);
   }
 
   resumeWorkflow(workflowID: string, options?: { queueName?: string }): Promise<void> {
