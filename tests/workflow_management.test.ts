@@ -2519,6 +2519,97 @@ describe('wf-cancel-tests', () => {
     expect(BulkCancelTest.stepsCompleted).toBe(3);
   });
 
+  class CancelChildrenTest {
+    static childID: string;
+    static grandchildID: string;
+    static workflowEvents: Record<string, Event> = {};
+    static mainEvents: Record<string, Event> = {};
+
+    @DBOS.step()
+    static async noop(): Promise<void> {
+      await Promise.resolve();
+    }
+
+    @DBOS.workflow()
+    static async grandchildWorkflow(): Promise<string> {
+      const wfid = DBOS.workflowID!;
+      CancelChildrenTest.mainEvents[wfid].set();
+      await CancelChildrenTest.workflowEvents[wfid].wait();
+      // A step after the wait so the workflow observes its cancellation.
+      await CancelChildrenTest.noop();
+      return wfid;
+    }
+
+    @DBOS.workflow()
+    static async childWorkflow(): Promise<string> {
+      const wfid = DBOS.workflowID!;
+      await DBOS.startWorkflow(CancelChildrenTest, {
+        workflowID: CancelChildrenTest.grandchildID,
+      }).grandchildWorkflow();
+      CancelChildrenTest.mainEvents[wfid].set();
+      await CancelChildrenTest.workflowEvents[wfid].wait();
+      await CancelChildrenTest.noop();
+      return wfid;
+    }
+
+    @DBOS.workflow()
+    static async parentWorkflow(): Promise<string> {
+      const wfid = DBOS.workflowID!;
+      await DBOS.startWorkflow(CancelChildrenTest, { workflowID: CancelChildrenTest.childID }).childWorkflow();
+      CancelChildrenTest.mainEvents[wfid].set();
+      await CancelChildrenTest.workflowEvents[wfid].wait();
+      await CancelChildrenTest.noop();
+      return wfid;
+    }
+  }
+
+  test('test-cancel-workflow-children', async () => {
+    // Build a three-level tree: parent -> child -> grandchild, each blocking.
+    const parentID = randomUUID();
+    const childID = randomUUID();
+    const grandchildID = randomUUID();
+    const ids = [parentID, childID, grandchildID];
+
+    CancelChildrenTest.childID = childID;
+    CancelChildrenTest.grandchildID = grandchildID;
+    CancelChildrenTest.workflowEvents = {};
+    CancelChildrenTest.mainEvents = {};
+    for (const id of ids) {
+      CancelChildrenTest.workflowEvents[id] = new Event();
+      CancelChildrenTest.mainEvents[id] = new Event();
+    }
+
+    const parentHandle = await DBOS.startWorkflow(CancelChildrenTest, { workflowID: parentID }).parentWorkflow();
+
+    // Wait until the whole tree is running and blocked
+    for (const id of ids) {
+      await CancelChildrenTest.mainEvents[id].wait();
+    }
+
+    // The cascade should discover the full descendant tree
+    const children = await DBOSExecutor.globalInstance!.systemDatabase.getWorkflowChildren(parentID);
+    expect(new Set(children)).toEqual(new Set([childID, grandchildID]));
+
+    // Cancelling without cancelChildren only affects the parent
+    await DBOS.cancelWorkflow(parentID);
+    expect((await DBOS.getWorkflowStatus(parentID))!.status).toBe(StatusString.CANCELLED);
+    expect((await DBOS.getWorkflowStatus(childID))!.status).not.toBe(StatusString.CANCELLED);
+    expect((await DBOS.getWorkflowStatus(grandchildID))!.status).not.toBe(StatusString.CANCELLED);
+
+    // Cancelling with cancelChildren cancels the entire subtree
+    await DBOS.cancelWorkflow(parentID, { cancelChildren: true });
+    for (const id of ids) {
+      expect((await DBOS.getWorkflowStatus(id))!.status).toBe(StatusString.CANCELLED);
+    }
+
+    // Release the workflows so they observe the cancellation
+    for (const id of ids) {
+      CancelChildrenTest.workflowEvents[id].set();
+    }
+
+    await expect(parentHandle.getResult()).rejects.toThrow(DBOSWorkflowCancelledError);
+  });
+
   class BulkResumeTest {
     static stepsCompleted = 0;
     static workflowEvents: Record<string, Event> = {};

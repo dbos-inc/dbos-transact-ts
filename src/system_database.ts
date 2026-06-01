@@ -1036,8 +1036,25 @@ export class SystemDatabase {
 
   // ==================== Workflow Management ====================
   async cancelWorkflows(workflowIDs: string[], cancelChildren: boolean = false): Promise<void> {
-    // TODO: honor cancelChildren to cascade cancellation to descendant workflows.
-    void cancelChildren;
+    if (!cancelChildren) {
+      await this.#cancelWorkflows(workflowIDs);
+      return;
+    }
+
+    // Cascade cancellation to child workflows level by level.
+    const visited = new Set<string>(workflowIDs);
+    let frontier = workflowIDs;
+    while (frontier.length > 0) {
+      await this.#cancelWorkflows(frontier);
+      const children = await this.#getDirectChildren(frontier);
+      frontier = children.filter((id) => !visited.has(id));
+      for (const id of frontier) {
+        visited.add(id);
+      }
+    }
+  }
+
+  async #cancelWorkflows(workflowIDs: string[]): Promise<void> {
     await this.pool.query(
       `UPDATE "${this.schemaName}".workflow_status
        SET status = $1, queue_name = NULL, deduplication_id = NULL, started_at_epoch_ms = NULL,
@@ -1101,35 +1118,32 @@ export class SystemDatabase {
     );
   }
 
+  // Get the immediate (one-level) child workflow IDs for a set of workflows.
+  async #getDirectChildren(workflowIDs: string[]): Promise<string[]> {
+    if (workflowIDs.length === 0) {
+      return [];
+    }
+    const result = await this.pool.query<{ workflow_uuid: string }>(
+      `SELECT workflow_uuid
+       FROM "${this.schemaName}".workflow_status
+       WHERE parent_workflow_id = ANY($1)`,
+      [workflowIDs],
+    );
+    return result.rows.map((row) => row.workflow_uuid);
+  }
+
   async getWorkflowChildren(workflowID: string): Promise<string[]> {
     // BFS to find all descendant workflows
-    const visited = new Set<string>([workflowID]);
-    const queue: string[] = [workflowID];
-    const children: string[] = [];
-
-    const client = await this.pool.connect();
-    try {
-      while (queue.length > 0) {
-        const batch = queue.splice(0, queue.length);
-        const result = await client.query<{ child_workflow_id: string }>(
-          `SELECT DISTINCT child_workflow_id
-           FROM "${this.schemaName}".operation_outputs
-           WHERE workflow_uuid = ANY($1)
-             AND child_workflow_id IS NOT NULL`,
-          [batch],
-        );
-        for (const row of result.rows) {
-          if (!visited.has(row.child_workflow_id)) {
-            visited.add(row.child_workflow_id);
-            queue.push(row.child_workflow_id);
-            children.push(row.child_workflow_id);
-          }
-        }
+    const descendants = new Set<string>();
+    let frontier = [workflowID];
+    while (frontier.length > 0) {
+      const children = await this.#getDirectChildren(frontier);
+      frontier = children.filter((id) => !descendants.has(id));
+      for (const id of frontier) {
+        descendants.add(id);
       }
-    } finally {
-      client.release();
     }
-    return children;
+    return [...descendants];
   }
 
   async deleteWorkflows(workflowIDs: string[], deleteChildren: boolean = false): Promise<void> {
