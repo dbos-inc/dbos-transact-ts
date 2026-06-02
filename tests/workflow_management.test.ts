@@ -2088,7 +2088,8 @@ describe('test-fork', () => {
     await ResumeForkQueueWorkflow.step1Started.wait();
     await DBOS.cancelWorkflow(wfid);
     ResumeForkQueueWorkflow.step1Gate.set();
-    await expect(handle.getResult()).rejects.toThrow();
+    await expect(handle.getResult()).rejects.toThrow(DBOSAwaitedWorkflowCancelledError);
+    await expect(DBOS.getWorkflowStatus(wfid)).resolves.toMatchObject({ status: StatusString.CANCELLED });
     expect(ResumeForkQueueWorkflow.stepOneCount).toBe(1);
     expect(ResumeForkQueueWorkflow.stepTwoCount).toBe(0);
 
