@@ -220,6 +220,14 @@ export interface SetWorkflowDelayOptions {
 }
 
 /**
+ * Options for `DBOS.cancelWorkflow` and `DBOS.cancelWorkflows`
+ */
+export interface CancelWorkflowsOptions {
+  /** If true, also cancel all descendant (child) workflows recursively (default: false) */
+  cancelChildren?: boolean;
+}
+
+/**
  * Options for `DBOS.setEvent`
  */
 export interface SetEventOptions {
@@ -930,19 +938,21 @@ export class DBOS {
    * If the workflow is currently running, `DBOSWorkflowCancelledError` will be
    *   thrown from its next DBOS call.
    * @param workflowID - ID of the workflow
+   * @param options - If `cancelChildren` is true, also cancel all descendant workflows recursively
    */
-  static async cancelWorkflow(workflowID: string): Promise<void> {
-    return this.cancelWorkflows([workflowID]);
+  static async cancelWorkflow(workflowID: string, options?: CancelWorkflowsOptions): Promise<void> {
+    return this.cancelWorkflows([workflowID], options);
   }
 
   /**
    * Cancel multiple workflows given their IDs.
    * @param workflowIDs - IDs of the workflows to cancel
+   * @param options - If `cancelChildren` is true, also cancel all descendant workflows recursively
    */
-  static async cancelWorkflows(workflowIDs: string[]): Promise<void> {
+  static async cancelWorkflows(workflowIDs: string[], options?: CancelWorkflowsOptions): Promise<void> {
     ensureDBOSIsLaunched('cancelWorkflows');
     return runInternalStep(async () => {
-      return DBOSExecutor.globalInstance!.systemDatabase.cancelWorkflows(workflowIDs);
+      return DBOSExecutor.globalInstance!.systemDatabase.cancelWorkflows(workflowIDs, options?.cancelChildren);
     }, 'DBOS.cancelWorkflow');
   }
 

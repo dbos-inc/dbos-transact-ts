@@ -103,6 +103,7 @@ export class CancelRequest implements BaseMessage {
   type = MessageType.CANCEL;
   request_id: string;
   workflow_id: string;
+  cancel_children: boolean = false;
   workflow_ids?: string[];
   constructor(request_id: string, workflow_id: string) {
     this.request_id = request_id;

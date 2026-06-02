@@ -163,7 +163,7 @@ export class Conductor {
             const cancelIds = cancelMsg.workflow_ids ?? [cancelMsg.workflow_id];
             let cancelSuccess = true;
             try {
-              await this.dbosExec.systemDatabase.cancelWorkflows(cancelIds);
+              await this.dbosExec.systemDatabase.cancelWorkflows(cancelIds, cancelMsg.cancel_children);
             } catch (e) {
               errorMsg = `Exception encountered when cancelling workflow(s) ${String(cancelIds)}: ${(e as Error).message}`;
               this.dbosExec.logger.error(errorMsg);
