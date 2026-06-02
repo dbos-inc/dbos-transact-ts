@@ -16,7 +16,7 @@
 
 ## What is DBOS?
 
-DBOS provides lightweight durable workflows built on top of Postgres
+DBOS provides lightweight durable workflows built on top of Postgres.
 Instead of managing your own workflow orchestrator or task queue system, you can use DBOS to add durable workflows and queues to your program in just a few lines of code.
 
 To get started, follow the [quickstart](https://docs.dbos.dev/quickstart) to install this open-source library and connect it to a Postgres database.
