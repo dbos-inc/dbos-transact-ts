@@ -799,9 +799,7 @@ export class SystemDatabase {
   async recordWorkflowOutput(workflowID: string, status: WorkflowStatusInternal): Promise<void> {
     const client = await this.pool.connect();
     try {
-      await this.updateWorkflowStatus(client, workflowID, StatusString.SUCCESS, {
-        update: { output: status.output, resetDeduplicationID: true, setCompletedAt: true },
-      });
+      await this.#recordWorkflowOutcome(client, workflowID, StatusString.SUCCESS, { output: status.output });
     } finally {
       client.release();
     }
@@ -811,11 +809,39 @@ export class SystemDatabase {
   async recordWorkflowError(workflowID: string, status: WorkflowStatusInternal): Promise<void> {
     const client = await this.pool.connect();
     try {
-      await this.updateWorkflowStatus(client, workflowID, StatusString.ERROR, {
-        update: { error: status.error, resetDeduplicationID: true, setCompletedAt: true },
-      });
+      await this.#recordWorkflowOutcome(client, workflowID, StatusString.ERROR, { error: status.error });
     } finally {
       client.release();
+    }
+  }
+
+  // Record a workflow's terminal outcome (SUCCESS or ERROR), but never overwrite
+  // the terminal CANCELLED status: a workflow can be cancelled during its final
+  // step, and if so it must not be able to subsequently complete. If the
+  // workflow is cancelled, abort the function so it does not complete. This
+  // mirrors the cancellation check done before each step.
+  async #recordWorkflowOutcome(
+    client: PoolClient,
+    workflowID: string,
+    status: (typeof StatusString)[keyof typeof StatusString],
+    outcome: { output?: string | null; error?: string | null },
+  ): Promise<void> {
+    let cancelled = false;
+    try {
+      await client.query('BEGIN');
+      await this.updateWorkflowStatus(client, workflowID, status, {
+        update: { ...outcome, resetDeduplicationID: true, setCompletedAt: true },
+        where: { notStatus: StatusString.CANCELLED },
+        throwOnFailure: false,
+      });
+      cancelled = (await this.getWorkflowStatusValue(client, workflowID)) === StatusString.CANCELLED;
+      await client.query('COMMIT');
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    }
+    if (cancelled) {
+      throw new DBOSWorkflowCancelledError(workflowID);
     }
   }
 
@@ -3668,6 +3694,7 @@ export class SystemDatabase {
       };
       where?: {
         status?: (typeof StatusString)[keyof typeof StatusString];
+        notStatus?: (typeof StatusString)[keyof typeof StatusString];
       };
       throwOnFailure?: boolean;
     } = {},
@@ -3731,6 +3758,10 @@ export class SystemDatabase {
     if (where.status) {
       const param = args.push(where.status);
       whereClause += ` AND status=$${param}`;
+    }
+    if (where.notStatus) {
+      const param = args.push(where.notStatus);
+      whereClause += ` AND status!=$${param}`;
     }
 
     const result = await client.query<workflow_status>(

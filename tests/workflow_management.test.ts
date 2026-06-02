@@ -396,6 +396,32 @@ describe('workflow-management-tests', () => {
     expect(result.rows[0].status).toBe(StatusString.SUCCESS);
   });
 
+  test('test-cancel-after-final-step', async () => {
+    // A workflow cancelled after its final step completes (but before it
+    // finishes) must not be able to complete successfully. CANCELLED is terminal.
+    TestEndpoints.stepsCompleted = 0;
+    const input = 5;
+    const wfid = randomUUID();
+
+    const cancelledHandle = await DBOS.startWorkflow(TestEndpoints, { workflowID: wfid }).cancelAfterFinalStepWorkflow(
+      input,
+    );
+    await TestEndpoints.mainThreadEvent.wait();
+    await DBOS.cancelWorkflow(wfid);
+    TestEndpoints.workflowEvent.set();
+
+    // The workflow must not complete successfully.
+    await expect(cancelledHandle.getResult()).rejects.toThrow(DBOSWorkflowCancelledError);
+    expect(TestEndpoints.stepsCompleted).toBe(1);
+    await expect(DBOS.getWorkflowStatus(wfid)).resolves.toMatchObject({ status: StatusString.CANCELLED });
+
+    // Resuming it should let it complete successfully.
+    const handle = await DBOS.resumeWorkflow<number>(wfid);
+    await expect(handle.getResult()).resolves.toBe(input);
+    await expect(DBOS.getWorkflowStatus(wfid)).resolves.toMatchObject({ status: StatusString.SUCCESS });
+    expect(TestEndpoints.stepsCompleted).toBe(1); // cancelStep was already recorded, not re-run
+  });
+
   test('getworkflows-with-completed-at', async () => {
     // Successful workflow gets completedAt set.
     const beforeSuccess = new Date().toISOString();
@@ -514,6 +540,26 @@ describe('workflow-management-tests', () => {
     @DBOS.step()
     static async stepOne() {
       return Promise.resolve();
+    }
+
+    static stepsCompleted = 0;
+    static workflowEvent = new Event();
+    static mainThreadEvent = new Event();
+
+    @DBOS.step()
+    static async cancelStep() {
+      TestEndpoints.stepsCompleted += 1;
+      return Promise.resolve();
+    }
+
+    @DBOS.workflow()
+    static async cancelAfterFinalStepWorkflow(x: number) {
+      // The only step runs and records its output...
+      await TestEndpoints.cancelStep();
+      // ...then the workflow is cancelled before it returns.
+      TestEndpoints.mainThreadEvent.set();
+      await TestEndpoints.workflowEvent.wait();
+      return x;
     }
   }
 });
