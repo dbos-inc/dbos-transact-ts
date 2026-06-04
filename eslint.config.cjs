@@ -45,7 +45,6 @@ module.exports = typescriptEslint.config(
       ],
       '@typescript-eslint/no-misused-promises': ['error', { checksVoidReturn: false }],
       '@typescript-eslint/no-floating-promises': 'error',
-      '@typescript-eslint/no-empty-object-type': 'off',
     },
   },
 );

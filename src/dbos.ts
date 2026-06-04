@@ -215,7 +215,7 @@ export interface GetResultOptions extends PollingOptions {
 /**
  * Options for `DBOS.waitFirst`.
  */
-export interface WaitFirstOptions extends PollingOptions {}
+export type WaitFirstOptions = PollingOptions;
 
 /**
  * Options for `DBOS.recv`
