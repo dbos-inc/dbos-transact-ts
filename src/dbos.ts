@@ -843,6 +843,26 @@ export class DBOS {
   }
 
   /**
+   * Wait for all of the given workflow handles to complete and return them.
+   * Polls the database until each workflow's status is no longer PENDING, ENQUEUED, or DELAYED.
+   * @param handles - Array of workflow handles to wait on
+   * @returns The input handles, in the same order
+   */
+  static async waitAll<R>(handles: WorkflowHandle<R>[]): Promise<WorkflowHandle<R>[]> {
+    ensureDBOSIsLaunched('waitAll');
+    if (handles.length === 0) {
+      return [];
+    }
+    const workflowIds = [...new Set(handles.map((handle) => handle.workflowID))];
+
+    await runInternalStep(async () => {
+      await DBOSExecutor.globalInstance!.systemDatabase.awaitWorkflowIds(workflowIds, DBOS.workflowID);
+    }, 'DBOS.waitAll');
+
+    return handles;
+  }
+
+  /**
    * Create a workflow handle with a given workflow ID.
    * This call always returns a handle, even if the workflow does not exist.
    * The resulting handle will check the database to provide any workflow information.

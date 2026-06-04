@@ -529,8 +529,66 @@ describe('dbos-tests', () => {
       }
     });
 
+    test('test_wait_all', async () => {
+      const handleFast = await DBOS.startWorkflow(WaitFirstTestClass).fastWorkflow();
+      const handleSlow = await DBOS.startWorkflow(WaitFirstTestClass).slowWorkflow();
+      const handles = [handleSlow, handleFast, handleFast];
+
+      const resultHandles = await DBOS.waitAll(handles);
+      expect(resultHandles).toHaveLength(handles.length);
+      expect(resultHandles[0]).toBe(handleSlow);
+      expect(resultHandles[1]).toBe(handleFast);
+      expect(resultHandles[2]).toBe(handleFast);
+      await expect(handleFast.getStatus()).resolves.toMatchObject({ status: StatusString.SUCCESS });
+      await expect(handleSlow.getStatus()).resolves.toMatchObject({ status: StatusString.SUCCESS });
+
+      const client = await DBOSClient.create({ systemDatabaseUrl: config.systemDatabaseUrl! });
+      try {
+        const handleFast2 = await DBOS.startWorkflow(WaitFirstTestClass).fastWorkflow();
+        const handleSlow2 = await DBOS.startWorkflow(WaitFirstTestClass).slowWorkflow();
+        const clientHandleFast = client.retrieveWorkflow(handleFast2.workflowID);
+        const clientHandleSlow = client.retrieveWorkflow(handleSlow2.workflowID);
+        const clientHandles = [clientHandleSlow, clientHandleFast, clientHandleFast];
+
+        const clientResultHandles = await client.waitAll(clientHandles);
+        expect(clientResultHandles).toHaveLength(clientHandles.length);
+        expect(clientResultHandles[0]).toBe(clientHandleSlow);
+        expect(clientResultHandles[1]).toBe(clientHandleFast);
+        expect(clientResultHandles[2]).toBe(clientHandleFast);
+        await expect(clientHandleFast.getStatus()).resolves.toMatchObject({ status: StatusString.SUCCESS });
+        await expect(clientHandleSlow.getStatus()).resolves.toMatchObject({ status: StatusString.SUCCESS });
+      } finally {
+        await client.destroy();
+      }
+    });
+
     test('test_wait_first_empty', async () => {
       await expect(DBOS.waitFirst([])).rejects.toThrow('handles must not be empty');
+    });
+
+    test('test_wait_all_empty', async () => {
+      await expect(DBOS.waitAll([])).resolves.toEqual([]);
+
+      const client = await DBOSClient.create({ systemDatabaseUrl: config.systemDatabaseUrl! });
+      try {
+        await expect(client.waitAll([])).resolves.toEqual([]);
+      } finally {
+        await client.destroy();
+      }
+    });
+
+    test('test_wait_all_inside_workflow', async () => {
+      const handleFast = await DBOS.startWorkflow(WaitFirstTestClass).fastWorkflow();
+      const handleSlow = await DBOS.startWorkflow(WaitFirstTestClass).slowWorkflow();
+      const workflowID = randomUUID();
+      const waitHandle = await DBOS.startWorkflow(WaitFirstTestClass, { workflowID }).waitAllWorkflow([
+        handleSlow.workflowID,
+        handleFast.workflowID,
+      ]);
+
+      await expect(waitHandle.getResult()).resolves.toEqual([handleSlow.workflowID, handleFast.workflowID]);
+      const steps = await DBOS.listWorkflowSteps(workflowID);
+      expect(steps?.map((step) => step.name)).toContain('DBOS.waitAll');
     });
 
     // This test should run last in the block as it changes some global state
@@ -637,6 +695,13 @@ class WaitFirstTestClass {
   static async slowWorkflow() {
     await DBOS.sleep(2);
     return 'slow';
+  }
+
+  @DBOS.workflow()
+  static async waitAllWorkflow(workflowIDs: string[]) {
+    const handles = workflowIDs.map((workflowID) => DBOS.retrieveWorkflow<string>(workflowID));
+    const resultHandles = await DBOS.waitAll(handles);
+    return resultHandles.map((handle) => handle.workflowID);
   }
 }
 

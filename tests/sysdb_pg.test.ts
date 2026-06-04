@@ -50,6 +50,13 @@ class PGSDBTests {
   }
 
   @DBOS.workflow()
+  static async doWaitAll(wfids: string[]) {
+    const handles = wfids.map((wfid) => DBOS.retrieveWorkflow<string>(wfid));
+    const resultHandles = await DBOS.waitAll(handles);
+    return resultHandles.map((handle) => handle.workflowID);
+  }
+
+  @DBOS.workflow()
   static async doRecvFromChild() {
     await PGSDBTests.doSend(DBOS.workflowID!, 'topic', 'msg');
     const ct = Date.now();
@@ -283,5 +290,39 @@ describe('sysdb-no-listen-notify', () => {
     await doTheWFDelayedTest();
 
     await doTheWFCancelTest();
+  });
+
+  test('wait-all-without-listen-notify', async () => {
+    expect(sysDB().shouldUseDBNotifications).toBe(false);
+    const previousResultInterval = sysDB().dbPollingIntervalResultMs;
+    sysDB().dbPollingIntervalResultMs = 100;
+
+    try {
+      const wfid1 = randomUUID();
+      const wfid2 = randomUUID();
+      const handle1 = await DBOS.startWorkflow(PGSDBTests, { workflowID: wfid1 }).returnAResult('one', 100);
+      const handle2 = await DBOS.startWorkflow(PGSDBTests, { workflowID: wfid2 }).returnAResult('two', 200);
+      let ct = Date.now();
+      const resultHandles = await DBOS.waitAll([DBOS.retrieveWorkflow(wfid2), DBOS.retrieveWorkflow(wfid1)]);
+
+      expect(resultHandles.map((handle) => handle.workflowID)).toEqual([wfid2, wfid1]);
+      expect(Date.now() - ct).toBeLessThan(2000);
+      await expect(handle1.getStatus()).resolves.toMatchObject({ status: 'SUCCESS' });
+      await expect(handle2.getStatus()).resolves.toMatchObject({ status: 'SUCCESS' });
+
+      const wfid3 = randomUUID();
+      const wfid4 = randomUUID();
+      const handle3 = await DBOS.startWorkflow(PGSDBTests, { workflowID: wfid3 }).returnAResult('three', 100);
+      const handle4 = await DBOS.startWorkflow(PGSDBTests, { workflowID: wfid4 }).returnAResult('four', 200);
+      ct = Date.now();
+      const waitHandle = await DBOS.startWorkflow(PGSDBTests).doWaitAll([wfid4, wfid3]);
+
+      await expect(waitHandle.getResult()).resolves.toEqual([wfid4, wfid3]);
+      expect(Date.now() - ct).toBeLessThan(2000);
+      await expect(handle3.getStatus()).resolves.toMatchObject({ status: 'SUCCESS' });
+      await expect(handle4.getStatus()).resolves.toMatchObject({ status: 'SUCCESS' });
+    } finally {
+      sysDB().dbPollingIntervalResultMs = previousResultInterval;
+    }
   });
 });

@@ -571,6 +571,15 @@ export class DBOSClient {
     return handleMap.get(completedId)!;
   }
 
+  async waitAll<R>(handles: WorkflowHandle<R>[]): Promise<WorkflowHandle<R>[]> {
+    if (handles.length === 0) {
+      return [];
+    }
+    const workflowIds = [...new Set(handles.map((handle) => handle.workflowID))];
+    await this.systemDatabase.awaitWorkflowIds(workflowIds);
+    return handles;
+  }
+
   /**
    * Read values from a stream as an async generator.
    * This function reads values from a stream identified by the workflowID and key,

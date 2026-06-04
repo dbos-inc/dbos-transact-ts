@@ -1831,6 +1831,57 @@ export class SystemDatabase {
     }
   }
 
+  @dbRetry()
+  async awaitWorkflowIds(workflowIds: string[], callerID?: string): Promise<void> {
+    const remainingWorkflowIds = new Set(workflowIds);
+
+    while (remainingWorkflowIds.size > 0) {
+      let resolveNotification: () => void;
+      const wakeupPromise = new Promise<void>((resolve) => {
+        resolveNotification = resolve;
+      });
+      const currentWorkflowIds = [...remainingWorkflowIds];
+
+      // Register cancel callbacks for all remaining target workflows and the caller.
+      const cbHandles = currentWorkflowIds.map((wfid) =>
+        this.cancelWakeupMap.registerCallback(wfid, () => resolveNotification!()),
+      );
+      const callerCbHandle = callerID
+        ? this.cancelWakeupMap.registerCallback(callerID, () => resolveNotification!())
+        : undefined;
+
+      try {
+        if (callerID) await this.checkIfCanceled(callerID);
+
+        const { rows } = await this.pool.query<{ workflow_uuid: string }>(
+          `SELECT workflow_uuid FROM "${this.schemaName}".workflow_status
+           WHERE workflow_uuid = ANY($1::text[])
+             AND status NOT IN ('${StatusString.PENDING}', '${StatusString.ENQUEUED}', '${StatusString.DELAYED}')`,
+          [currentWorkflowIds],
+        );
+
+        for (const row of rows) {
+          remainingWorkflowIds.delete(row.workflow_uuid);
+        }
+        if (remainingWorkflowIds.size === 0) {
+          return;
+        }
+
+        const { promise: sleepPromise, cancel: sleepCancel } = cancellableSleep(this.dbPollingIntervalResultMs);
+        try {
+          await Promise.race([wakeupPromise, sleepPromise]);
+        } finally {
+          sleepCancel();
+        }
+      } finally {
+        for (const h of cbHandles) {
+          this.cancelWakeupMap.deregisterCallback(h);
+        }
+        if (callerCbHandle) this.cancelWakeupMap.deregisterCallback(callerCbHandle);
+      }
+    }
+  }
+
   // ==================== Sleep ====================
   @dbRetry()
   async durableSleepms(workflowID: string, functionID: number, durationMS: number): Promise<void> {
