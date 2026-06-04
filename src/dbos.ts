@@ -190,9 +190,37 @@ export interface WriteStreamOptions {
 }
 
 /**
+ * Options for DBOS operations that poll the system database while waiting.
+ */
+export interface PollingOptions {
+  /**
+   * Milliseconds to wait between system database polls. Must be positive and finite.
+   *
+   * This affects DB-backed polling waits. Live in-process workflow handles that await
+   * an already-running promise do not poll.
+   */
+  pollingIntervalMs?: number;
+}
+
+/**
+ * Options for `DBOS.getResult` and workflow handle `getResult`.
+ */
+export interface GetResultOptions extends PollingOptions {
+  /** Timeout in seconds; if the workflow does not complete before the timeout, `null` will be returned */
+  timeoutSeconds?: number;
+  /** Absolute deadline as a UNIX epoch timestamp in milliseconds; if the workflow does not complete before this time, `null` will be returned */
+  deadlineEpochMS?: number;
+}
+
+/**
+ * Options for `DBOS.waitFirst`.
+ */
+export interface WaitFirstOptions extends PollingOptions {}
+
+/**
  * Options for `DBOS.recv`
  */
-export interface RecvOptions {
+export interface RecvOptions extends PollingOptions {
   /** Timeout in seconds; if no message is received before the timeout (default 60 seconds), `null` will be returned */
   timeoutSeconds?: number;
   /** Absolute deadline as a UNIX epoch timestamp in milliseconds; if no message is received before this time, `null` will be returned */
@@ -202,7 +230,7 @@ export interface RecvOptions {
 /**
  * Options for `DBOS.getEvent`
  */
-export interface GetEventOptions {
+export interface GetEventOptions extends PollingOptions {
   /** Timeout in seconds; if no event is received before the timeout (default 60 seconds), `null` will be returned */
   timeoutSeconds?: number;
   /** Absolute deadline as a UNIX epoch timestamp in milliseconds; if no event is received before this time, `null` will be returned */
@@ -238,13 +266,25 @@ export interface SetEventOptions {
   serializationType?: WorkflowSerializationFormat;
 }
 
-export function resolveTimeoutSeconds(options?: number | RecvOptions | GetEventOptions): number | undefined {
+export function resolveTimeoutSeconds(
+  options?: number | RecvOptions | GetEventOptions | GetResultOptions,
+): number | undefined {
   if (options === undefined) return undefined;
   if (typeof options === 'number') return options;
   if (options.deadlineEpochMS !== undefined) {
     return Math.max(0, (options.deadlineEpochMS - Date.now()) / 1000);
   }
   return options.timeoutSeconds;
+}
+
+export function resolvePollingIntervalMs(options?: number | PollingOptions): number | undefined {
+  if (options === undefined || typeof options === 'number') return undefined;
+  const interval = options.pollingIntervalMs;
+  if (interval === undefined) return undefined;
+  if (!Number.isFinite(interval) || interval <= 0) {
+    throw new DBOSError('pollingIntervalMs must be a positive finite number');
+  }
+  return interval;
 }
 
 export function resolveDelayEpochMS(options: number | SetWorkflowDelayOptions): number {
@@ -774,14 +814,16 @@ export class DBOS {
    * @param timeoutSeconds - Maximum time to wait for result; if not provided, the operation does not time out
    * @returns The return value of the workflow, or throws the exception thrown by the workflow, or `null` if times out
    */
-  static async getResult<T>(workflowID: string, timeoutSeconds?: number): Promise<T | null> {
+  static async getResult<T>(workflowID: string, options?: number | GetResultOptions): Promise<T | null> {
     ensureDBOSIsLaunched('getResult');
+    const timeoutSeconds = resolveTimeoutSeconds(options);
+    const pollingIntervalMs = resolvePollingIntervalMs(options);
     let timerFuncID: number | undefined = undefined;
     if (DBOS.isWithinWorkflow() && timeoutSeconds !== undefined) {
       // Reserve the function ID synchronously, before any await.
       timerFuncID = functionIDGetIncrement();
     }
-    return await DBOS.getResultInternal(workflowID, timeoutSeconds, timerFuncID, undefined);
+    return await DBOS.getResultInternal(workflowID, timeoutSeconds, timerFuncID, undefined, pollingIntervalMs);
   }
 
   static async getResultInternal<T>(
@@ -789,6 +831,7 @@ export class DBOS {
     timeoutSeconds?: number,
     timerFuncID?: number,
     assignedFuncID?: number,
+    pollingIntervalMs?: number,
   ): Promise<T | null> {
     return await runInternalStep(
       async () => {
@@ -797,6 +840,7 @@ export class DBOS {
           timeoutSeconds,
           DBOS.workflowID,
           timerFuncID,
+          pollingIntervalMs,
         );
         if (!rres) return null;
         if (rres?.cancelled) {
@@ -820,8 +864,12 @@ export class DBOS {
    * @param handles - Non-empty array of workflow handles to wait on
    * @returns The first handle whose workflow has completed
    */
-  static async waitFirst(handles: WorkflowHandle<unknown>[]): Promise<WorkflowHandle<unknown>> {
+  static async waitFirst(
+    handles: WorkflowHandle<unknown>[],
+    options?: WaitFirstOptions,
+  ): Promise<WorkflowHandle<unknown>> {
     ensureDBOSIsLaunched('waitFirst');
+    const pollingIntervalMs = resolvePollingIntervalMs(options);
     if (handles.length === 0) {
       throw new Error('handles must not be empty');
     }
@@ -836,7 +884,11 @@ export class DBOS {
     const workflowIds = [...handleMap.keys()];
 
     const completedId = await runInternalStep(async () => {
-      return await DBOSExecutor.globalInstance!.systemDatabase.awaitFirstWorkflowId(workflowIds, DBOS.workflowID);
+      return await DBOSExecutor.globalInstance!.systemDatabase.awaitFirstWorkflowId(
+        workflowIds,
+        DBOS.workflowID,
+        pollingIntervalMs,
+      );
     }, 'DBOS.waitFirst');
 
     return handleMap.get(completedId)!;
@@ -1362,12 +1414,14 @@ export class DBOS {
       const functionID: number = functionIDGetIncrement();
       const timeoutFunctionID: number = functionIDGetIncrement();
       const timeoutSeconds = resolveTimeoutSeconds(options);
+      const pollingIntervalMs = resolvePollingIntervalMs(options);
       const msg = await DBOSExecutor.globalInstance!.systemDatabase.recv(
         DBOS.workflowID!,
         functionID,
         timeoutFunctionID,
         topic,
         timeoutSeconds,
+        pollingIntervalMs,
       );
 
       return (await deserializeValue(msg.serializedValue, msg.serialization, DBOS.#executor.serializer)) as T;
@@ -1426,6 +1480,7 @@ export class DBOS {
   static async getEvent<T>(workflowID: string, key: string, options?: number | GetEventOptions): Promise<T | null> {
     ensureDBOSIsLaunched('getEvent');
     const timeoutSeconds = resolveTimeoutSeconds(options);
+    const pollingIntervalMs = resolvePollingIntervalMs(options);
     if (DBOS.isWithinWorkflow()) {
       if (!DBOS.isInWorkflow()) {
         throw new DBOSInvalidWorkflowTransitionError(
@@ -1445,10 +1500,11 @@ export class DBOS {
         key,
         timeoutSeconds ?? DBOSExecutor.defaultNotificationTimeoutSec,
         params,
+        pollingIntervalMs,
       );
       return (await deserializeValue(evt.serializedValue, evt.serialization, DBOS.#executor.serializer)) as T;
     }
-    return DBOS.#executor.getEvent(workflowID, key, timeoutSeconds);
+    return DBOS.#executor.getEvent(workflowID, key, timeoutSeconds, pollingIntervalMs);
   }
 
   /**
