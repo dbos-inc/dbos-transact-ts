@@ -1092,12 +1092,7 @@ export class SystemDatabase {
 
   @dbRetry()
   async checkIfCanceled(workflowID: string): Promise<void> {
-    const client = await this.pool.connect();
-    try {
-      await this.#checkIfCanceled(client, workflowID);
-    } finally {
-      client.release();
-    }
+    await this.#checkIfCanceled(this.pool, workflowID);
   }
 
   async resumeWorkflows(workflowIDs: string[], queueName?: string): Promise<void> {
@@ -3576,7 +3571,7 @@ export class SystemDatabase {
     }
   }
 
-  private async getWorkflowStatusValue(client: PoolClient, workflowID: string): Promise<string | undefined> {
+  private async getWorkflowStatusValue(client: PoolClient | Pool, workflowID: string): Promise<string | undefined> {
     const { rows } = await client.query<{ status: string }>(
       `SELECT status FROM "${this.schemaName}".workflow_status WHERE workflow_uuid=$1`,
       [workflowID],
@@ -3797,7 +3792,7 @@ export class SystemDatabase {
     return output;
   }
 
-  async #checkIfCanceled(client: PoolClient, workflowID: string): Promise<void> {
+  async #checkIfCanceled(client: PoolClient | Pool, workflowID: string): Promise<void> {
     const statusValue = await this.getWorkflowStatusValue(client, workflowID);
     if (statusValue === StatusString.CANCELLED) {
       throw new DBOSWorkflowCancelledError(workflowID);
