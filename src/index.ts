@@ -5,6 +5,7 @@ export {
   GetResultOptions,
   PollingOptions,
   WaitFirstOptions,
+  WaitAllOptions,
   SetWorkflowDelayOptions,
 } from './dbos';
 
