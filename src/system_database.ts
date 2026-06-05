@@ -1729,9 +1729,11 @@ export class SystemDatabase {
     timeoutSeconds?: number,
     callerID?: string,
     timerFuncID?: number,
+    pollingIntervalMs?: number,
   ): Promise<SystemDatabaseStoredResult | undefined> {
     const timeoutms = timeoutSeconds !== undefined ? timeoutSeconds * 1000 : undefined;
     let finishTime = timeoutms !== undefined ? Date.now() + timeoutms : undefined;
+    const pollIntervalMs = pollingIntervalMs ?? this.dbPollingIntervalResultMs;
 
     while (true) {
       let resolveNotification: () => void;
@@ -1784,14 +1786,14 @@ export class SystemDatabase {
             callerID,
             timerFuncID,
             timeoutms,
-            this.dbPollingIntervalResultMs,
+            pollIntervalMs,
           );
           finishTime = endTime;
           timeoutPromise = promise;
           timeoutCancel = cancel;
         } else {
-          let poll = finishTime ? finishTime - ct : this.dbPollingIntervalResultMs;
-          poll = Math.min(this.dbPollingIntervalResultMs, poll);
+          let poll = finishTime ? finishTime - ct : pollIntervalMs;
+          poll = Math.min(pollIntervalMs, poll);
           const { promise, cancel } = cancellableSleep(poll);
           timeoutPromise = promise;
           timeoutCancel = cancel;
@@ -1810,8 +1812,9 @@ export class SystemDatabase {
   }
 
   @dbRetry()
-  async awaitFirstWorkflowId(workflowIds: string[], callerID?: string): Promise<string> {
+  async awaitFirstWorkflowId(workflowIds: string[], callerID?: string, pollingIntervalMs?: number): Promise<string> {
     const placeholders = workflowIds.map((_, i) => `$${i + 1}`).join(', ');
+    const pollIntervalMs = pollingIntervalMs ?? this.dbPollingIntervalResultMs;
 
     while (true) {
       let resolveNotification: () => void;
@@ -1842,7 +1845,7 @@ export class SystemDatabase {
           return rows[0].workflow_uuid;
         }
 
-        const { promise: sleepPromise, cancel: sleepCancel } = cancellableSleep(this.dbPollingIntervalResultMs);
+        const { promise: sleepPromise, cancel: sleepCancel } = cancellableSleep(pollIntervalMs);
         try {
           await Promise.race([wakeupPromise, sleepPromise]);
         } finally {
@@ -1965,6 +1968,7 @@ export class SystemDatabase {
     timeoutFunctionID: number,
     topic?: string,
     timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec,
+    pollingIntervalMs?: number,
   ): Promise<{ serializedValue: string | null; serialization: string | null }> {
     topic = topic ?? this.nullTopic;
     const startTime = Date.now();
@@ -1979,6 +1983,7 @@ export class SystemDatabase {
 
     const timeoutms = timeoutSeconds !== undefined ? timeoutSeconds * 1000 : undefined;
     let finishTime = timeoutms !== undefined ? Date.now() + timeoutms : undefined;
+    const pollIntervalMs = pollingIntervalMs ?? this.dbPollingIntervalEventMs;
 
     while (true) {
       // register the key with the global notifications listener.
@@ -2015,14 +2020,14 @@ export class SystemDatabase {
             workflowID,
             timeoutFunctionID,
             timeoutms,
-            this.dbPollingIntervalEventMs,
+            pollIntervalMs,
           );
           timeoutPromise = promise;
           timeoutCancel = cancel;
           finishTime = endTime;
         } else {
-          let poll = finishTime ? finishTime - ct : this.dbPollingIntervalEventMs;
-          poll = Math.min(this.dbPollingIntervalEventMs, poll);
+          let poll = finishTime ? finishTime - ct : pollIntervalMs;
+          poll = Math.min(pollIntervalMs, poll);
           const { promise, cancel } = cancellableSleep(poll);
           timeoutPromise = promise;
           timeoutCancel = cancel;
@@ -2147,6 +2152,7 @@ export class SystemDatabase {
       functionID: number;
       timeoutFunctionID: number;
     },
+    pollingIntervalMs?: number,
   ): Promise<{ serializedValue: string | null; serialization: string | null }> {
     const startTime = Date.now();
     // Check if the operation has been done before for OAOO (only do this inside a workflow).
@@ -2174,6 +2180,7 @@ export class SystemDatabase {
     const payloadKey = `${workflowID}::${key}`;
     const timeoutms = timeoutSeconds !== undefined ? timeoutSeconds * 1000 : undefined;
     let finishTime = timeoutms !== undefined ? Date.now() + timeoutms : undefined;
+    const pollIntervalMs = pollingIntervalMs ?? this.dbPollingIntervalEventMs;
 
     // Register the key with the global notifications listener first... we do not want to look in the DB first
     //  or that would cause a timing hole.
@@ -2218,14 +2225,14 @@ export class SystemDatabase {
             callerWorkflow.workflowID,
             callerWorkflow.timeoutFunctionID ?? -1,
             timeoutms,
-            this.dbPollingIntervalEventMs,
+            pollIntervalMs,
           );
           timeoutPromise = promise;
           timeoutCancel = cancel;
           finishTime = endTime;
         } else {
-          let poll = finishTime ? finishTime - ct : this.dbPollingIntervalEventMs;
-          poll = Math.min(this.dbPollingIntervalEventMs, poll);
+          let poll = finishTime ? finishTime - ct : pollIntervalMs;
+          poll = Math.min(pollIntervalMs, poll);
           const { promise, cancel } = cancellableSleep(poll);
           timeoutPromise = promise;
           timeoutCancel = cancel;

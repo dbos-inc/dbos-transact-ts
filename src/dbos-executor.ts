@@ -921,8 +921,9 @@ export class DBOSExecutor {
     workflowUUID: string,
     key: string,
     timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec,
+    pollingIntervalMs?: number,
   ): Promise<T | null> {
-    const evt = await this.systemDatabase.getEvent(workflowUUID, key, timeoutSeconds);
+    const evt = await this.systemDatabase.getEvent(workflowUUID, key, timeoutSeconds, undefined, pollingIntervalMs);
     return (await deserializeValue(evt.serializedValue, evt.serialization, this.serializer)) as T;
   }
 

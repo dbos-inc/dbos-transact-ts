@@ -1,4 +1,12 @@
-export { DBOS, RecvOptions, GetEventOptions, SetWorkflowDelayOptions } from './dbos';
+export {
+  DBOS,
+  RecvOptions,
+  GetEventOptions,
+  GetResultOptions,
+  PollingOptions,
+  WaitFirstOptions,
+  SetWorkflowDelayOptions,
+} from './dbos';
 
 export { DBOSClient } from './client';
 
