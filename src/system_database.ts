@@ -1912,11 +1912,13 @@ export class SystemDatabase {
       try {
         if (callerID) await this.checkIfCanceled(callerID);
 
-        const { rows } = await this.pool.query<{ workflow_uuid: string }>(
-          `SELECT workflow_uuid FROM "${this.schemaName}".workflow_status
+        const { rows } = await this.#pollWithLimiter(() =>
+          this.pool.query<{ workflow_uuid: string }>(
+            `SELECT workflow_uuid FROM "${this.schemaName}".workflow_status
            WHERE workflow_uuid = ANY($1::text[])
              AND status NOT IN ('${StatusString.PENDING}', '${StatusString.ENQUEUED}', '${StatusString.DELAYED}')`,
-          [currentWorkflowIds],
+            [currentWorkflowIds],
+          ),
         );
 
         for (const row of rows) {
