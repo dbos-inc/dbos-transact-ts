@@ -1638,7 +1638,9 @@ describe('queue-time-outs', () => {
     const handle = await DBOS.startWorkflow(DBOSTimeoutTestClass, {
       workflowID,
       queueName: timeoutQueue.name,
-      timeoutMS: 2000, // allow a dequeue interval to pass
+      // Long enough that the parent, which learns of the child's cancellation on its next
+      // result poll (not instantly), observes it well before the parent's own deadline fires.
+      timeoutMS: 4000,
     }).timeoutParentEnqueueWF(100);
     await events_map.get(childID)?.wait();
     await expect(handle.getResult()).rejects.toThrow(new DBOSAwaitedWorkflowCancelledError(childID));
