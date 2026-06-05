@@ -25,6 +25,7 @@ import {
   type GetEventOptions,
   type PollingOptions,
   type WaitFirstOptions,
+  type WaitAllOptions,
   type SetWorkflowDelayOptions,
   type CancelWorkflowsOptions,
   resolvePollingIntervalMs,
@@ -587,6 +588,16 @@ export class DBOSClient {
       pollingIntervalMs,
     );
     return handleMap.get(completedId)!;
+  }
+
+  async waitAll<R>(handles: WorkflowHandle<R>[], options?: WaitAllOptions): Promise<WorkflowHandle<R>[]> {
+    if (handles.length === 0) {
+      return [];
+    }
+    const pollingIntervalMs = resolvePollingIntervalMs(options);
+    const workflowIds = [...new Set(handles.map((handle) => handle.workflowID))];
+    await this.systemDatabase.awaitWorkflowIds(workflowIds, undefined, pollingIntervalMs);
+    return handles;
   }
 
   /**

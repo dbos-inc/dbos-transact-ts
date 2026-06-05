@@ -218,6 +218,11 @@ export interface GetResultOptions extends PollingOptions {
 export type WaitFirstOptions = PollingOptions;
 
 /**
+ * Options for `DBOS.waitAll`.
+ */
+export type WaitAllOptions = PollingOptions;
+
+/**
  * Options for `DBOS.recv`
  */
 export interface RecvOptions extends PollingOptions {
@@ -892,6 +897,32 @@ export class DBOS {
     }, 'DBOS.waitFirst');
 
     return handleMap.get(completedId)!;
+  }
+
+  /**
+   * Wait for all of the given workflow handles to complete and return them.
+   * Polls the database until each workflow's status is no longer PENDING, ENQUEUED, or DELAYED.
+   * @param handles - Array of workflow handles to wait on
+   * @param options - Optional polling interval
+   * @returns The input handles, in the same order
+   */
+  static async waitAll<R>(handles: WorkflowHandle<R>[], options?: WaitAllOptions): Promise<WorkflowHandle<R>[]> {
+    ensureDBOSIsLaunched('waitAll');
+    if (handles.length === 0) {
+      return [];
+    }
+    const pollingIntervalMs = resolvePollingIntervalMs(options);
+    const workflowIds = [...new Set(handles.map((handle) => handle.workflowID))];
+
+    await runInternalStep(async () => {
+      await DBOSExecutor.globalInstance!.systemDatabase.awaitWorkflowIds(
+        workflowIds,
+        DBOS.workflowID,
+        pollingIntervalMs,
+      );
+    }, 'DBOS.waitAll');
+
+    return handles;
   }
 
   /**
