@@ -799,9 +799,7 @@ export class SystemDatabase {
   async recordWorkflowOutput(workflowID: string, status: WorkflowStatusInternal): Promise<void> {
     const client = await this.pool.connect();
     try {
-      await this.updateWorkflowStatus(client, workflowID, StatusString.SUCCESS, {
-        update: { output: status.output, resetDeduplicationID: true, setCompletedAt: true },
-      });
+      await this.#recordWorkflowOutcome(client, workflowID, StatusString.SUCCESS, { output: status.output });
     } finally {
       client.release();
     }
@@ -811,11 +809,39 @@ export class SystemDatabase {
   async recordWorkflowError(workflowID: string, status: WorkflowStatusInternal): Promise<void> {
     const client = await this.pool.connect();
     try {
-      await this.updateWorkflowStatus(client, workflowID, StatusString.ERROR, {
-        update: { error: status.error, resetDeduplicationID: true, setCompletedAt: true },
-      });
+      await this.#recordWorkflowOutcome(client, workflowID, StatusString.ERROR, { error: status.error });
     } finally {
       client.release();
+    }
+  }
+
+  // Record a workflow's terminal outcome (SUCCESS or ERROR), but never overwrite
+  // the terminal CANCELLED status: a workflow can be cancelled during its final
+  // step, and if so it must not be able to subsequently complete. If the
+  // workflow is cancelled, abort the function so it does not complete. This
+  // mirrors the cancellation check done before each step.
+  async #recordWorkflowOutcome(
+    client: PoolClient,
+    workflowID: string,
+    status: (typeof StatusString)[keyof typeof StatusString],
+    outcome: { output?: string | null; error?: string | null },
+  ): Promise<void> {
+    let cancelled = false;
+    try {
+      await client.query('BEGIN');
+      await this.updateWorkflowStatus(client, workflowID, status, {
+        update: { ...outcome, resetDeduplicationID: true, setCompletedAt: true },
+        where: { notStatus: StatusString.CANCELLED },
+        throwOnFailure: false,
+      });
+      cancelled = (await this.getWorkflowStatusValue(client, workflowID)) === StatusString.CANCELLED;
+      await client.query('COMMIT');
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    }
+    if (cancelled) {
+      throw new DBOSWorkflowCancelledError(workflowID);
     }
   }
 
@@ -1703,9 +1729,11 @@ export class SystemDatabase {
     timeoutSeconds?: number,
     callerID?: string,
     timerFuncID?: number,
+    pollingIntervalMs?: number,
   ): Promise<SystemDatabaseStoredResult | undefined> {
     const timeoutms = timeoutSeconds !== undefined ? timeoutSeconds * 1000 : undefined;
     let finishTime = timeoutms !== undefined ? Date.now() + timeoutms : undefined;
+    const pollIntervalMs = pollingIntervalMs ?? this.dbPollingIntervalResultMs;
 
     while (true) {
       let resolveNotification: () => void;
@@ -1758,14 +1786,14 @@ export class SystemDatabase {
             callerID,
             timerFuncID,
             timeoutms,
-            this.dbPollingIntervalResultMs,
+            pollIntervalMs,
           );
           finishTime = endTime;
           timeoutPromise = promise;
           timeoutCancel = cancel;
         } else {
-          let poll = finishTime ? finishTime - ct : this.dbPollingIntervalResultMs;
-          poll = Math.min(this.dbPollingIntervalResultMs, poll);
+          let poll = finishTime ? finishTime - ct : pollIntervalMs;
+          poll = Math.min(pollIntervalMs, poll);
           const { promise, cancel } = cancellableSleep(poll);
           timeoutPromise = promise;
           timeoutCancel = cancel;
@@ -1784,8 +1812,9 @@ export class SystemDatabase {
   }
 
   @dbRetry()
-  async awaitFirstWorkflowId(workflowIds: string[], callerID?: string): Promise<string> {
+  async awaitFirstWorkflowId(workflowIds: string[], callerID?: string, pollingIntervalMs?: number): Promise<string> {
     const placeholders = workflowIds.map((_, i) => `$${i + 1}`).join(', ');
+    const pollIntervalMs = pollingIntervalMs ?? this.dbPollingIntervalResultMs;
 
     while (true) {
       let resolveNotification: () => void;
@@ -1816,7 +1845,7 @@ export class SystemDatabase {
           return rows[0].workflow_uuid;
         }
 
-        const { promise: sleepPromise, cancel: sleepCancel } = cancellableSleep(this.dbPollingIntervalResultMs);
+        const { promise: sleepPromise, cancel: sleepCancel } = cancellableSleep(pollIntervalMs);
         try {
           await Promise.race([wakeupPromise, sleepPromise]);
         } finally {
@@ -1990,6 +2019,7 @@ export class SystemDatabase {
     timeoutFunctionID: number,
     topic?: string,
     timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec,
+    pollingIntervalMs?: number,
   ): Promise<{ serializedValue: string | null; serialization: string | null }> {
     topic = topic ?? this.nullTopic;
     const startTime = Date.now();
@@ -2004,6 +2034,7 @@ export class SystemDatabase {
 
     const timeoutms = timeoutSeconds !== undefined ? timeoutSeconds * 1000 : undefined;
     let finishTime = timeoutms !== undefined ? Date.now() + timeoutms : undefined;
+    const pollIntervalMs = pollingIntervalMs ?? this.dbPollingIntervalEventMs;
 
     while (true) {
       // register the key with the global notifications listener.
@@ -2040,14 +2071,14 @@ export class SystemDatabase {
             workflowID,
             timeoutFunctionID,
             timeoutms,
-            this.dbPollingIntervalEventMs,
+            pollIntervalMs,
           );
           timeoutPromise = promise;
           timeoutCancel = cancel;
           finishTime = endTime;
         } else {
-          let poll = finishTime ? finishTime - ct : this.dbPollingIntervalEventMs;
-          poll = Math.min(this.dbPollingIntervalEventMs, poll);
+          let poll = finishTime ? finishTime - ct : pollIntervalMs;
+          poll = Math.min(pollIntervalMs, poll);
           const { promise, cancel } = cancellableSleep(poll);
           timeoutPromise = promise;
           timeoutCancel = cancel;
@@ -2172,6 +2203,7 @@ export class SystemDatabase {
       functionID: number;
       timeoutFunctionID: number;
     },
+    pollingIntervalMs?: number,
   ): Promise<{ serializedValue: string | null; serialization: string | null }> {
     const startTime = Date.now();
     // Check if the operation has been done before for OAOO (only do this inside a workflow).
@@ -2199,6 +2231,7 @@ export class SystemDatabase {
     const payloadKey = `${workflowID}::${key}`;
     const timeoutms = timeoutSeconds !== undefined ? timeoutSeconds * 1000 : undefined;
     let finishTime = timeoutms !== undefined ? Date.now() + timeoutms : undefined;
+    const pollIntervalMs = pollingIntervalMs ?? this.dbPollingIntervalEventMs;
 
     // Register the key with the global notifications listener first... we do not want to look in the DB first
     //  or that would cause a timing hole.
@@ -2243,14 +2276,14 @@ export class SystemDatabase {
             callerWorkflow.workflowID,
             callerWorkflow.timeoutFunctionID ?? -1,
             timeoutms,
-            this.dbPollingIntervalEventMs,
+            pollIntervalMs,
           );
           timeoutPromise = promise;
           timeoutCancel = cancel;
           finishTime = endTime;
         } else {
-          let poll = finishTime ? finishTime - ct : this.dbPollingIntervalEventMs;
-          poll = Math.min(this.dbPollingIntervalEventMs, poll);
+          let poll = finishTime ? finishTime - ct : pollIntervalMs;
+          poll = Math.min(pollIntervalMs, poll);
           const { promise, cancel } = cancellableSleep(poll);
           timeoutPromise = promise;
           timeoutCancel = cancel;
@@ -3719,6 +3752,7 @@ export class SystemDatabase {
       };
       where?: {
         status?: (typeof StatusString)[keyof typeof StatusString];
+        notStatus?: (typeof StatusString)[keyof typeof StatusString];
       };
       throwOnFailure?: boolean;
     } = {},
@@ -3782,6 +3816,10 @@ export class SystemDatabase {
     if (where.status) {
       const param = args.push(where.status);
       whereClause += ` AND status=$${param}`;
+    }
+    if (where.notStatus) {
+      const param = args.push(where.notStatus);
+      whereClause += ` AND status!=$${param}`;
     }
 
     const result = await client.query<workflow_status>(

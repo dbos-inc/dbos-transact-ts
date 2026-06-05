@@ -2,7 +2,7 @@
 import { type SystemDatabase, WorkflowStatusInternal } from './system_database';
 import { ConfiguredInstance } from './decorators';
 import { deserializePositionalArgs, registerSerializationRecipe } from './serialization';
-import { DBOS, runInternalStep } from './dbos';
+import { DBOS, resolvePollingIntervalMs, runInternalStep, type PollingOptions } from './dbos';
 import { DuplicationPolicy, EnqueueOptions } from './system_database';
 import { DBOSExecutor } from './dbos-executor';
 
@@ -220,7 +220,7 @@ export interface WorkflowHandle<R> {
   /**
    * Await workflow completion and return its result.
    */
-  getResult(): Promise<R>;
+  getResult(options?: PollingOptions): Promise<R>;
   /**
    * Return the workflow's ID
    */
@@ -232,7 +232,7 @@ export interface WorkflowHandle<R> {
 }
 
 export interface InternalWFHandle<R> extends WorkflowHandle<R> {
-  getResult(funcIdForGet?: number): Promise<R>;
+  getResult(optionsOrFuncIdForGet?: PollingOptions | number): Promise<R>;
 }
 
 /**
@@ -258,7 +258,9 @@ export class InvokedHandle<R> implements InternalWFHandle<R> {
     return await DBOS.getWorkflowStatus(this.workflowUUID);
   }
 
-  async getResult(funcIdForGet?: number): Promise<R> {
+  async getResult(optionsOrFuncIdForGet?: PollingOptions | number): Promise<R> {
+    const funcIdForGet = typeof optionsOrFuncIdForGet === 'number' ? optionsOrFuncIdForGet : undefined;
+    resolvePollingIntervalMs(optionsOrFuncIdForGet);
     return await runInternalStep(
       async () => {
         return await this.workflowPromise;
@@ -300,8 +302,16 @@ export class RetrievedHandle<R> implements InternalWFHandle<R> {
     return await DBOS.getWorkflowStatus(this.workflowUUID);
   }
 
-  async getResult(funcIdForGet?: number): Promise<R> {
-    return (await DBOS.getResultInternal<R>(this.workflowUUID, undefined, undefined, funcIdForGet)) as Promise<R>;
+  async getResult(optionsOrFuncIdForGet?: PollingOptions | number): Promise<R> {
+    const funcIdForGet = typeof optionsOrFuncIdForGet === 'number' ? optionsOrFuncIdForGet : undefined;
+    const pollingIntervalMs = resolvePollingIntervalMs(optionsOrFuncIdForGet);
+    return (await DBOS.getResultInternal<R>(
+      this.workflowUUID,
+      undefined,
+      undefined,
+      funcIdForGet,
+      pollingIntervalMs,
+    )) as Promise<R>;
   }
 
   async getWorkflowInputs<T extends any[]>(): Promise<T> {

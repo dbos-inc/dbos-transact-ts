@@ -23,8 +23,11 @@ import {
 import { cancellableSleep } from './utils';
 import {
   type GetEventOptions,
+  type PollingOptions,
+  type WaitFirstOptions,
   type SetWorkflowDelayOptions,
   type CancelWorkflowsOptions,
+  resolvePollingIntervalMs,
   resolveTimeoutSeconds,
   resolveDelayEpochMS,
 } from './dbos';
@@ -173,8 +176,15 @@ export class ClientHandle<R> implements WorkflowHandle<R> {
     return status ? toWorkflowStatus(status, this.systemDatabase.getSerializer()) : null;
   }
 
-  async getResult(): Promise<R> {
-    const res = await this.systemDatabase.awaitWorkflowResult(this.workflowID);
+  async getResult(options?: PollingOptions): Promise<R> {
+    const pollingIntervalMs = resolvePollingIntervalMs(options);
+    const res = await this.systemDatabase.awaitWorkflowResult(
+      this.workflowID,
+      undefined,
+      undefined,
+      undefined,
+      pollingIntervalMs,
+    );
     if (res?.cancelled) {
       throw new DBOSAwaitedWorkflowCancelledError(this.workflowID);
     }
@@ -479,7 +489,8 @@ export class DBOSClient {
    */
   async getEvent<T>(workflowID: string, key: string, options?: number | GetEventOptions): Promise<T | null> {
     const timeoutSeconds = resolveTimeoutSeconds(options);
-    const evt = await this.systemDatabase.getEvent(workflowID, key, timeoutSeconds ?? 60);
+    const pollingIntervalMs = resolvePollingIntervalMs(options);
+    const evt = await this.systemDatabase.getEvent(workflowID, key, timeoutSeconds ?? 60, undefined, pollingIntervalMs);
     return (await deserializeValue(evt.serializedValue, evt.serialization, this.serializer)) as T;
   }
 
@@ -556,7 +567,8 @@ export class DBOSClient {
     return listWorkflowSteps(this.systemDatabase, workflowID, true, options);
   }
 
-  async waitFirst(handles: WorkflowHandle<unknown>[]): Promise<WorkflowHandle<unknown>> {
+  async waitFirst(handles: WorkflowHandle<unknown>[], options?: WaitFirstOptions): Promise<WorkflowHandle<unknown>> {
+    const pollingIntervalMs = resolvePollingIntervalMs(options);
     if (handles.length === 0) {
       throw new Error('handles must not be empty');
     }
@@ -567,7 +579,11 @@ export class DBOSClient {
       }
       handleMap.set(handle.workflowID, handle);
     }
-    const completedId = await this.systemDatabase.awaitFirstWorkflowId([...handleMap.keys()]);
+    const completedId = await this.systemDatabase.awaitFirstWorkflowId(
+      [...handleMap.keys()],
+      undefined,
+      pollingIntervalMs,
+    );
     return handleMap.get(completedId)!;
   }
 

@@ -348,6 +348,11 @@ describe('dbos-tests', () => {
       });
       const status = await DBOS.getWorkflowStatus(workflowID);
       expect(status?.status).toBe(StatusString.CANCELLED);
+      // The child is cancelled by its own inherited deadline, independently of the parent.
+      // Wait for it to settle before reading its status to avoid a race with that cancellation.
+      await expect(DBOS.retrieveWorkflow(childID).getResult()).rejects.toThrow(
+        new DBOSAwaitedWorkflowCancelledError(childID),
+      );
       const childStatus = await DBOS.getWorkflowStatus(childID);
       expect(childStatus?.status).toBe(StatusString.CANCELLED);
       expect(status?.deadlineEpochMS).toBe(childStatus?.deadlineEpochMS);
@@ -363,6 +368,11 @@ describe('dbos-tests', () => {
       await expect(handle.getResult()).rejects.toThrow(new DBOSWorkflowCancelledError(workflowID));
       const status = await DBOS.getWorkflowStatus(workflowID);
       expect(status?.status).toBe(StatusString.CANCELLED);
+      // The child is cancelled by its own inherited deadline, independently of the parent.
+      // Wait for it to settle before reading its status to avoid a race with that cancellation.
+      await expect(DBOS.retrieveWorkflow(childID).getResult()).rejects.toThrow(
+        new DBOSAwaitedWorkflowCancelledError(childID),
+      );
       const childStatus = await DBOS.getWorkflowStatus(childID);
       expect(childStatus?.status).toBe(StatusString.CANCELLED);
       expect(status?.deadlineEpochMS).toBe(childStatus?.deadlineEpochMS);
@@ -380,6 +390,11 @@ describe('dbos-tests', () => {
       });
       const status = await DBOS.getWorkflowStatus(workflowID);
       expect(status?.status).toBe(StatusString.CANCELLED);
+      // The child is cancelled by its own inherited deadline, independently of the parent.
+      // Wait for it to settle before reading its status to avoid a race with that cancellation.
+      await expect(DBOS.retrieveWorkflow(childID).getResult()).rejects.toThrow(
+        new DBOSAwaitedWorkflowCancelledError(childID),
+      );
       const childStatus = await DBOS.getWorkflowStatus(childID);
       expect(childStatus?.status).toBe(StatusString.CANCELLED);
       expect(status?.deadlineEpochMS).toBe(childStatus?.deadlineEpochMS);
@@ -395,6 +410,11 @@ describe('dbos-tests', () => {
       await expect(handle.getResult()).rejects.toThrow(new DBOSWorkflowCancelledError(workflowID));
       const status = await DBOS.getWorkflowStatus(workflowID);
       expect(status?.status).toBe(StatusString.CANCELLED);
+      // The child is cancelled by its own inherited deadline, independently of the parent.
+      // Wait for it to settle before reading its status to avoid a race with that cancellation.
+      await expect(DBOS.retrieveWorkflow(childID).getResult()).rejects.toThrow(
+        new DBOSAwaitedWorkflowCancelledError(childID),
+      );
       const childStatus = await DBOS.getWorkflowStatus(childID);
       expect(childStatus?.status).toBe(StatusString.CANCELLED);
       expect(status?.deadlineEpochMS).toBe(childStatus?.deadlineEpochMS);

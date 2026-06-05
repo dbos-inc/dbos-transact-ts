@@ -2,7 +2,7 @@
 //  Basically, will it function without notifications, by falling back to polling?
 //  Does the notification work if polling is so slow as to be discounted?
 
-import { DBOS, DBOSConfig } from '../src';
+import { DBOS, DBOSClient, DBOSConfig } from '../src';
 import { DBOSExecutor } from '../src/dbos-executor';
 import { DBOSWorkflowCancelledError } from '../src/error';
 import { sleepms } from '../src/utils';
@@ -22,6 +22,11 @@ class PGSDBTests {
   }
 
   @DBOS.workflow()
+  static async doRecvWithOptions(topic: string, timeout: number, pollingIntervalMs: number) {
+    return await DBOS.recv(topic, { timeoutSeconds: timeout, pollingIntervalMs });
+  }
+
+  @DBOS.workflow()
   static async doSend(wfid: string, topic: string, msg: string, delay?: number) {
     if (delay) await sleepms(delay);
     return await DBOS.send(wfid, msg, topic);
@@ -30,6 +35,11 @@ class PGSDBTests {
   @DBOS.workflow()
   static async doGetEvent(wfid: string, topic: string, timeout: number) {
     return await DBOS.getEvent(wfid, topic, timeout);
+  }
+
+  @DBOS.workflow()
+  static async doGetEventWithOptions(wfid: string, topic: string, timeout: number, pollingIntervalMs: number) {
+    return await DBOS.getEvent(wfid, topic, { timeoutSeconds: timeout, pollingIntervalMs });
   }
 
   @DBOS.workflow()
@@ -54,6 +64,11 @@ class PGSDBTests {
     const handles = wfids.map((wfid) => DBOS.retrieveWorkflow<string>(wfid));
     const resultHandles = await DBOS.waitAll(handles);
     return resultHandles.map((handle) => handle.workflowID);
+  }
+
+  @DBOS.workflow()
+  static async doGetResultWithOptions(wfid: string, timeout: number, pollingIntervalMs: number) {
+    return await DBOS.getResult(wfid, { timeoutSeconds: timeout, pollingIntervalMs });
   }
 
   @DBOS.workflow()
@@ -323,6 +338,189 @@ describe('sysdb-no-listen-notify', () => {
       await expect(handle4.getStatus()).resolves.toMatchObject({ status: 'SUCCESS' });
     } finally {
       sysDB().dbPollingIntervalResultMs = previousResultInterval;
+    }
+  });
+
+  test('per-call-polling-interval-options', async () => {
+    expect(sysDB().shouldUseDBNotifications).toBe(false);
+    const previousResultInterval = sysDB().dbPollingIntervalResultMs;
+    const previousEventInterval = sysDB().dbPollingIntervalEventMs;
+    sysDB().dbPollingIntervalResultMs = 5000;
+    sysDB().dbPollingIntervalEventMs = 5000;
+
+    const assertQuick = (start: number) => {
+      expect(Date.now() - start).toBeLessThan(1000);
+    };
+
+    try {
+      let ct = Date.now();
+      const resultWorkflowID = randomUUID();
+      const resultHandle = await DBOS.startWorkflow(PGSDBTests, { workflowID: resultWorkflowID }).returnAResult(
+        'result',
+        100,
+      );
+      await expect(DBOS.getResult(resultWorkflowID, { pollingIntervalMs: 50 })).resolves.toBe('result');
+      assertQuick(ct);
+      await resultHandle.getResult({ pollingIntervalMs: 50 });
+
+      ct = Date.now();
+      const retrievedWorkflowID = randomUUID();
+      const retrievedHandle = await DBOS.startWorkflow(PGSDBTests, { workflowID: retrievedWorkflowID }).returnAResult(
+        'retrieved',
+        100,
+      );
+      await expect(
+        DBOS.retrieveWorkflow<string>(retrievedWorkflowID).getResult({ pollingIntervalMs: 50 }),
+      ).resolves.toBe('retrieved');
+      assertQuick(ct);
+      await retrievedHandle.getResult({ pollingIntervalMs: 50 });
+
+      ct = Date.now();
+      const waitedWorkflowID = randomUUID();
+      const waitedHandle = await DBOS.startWorkflow(PGSDBTests, { workflowID: waitedWorkflowID }).returnAResult(
+        'waited',
+        100,
+      );
+      const completed = await DBOS.waitFirst([DBOS.retrieveWorkflow(waitedWorkflowID)], { pollingIntervalMs: 50 });
+      expect(completed.workflowID).toBe(waitedWorkflowID);
+      assertQuick(ct);
+      await waitedHandle.getResult({ pollingIntervalMs: 50 });
+
+      ct = Date.now();
+      const eventWorkflowID = randomUUID();
+      const eventHandle = await DBOS.startWorkflow(PGSDBTests, { workflowID: eventWorkflowID }).doSetEvent(
+        'key',
+        'value',
+        100,
+      );
+      await expect(DBOS.getEvent(eventWorkflowID, 'key', { timeoutSeconds: 5, pollingIntervalMs: 50 })).resolves.toBe(
+        'value',
+      );
+      assertQuick(ct);
+      await eventHandle.getResult({ pollingIntervalMs: 50 });
+
+      ct = Date.now();
+      const recvWorkflowID = randomUUID();
+      const recvHandle = await DBOS.startWorkflow(PGSDBTests, { workflowID: recvWorkflowID }).doRecvWithOptions(
+        'topic',
+        5,
+        50,
+      );
+      await sleepms(100);
+      await DBOS.send(recvWorkflowID, 'message', 'topic');
+      await expect(recvHandle.getResult({ pollingIntervalMs: 50 })).resolves.toBe('message');
+      assertQuick(ct);
+
+      const workflowGetResultTargetID = randomUUID();
+      const workflowGetResultTarget = await DBOS.startWorkflow(PGSDBTests, {
+        workflowID: workflowGetResultTargetID,
+      }).returnAResult('workflow-get-result', 100);
+      ct = Date.now();
+      const workflowGetResultHandle = await DBOS.startWorkflow(PGSDBTests).doGetResultWithOptions(
+        workflowGetResultTargetID,
+        5,
+        50,
+      );
+      await expect(workflowGetResultHandle.getResult({ pollingIntervalMs: 50 })).resolves.toBe('workflow-get-result');
+      assertQuick(ct);
+      await workflowGetResultTarget.getResult({ pollingIntervalMs: 50 });
+
+      const workflowGetEventTargetID = randomUUID();
+      const workflowGetEventSetter = await DBOS.startWorkflow(PGSDBTests, {
+        workflowID: workflowGetEventTargetID,
+      }).doSetEvent('workflow-key', 'workflow-event', 100);
+      ct = Date.now();
+      const workflowGetEventHandle = await DBOS.startWorkflow(PGSDBTests).doGetEventWithOptions(
+        workflowGetEventTargetID,
+        'workflow-key',
+        5,
+        50,
+      );
+      await expect(workflowGetEventHandle.getResult({ pollingIntervalMs: 50 })).resolves.toBe('workflow-event');
+      assertQuick(ct);
+      await workflowGetEventSetter.getResult({ pollingIntervalMs: 50 });
+
+      const client = await DBOSClient.create({ systemDatabaseUrl: config.systemDatabaseUrl! });
+      try {
+        ct = Date.now();
+        const clientResultWorkflowID = randomUUID();
+        const clientResultHandle = await DBOS.startWorkflow(PGSDBTests, {
+          workflowID: clientResultWorkflowID,
+        }).returnAResult('client-result', 100);
+        await expect(
+          client.retrieveWorkflow<string>(clientResultWorkflowID).getResult({ pollingIntervalMs: 50 }),
+        ).resolves.toBe('client-result');
+        assertQuick(ct);
+        await clientResultHandle.getResult({ pollingIntervalMs: 50 });
+
+        ct = Date.now();
+        const clientWaitWorkflowID = randomUUID();
+        const clientWaitHandle = await DBOS.startWorkflow(PGSDBTests, {
+          workflowID: clientWaitWorkflowID,
+        }).returnAResult('client-wait', 100);
+        const clientCompleted = await client.waitFirst([client.retrieveWorkflow(clientWaitWorkflowID)], {
+          pollingIntervalMs: 50,
+        });
+        expect(clientCompleted.workflowID).toBe(clientWaitWorkflowID);
+        assertQuick(ct);
+        await clientWaitHandle.getResult({ pollingIntervalMs: 50 });
+
+        ct = Date.now();
+        const clientEventWorkflowID = randomUUID();
+        const clientEventHandle = await DBOS.startWorkflow(PGSDBTests, {
+          workflowID: clientEventWorkflowID,
+        }).doSetEvent('client-key', 'client-event', 100);
+        await expect(
+          client.getEvent(clientEventWorkflowID, 'client-key', { timeoutSeconds: 5, pollingIntervalMs: 50 }),
+        ).resolves.toBe('client-event');
+        assertQuick(ct);
+        await clientEventHandle.getResult({ pollingIntervalMs: 50 });
+      } finally {
+        await client.destroy();
+      }
+    } finally {
+      sysDB().dbPollingIntervalResultMs = previousResultInterval;
+      sysDB().dbPollingIntervalEventMs = previousEventInterval;
+    }
+  });
+
+  test('invalid-polling-interval-options', async () => {
+    const invalidIntervals = [0, -1, Number.NaN, Number.POSITIVE_INFINITY];
+    const client = await DBOSClient.create({ systemDatabaseUrl: config.systemDatabaseUrl! });
+    try {
+      for (const pollingIntervalMs of invalidIntervals) {
+        await expect(DBOS.getResult(randomUUID(), { timeoutSeconds: 0, pollingIntervalMs })).rejects.toThrow(
+          'pollingIntervalMs must be a positive finite number',
+        );
+        await expect(DBOS.getEvent(randomUUID(), 'key', { timeoutSeconds: 0, pollingIntervalMs })).rejects.toThrow(
+          'pollingIntervalMs must be a positive finite number',
+        );
+        await expect(DBOS.waitFirst([DBOS.retrieveWorkflow(randomUUID())], { pollingIntervalMs })).rejects.toThrow(
+          'pollingIntervalMs must be a positive finite number',
+        );
+        await expect(DBOS.retrieveWorkflow(randomUUID()).getResult({ pollingIntervalMs })).rejects.toThrow(
+          'pollingIntervalMs must be a positive finite number',
+        );
+        const invalidRecvHandle = await DBOS.startWorkflow(PGSDBTests).doRecvWithOptions(
+          'invalid',
+          0,
+          pollingIntervalMs,
+        );
+        await expect(invalidRecvHandle.getResult({ pollingIntervalMs: 50 })).rejects.toThrow(
+          'pollingIntervalMs must be a positive finite number',
+        );
+        await expect(client.retrieveWorkflow(randomUUID()).getResult({ pollingIntervalMs })).rejects.toThrow(
+          'pollingIntervalMs must be a positive finite number',
+        );
+        await expect(client.getEvent(randomUUID(), 'key', { timeoutSeconds: 0, pollingIntervalMs })).rejects.toThrow(
+          'pollingIntervalMs must be a positive finite number',
+        );
+        await expect(client.waitFirst([client.retrieveWorkflow(randomUUID())], { pollingIntervalMs })).rejects.toThrow(
+          'pollingIntervalMs must be a positive finite number',
+        );
+      }
+    } finally {
+      await client.destroy();
     }
   });
 });
