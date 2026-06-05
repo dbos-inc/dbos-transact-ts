@@ -1754,25 +1754,14 @@ export class SystemDatabase {
       const ct = Date.now();
       if (finishTime && ct > finishTime) return undefined; // Time's up
 
-      let timeoutPromise: Promise<void> = Promise.resolve();
-      let timeoutCancel: () => void = () => {};
       if (timerFuncID !== undefined && callerID !== undefined && timeoutms !== undefined) {
-        const { promise, cancel, endTime } = await this.#durableSleep(callerID, timerFuncID, timeoutms, pollIntervalMs);
+        const { promise, endTime } = await this.#durableSleep(callerID, timerFuncID, timeoutms, pollIntervalMs);
         finishTime = endTime;
-        timeoutPromise = promise;
-        timeoutCancel = cancel;
+        await promise;
       } else {
         let poll = finishTime ? finishTime - ct : pollIntervalMs;
         poll = Math.min(pollIntervalMs, poll);
-        const { promise, cancel } = cancellableSleep(poll);
-        timeoutPromise = promise;
-        timeoutCancel = cancel;
-      }
-
-      try {
-        await timeoutPromise;
-      } finally {
-        timeoutCancel();
+        await sleepms(poll);
       }
     }
   }
@@ -1797,12 +1786,7 @@ export class SystemDatabase {
         return rows[0].workflow_uuid;
       }
 
-      const { promise: sleepPromise, cancel: sleepCancel } = cancellableSleep(pollIntervalMs);
-      try {
-        await sleepPromise;
-      } finally {
-        sleepCancel();
-      }
+      await sleepms(pollIntervalMs);
     }
   }
 
@@ -1830,12 +1814,7 @@ export class SystemDatabase {
         return;
       }
 
-      const { promise: sleepPromise, cancel: sleepCancel } = cancellableSleep(pollIntervalMs);
-      try {
-        await sleepPromise;
-      } finally {
-        sleepCancel();
-      }
+      await sleepms(pollIntervalMs);
     }
   }
 
@@ -1846,12 +1825,7 @@ export class SystemDatabase {
     cancelInitial();
 
     while (Date.now() < endTime) {
-      const { promise, cancel } = cancellableSleep(Math.min(endTime - Date.now(), sleepConfig.maxTimeoutMS));
-      try {
-        await promise;
-      } finally {
-        cancel();
-      }
+      await sleepms(Math.min(endTime - Date.now(), sleepConfig.maxTimeoutMS));
     }
 
     await this.checkIfCanceled(workflowID);
