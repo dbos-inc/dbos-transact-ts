@@ -1755,14 +1755,11 @@ export class SystemDatabase {
       if (finishTime && ct > finishTime) return undefined; // Time's up
 
       if (timerFuncID !== undefined && callerID !== undefined && timeoutms !== undefined) {
-        const { promise, endTime } = await this.#durableSleep(callerID, timerFuncID, timeoutms, pollIntervalMs);
-        finishTime = endTime;
-        await promise;
-      } else {
-        let poll = finishTime ? finishTime - ct : pollIntervalMs;
-        poll = Math.min(pollIntervalMs, poll);
-        await sleepms(poll);
+        finishTime = await this.#durableSleep(callerID, timerFuncID, timeoutms);
       }
+      let poll = finishTime ? finishTime - Date.now() : pollIntervalMs;
+      poll = Math.min(pollIntervalMs, poll);
+      await sleepms(poll);
     }
   }
 
@@ -1821,8 +1818,7 @@ export class SystemDatabase {
   // ==================== Sleep ====================
   @dbRetry()
   async durableSleepms(workflowID: string, functionID: number, durationMS: number): Promise<void> {
-    const { cancel: cancelInitial, endTime } = await this.#durableSleep(workflowID, functionID, durationMS);
-    cancelInitial();
+    const endTime = await this.#durableSleep(workflowID, functionID, durationMS);
 
     while (Date.now() < endTime) {
       await sleepms(Math.min(endTime - Date.now(), sleepConfig.maxTimeoutMS));
@@ -1949,29 +1945,16 @@ export class SystemDatabase {
         const ct = Date.now();
         if (finishTime && ct > finishTime) break; // Time's up
 
-        let timeoutPromise: Promise<void> = Promise.resolve();
-        let timeoutCancel: () => void = () => {};
         if (timeoutms) {
-          const { promise, cancel, endTime } = await this.#durableSleep(
-            workflowID,
-            timeoutFunctionID,
-            timeoutms,
-            pollIntervalMs,
-          );
-          timeoutPromise = promise;
-          timeoutCancel = cancel;
-          finishTime = endTime;
-        } else {
-          let poll = finishTime ? finishTime - ct : pollIntervalMs;
-          poll = Math.min(pollIntervalMs, poll);
-          const { promise, cancel } = cancellableSleep(poll);
-          timeoutPromise = promise;
-          timeoutCancel = cancel;
+          finishTime = await this.#durableSleep(workflowID, timeoutFunctionID, timeoutms);
         }
+        let poll = finishTime ? finishTime - Date.now() : pollIntervalMs;
+        poll = Math.min(pollIntervalMs, poll);
+        const { promise, cancel } = cancellableSleep(poll);
         try {
-          await Promise.race([messagePromise, timeoutPromise]);
+          await Promise.race([messagePromise, promise]);
         } finally {
-          timeoutCancel();
+          cancel();
         }
       } finally {
         this.notificationsMap.deregisterCallback(cbr);
@@ -2148,30 +2131,21 @@ export class SystemDatabase {
         if (finishTime && ct > finishTime) break; // Time's up
 
         // If we have a callerWorkflow, we want a durable sleep, otherwise, not
-        let timeoutPromise: Promise<void> = Promise.resolve();
-        let timeoutCancel: () => void = () => {};
         if (callerWorkflow && timeoutms) {
-          const { promise, cancel, endTime } = await this.#durableSleep(
+          finishTime = await this.#durableSleep(
             callerWorkflow.workflowID,
             callerWorkflow.timeoutFunctionID ?? -1,
             timeoutms,
-            pollIntervalMs,
           );
-          timeoutPromise = promise;
-          timeoutCancel = cancel;
-          finishTime = endTime;
-        } else {
-          let poll = finishTime ? finishTime - ct : pollIntervalMs;
-          poll = Math.min(pollIntervalMs, poll);
-          const { promise, cancel } = cancellableSleep(poll);
-          timeoutPromise = promise;
-          timeoutCancel = cancel;
         }
+        let poll = finishTime ? finishTime - Date.now() : pollIntervalMs;
+        poll = Math.min(pollIntervalMs, poll);
+        const { promise, cancel } = cancellableSleep(poll);
 
         try {
-          await Promise.race([valuePromise, timeoutPromise]);
+          await Promise.race([valuePromise, promise]);
         } finally {
-          timeoutCancel();
+          cancel();
         }
       } finally {
         this.workflowEventsMap.deregisterCallback(cbr);
@@ -3830,16 +3804,12 @@ export class SystemDatabase {
     }
   }
 
-  async #durableSleep(
-    workflowID: string,
-    functionID: number,
-    durationMS: number,
-    maxSleepPerIteration?: number,
-  ): Promise<{ promise: Promise<void>; cancel: () => void; endTime: number }> {
-    if (maxSleepPerIteration === undefined) maxSleepPerIteration = durationMS;
-
-    const curTime = Date.now();
-    let endTimeMs = curTime + durationMS;
+  // Durably records (or, on recovery, reads back) the wakeup deadline for a sleep or
+  // timeout so it survives recovery. Returns the absolute end time in epoch ms; the
+  // caller is responsible for actually waiting until then. Throws if the workflow has
+  // been cancelled.
+  async #durableSleep(workflowID: string, functionID: number, durationMS: number): Promise<number> {
+    const endTimeMs = Date.now() + durationMS;
 
     const client = await this.pool.connect();
     try {
@@ -3848,26 +3818,22 @@ export class SystemDatabase {
         if (res.functionName !== DBOS_FUNCNAME_SLEEP) {
           throw new DBOSUnexpectedStepError(workflowID, functionID, DBOS_FUNCNAME_SLEEP, res.functionName!);
         }
-        endTimeMs = JSON.parse(res.output!) as number;
-      } else {
-        await this.recordOperationResultInternal(
-          client,
-          workflowID,
-          functionID,
-          DBOS_FUNCNAME_SLEEP,
-          false,
-          Date.now(),
-          Date.now(),
-          {
-            output: DBOSPortableJSON.stringify(endTimeMs),
-            serialization: DBOSPortableJSON.name(),
-          },
-        );
+        return JSON.parse(res.output!) as number;
       }
-      return {
-        ...cancellableSleep(Math.max(Math.min(maxSleepPerIteration, endTimeMs - curTime), 0)),
-        endTime: endTimeMs,
-      };
+      await this.recordOperationResultInternal(
+        client,
+        workflowID,
+        functionID,
+        DBOS_FUNCNAME_SLEEP,
+        false,
+        Date.now(),
+        Date.now(),
+        {
+          output: DBOSPortableJSON.stringify(endTimeMs),
+          serialization: DBOSPortableJSON.name(),
+        },
+      );
+      return endTimeMs;
     } finally {
       client.release();
     }
