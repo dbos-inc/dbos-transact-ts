@@ -224,8 +224,8 @@ export class DBOSClient {
       systemDatabaseSchemaName,
       // The client does not run a background notifications listener
       false,
-      // Maximum polling concurrency for the client: half its pool.
-      Math.floor(DEFAULT_POOL_SIZE / 2),
+      // Polling concurrency is left to default (half the pool)
+      undefined,
     );
   }
 

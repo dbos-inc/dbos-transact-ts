@@ -655,11 +655,6 @@ export class SystemDatabase {
     this.schemaName = schemaName;
     this.shouldUseDBNotifications = useListenNotify;
 
-    // Default the polling limit to half the pool (minimum 1), reserving the
-    // rest of the pool for control-plane operations. An explicit value wins; a
-    // non-positive value disables the limiter.
-    const pollingLimit = pollingConcurrency ?? Math.max(1, Math.floor(sysDbPoolSize / 2));
-    this.pollLimiter = new Semaphore(pollingLimit);
     if (systemDatabasePool) {
       this.pool = systemDatabasePool;
       this.customPool = true;
@@ -672,6 +667,12 @@ export class SystemDatabase {
       };
       this.pool = new Pool(systemPoolConfig);
     }
+
+    // Default the polling limit to half the pool (minimum 1), reserving the rest
+    // of the pool for control-plane operations.
+    const effectivePoolSize = this.pool.options.max ?? sysDbPoolSize;
+    const pollingLimit = pollingConcurrency ?? Math.max(1, Math.floor(effectivePoolSize / 2));
+    this.pollLimiter = new Semaphore(pollingLimit);
 
     this.pool.on('error', (err: Error) => {
       this.logger.warn(`Unexpected error in pool: ${err}`);
