@@ -1861,8 +1861,9 @@ export class SystemDatabase {
   }
 
   @dbRetry()
-  async awaitWorkflowIds(workflowIds: string[], callerID?: string): Promise<void> {
+  async awaitWorkflowIds(workflowIds: string[], callerID?: string, pollingIntervalMs?: number): Promise<void> {
     const remainingWorkflowIds = new Set(workflowIds);
+    const pollIntervalMs = pollingIntervalMs ?? this.dbPollingIntervalResultMs;
 
     while (remainingWorkflowIds.size > 0) {
       let resolveNotification: () => void;
@@ -1896,7 +1897,7 @@ export class SystemDatabase {
           return;
         }
 
-        const { promise: sleepPromise, cancel: sleepCancel } = cancellableSleep(this.dbPollingIntervalResultMs);
+        const { promise: sleepPromise, cancel: sleepCancel } = cancellableSleep(pollIntervalMs);
         try {
           await Promise.race([wakeupPromise, sleepPromise]);
         } finally {

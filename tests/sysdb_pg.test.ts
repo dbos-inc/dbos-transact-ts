@@ -387,6 +387,17 @@ describe('sysdb-no-listen-notify', () => {
       await waitedHandle.getResult({ pollingIntervalMs: 50 });
 
       ct = Date.now();
+      const waitAllWorkflowID = randomUUID();
+      const waitAllHandle = await DBOS.startWorkflow(PGSDBTests, { workflowID: waitAllWorkflowID }).returnAResult(
+        'wait-all',
+        100,
+      );
+      const waitAllResult = await DBOS.waitAll([DBOS.retrieveWorkflow(waitAllWorkflowID)], { pollingIntervalMs: 50 });
+      expect(waitAllResult.map((handle) => handle.workflowID)).toEqual([waitAllWorkflowID]);
+      assertQuick(ct);
+      await waitAllHandle.getResult({ pollingIntervalMs: 50 });
+
+      ct = Date.now();
       const eventWorkflowID = randomUUID();
       const eventHandle = await DBOS.startWorkflow(PGSDBTests, { workflowID: eventWorkflowID }).doSetEvent(
         'key',
@@ -466,6 +477,18 @@ describe('sysdb-no-listen-notify', () => {
         await clientWaitHandle.getResult({ pollingIntervalMs: 50 });
 
         ct = Date.now();
+        const clientWaitAllWorkflowID = randomUUID();
+        const clientWaitAllHandle = await DBOS.startWorkflow(PGSDBTests, {
+          workflowID: clientWaitAllWorkflowID,
+        }).returnAResult('client-wait-all', 100);
+        const clientWaitAllResult = await client.waitAll([client.retrieveWorkflow(clientWaitAllWorkflowID)], {
+          pollingIntervalMs: 50,
+        });
+        expect(clientWaitAllResult.map((handle) => handle.workflowID)).toEqual([clientWaitAllWorkflowID]);
+        assertQuick(ct);
+        await clientWaitAllHandle.getResult({ pollingIntervalMs: 50 });
+
+        ct = Date.now();
         const clientEventWorkflowID = randomUUID();
         const clientEventHandle = await DBOS.startWorkflow(PGSDBTests, {
           workflowID: clientEventWorkflowID,
@@ -498,6 +521,9 @@ describe('sysdb-no-listen-notify', () => {
         await expect(DBOS.waitFirst([DBOS.retrieveWorkflow(randomUUID())], { pollingIntervalMs })).rejects.toThrow(
           'pollingIntervalMs must be a positive finite number',
         );
+        await expect(DBOS.waitAll([DBOS.retrieveWorkflow(randomUUID())], { pollingIntervalMs })).rejects.toThrow(
+          'pollingIntervalMs must be a positive finite number',
+        );
         await expect(DBOS.retrieveWorkflow(randomUUID()).getResult({ pollingIntervalMs })).rejects.toThrow(
           'pollingIntervalMs must be a positive finite number',
         );
@@ -516,6 +542,9 @@ describe('sysdb-no-listen-notify', () => {
           'pollingIntervalMs must be a positive finite number',
         );
         await expect(client.waitFirst([client.retrieveWorkflow(randomUUID())], { pollingIntervalMs })).rejects.toThrow(
+          'pollingIntervalMs must be a positive finite number',
+        );
+        await expect(client.waitAll([client.retrieveWorkflow(randomUUID())], { pollingIntervalMs })).rejects.toThrow(
           'pollingIntervalMs must be a positive finite number',
         );
       }
