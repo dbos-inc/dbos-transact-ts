@@ -24,7 +24,7 @@ import {
   queues,
   SysDBSerializationFormat,
 } from '../schemas/system_db_schema';
-import { globalParams, cancellableSleep, INTERNAL_QUEUE_NAME, sleepConfig, sleepms } from './utils';
+import { globalParams, cancellableSleep, INTERNAL_QUEUE_NAME, Semaphore, sleepConfig, sleepms } from './utils';
 import { GlobalLogger } from './telemetry/logs';
 import { WorkflowQueue } from './wfqueue';
 import { randomUUID } from 'crypto';
@@ -629,6 +629,13 @@ export class SystemDatabase {
   readonly cancelWakeupMap: NotificationMap<void> = new NotificationMap();
   customPool: boolean = false;
 
+  /**
+   * Caps how many DB-backed polling reads (from wait operations) may run
+   * concurrently against the pool, so a polling storm cannot check out every
+   * client and starve control-plane operations. See {@link #pollWithLimiter}.
+   */
+  readonly pollLimiter: Semaphore;
+
   readonly runningWorkflowMap: Map<
     string,
     { promise: Promise<unknown>; queueName?: string; queuePartitionKey?: string }
@@ -643,9 +650,16 @@ export class SystemDatabase {
     systemDatabasePool?: Pool,
     schemaName: string = 'dbos',
     useListenNotify: boolean = true,
+    pollingConcurrency?: number,
   ) {
     this.schemaName = schemaName;
     this.shouldUseDBNotifications = useListenNotify;
+
+    // Default the polling limit to half the pool (minimum 1), reserving the
+    // rest of the pool for control-plane operations. An explicit value wins; a
+    // non-positive value disables the limiter.
+    const pollingLimit = pollingConcurrency ?? Math.max(1, Math.floor(sysDbPoolSize / 2));
+    this.pollLimiter = new Semaphore(pollingLimit);
     if (systemDatabasePool) {
       this.pool = systemDatabasePool;
       this.customPool = true;
@@ -1723,6 +1737,16 @@ export class SystemDatabase {
     }
   }
 
+  /**
+   * Run a DB-backed polling read under the polling concurrency limiter, so that
+   * high-fan-out wait loops cannot check out every pool client and starve
+   * control-plane operations. Only polling reads should go through here;
+   * control-plane work hits the pool directly and bypasses the limiter.
+   */
+  #pollWithLimiter<T>(query: () => Promise<T>): Promise<T> {
+    return this.pollLimiter.runExclusive(query);
+  }
+
   @dbRetry()
   async awaitWorkflowResult(
     workflowID: string,
@@ -1751,10 +1775,12 @@ export class SystemDatabase {
       try {
         if (callerID) await this.checkIfCanceled(callerID);
         try {
-          const { rows } = await this.pool.query<workflow_status>(
-            `SELECT status, output, error, serialization FROM "${this.schemaName}".workflow_status 
+          const { rows } = await this.#pollWithLimiter(() =>
+            this.pool.query<workflow_status>(
+              `SELECT status, output, error, serialization FROM "${this.schemaName}".workflow_status
              WHERE workflow_uuid=$1`,
-            [workflowID],
+              [workflowID],
+            ),
           );
           if (rows.length > 0) {
             const status = rows[0].status;
@@ -1833,12 +1859,14 @@ export class SystemDatabase {
       try {
         if (callerID) await this.checkIfCanceled(callerID);
 
-        const { rows } = await this.pool.query<workflow_status>(
-          `SELECT workflow_uuid FROM "${this.schemaName}".workflow_status
+        const { rows } = await this.#pollWithLimiter(() =>
+          this.pool.query<workflow_status>(
+            `SELECT workflow_uuid FROM "${this.schemaName}".workflow_status
            WHERE workflow_uuid IN (${placeholders})
              AND status NOT IN ('${StatusString.PENDING}', '${StatusString.ENQUEUED}', '${StatusString.DELAYED}')
            LIMIT 1`,
-          workflowIds,
+            workflowIds,
+          ),
         );
 
         if (rows.length > 0) {
@@ -2002,9 +2030,11 @@ export class SystemDatabase {
 
         // Check if the key is already in the DB, then wait for the notification if it isn't.
         const initRecvRows = (
-          await this.pool.query<notifications>(
-            `SELECT topic FROM "${this.schemaName}".notifications WHERE destination_uuid=$1 AND topic=$2 AND consumed = false;`,
-            [workflowID, topic],
+          await this.#pollWithLimiter(() =>
+            this.pool.query<notifications>(
+              `SELECT topic FROM "${this.schemaName}".notifications WHERE destination_uuid=$1 AND topic=$2 AND consumed = false;`,
+              [workflowID, topic],
+            ),
           )
         ).rows;
 
@@ -2200,11 +2230,13 @@ export class SystemDatabase {
         if (callerWorkflow?.workflowID) await this.checkIfCanceled(callerWorkflow?.workflowID);
         // Check if the key is already in the DB, then wait for the notification if it isn't.
         const initRecvRows = (
-          await this.pool.query<workflow_events>(
-            `SELECT key, value, serialization
+          await this.#pollWithLimiter(() =>
+            this.pool.query<workflow_events>(
+              `SELECT key, value, serialization
              FROM "${this.schemaName}".workflow_events
              WHERE workflow_uuid=$1 AND key=$2;`,
-            [workflowID, key],
+              [workflowID, key],
+            ),
           )
         ).rows;
 

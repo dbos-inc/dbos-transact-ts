@@ -101,6 +101,59 @@ export function cancellableSleep(ms: number) {
 }
 
 /**
+ * A minimal counting semaphore used to cap how many operations may run
+ * concurrently. Acquirers that arrive while the limit is exhausted queue in
+ * FIFO order and are woken as permits are released.
+ *
+ * A non-positive limit disables the semaphore: acquire resolves immediately and
+ * release is a no-op, so the limiter adds no overhead when it is turned off.
+ */
+export class Semaphore {
+  private available: number;
+  private readonly waiters: Array<() => void> = [];
+  private readonly enabled: boolean;
+
+  constructor(limit: number) {
+    this.enabled = Number.isFinite(limit) && limit > 0;
+    this.available = this.enabled ? limit : 0;
+  }
+
+  /** Acquire a permit, waiting if necessary. Resolves once a permit is held. */
+  acquire(): Promise<void> {
+    if (!this.enabled) return Promise.resolve();
+    if (this.available > 0) {
+      this.available--;
+      return Promise.resolve();
+    }
+    return new Promise<void>((resolve) => {
+      this.waiters.push(resolve);
+    });
+  }
+
+  /** Release a previously acquired permit, waking the next waiter if any. */
+  release(): void {
+    if (!this.enabled) return;
+    const next = this.waiters.shift();
+    if (next) {
+      // Hand the permit directly to the next waiter without touching `available`.
+      next();
+    } else {
+      this.available++;
+    }
+  }
+
+  /** Run `fn` while holding a permit, releasing it on every resolution path. */
+  async runExclusive<T>(fn: () => Promise<T>): Promise<T> {
+    await this.acquire();
+    try {
+      return await fn();
+    } finally {
+      this.release();
+    }
+  }
+}
+
+/**
  * Sleep for `ms` milliseconds, resolving early (without throwing) when
  * `signal` aborts. The abort listener is detached on every resolution path,
  * so calling this in a tight loop against a long-lived signal does not

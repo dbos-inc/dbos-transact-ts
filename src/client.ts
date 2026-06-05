@@ -224,6 +224,9 @@ export class DBOSClient {
       systemDatabaseSchemaName,
       // The client does not run a background notifications listener
       false,
+      // The client is short-lived and has no control-plane work to protect, so
+      // its polling reads are not throttled.
+      0,
     );
   }
 
