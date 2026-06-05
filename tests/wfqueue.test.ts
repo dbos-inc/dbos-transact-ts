@@ -621,9 +621,14 @@ describe('queued-wf-tests-simple', () => {
     });
     await expect(regularHandle.getResult()).resolves.toBeUndefined();
 
-    // Complete the blocked workflow
+    // Unblock the cancelled workflow's body. Even though it now runs to
+    // completion, CANCELLED is terminal: it must not overwrite CANCELLED with
+    // SUCCESS, and awaiting its result must raise.
     TestCancelQueues.blockingEvent.set();
     await expect(blockedHandle.getResult()).rejects.toThrow(DBOSAwaitedWorkflowCancelledError);
+    await expect(blockedHandle.getStatus()).resolves.toMatchObject({
+      status: StatusString.CANCELLED,
+    });
 
     // Verify all queue entries eventually get cleaned up
     expect(await queueEntriesAreCleanedUp()).toBe(true);
