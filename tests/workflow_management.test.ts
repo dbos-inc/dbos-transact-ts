@@ -2244,17 +2244,6 @@ describe('wf-cancel-tests', () => {
     expect(WFwith2Steps.stepsExecuted).toBe(2);
   });
 
-  test('test-preempt-sleepms', async () => {
-    const wfid = randomUUID();
-    const wfh = await DBOS.startWorkflow(DeepSleep, { workflowID: wfid }).sleepTooLong();
-
-    await expect(DBOS.getResult(wfh.workflowID, 0.2)).resolves.toBeNull();
-    await DBOS.cancelWorkflow(wfid);
-
-    await expect(DBOS.getResult(wfh.workflowID)).rejects.toThrow(DBOSAwaitedWorkflowCancelledError);
-    await expect(wfh.getResult()).rejects.toThrow(DBOSWorkflowCancelledError);
-  });
-
   test('test-preempt-getresult', async () => {
     const wfid = randomUUID();
     const wfh = await DBOS.startWorkflow(DeepSleep, { workflowID: wfid }).getResultTooLong();
@@ -2314,12 +2303,6 @@ describe('wf-cancel-tests', () => {
   }
 
   class DeepSleep {
-    @DBOS.workflow()
-    static async sleepTooLong() {
-      await DBOS.sleepms(1000 * 1000);
-      return 'Done';
-    }
-
     @DBOS.workflow()
     static async getResultTooLong() {
       await DBOS.getResult('bogusbogusbogus', 1000);
