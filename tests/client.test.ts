@@ -7,6 +7,7 @@ import { spawnSync } from 'child_process';
 import { DBOSQueueDuplicatedError, DBOSAwaitedWorkflowCancelledError } from '../src/error';
 import { randomUUID } from 'crypto';
 import { DBOSConfig } from '../src/dbos-executor';
+import { DEFAULT_POOL_SIZE } from '../src/system_database';
 
 // Re-register the database-backed queue used by these tests every time DBOS
 // is launched. Many tests in this file launch with their own setup, so this
@@ -118,6 +119,38 @@ describe('DBOSClient', () => {
 
   afterEach(async () => {
     await DBOS.shutdown();
+  });
+
+  test('create-passes-through-pool-size-and-polling-concurrency', async () => {
+    // No DBOS.launch() needed: create only constructs the SystemDatabase, whose
+    // pool connects lazily, so we can inspect the wiring without touching the DB.
+    const client = await DBOSClient.create({
+      systemDatabaseUrl,
+      systemDatabaseSchemaName: 'custom_schema',
+      systemDatabasePoolSize: 8,
+      pollingConcurrency: 3,
+    });
+    try {
+      const sysdb = client['systemDatabase'];
+      expect(sysdb.pool.options.max).toBe(8);
+      expect(sysdb.schemaName).toBe('custom_schema');
+      // The semaphore is initialized with the requested `pollingConcurrency` (3),
+      // not the half-the-pool default (which would be 4 for a pool size of 8).
+      expect(sysdb.pollLimiter['available']).toBe(3);
+    } finally {
+      await client.destroy();
+    }
+
+    // When the optional parameters are omitted, the defaults apply: the default
+    // pool size and a polling concurrency of half the pool.
+    const defaultClient = await DBOSClient.create({ systemDatabaseUrl });
+    try {
+      const sysdb = defaultClient['systemDatabase'];
+      expect(sysdb.pool.options.max).toBe(DEFAULT_POOL_SIZE);
+      expect(sysdb.pollLimiter['available']).toBe(Math.floor(DEFAULT_POOL_SIZE / 2));
+    } finally {
+      await defaultClient.destroy();
+    }
   });
 
   test('enqueue-timeout-simple', async () => {
