@@ -663,7 +663,7 @@ describe('dbos-tests', () => {
       assert.equal(await DBOS.getEvent(handle.workflowID, key), value);
       const steps = await DBOS.listWorkflowSteps(handle.workflowID);
       assert.ok(steps);
-      assert.equal(steps.length, 2);
+      assert.equal(steps.length, 3);
       assert.ok(steps[0].name.includes('DBOS.setEvent'));
       assert.ok(steps[1].name.includes('DBOS.recv'));
       assert.equal(steps[1].output, message);
@@ -698,7 +698,7 @@ describe('dbos-tests', () => {
       assert.ok(badClientSteps);
       assert.ok(badClientSteps[1].name.includes('DBOS.recv'));
       assert.equal(badClientSteps[1].output, jsonSerializer.stringify(message));
-      assert.equal(badClientSteps.length, 2);
+      assert.equal(badClientSteps.length, 3);
       await badClient.destroy();
     });
   });

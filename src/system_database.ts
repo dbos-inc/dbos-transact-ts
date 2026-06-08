@@ -1752,6 +1752,12 @@ export class SystemDatabase {
     let finishTime = timeoutms !== undefined ? Date.now() + timeoutms : undefined;
     const pollIntervalMs = pollingIntervalMs ?? this.dbPollingIntervalResultMs;
 
+    // Record the durable timeout deadline once before polling. #durableSleep persists it on the
+    // first call and reads back the same value on recovery, so it never changes across iterations.
+    if (timerFuncID !== undefined && callerID !== undefined && timeoutms !== undefined) {
+      finishTime = await this.#durableSleep(callerID, timerFuncID, timeoutms);
+    }
+
     while (true) {
       if (callerID) await this.#checkIfCanceledLimited(callerID);
       try {
@@ -1785,9 +1791,6 @@ export class SystemDatabase {
       const ct = Date.now();
       if (finishTime && ct > finishTime) return undefined; // Time's up
 
-      if (timerFuncID !== undefined && callerID !== undefined && timeoutms !== undefined) {
-        finishTime = await this.#durableSleep(callerID, timerFuncID, timeoutms);
-      }
       let poll = finishTime ? finishTime - Date.now() : pollIntervalMs;
       poll = Math.min(pollIntervalMs, poll);
       await sleepms(poll);
@@ -1955,6 +1958,12 @@ export class SystemDatabase {
     let finishTime = timeoutms !== undefined ? Date.now() + timeoutms : undefined;
     const pollIntervalMs = pollingIntervalMs ?? this.dbPollingIntervalEventMs;
 
+    // Record the durable timeout deadline once before polling. #durableSleep persists it on the
+    // first call and reads back the same value on recovery, so it never changes across iterations.
+    if (timeoutms) {
+      finishTime = await this.#durableSleep(workflowID, timeoutFunctionID, timeoutms);
+    }
+
     while (true) {
       // register the key with the global notifications listener.
       let resolveNotification: () => void;
@@ -1982,9 +1991,6 @@ export class SystemDatabase {
         const ct = Date.now();
         if (finishTime && ct > finishTime) break; // Time's up
 
-        if (timeoutms) {
-          finishTime = await this.#durableSleep(workflowID, timeoutFunctionID, timeoutms);
-        }
         let poll = finishTime ? finishTime - Date.now() : pollIntervalMs;
         poll = Math.min(pollIntervalMs, poll);
         const { promise, cancel } = cancellableSleep(poll);
@@ -2137,6 +2143,17 @@ export class SystemDatabase {
     let finishTime = timeoutms !== undefined ? Date.now() + timeoutms : undefined;
     const pollIntervalMs = pollingIntervalMs ?? this.dbPollingIntervalEventMs;
 
+    // If we have a callerWorkflow, we want a durable sleep, otherwise, not. Record the durable
+    // timeout deadline once before polling. #durableSleep persists it on the first call and reads
+    // back the same value on recovery, so it never changes across iterations.
+    if (callerWorkflow && timeoutms) {
+      finishTime = await this.#durableSleep(
+        callerWorkflow.workflowID,
+        callerWorkflow.timeoutFunctionID ?? -1,
+        timeoutms,
+      );
+    }
+
     // Register the key with the global notifications listener first... we do not want to look in the DB first
     //  or that would cause a timing hole.
     while (true) {
@@ -2169,14 +2186,6 @@ export class SystemDatabase {
         const ct = Date.now();
         if (finishTime && ct > finishTime) break; // Time's up
 
-        // If we have a callerWorkflow, we want a durable sleep, otherwise, not
-        if (callerWorkflow && timeoutms) {
-          finishTime = await this.#durableSleep(
-            callerWorkflow.workflowID,
-            callerWorkflow.timeoutFunctionID ?? -1,
-            timeoutms,
-          );
-        }
         let poll = finishTime ? finishTime - Date.now() : pollIntervalMs;
         poll = Math.min(pollIntervalMs, poll);
         const { promise, cancel } = cancellableSleep(poll);
