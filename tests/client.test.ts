@@ -128,13 +128,13 @@ describe('DBOSClient', () => {
       systemDatabaseUrl,
       systemDatabaseSchemaName: 'custom_schema',
       systemDatabasePoolSize: 8,
-      pollingConcurrency: 3,
+      systemDatabasePollingConcurrency: 3,
     });
     try {
       const sysdb = client['systemDatabase'];
       expect(sysdb.pool.options.max).toBe(8);
       expect(sysdb.schemaName).toBe('custom_schema');
-      // The semaphore is initialized with the requested `pollingConcurrency` (3),
+      // The semaphore is initialized with the requested `systemDatabasePollingConcurrency` (3),
       // not the half-the-pool default (which would be 4 for a pool size of 8).
       expect(sysdb.pollLimiter['available']).toBe(3);
     } finally {

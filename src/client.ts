@@ -215,7 +215,7 @@ export class DBOSClient {
     readonly serializer: DBOSSerializer,
     systemDatabaseSchemaName?: string,
     systemDatabasePoolSize?: number,
-    pollingConcurrency?: number,
+    systemDatabasePollingConcurrency?: number,
   ) {
     this.logger = new GlobalLogger();
     this.systemDatabase = new SystemDatabase(
@@ -227,7 +227,7 @@ export class DBOSClient {
       systemDatabaseSchemaName,
       // The client does not run a background notifications listener
       false,
-      pollingConcurrency,
+      systemDatabasePollingConcurrency,
     );
   }
 
@@ -238,7 +238,7 @@ export class DBOSClient {
    * @param serializer - An optional serializer for workflow inputs and outputs. Defaults to JSON serialization.
    * @param systemDatabaseSchemaName - An optional schema name for the system database. Defaults to `dbos`.
    * @param systemDatabasePoolSize - An optional maximum size for the system database connection pool. Defaults to {@link DEFAULT_POOL_SIZE}.
-   * @param pollingConcurrency - An optional maximum number of concurrent polling operations. Defaults to half the pool size (minimum 1).
+   * @param systemDatabasePollingConcurrency - An optional maximum number of concurrent polling operations. Defaults to half the pool size (minimum 1).
    * @returns A Promise that resolves with the DBOSClient instance.
    */
   static async create({
@@ -247,14 +247,14 @@ export class DBOSClient {
     serializer,
     systemDatabaseSchemaName,
     systemDatabasePoolSize,
-    pollingConcurrency,
+    systemDatabasePollingConcurrency,
   }: {
     systemDatabaseUrl: string;
     systemDatabasePool?: Pool;
     serializer?: DBOSSerializer;
     systemDatabaseSchemaName?: string;
     systemDatabasePoolSize?: number;
-    pollingConcurrency?: number;
+    systemDatabasePollingConcurrency?: number;
   }): Promise<DBOSClient> {
     const client = new DBOSClient(
       systemDatabaseUrl,
@@ -262,7 +262,7 @@ export class DBOSClient {
       serializer ?? DBOSJSON,
       systemDatabaseSchemaName,
       systemDatabasePoolSize,
-      pollingConcurrency,
+      systemDatabasePollingConcurrency,
     );
     return Promise.resolve(client);
   }
