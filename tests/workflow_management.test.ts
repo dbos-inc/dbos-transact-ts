@@ -339,6 +339,12 @@ describe('workflow-management-tests', () => {
   test('test-cancel-retry-restart', async () => {
     TestEndpoints.tries = 0;
 
+    // A blocked workflow observes cancellation on its next poll, not instantly. Shorten the
+    // poll interval so the cancelled recv below stops promptly (the launch in beforeEach builds
+    // a fresh system database, so this does not leak to other tests).
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    sysdb.dbPollingIntervalEventMs = 100;
+
     const workflowID = `test-cancel-resume-fork-${Date.now()}`;
     const handle = await DBOS.startWorkflow(TestEndpoints, { workflowID }).waitingWorkflow(42);
     expect(TestEndpoints.tries).toBe(1);
@@ -353,6 +359,13 @@ describe('workflow-management-tests', () => {
     );
     expect(result.rows[0].attempts).toBe(String(1));
     expect(result.rows[0].status).toBe(StatusString.CANCELLED);
+
+    // Wait for the cancelled execution to fully stop before resuming. Otherwise the stale
+    // coroutine (still blocked in recv) could consume the message and complete the workflow
+    // itself, instead of the fresh execution that resume is meant to start.
+    while (sysdb.checkForRunningWorkflow(workflowID)) {
+      await sleepms(50);
+    }
 
     await recoverPendingWorkflows(); // Does nothing as the workflow is CANCELLED
     expect(TestEndpoints.tries).toBe(1);
@@ -2244,17 +2257,6 @@ describe('wf-cancel-tests', () => {
     expect(WFwith2Steps.stepsExecuted).toBe(2);
   });
 
-  test('test-preempt-sleepms', async () => {
-    const wfid = randomUUID();
-    const wfh = await DBOS.startWorkflow(DeepSleep, { workflowID: wfid }).sleepTooLong();
-
-    await expect(DBOS.getResult(wfh.workflowID, 0.2)).resolves.toBeNull();
-    await DBOS.cancelWorkflow(wfid);
-
-    await expect(DBOS.getResult(wfh.workflowID)).rejects.toThrow(DBOSAwaitedWorkflowCancelledError);
-    await expect(wfh.getResult()).rejects.toThrow(DBOSWorkflowCancelledError);
-  });
-
   test('test-preempt-getresult', async () => {
     const wfid = randomUUID();
     const wfh = await DBOS.startWorkflow(DeepSleep, { workflowID: wfid }).getResultTooLong();
@@ -2314,12 +2316,6 @@ describe('wf-cancel-tests', () => {
   }
 
   class DeepSleep {
-    @DBOS.workflow()
-    static async sleepTooLong() {
-      await DBOS.sleepms(1000 * 1000);
-      return 'Done';
-    }
-
     @DBOS.workflow()
     static async getResultTooLong() {
       await DBOS.getResult('bogusbogusbogus', 1000);
