@@ -626,14 +626,12 @@ export class SystemDatabase {
   readonly notificationsMap: NotificationMap<void> = new NotificationMap();
   readonly workflowEventsMap: NotificationMap<void> = new NotificationMap();
   readonly streamsMap: NotificationMap<void> = new NotificationMap();
-  readonly cancelWakeupMap: NotificationMap<void> = new NotificationMap();
   customPool: boolean = false;
 
   readonly runningWorkflowMap: Map<
     string,
     { promise: Promise<unknown>; queueName?: string; queuePartitionKey?: string }
   > = new Map(); // Map from workflowID to workflow promise, queue name and partition key
-  readonly workflowCancellationMap: Map<string, boolean> = new Map(); // Map from workflowID to its cancellation status.
 
   constructor(
     readonly systemDatabaseUrl: string,
@@ -1090,27 +1088,14 @@ export class SystemDatabase {
          AND status NOT IN ($3, $4)`,
       [StatusString.CANCELLED, workflowIDs, StatusString.SUCCESS, StatusString.ERROR],
     );
-
-    for (const workflowID of workflowIDs) {
-      this.#setWFCancelMap(workflowID);
-    }
   }
 
   @dbRetry()
   async checkIfCanceled(workflowID: string): Promise<void> {
-    const client = await this.pool.connect();
-    try {
-      await this.#checkIfCanceled(client, workflowID);
-    } finally {
-      client.release();
-    }
+    await this.#checkIfCanceled(this.pool, workflowID);
   }
 
   async resumeWorkflows(workflowIDs: string[], queueName?: string): Promise<void> {
-    for (const workflowID of workflowIDs) {
-      this.#clearWFCancelMap(workflowID);
-    }
-
     await this.pool.query(
       `UPDATE "${this.schemaName}".workflow_status
        SET status = $1, queue_name = $2, recovery_attempts = 0,
@@ -1184,7 +1169,6 @@ export class SystemDatabase {
 
     for (const wfid of allIds) {
       this.runningWorkflowMap.delete(wfid);
-      this.workflowCancellationMap.delete(wfid);
     }
   }
 
@@ -1687,7 +1671,6 @@ export class SystemDatabase {
       .finally(() => {
         // Remove itself from pending workflow map.
         this.runningWorkflowMap.delete(workflowID);
-        this.workflowCancellationMap.delete(workflowID);
       });
     this.runningWorkflowMap.set(workflowID, {
       promise: awaitWorkflowPromise,
@@ -1736,78 +1719,42 @@ export class SystemDatabase {
     const pollIntervalMs = pollingIntervalMs ?? this.dbPollingIntervalResultMs;
 
     while (true) {
-      let resolveNotification: () => void;
-      const statusPromise = new Promise<void>((resolve) => {
-        resolveNotification = resolve;
-      });
-      const irh = this.cancelWakeupMap.registerCallback(workflowID, (_res) => {
-        resolveNotification();
-      });
-      const crh = callerID
-        ? this.cancelWakeupMap.registerCallback(callerID, (_res) => {
-            resolveNotification();
-          })
-        : undefined;
+      if (callerID) await this.checkIfCanceled(callerID);
       try {
-        if (callerID) await this.checkIfCanceled(callerID);
-        try {
-          const { rows } = await this.pool.query<workflow_status>(
-            `SELECT status, output, error, serialization FROM "${this.schemaName}".workflow_status 
-             WHERE workflow_uuid=$1`,
-            [workflowID],
-          );
-          if (rows.length > 0) {
-            const status = rows[0].status;
-            if (status === StatusString.SUCCESS) {
-              return { output: rows[0].output, serialization: rows[0].serialization };
-            } else if (status === StatusString.ERROR) {
-              return { error: rows[0].error, serialization: rows[0].serialization };
-            } else if (status === StatusString.CANCELLED) {
-              return { cancelled: true };
-            } else if (status === StatusString.MAX_RECOVERY_ATTEMPTS_EXCEEDED) {
-              return { maxRecoveryAttemptsExceeded: true };
-            } else {
-              // Status is not actionable
-            }
+        const { rows } = await this.pool.query<workflow_status>(
+          `SELECT status, output, error, serialization FROM "${this.schemaName}".workflow_status
+           WHERE workflow_uuid=$1`,
+          [workflowID],
+        );
+        if (rows.length > 0) {
+          const status = rows[0].status;
+          if (status === StatusString.SUCCESS) {
+            return { output: rows[0].output, serialization: rows[0].serialization };
+          } else if (status === StatusString.ERROR) {
+            return { error: rows[0].error, serialization: rows[0].serialization };
+          } else if (status === StatusString.CANCELLED) {
+            return { cancelled: true };
+          } else if (status === StatusString.MAX_RECOVERY_ATTEMPTS_EXCEEDED) {
+            return { maxRecoveryAttemptsExceeded: true };
+          } else {
+            // Status is not actionable
           }
-        } catch (e) {
-          const err = e as Error;
-          this.logger.error(`Exception from system database: ${err}`, err);
-          throw err;
         }
-
-        const ct = Date.now();
-        if (finishTime && ct > finishTime) return undefined; // Time's up
-
-        let timeoutPromise: Promise<void> = Promise.resolve();
-        let timeoutCancel: () => void = () => {};
-        if (timerFuncID !== undefined && callerID !== undefined && timeoutms !== undefined) {
-          const { promise, cancel, endTime } = await this.#durableSleep(
-            callerID,
-            timerFuncID,
-            timeoutms,
-            pollIntervalMs,
-          );
-          finishTime = endTime;
-          timeoutPromise = promise;
-          timeoutCancel = cancel;
-        } else {
-          let poll = finishTime ? finishTime - ct : pollIntervalMs;
-          poll = Math.min(pollIntervalMs, poll);
-          const { promise, cancel } = cancellableSleep(poll);
-          timeoutPromise = promise;
-          timeoutCancel = cancel;
-        }
-
-        try {
-          await Promise.race([statusPromise, timeoutPromise]);
-        } finally {
-          timeoutCancel();
-        }
-      } finally {
-        this.cancelWakeupMap.deregisterCallback(irh);
-        if (crh) this.cancelWakeupMap.deregisterCallback(crh);
+      } catch (e) {
+        const err = e as Error;
+        this.logger.error(`Exception from system database: ${err}`, err);
+        throw err;
       }
+
+      const ct = Date.now();
+      if (finishTime && ct > finishTime) return undefined; // Time's up
+
+      if (timerFuncID !== undefined && callerID !== undefined && timeoutms !== undefined) {
+        finishTime = await this.#durableSleep(callerID, timerFuncID, timeoutms);
+      }
+      let poll = finishTime ? finishTime - Date.now() : pollIntervalMs;
+      poll = Math.min(pollIntervalMs, poll);
+      await sleepms(poll);
     }
   }
 
@@ -1817,46 +1764,21 @@ export class SystemDatabase {
     const pollIntervalMs = pollingIntervalMs ?? this.dbPollingIntervalResultMs;
 
     while (true) {
-      let resolveNotification: () => void;
-      const wakeupPromise = new Promise<void>((resolve) => {
-        resolveNotification = resolve;
-      });
+      if (callerID) await this.checkIfCanceled(callerID);
 
-      // Register cancel callbacks for all target workflows and the caller.
-      const cbHandles = workflowIds.map((wfid) =>
-        this.cancelWakeupMap.registerCallback(wfid, () => resolveNotification!()),
+      const { rows } = await this.pool.query<workflow_status>(
+        `SELECT workflow_uuid FROM "${this.schemaName}".workflow_status
+         WHERE workflow_uuid IN (${placeholders})
+           AND status NOT IN ('${StatusString.PENDING}', '${StatusString.ENQUEUED}', '${StatusString.DELAYED}')
+         LIMIT 1`,
+        workflowIds,
       );
-      const callerCbHandle = callerID
-        ? this.cancelWakeupMap.registerCallback(callerID, () => resolveNotification!())
-        : undefined;
 
-      try {
-        if (callerID) await this.checkIfCanceled(callerID);
-
-        const { rows } = await this.pool.query<workflow_status>(
-          `SELECT workflow_uuid FROM "${this.schemaName}".workflow_status
-           WHERE workflow_uuid IN (${placeholders})
-             AND status NOT IN ('${StatusString.PENDING}', '${StatusString.ENQUEUED}', '${StatusString.DELAYED}')
-           LIMIT 1`,
-          workflowIds,
-        );
-
-        if (rows.length > 0) {
-          return rows[0].workflow_uuid;
-        }
-
-        const { promise: sleepPromise, cancel: sleepCancel } = cancellableSleep(pollIntervalMs);
-        try {
-          await Promise.race([wakeupPromise, sleepPromise]);
-        } finally {
-          sleepCancel();
-        }
-      } finally {
-        for (const h of cbHandles) {
-          this.cancelWakeupMap.deregisterCallback(h);
-        }
-        if (callerCbHandle) this.cancelWakeupMap.deregisterCallback(callerCbHandle);
+      if (rows.length > 0) {
+        return rows[0].workflow_uuid;
       }
+
+      await sleepms(pollIntervalMs);
     }
   }
 
@@ -1866,79 +1788,35 @@ export class SystemDatabase {
     const pollIntervalMs = pollingIntervalMs ?? this.dbPollingIntervalResultMs;
 
     while (remainingWorkflowIds.size > 0) {
-      let resolveNotification: () => void;
-      const wakeupPromise = new Promise<void>((resolve) => {
-        resolveNotification = resolve;
-      });
       const currentWorkflowIds = [...remainingWorkflowIds];
 
-      // Register cancel callbacks for all remaining target workflows and the caller.
-      const cbHandles = currentWorkflowIds.map((wfid) =>
-        this.cancelWakeupMap.registerCallback(wfid, () => resolveNotification!()),
+      if (callerID) await this.checkIfCanceled(callerID);
+
+      const { rows } = await this.pool.query<{ workflow_uuid: string }>(
+        `SELECT workflow_uuid FROM "${this.schemaName}".workflow_status
+         WHERE workflow_uuid = ANY($1::text[])
+           AND status NOT IN ('${StatusString.PENDING}', '${StatusString.ENQUEUED}', '${StatusString.DELAYED}')`,
+        [currentWorkflowIds],
       );
-      const callerCbHandle = callerID
-        ? this.cancelWakeupMap.registerCallback(callerID, () => resolveNotification!())
-        : undefined;
 
-      try {
-        if (callerID) await this.checkIfCanceled(callerID);
-
-        const { rows } = await this.pool.query<{ workflow_uuid: string }>(
-          `SELECT workflow_uuid FROM "${this.schemaName}".workflow_status
-           WHERE workflow_uuid = ANY($1::text[])
-             AND status NOT IN ('${StatusString.PENDING}', '${StatusString.ENQUEUED}', '${StatusString.DELAYED}')`,
-          [currentWorkflowIds],
-        );
-
-        for (const row of rows) {
-          remainingWorkflowIds.delete(row.workflow_uuid);
-        }
-        if (remainingWorkflowIds.size === 0) {
-          return;
-        }
-
-        const { promise: sleepPromise, cancel: sleepCancel } = cancellableSleep(pollIntervalMs);
-        try {
-          await Promise.race([wakeupPromise, sleepPromise]);
-        } finally {
-          sleepCancel();
-        }
-      } finally {
-        for (const h of cbHandles) {
-          this.cancelWakeupMap.deregisterCallback(h);
-        }
-        if (callerCbHandle) this.cancelWakeupMap.deregisterCallback(callerCbHandle);
+      for (const row of rows) {
+        remainingWorkflowIds.delete(row.workflow_uuid);
       }
+      if (remainingWorkflowIds.size === 0) {
+        return;
+      }
+
+      await sleepms(pollIntervalMs);
     }
   }
 
   // ==================== Sleep ====================
   @dbRetry()
   async durableSleepms(workflowID: string, functionID: number, durationMS: number): Promise<void> {
-    let cancelled = false;
-    let resolveNotification: () => void;
-    const cancelPromise = new Promise<void>((resolve) => {
-      resolveNotification = () => {
-        cancelled = true;
-        resolve();
-      };
-    });
+    const endTime = await this.#durableSleep(workflowID, functionID, durationMS);
 
-    const cbr = this.cancelWakeupMap.registerCallback(workflowID, resolveNotification!);
-    try {
-      const { cancel: cancelInitial, endTime } = await this.#durableSleep(workflowID, functionID, durationMS);
-      cancelInitial();
-
-      while (!cancelled && Date.now() < endTime) {
-        const { promise, cancel } = cancellableSleep(Math.min(endTime - Date.now(), sleepConfig.maxTimeoutMS));
-        try {
-          await Promise.race([cancelPromise, promise]);
-        } finally {
-          cancel();
-        }
-      }
-    } finally {
-      this.cancelWakeupMap.deregisterCallback(cbr);
+    while (Date.now() < endTime) {
+      await sleepms(Math.min(endTime - Date.now(), sleepConfig.maxTimeoutMS));
     }
 
     await this.checkIfCanceled(workflowID);
@@ -2045,9 +1923,6 @@ export class SystemDatabase {
       });
       const payload = `${workflowID}::${topic}`;
       const cbr = this.notificationsMap.registerCallback(payload, resolveNotification!);
-      const crh = this.cancelWakeupMap.registerCallback(workflowID, (_res) => {
-        resolveNotification();
-      });
 
       try {
         await this.checkIfCanceled(workflowID);
@@ -2065,33 +1940,19 @@ export class SystemDatabase {
         const ct = Date.now();
         if (finishTime && ct > finishTime) break; // Time's up
 
-        let timeoutPromise: Promise<void> = Promise.resolve();
-        let timeoutCancel: () => void = () => {};
         if (timeoutms) {
-          const { promise, cancel, endTime } = await this.#durableSleep(
-            workflowID,
-            timeoutFunctionID,
-            timeoutms,
-            pollIntervalMs,
-          );
-          timeoutPromise = promise;
-          timeoutCancel = cancel;
-          finishTime = endTime;
-        } else {
-          let poll = finishTime ? finishTime - ct : pollIntervalMs;
-          poll = Math.min(pollIntervalMs, poll);
-          const { promise, cancel } = cancellableSleep(poll);
-          timeoutPromise = promise;
-          timeoutCancel = cancel;
+          finishTime = await this.#durableSleep(workflowID, timeoutFunctionID, timeoutms);
         }
+        let poll = finishTime ? finishTime - Date.now() : pollIntervalMs;
+        poll = Math.min(pollIntervalMs, poll);
+        const { promise, cancel } = cancellableSleep(poll);
         try {
-          await Promise.race([messagePromise, timeoutPromise]);
+          await Promise.race([messagePromise, promise]);
         } finally {
-          timeoutCancel();
+          cancel();
         }
       } finally {
         this.notificationsMap.deregisterCallback(cbr);
-        this.cancelWakeupMap.deregisterCallback(crh);
       }
     }
 
@@ -2242,11 +2103,6 @@ export class SystemDatabase {
         resolveNotification = resolve;
       });
       const cbr = this.workflowEventsMap.registerCallback(payloadKey, resolveNotification!);
-      const crh = callerWorkflow?.workflowID
-        ? this.cancelWakeupMap.registerCallback(callerWorkflow.workflowID, (_res) => {
-            resolveNotification();
-          })
-        : undefined;
 
       try {
         if (callerWorkflow?.workflowID) await this.checkIfCanceled(callerWorkflow?.workflowID);
@@ -2270,34 +2126,24 @@ export class SystemDatabase {
         if (finishTime && ct > finishTime) break; // Time's up
 
         // If we have a callerWorkflow, we want a durable sleep, otherwise, not
-        let timeoutPromise: Promise<void> = Promise.resolve();
-        let timeoutCancel: () => void = () => {};
         if (callerWorkflow && timeoutms) {
-          const { promise, cancel, endTime } = await this.#durableSleep(
+          finishTime = await this.#durableSleep(
             callerWorkflow.workflowID,
             callerWorkflow.timeoutFunctionID ?? -1,
             timeoutms,
-            pollIntervalMs,
           );
-          timeoutPromise = promise;
-          timeoutCancel = cancel;
-          finishTime = endTime;
-        } else {
-          let poll = finishTime ? finishTime - ct : pollIntervalMs;
-          poll = Math.min(pollIntervalMs, poll);
-          const { promise, cancel } = cancellableSleep(poll);
-          timeoutPromise = promise;
-          timeoutCancel = cancel;
         }
+        let poll = finishTime ? finishTime - Date.now() : pollIntervalMs;
+        poll = Math.min(pollIntervalMs, poll);
+        const { promise, cancel } = cancellableSleep(poll);
 
         try {
-          await Promise.race([valuePromise, timeoutPromise]);
+          await Promise.race([valuePromise, promise]);
         } finally {
-          timeoutCancel();
+          cancel();
         }
       } finally {
         this.workflowEventsMap.deregisterCallback(cbr);
-        if (crh) this.cancelWakeupMap.deregisterCallback(crh);
       }
     }
 
@@ -3725,7 +3571,7 @@ export class SystemDatabase {
     }
   }
 
-  private async getWorkflowStatusValue(client: PoolClient, workflowID: string): Promise<string | undefined> {
+  private async getWorkflowStatusValue(client: PoolClient | Pool, workflowID: string): Promise<string | undefined> {
     const { rows } = await client.query<{ status: string }>(
       `SELECT status FROM "${this.schemaName}".workflow_status WHERE workflow_uuid=$1`,
       [workflowID],
@@ -3946,39 +3792,19 @@ export class SystemDatabase {
     return output;
   }
 
-  #setWFCancelMap(workflowID: string) {
-    if (this.runningWorkflowMap.has(workflowID)) {
-      this.workflowCancellationMap.set(workflowID, true);
-    }
-    this.cancelWakeupMap.callCallbacks(workflowID);
-  }
-
-  #clearWFCancelMap(workflowID: string) {
-    if (this.workflowCancellationMap.has(workflowID)) {
-      this.workflowCancellationMap.delete(workflowID);
-    }
-  }
-
-  async #checkIfCanceled(client: PoolClient, workflowID: string): Promise<void> {
-    if (this.workflowCancellationMap.get(workflowID) === true) {
-      throw new DBOSWorkflowCancelledError(workflowID);
-    }
+  async #checkIfCanceled(client: PoolClient | Pool, workflowID: string): Promise<void> {
     const statusValue = await this.getWorkflowStatusValue(client, workflowID);
     if (statusValue === StatusString.CANCELLED) {
       throw new DBOSWorkflowCancelledError(workflowID);
     }
   }
 
-  async #durableSleep(
-    workflowID: string,
-    functionID: number,
-    durationMS: number,
-    maxSleepPerIteration?: number,
-  ): Promise<{ promise: Promise<void>; cancel: () => void; endTime: number }> {
-    if (maxSleepPerIteration === undefined) maxSleepPerIteration = durationMS;
-
-    const curTime = Date.now();
-    let endTimeMs = curTime + durationMS;
+  // Durably records (or, on recovery, reads back) the wakeup deadline for a sleep or
+  // timeout so it survives recovery. Returns the absolute end time in epoch ms; the
+  // caller is responsible for actually waiting until then. Throws if the workflow has
+  // been cancelled.
+  async #durableSleep(workflowID: string, functionID: number, durationMS: number): Promise<number> {
+    const endTimeMs = Date.now() + durationMS;
 
     const client = await this.pool.connect();
     try {
@@ -3987,26 +3813,22 @@ export class SystemDatabase {
         if (res.functionName !== DBOS_FUNCNAME_SLEEP) {
           throw new DBOSUnexpectedStepError(workflowID, functionID, DBOS_FUNCNAME_SLEEP, res.functionName!);
         }
-        endTimeMs = JSON.parse(res.output!) as number;
-      } else {
-        await this.recordOperationResultInternal(
-          client,
-          workflowID,
-          functionID,
-          DBOS_FUNCNAME_SLEEP,
-          false,
-          Date.now(),
-          Date.now(),
-          {
-            output: DBOSPortableJSON.stringify(endTimeMs),
-            serialization: DBOSPortableJSON.name(),
-          },
-        );
+        return JSON.parse(res.output!) as number;
       }
-      return {
-        ...cancellableSleep(Math.max(Math.min(maxSleepPerIteration, endTimeMs - curTime), 0)),
-        endTime: endTimeMs,
-      };
+      await this.recordOperationResultInternal(
+        client,
+        workflowID,
+        functionID,
+        DBOS_FUNCNAME_SLEEP,
+        false,
+        Date.now(),
+        Date.now(),
+        {
+          output: DBOSPortableJSON.stringify(endTimeMs),
+          serialization: DBOSPortableJSON.name(),
+        },
+      );
+      return endTimeMs;
     } finally {
       client.release();
     }
