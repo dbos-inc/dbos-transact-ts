@@ -643,7 +643,7 @@ export class DBOS {
     if (lctx?.logger) return lctx.logger;
     const executor = DBOSExecutor.globalInstance;
     if (executor) return executor.logger;
-    return new GlobalLogger(undefined, { logger: DBOS.#dbosConfig?.logger });
+    return new GlobalLogger(undefined, { logger: DBOS.#dbosConfig?.logger, logLevel: DBOS.#dbosConfig?.logLevel });
   }
 
   /** Get the current DBOS Tracer, for starting spans */

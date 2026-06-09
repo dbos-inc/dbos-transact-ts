@@ -138,6 +138,21 @@ describe('custom-logger', () => {
     expect(recorder.find('info', 'pre-launch-marker')).toBeDefined();
   });
 
+  test('DBOS.logger honors the configured logLevel before launch', () => {
+    const debugSpy = jest.spyOn(console, 'debug').mockImplementation(() => {});
+    try {
+      DBOS.setConfig({ ...generateDBOSTestConfig(), logLevel: 'error' });
+      DBOS.logger.debug('pre-launch-debug-marker');
+      expect(debugSpy.mock.calls.some((c) => String(c[0]).includes('pre-launch-debug-marker'))).toBe(false);
+
+      DBOS.setConfig({ ...generateDBOSTestConfig(), logLevel: 'debug' });
+      DBOS.logger.debug('pre-launch-debug-marker');
+      expect(debugSpy.mock.calls.some((c) => String(c[0]).includes('pre-launch-debug-marker'))).toBe(true);
+    } finally {
+      debugSpy.mockRestore();
+    }
+  });
+
   test('custom logger takes over when OTLP is enabled', async () => {
     const logSpy = jest.spyOn(console, 'log');
     try {
