@@ -214,24 +214,31 @@ export class DBOSClient {
     systemDatabasePool: Pool | undefined,
     readonly serializer: DBOSSerializer,
     systemDatabaseSchemaName?: string,
+    systemDatabasePoolSize?: number,
+    systemDatabasePollingConcurrency?: number,
   ) {
     this.logger = new GlobalLogger();
     this.systemDatabase = new SystemDatabase(
       systemDatabaseUrl,
       this.logger,
       serializer,
-      DEFAULT_POOL_SIZE,
+      systemDatabasePoolSize ?? DEFAULT_POOL_SIZE,
       systemDatabasePool,
       systemDatabaseSchemaName,
       // The client does not run a background notifications listener
       false,
+      systemDatabasePollingConcurrency,
     );
   }
 
   /**
    * Creates a new instance of the DBOSClient.
-   * @param databaseUrl - The connection string for the database. This should include the hostname, port, username, password, and database name.
-   * @param systemDatabase - An optional name for the system database. If not provided, it defaults to the application database name with a `_dbos_sys` suffix.
+   * @param systemDatabaseUrl - The connection string for the system database. This should include the hostname, port, username, password, and database name.
+   * @param systemDatabasePool - An optional pre-configured connection pool to use for the system database. If provided, `systemDatabasePoolSize` is ignored.
+   * @param serializer - An optional serializer for workflow inputs and outputs. Defaults to JSON serialization.
+   * @param systemDatabaseSchemaName - An optional schema name for the system database. Defaults to `dbos`.
+   * @param systemDatabasePoolSize - An optional maximum size for the system database connection pool. Defaults to {@link DEFAULT_POOL_SIZE}.
+   * @param systemDatabasePollingConcurrency - An optional maximum number of concurrent polling operations. Defaults to half the pool size (minimum 1).
    * @returns A Promise that resolves with the DBOSClient instance.
    */
   static async create({
@@ -239,17 +246,23 @@ export class DBOSClient {
     systemDatabasePool,
     serializer,
     systemDatabaseSchemaName,
+    systemDatabasePoolSize,
+    systemDatabasePollingConcurrency,
   }: {
     systemDatabaseUrl: string;
     systemDatabasePool?: Pool;
     serializer?: DBOSSerializer;
     systemDatabaseSchemaName?: string;
+    systemDatabasePoolSize?: number;
+    systemDatabasePollingConcurrency?: number;
   }): Promise<DBOSClient> {
     const client = new DBOSClient(
       systemDatabaseUrl,
       systemDatabasePool,
       serializer ?? DBOSJSON,
       systemDatabaseSchemaName,
+      systemDatabasePoolSize,
+      systemDatabasePollingConcurrency,
     );
     return Promise.resolve(client);
   }

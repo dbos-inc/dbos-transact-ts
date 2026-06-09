@@ -184,6 +184,7 @@ export function translateDbosConfig(options: DBOSConfig, forceConsole: boolean =
     name: options.name,
     systemDatabaseUrl,
     sysDbPoolSize: options.systemDatabasePoolSize,
+    systemDatabasePollingConcurrency: options.systemDatabasePollingConcurrency,
     systemDatabasePool: options.systemDatabasePool,
     systemDatabaseSchemaName: options.systemDatabaseSchemaName ?? 'dbos',
     serializer: options.serializer ?? DBOSJSON,

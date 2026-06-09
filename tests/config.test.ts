@@ -402,6 +402,24 @@ describe('dbos-config', () => {
       });
     });
 
+    test('translate passes through systemDatabasePollingConcurrency', () => {
+      let internalConfig = translateDbosConfig({
+        name: 'dbostest',
+        systemDatabasePoolSize: 50,
+        systemDatabasePollingConcurrency: 8,
+      });
+      expect(internalConfig.sysDbPoolSize).toBe(50);
+      expect(internalConfig.systemDatabasePollingConcurrency).toBe(8);
+      // When unset, translation leaves it undefined; the default (half the pool)
+      // is materialized later in the SystemDatabase constructor.
+      internalConfig = translateDbosConfig({
+        name: 'dbostest',
+        systemDatabasePoolSize: 50,
+      });
+      expect(internalConfig.sysDbPoolSize).toBe(50);
+      expect(internalConfig.systemDatabasePollingConcurrency).toBeUndefined();
+    });
+
     test('translate with force console', () => {
       const internalConfig = translateDbosConfig(
         {

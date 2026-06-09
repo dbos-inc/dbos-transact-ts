@@ -101,6 +101,17 @@ export interface DBOSConfig {
   systemDatabasePoolSize?: number;
   systemDatabasePool?: Pool;
   systemDatabaseSchemaName?: string;
+  /**
+   * Maximum number of DB-backed polling reads (from wait operations such as
+   * `getResult`, `recv`, and `getEvent`) that may run concurrently against the
+   * system database pool. This keeps high-fan-out polling from checking out
+   * every pool client and starving control-plane operations such as
+   * enqueue/dequeue, status writes, recovery, and cancellation.
+   *
+   * Defaults to half the system database pool size (minimum 1). Set to a
+   * non-positive value to disable the limiter.
+   */
+  systemDatabasePollingConcurrency?: number;
 
   enableOTLP?: boolean;
   tracingEnabled?: boolean;
@@ -177,6 +188,7 @@ export type DBOSConfigInternal = {
 
   systemDatabaseUrl: string;
   sysDbPoolSize?: number;
+  systemDatabasePollingConcurrency?: number;
   systemDatabasePool?: Pool;
   systemDatabaseSchemaName: string;
   serializer: DBOSSerializer;
@@ -292,6 +304,7 @@ export class DBOSExecutor {
         this.config.systemDatabasePool,
         this.systemDBSchemaName,
         this.config.useListenNotify,
+        this.config.systemDatabasePollingConcurrency,
       );
     }
 

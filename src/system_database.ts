@@ -24,7 +24,7 @@ import {
   queues,
   SysDBSerializationFormat,
 } from '../schemas/system_db_schema';
-import { globalParams, cancellableSleep, INTERNAL_QUEUE_NAME, sleepConfig, sleepms } from './utils';
+import { globalParams, cancellableSleep, INTERNAL_QUEUE_NAME, Semaphore, sleepConfig, sleepms } from './utils';
 import { GlobalLogger } from './telemetry/logs';
 import { WorkflowQueue } from './wfqueue';
 import { randomUUID } from 'crypto';
@@ -628,6 +628,13 @@ export class SystemDatabase {
   readonly streamsMap: NotificationMap<void> = new NotificationMap();
   customPool: boolean = false;
 
+  /**
+   * Caps how many DB-backed polling reads (from wait operations) may run
+   * concurrently against the pool, so a polling storm cannot check out every
+   * client and starve control-plane operations. See {@link #pollWithLimiter}.
+   */
+  readonly pollLimiter: Semaphore;
+
   readonly runningWorkflowMap: Map<
     string,
     { promise: Promise<unknown>; queueName?: string; queuePartitionKey?: string }
@@ -641,9 +648,11 @@ export class SystemDatabase {
     systemDatabasePool?: Pool,
     schemaName: string = 'dbos',
     useListenNotify: boolean = true,
+    pollingConcurrency?: number,
   ) {
     this.schemaName = schemaName;
     this.shouldUseDBNotifications = useListenNotify;
+
     if (systemDatabasePool) {
       this.pool = systemDatabasePool;
       this.customPool = true;
@@ -656,6 +665,12 @@ export class SystemDatabase {
       };
       this.pool = new Pool(systemPoolConfig);
     }
+
+    // Default the polling limit to half the pool (minimum 1), reserving the rest
+    // of the pool for control-plane operations.
+    const effectivePoolSize = this.pool.options.max ?? sysDbPoolSize;
+    const pollingLimit = pollingConcurrency ?? Math.max(1, Math.floor(effectivePoolSize / 2));
+    this.pollLimiter = new Semaphore(pollingLimit);
 
     this.pool.on('error', (err: Error) => {
       this.logger.warn(`Unexpected error in pool: ${err}`);
@@ -1706,6 +1721,25 @@ export class SystemDatabase {
     }
   }
 
+  /**
+   * Run a DB-backed polling read under the polling concurrency limiter, so that
+   * high-fan-out wait loops cannot check out every pool client and starve
+   * control-plane operations. Only polling reads should go through here;
+   * control-plane work hits the pool directly and bypasses the limiter.
+   */
+  #pollWithLimiter<T>(query: () => Promise<T>): Promise<T> {
+    return this.pollLimiter.runExclusive(query);
+  }
+
+  /**
+   * Cancellation check for use inside polling wait loops: the status read runs
+   * under the polling limiter so it counts against the same concurrency budget
+   * as the rest of the loop's reads.
+   */
+  async #checkIfCanceledLimited(workflowID: string): Promise<void> {
+    await this.#pollWithLimiter(() => this.#checkIfCanceled(this.pool, workflowID));
+  }
+
   @dbRetry()
   async awaitWorkflowResult(
     workflowID: string,
@@ -1718,13 +1752,21 @@ export class SystemDatabase {
     let finishTime = timeoutms !== undefined ? Date.now() + timeoutms : undefined;
     const pollIntervalMs = pollingIntervalMs ?? this.dbPollingIntervalResultMs;
 
+    // Record the durable timeout deadline once before polling. #durableSleep persists it on the
+    // first call and reads back the same value on recovery, so it never changes across iterations.
+    if (timerFuncID !== undefined && callerID !== undefined && timeoutms !== undefined) {
+      finishTime = await this.#durableSleep(callerID, timerFuncID, timeoutms);
+    }
+
     while (true) {
-      if (callerID) await this.checkIfCanceled(callerID);
+      if (callerID) await this.#checkIfCanceledLimited(callerID);
       try {
-        const { rows } = await this.pool.query<workflow_status>(
-          `SELECT status, output, error, serialization FROM "${this.schemaName}".workflow_status
-           WHERE workflow_uuid=$1`,
-          [workflowID],
+        const { rows } = await this.#pollWithLimiter(() =>
+          this.pool.query<workflow_status>(
+            `SELECT status, output, error, serialization FROM "${this.schemaName}".workflow_status
+             WHERE workflow_uuid=$1`,
+            [workflowID],
+          ),
         );
         if (rows.length > 0) {
           const status = rows[0].status;
@@ -1749,9 +1791,6 @@ export class SystemDatabase {
       const ct = Date.now();
       if (finishTime && ct > finishTime) return undefined; // Time's up
 
-      if (timerFuncID !== undefined && callerID !== undefined && timeoutms !== undefined) {
-        finishTime = await this.#durableSleep(callerID, timerFuncID, timeoutms);
-      }
       let poll = finishTime ? finishTime - Date.now() : pollIntervalMs;
       poll = Math.min(pollIntervalMs, poll);
       await sleepms(poll);
@@ -1764,14 +1803,16 @@ export class SystemDatabase {
     const pollIntervalMs = pollingIntervalMs ?? this.dbPollingIntervalResultMs;
 
     while (true) {
-      if (callerID) await this.checkIfCanceled(callerID);
+      if (callerID) await this.#checkIfCanceledLimited(callerID);
 
-      const { rows } = await this.pool.query<workflow_status>(
-        `SELECT workflow_uuid FROM "${this.schemaName}".workflow_status
-         WHERE workflow_uuid IN (${placeholders})
-           AND status NOT IN ('${StatusString.PENDING}', '${StatusString.ENQUEUED}', '${StatusString.DELAYED}')
-         LIMIT 1`,
-        workflowIds,
+      const { rows } = await this.#pollWithLimiter(() =>
+        this.pool.query<workflow_status>(
+          `SELECT workflow_uuid FROM "${this.schemaName}".workflow_status
+           WHERE workflow_uuid IN (${placeholders})
+             AND status NOT IN ('${StatusString.PENDING}', '${StatusString.ENQUEUED}', '${StatusString.DELAYED}')
+           LIMIT 1`,
+          workflowIds,
+        ),
       );
 
       if (rows.length > 0) {
@@ -1790,13 +1831,15 @@ export class SystemDatabase {
     while (remainingWorkflowIds.size > 0) {
       const currentWorkflowIds = [...remainingWorkflowIds];
 
-      if (callerID) await this.checkIfCanceled(callerID);
+      if (callerID) await this.#checkIfCanceledLimited(callerID);
 
-      const { rows } = await this.pool.query<{ workflow_uuid: string }>(
-        `SELECT workflow_uuid FROM "${this.schemaName}".workflow_status
-         WHERE workflow_uuid = ANY($1::text[])
-           AND status NOT IN ('${StatusString.PENDING}', '${StatusString.ENQUEUED}', '${StatusString.DELAYED}')`,
-        [currentWorkflowIds],
+      const { rows } = await this.#pollWithLimiter(() =>
+        this.pool.query<{ workflow_uuid: string }>(
+          `SELECT workflow_uuid FROM "${this.schemaName}".workflow_status
+           WHERE workflow_uuid = ANY($1::text[])
+             AND status NOT IN ('${StatusString.PENDING}', '${StatusString.ENQUEUED}', '${StatusString.DELAYED}')`,
+          [currentWorkflowIds],
+        ),
       );
 
       for (const row of rows) {
@@ -1915,6 +1958,12 @@ export class SystemDatabase {
     let finishTime = timeoutms !== undefined ? Date.now() + timeoutms : undefined;
     const pollIntervalMs = pollingIntervalMs ?? this.dbPollingIntervalEventMs;
 
+    // Record the durable timeout deadline once before polling. #durableSleep persists it on the
+    // first call and reads back the same value on recovery, so it never changes across iterations.
+    if (timeoutms) {
+      finishTime = await this.#durableSleep(workflowID, timeoutFunctionID, timeoutms);
+    }
+
     while (true) {
       // register the key with the global notifications listener.
       let resolveNotification: () => void;
@@ -1925,13 +1974,15 @@ export class SystemDatabase {
       const cbr = this.notificationsMap.registerCallback(payload, resolveNotification!);
 
       try {
-        await this.checkIfCanceled(workflowID);
+        await this.#checkIfCanceledLimited(workflowID);
 
         // Check if the key is already in the DB, then wait for the notification if it isn't.
         const initRecvRows = (
-          await this.pool.query<notifications>(
-            `SELECT topic FROM "${this.schemaName}".notifications WHERE destination_uuid=$1 AND topic=$2 AND consumed = false;`,
-            [workflowID, topic],
+          await this.#pollWithLimiter(() =>
+            this.pool.query<notifications>(
+              `SELECT topic FROM "${this.schemaName}".notifications WHERE destination_uuid=$1 AND topic=$2 AND consumed = false;`,
+              [workflowID, topic],
+            ),
           )
         ).rows;
 
@@ -1940,9 +1991,6 @@ export class SystemDatabase {
         const ct = Date.now();
         if (finishTime && ct > finishTime) break; // Time's up
 
-        if (timeoutms) {
-          finishTime = await this.#durableSleep(workflowID, timeoutFunctionID, timeoutms);
-        }
         let poll = finishTime ? finishTime - Date.now() : pollIntervalMs;
         poll = Math.min(pollIntervalMs, poll);
         const { promise, cancel } = cancellableSleep(poll);
@@ -2095,6 +2143,17 @@ export class SystemDatabase {
     let finishTime = timeoutms !== undefined ? Date.now() + timeoutms : undefined;
     const pollIntervalMs = pollingIntervalMs ?? this.dbPollingIntervalEventMs;
 
+    // If we have a callerWorkflow, we want a durable sleep, otherwise, not. Record the durable
+    // timeout deadline once before polling. #durableSleep persists it on the first call and reads
+    // back the same value on recovery, so it never changes across iterations.
+    if (callerWorkflow && timeoutms) {
+      finishTime = await this.#durableSleep(
+        callerWorkflow.workflowID,
+        callerWorkflow.timeoutFunctionID ?? -1,
+        timeoutms,
+      );
+    }
+
     // Register the key with the global notifications listener first... we do not want to look in the DB first
     //  or that would cause a timing hole.
     while (true) {
@@ -2105,14 +2164,16 @@ export class SystemDatabase {
       const cbr = this.workflowEventsMap.registerCallback(payloadKey, resolveNotification!);
 
       try {
-        if (callerWorkflow?.workflowID) await this.checkIfCanceled(callerWorkflow?.workflowID);
+        if (callerWorkflow?.workflowID) await this.#checkIfCanceledLimited(callerWorkflow?.workflowID);
         // Check if the key is already in the DB, then wait for the notification if it isn't.
         const initRecvRows = (
-          await this.pool.query<workflow_events>(
-            `SELECT key, value, serialization
+          await this.#pollWithLimiter(() =>
+            this.pool.query<workflow_events>(
+              `SELECT key, value, serialization
              FROM "${this.schemaName}".workflow_events
              WHERE workflow_uuid=$1 AND key=$2;`,
-            [workflowID, key],
+              [workflowID, key],
+            ),
           )
         ).rows;
 
@@ -2125,14 +2186,6 @@ export class SystemDatabase {
         const ct = Date.now();
         if (finishTime && ct > finishTime) break; // Time's up
 
-        // If we have a callerWorkflow, we want a durable sleep, otherwise, not
-        if (callerWorkflow && timeoutms) {
-          finishTime = await this.#durableSleep(
-            callerWorkflow.workflowID,
-            callerWorkflow.timeoutFunctionID ?? -1,
-            timeoutms,
-          );
-        }
         let poll = finishTime ? finishTime - Date.now() : pollIntervalMs;
         poll = Math.min(pollIntervalMs, poll);
         const { promise, cancel } = cancellableSleep(poll);
