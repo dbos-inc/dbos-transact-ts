@@ -69,6 +69,9 @@ describe('custom-logger', () => {
       DBOS.setConfig({ ...generateDBOSTestConfig(), logger: recorder, tracingEnabled: true });
       await DBOS.launch();
 
+      // Internal lifecycle logs must also flow through the custom logger.
+      expect(recorder.find('info', 'DBOS launched!')).toBeDefined();
+
       const wfid = randomUUID();
       await DBOS.withNextWorkflowID(wfid, async () => {
         await LoggingWF.loggingWorkflow();
@@ -86,11 +89,13 @@ describe('custom-logger', () => {
       expect(stepEntry?.metadata?.span?.attributes?.operationType).toBe('step');
       expect(stepEntry?.metadata?.span?.attributes?.operationName).toBe('loggingStep');
 
-      // The markers must reach only the custom logger, not a built-in console sink.
+      // Both user markers and internal logs must reach only the custom logger,
+      // not a built-in console sink.
       for (const spy of consoleSpies) {
         for (const call of spy.mock.calls) {
           expect(String(call[0])).not.toContain('marker-in-wf');
           expect(String(call[0])).not.toContain('marker-in-step');
+          expect(String(call[0])).not.toContain('DBOS launched!');
         }
       }
     } finally {
