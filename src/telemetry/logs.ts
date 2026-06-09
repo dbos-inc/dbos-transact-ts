@@ -243,8 +243,8 @@ export class GlobalLogger {
 
 /**
  * The logger interface used throughout DBOS. Implement this to supply a custom
- * logger through `DBOSConfig.logger` (for example, an adapter over Pino,
- * Winston, or Bunyan).
+ * logger through `DBOSConfig.logger` (for example, an adapter over an existing
+ * logging service).
  *
  * Contract for custom implementations:
  * - Log entries arrive as strings: DBOS stringifies non-string entries before
