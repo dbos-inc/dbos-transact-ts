@@ -48,12 +48,12 @@ enum SeverityNumber {
 /* GLOBAL LOGGER */
 /*****************/
 
-type ContextualMetadata = {
+export type ContextualMetadata = {
   includeContextMetadata?: boolean; // Should the console transport formatter include the context metadata?
   span?: DBOSSpan; // All context metadata should be attributes of the context's span
 };
 
-interface StackTrace {
+export interface StackTrace {
   stack?: string;
 }
 
@@ -68,6 +68,10 @@ export class GlobalLogger {
     appName: string = 'dbos',
   ) {
     this.addContextMetadata = config?.addContextMetadata || false;
+    if (config?.logger) {
+      this.logger = config.logger;
+      return;
+    }
     if (!globalParams.enableOTLP) {
       this.logger = new DBOSConsoleLogger(config ?? {});
       return;
@@ -237,6 +241,23 @@ export class GlobalLogger {
 /* CONTEXT LOGGER */
 /******************/
 
+/**
+ * The logger interface used throughout DBOS. Implement this to supply a custom
+ * logger through `DBOSConfig.logger` (for example, an adapter over Pino,
+ * Winston, or Bunyan).
+ *
+ * Contract for custom implementations:
+ * - Log entries arrive as strings: DBOS stringifies non-string entries before
+ *   delegating, and `error()` receives the message of an `Error` with its
+ *   stack trace in `metadata.stack`.
+ * - When called from a workflow or step, `metadata.span?.attributes` carries
+ *   the operation context (workflow ID, operation name and type, etc.).
+ * - DBOS does not filter by `logLevel` before delegating; level routing is the
+ *   implementation's responsibility.
+ * - DBOS never flushes or closes the logger; the caller owns its lifecycle.
+ * - Implementations must not log back through `DBOS.logger`, which could
+ *   recurse.
+ */
 export interface DLogger {
   info(logEntry: unknown, metadata?: ContextualMetadata): void;
   debug(logEntry: unknown, metadata?: ContextualMetadata): void;

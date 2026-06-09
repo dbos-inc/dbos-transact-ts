@@ -26,7 +26,7 @@ import {
 import { type StepConfig } from './step';
 import { TelemetryCollector } from './telemetry/collector';
 import { getActiveSpan, runWithTrace, SpanStatusCode, Tracer } from './telemetry/traces';
-import { DBOSContextualLogger, GlobalLogger } from './telemetry/logs';
+import { DBOSContextualLogger, DLogger, GlobalLogger } from './telemetry/logs';
 import { TelemetryExporter } from './telemetry/exporters';
 import { SystemDatabase, type WorkflowStatusInternal, type SystemDatabaseStoredResult } from './system_database';
 import { randomUUID } from 'node:crypto';
@@ -116,6 +116,18 @@ export interface DBOSConfig {
   enableOTLP?: boolean;
   tracingEnabled?: boolean;
   logLevel?: string;
+  /**
+   * A custom logger to which DBOS directs all its internal logging, replacing
+   * the built-in console and OTLP log sinks. See {@link DLogger} for the
+   * contract implementations must follow. When set:
+   * - `logLevel` does not filter calls to it; level routing is its job.
+   * - Logs are not exported over OTLP even if `enableOTLP` is on (traces are
+   *   unaffected).
+   * - DBOS never flushes or closes it; the caller owns its lifecycle.
+   * Only settable programmatically, not from `dbos-config.yaml`; CLI commands
+   * keep using the built-in logger.
+   */
+  logger?: DLogger;
   addContextMetadata?: boolean;
   otlpTracesEndpoints?: string[];
   otlpLogsEndpoints?: string[];
@@ -181,6 +193,7 @@ export interface LoggerConfig {
   silent?: boolean;
   addContextMetadata?: boolean;
   forceConsole?: boolean;
+  logger?: DLogger;
 }
 
 export type DBOSConfigInternal = {
