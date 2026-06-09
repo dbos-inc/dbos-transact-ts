@@ -124,8 +124,6 @@ export interface DBOSConfig {
    * - Logs are not exported over OTLP even if `enableOTLP` is on (traces are
    *   unaffected).
    * - DBOS never flushes or closes it; the caller owns its lifecycle.
-   * Only settable programmatically, not from `dbos-config.yaml`; CLI commands
-   * keep using the built-in logger.
    */
   logger?: DLogger;
   addContextMetadata?: boolean;
