@@ -1148,6 +1148,8 @@ export class DBOSExecutor {
 
     // If starting a new workflow, assign a new UUID. Otherwise, use the workflow's original UUID.
     const workflowStartID = !!options?.startNewWorkflow ? undefined : workflowID;
+    const enqueueOptions =
+      wfStatus.queuePartitionKey !== undefined ? { queuePartitionKey: wfStatus.queuePartitionKey } : undefined;
 
     if (methReg?.workflowConfig) {
       return await runWithTopContext(recoverCtx, async () => {
@@ -1157,6 +1159,7 @@ export class DBOSExecutor {
             workflowUUID: workflowStartID,
             configuredInstance: configuredInst,
             queueName: wfStatus.queueName,
+            enqueueOptions,
             executeWorkflow: true,
             deadlineEpochMS: wfStatus.deadlineEpochMS,
             isRecoveryDispatch: !!options?.isRecoveryDispatch,
@@ -1189,6 +1192,7 @@ export class DBOSExecutor {
             workflowUUID: workflowStartID,
             configuredInstance: configuredInst,
             queueName: wfStatus.queueName, // Probably null
+            enqueueOptions,
             executeWorkflow: true,
             isRecoveryDispatch: !!options?.isRecoveryDispatch,
             isQueueDispatch: !!options?.isQueueDispatch,
@@ -1228,6 +1232,7 @@ export class DBOSExecutor {
             tempWfType: TempWorkflowType.send,
             workflowUUID: workflowStartID,
             queueName: wfStatus.queueName,
+            enqueueOptions,
             executeWorkflow: true,
             isRecoveryDispatch: !!options?.isRecoveryDispatch,
             isQueueDispatch: !!options?.isQueueDispatch,
