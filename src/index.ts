@@ -54,4 +54,8 @@ export { FunctionName, ConfiguredInstance, MethodParameter } from './decorators'
 
 export { DBOSConfig, DBOSExternalState, OtelAttributeFormat } from './dbos-executor';
 
+export { DLogger, ContextualMetadata, StackTrace } from './telemetry/logs';
+
+export { DBOSSpan } from './telemetry/traces';
+
 export { VersionInfo } from './system_database';

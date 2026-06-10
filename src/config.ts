@@ -193,6 +193,7 @@ export function translateDbosConfig(options: DBOSConfig, forceConsole: boolean =
         logLevel: options.logLevel || 'info',
         addContextMetadata: options.addContextMetadata,
         forceConsole,
+        logger: options.logger,
       },
       OTLPExporter: {
         tracesEndpoint: options.otlpTracesEndpoints,

@@ -8,7 +8,7 @@ import {
   DEFAULT_POOL_SIZE,
 } from './system_database';
 
-import { GlobalLogger } from './telemetry/logs';
+import { DLogger, GlobalLogger } from './telemetry/logs';
 import { randomUUID } from 'node:crypto';
 import {
   type GetWorkflowsInput,
@@ -216,8 +216,9 @@ export class DBOSClient {
     systemDatabaseSchemaName?: string,
     systemDatabasePoolSize?: number,
     systemDatabasePollingConcurrency?: number,
+    logger?: DLogger,
   ) {
-    this.logger = new GlobalLogger();
+    this.logger = new GlobalLogger(undefined, logger ? { logger } : undefined);
     this.systemDatabase = new SystemDatabase(
       systemDatabaseUrl,
       this.logger,
@@ -239,6 +240,7 @@ export class DBOSClient {
    * @param systemDatabaseSchemaName - An optional schema name for the system database. Defaults to `dbos`.
    * @param systemDatabasePoolSize - An optional maximum size for the system database connection pool. Defaults to {@link DEFAULT_POOL_SIZE}.
    * @param systemDatabasePollingConcurrency - An optional maximum number of concurrent polling operations. Defaults to half the pool size (minimum 1).
+   * @param logger - An optional custom logger to which the client directs all its logging, replacing the built-in console logger.
    * @returns A Promise that resolves with the DBOSClient instance.
    */
   static async create({
@@ -248,6 +250,7 @@ export class DBOSClient {
     systemDatabaseSchemaName,
     systemDatabasePoolSize,
     systemDatabasePollingConcurrency,
+    logger,
   }: {
     systemDatabaseUrl: string;
     systemDatabasePool?: Pool;
@@ -255,6 +258,7 @@ export class DBOSClient {
     systemDatabaseSchemaName?: string;
     systemDatabasePoolSize?: number;
     systemDatabasePollingConcurrency?: number;
+    logger?: DLogger;
   }): Promise<DBOSClient> {
     const client = new DBOSClient(
       systemDatabaseUrl,
@@ -263,6 +267,7 @@ export class DBOSClient {
       systemDatabaseSchemaName,
       systemDatabasePoolSize,
       systemDatabasePollingConcurrency,
+      logger,
     );
     return Promise.resolve(client);
   }

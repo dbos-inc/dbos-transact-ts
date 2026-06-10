@@ -420,6 +420,14 @@ describe('dbos-config', () => {
       expect(internalConfig.systemDatabasePollingConcurrency).toBeUndefined();
     });
 
+    test('translate passes through a custom logger', () => {
+      const myLogger = { info: () => {}, debug: () => {}, warn: () => {}, error: () => {} };
+      let internalConfig = translateDbosConfig({ name: 'dbostest', logger: myLogger });
+      expect(internalConfig.telemetry.logs?.logger).toBe(myLogger);
+      internalConfig = translateDbosConfig({ name: 'dbostest' });
+      expect(internalConfig.telemetry.logs?.logger).toBeUndefined();
+    });
+
     test('translate with force console', () => {
       const internalConfig = translateDbosConfig(
         {
