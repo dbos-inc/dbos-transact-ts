@@ -1565,7 +1565,7 @@ describe('queue-time-outs', () => {
 
   beforeEach(async () => {
     await DBOS.launch();
-    for (const ref of [timeoutQueue, dedupRecoveryQueue, partitionQueue]) {
+    for (const ref of [timeoutQueue, dedupRecoveryQueue, partitionQueue, partitionWorkerConcurrencyQueue]) {
       await DBOS.registerQueue(ref.name, { onConflict: 'always_update', ...ref.config });
     }
   });
@@ -1792,6 +1792,10 @@ describe('queue-time-outs', () => {
     name: 'partition-queue',
     config: { partitionQueue: true, concurrency: 1, ...testPolling },
   };
+  const partitionWorkerConcurrencyQueue: QueueRef = {
+    name: 'partition-worker-concurrency-queue',
+    config: { partitionQueue: true, workerConcurrency: 1, ...testPolling },
+  };
 
   const partitionBlockedWorkflow = DBOS.registerWorkflow(
     async () => {
@@ -1807,6 +1811,19 @@ describe('queue-time-outs', () => {
       return Promise.resolve(DBOS.workflowID);
     },
     { name: 'partitionNormalWorkflow' },
+  );
+
+  const partitionWorkerConcurrencyBlockingEvent = new Event();
+  const partitionWorkerConcurrencyStartedEvent = new Event();
+  let partitionWorkerConcurrencyStartedCount = 0;
+  const partitionWorkerConcurrencyWorkflow = DBOS.registerWorkflow(
+    async () => {
+      partitionWorkerConcurrencyStartedCount++;
+      partitionWorkerConcurrencyStartedEvent.set();
+      await partitionWorkerConcurrencyBlockingEvent.wait();
+      return DBOS.workflowID;
+    },
+    { name: 'partitionWorkerConcurrencyWorkflow' },
   );
 
   test('partitioned-queues', async () => {
@@ -1869,6 +1886,38 @@ describe('queue-time-outs', () => {
         enqueueOptions: { queuePartitionKey: normalPartitionKey, deduplicationID: 'key' },
       })();
     }, Error);
+  });
+
+  test('partitioned-queue-worker-concurrency', async () => {
+    partitionWorkerConcurrencyBlockingEvent.clear();
+    partitionWorkerConcurrencyStartedEvent.clear();
+    partitionWorkerConcurrencyStartedCount = 0;
+
+    const partitionKey = 'same-partition';
+    const handles = await Promise.all(
+      Array.from({ length: 3 }, () =>
+        DBOS.startWorkflow(partitionWorkerConcurrencyWorkflow, {
+          queueName: partitionWorkerConcurrencyQueue.name,
+          enqueueOptions: { queuePartitionKey: partitionKey },
+        })(),
+      ),
+    );
+
+    try {
+      await partitionWorkerConcurrencyStartedEvent.wait();
+      await sleepms(500);
+      expect(partitionWorkerConcurrencyStartedCount).toBe(1);
+      const statuses = await Promise.all(handles.map((h) => h.getStatus()));
+      expect(statuses.filter((s) => s?.status === StatusString.PENDING)).toHaveLength(1);
+      expect(statuses.filter((s) => s?.status === StatusString.ENQUEUED)).toHaveLength(2);
+      for (const status of statuses) {
+        expect(status?.queuePartitionKey).toBe(partitionKey);
+      }
+    } finally {
+      partitionWorkerConcurrencyBlockingEvent.set();
+    }
+
+    await Promise.all(handles.map((h) => h.getResult()));
   });
 
   test('explicit-queue-listen-test', async () => {
