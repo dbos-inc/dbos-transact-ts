@@ -200,6 +200,17 @@ export class DBOSAwaitedWorkflowExceededMaxRecoveryAttempts extends DBOSError {
   }
 }
 
+const StepTimeout = 31;
+/** Exception raised when a single attempt of a step exceeds its configured `timeoutMS` */
+export class DBOSStepTimeoutError extends DBOSError {
+  constructor(
+    readonly stepName: string,
+    readonly timeoutMS: number,
+  ) {
+    super(`Step ${stepName} timed out after ${timeoutMS}ms`, StepTimeout);
+  }
+}
+
 export function getDBOSErrorCode(e: Error): number | undefined {
   if (e && typeof e === 'object' && 'dbosErrorCode' in e) {
     const code = (e as Record<string, unknown>).dbosErrorCode;

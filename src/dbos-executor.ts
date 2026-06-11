@@ -8,6 +8,7 @@ import {
   DBOSUnexpectedStepError,
   DBOSAwaitedWorkflowCancelledError,
   DBOSQueueDuplicatedError,
+  DBOSStepTimeoutError,
 } from './error';
 import {
   InvokedHandle,
@@ -811,6 +812,7 @@ export class DBOSExecutor {
       intervalSeconds: stepConfig.intervalSeconds,
       maxAttempts: stepConfig.maxAttempts,
       backoffRate: stepConfig.backoffRate,
+      timeoutMS: stepConfig.timeoutMS,
     });
 
     // Check if this execution previously happened, returning its original result if it did.
@@ -827,6 +829,47 @@ export class DBOSExecutor {
     }
 
     const maxAttempts = stepConfig.maxAttempts ?? 3;
+    const timeoutMS = stepConfig.timeoutMS;
+
+    // Run a single attempt of the step function.
+    // If `timeoutMS` is set, race the attempt against a timer, firing the attempt's AbortSignal
+    // (exposed as `DBOS.stepStatus.timeoutSignal`) so the step can cancel its underlying operation.
+    // A timed-out attempt is abandoned: it has no path to record a result, and its eventual
+    // rejection (if any) is swallowed.
+    const invokeStepAttempt = async (attemptNum: number | undefined): Promise<R> => {
+      const timeoutAbort = timeoutMS === undefined ? undefined : new AbortController();
+      let cresult: R | undefined;
+      const attemptPromise = runWithTrace(span, async () => {
+        await runInStepContext(lctx, funcID, maxAttempts, attemptNum, timeoutAbort?.signal, async () => {
+          const sf = stepFn as unknown as (...args: T) => Promise<R>;
+          cresult = await sf.call(clsInst, ...args);
+        });
+      });
+      if (timeoutMS === undefined) {
+        await attemptPromise;
+        return cresult!;
+      }
+
+      const timeoutError = new DBOSStepTimeoutError(stepFnName, timeoutMS);
+      let timeoutID: ReturnType<typeof setTimeout> | undefined = undefined;
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timeoutID = setTimeout(() => {
+          timeoutAbort!.abort(timeoutError);
+          reject(timeoutError);
+        }, timeoutMS);
+      });
+      try {
+        await Promise.race([attemptPromise, timeoutPromise]);
+        return cresult!;
+      } catch (e) {
+        if (e === timeoutError) {
+          attemptPromise.catch(() => {});
+        }
+        throw e;
+      } finally {
+        clearTimeout(timeoutID);
+      }
+    };
 
     // Execute the step function.  If it throws an exception, retry with exponential backoff.
     // After reaching the maximum number of retries, throw an DBOSError.
@@ -844,15 +887,7 @@ export class DBOSExecutor {
       while (result === dbosNull && attemptNum++ < (maxAttempts ?? 3)) {
         try {
           await this.systemDatabase.checkIfCanceled(wfid);
-
-          let cresult: R | undefined;
-          await runWithTrace(span, async () => {
-            await runInStepContext(lctx, funcID, maxAttempts, attemptNum, async () => {
-              const sf = stepFn as unknown as (...args: T) => Promise<R>;
-              cresult = await sf.call(clsInst, ...args);
-            });
-          });
-          result = cresult!;
+          result = await invokeStepAttempt(attemptNum);
         } catch (error) {
           const e = error as Error;
           if (stepConfig.shouldRetry) {
@@ -901,14 +936,7 @@ export class DBOSExecutor {
       }
     } else {
       try {
-        let cresult: R | undefined;
-        await runWithTrace(span, async () => {
-          await runInStepContext(lctx, funcID, maxAttempts, undefined, async () => {
-            const sf = stepFn as unknown as (...args: T) => Promise<R>;
-            cresult = await sf.call(clsInst, ...args);
-          });
-        });
-        result = cresult!;
+        result = await invokeStepAttempt(undefined);
       } catch (error) {
         err = error as Error;
       }
