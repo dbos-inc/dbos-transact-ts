@@ -816,13 +816,23 @@ export class DBOSExecutor {
       timeoutMS: stepConfig.timeoutMS,
     });
 
+    // For errors that propagate without being recorded as the step's outcome (e.g. workflow cancellation):
+    // mark the span failed and end it before rethrowing.
+    const endSpanAndRethrow = (e: unknown): never => {
+      span.setStatus({ code: SpanStatusCode.ERROR, message: (e as Error).message });
+      this.tracer.endSpan(span);
+      throw e;
+    };
+
     // Check if this execution previously happened, returning its original result if it did.
-    const checkr = await this.systemDatabase.getOperationResultAndThrowIfCancelled(wfid, funcID);
+    const checkr = await this.systemDatabase
+      .getOperationResultAndThrowIfCancelled(wfid, funcID)
+      .catch(endSpanAndRethrow);
     if (checkr) {
       if (checkr.functionName !== stepFnName) {
-        throw new DBOSUnexpectedStepError(wfid, funcID, stepFnName, checkr.functionName ?? '?');
+        endSpanAndRethrow(new DBOSUnexpectedStepError(wfid, funcID, stepFnName, checkr.functionName ?? '?'));
       }
-      const check = await DBOSExecutor.reviveResultOrError<R>(checkr, this.serializer);
+      const check = await DBOSExecutor.reviveResultOrError<R>(checkr, this.serializer).catch(endSpanAndRethrow);
       span.setAttribute('cached', true);
       span.setStatus({ code: SpanStatusCode.OK });
       this.tracer.endSpan(span);
@@ -883,7 +893,7 @@ export class DBOSExecutor {
       }
       while (result === dbosNull && attemptNum++ < (maxAttempts ?? 3)) {
         // Outside the try so workflow cancellation propagates immediately instead of consuming the remaining attempts
-        await this.systemDatabase.checkIfCanceled(wfid);
+        await this.systemDatabase.checkIfCanceled(wfid).catch(endSpanAndRethrow);
         try {
           result = await invokeStepAttempt(attemptNum);
         } catch (error) {
