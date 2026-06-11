@@ -322,5 +322,11 @@ describe('step-timeout-tests', () => {
     await expect(handle.getResult()).rejects.toThrow(new DBOSWorkflowCancelledError(workflowID));
     const status = await DBOS.getWorkflowStatus(workflowID);
     expect(status?.status).toBe(StatusString.CANCELLED);
+
+    // The cancellation stopped the retry loop after the first attempt instead of consuming all three,
+    // and was not recorded as the step's durable result
+    expect(StepTimeoutTestClass.attempts).toBe(1);
+    const steps = (await DBOS.listWorkflowSteps(workflowID))!;
+    expect(steps.length).toBe(0);
   });
 });

@@ -882,8 +882,9 @@ export class DBOSExecutor {
         );
       }
       while (result === dbosNull && attemptNum++ < (maxAttempts ?? 3)) {
+        // Outside the try so workflow cancellation propagates immediately instead of consuming the remaining attempts
+        await this.systemDatabase.checkIfCanceled(wfid);
         try {
-          await this.systemDatabase.checkIfCanceled(wfid);
           result = await invokeStepAttempt(attemptNum);
         } catch (error) {
           const e = error as Error;
