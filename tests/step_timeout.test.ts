@@ -5,6 +5,10 @@ import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
 import { DBOSMaxStepRetriesError, DBOSStepTimeoutError, DBOSWorkflowCancelledError } from '../src/error';
 import { StatusString } from '../src/workflow';
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 // Sleep that resolves after `ms`, or rejects with the signal's reason when it aborts.
 // Models a step operation that cooperatively cancels on timeout.
 function sleepUnlessAborted(ms: number, signal?: AbortSignal): Promise<void> {
@@ -29,11 +33,13 @@ class StepTimeoutTestClass {
   static attempts = 0;
   static abortsObserved = 0;
   static hangAttempts = 0; // The first `hangAttempts` attempts hang until aborted
+  static zombieDone = false;
 
   static reset() {
     StepTimeoutTestClass.attempts = 0;
     StepTimeoutTestClass.abortsObserved = 0;
     StepTimeoutTestClass.hangAttempts = 0;
+    StepTimeoutTestClass.zombieDone = false;
   }
 
   static async slowStepGuts() {
@@ -90,6 +96,40 @@ class StepTimeoutTestClass {
     } catch (e) {
       return `caught: ${(e as Error).message}`;
     }
+  }
+
+  // Ignores the timeout signal: the first attempt keeps running long past the timeout, then resolves
+  @DBOS.step({ retriesAllowed: true, maxAttempts: 2, intervalSeconds: 0, timeoutMS: 100 })
+  static async uncooperativeStep() {
+    StepTimeoutTestClass.attempts++;
+    if (StepTimeoutTestClass.attempts === 1) {
+      await sleep(1000);
+      StepTimeoutTestClass.zombieDone = true;
+      return 'zombie';
+    }
+    return 'fresh';
+  }
+
+  // Ignores the timeout signal: the first attempt keeps running long past the timeout, then rejects
+  @DBOS.step({ retriesAllowed: true, maxAttempts: 2, intervalSeconds: 0, timeoutMS: 100 })
+  static async uncooperativeThrowingStep() {
+    StepTimeoutTestClass.attempts++;
+    if (StepTimeoutTestClass.attempts === 1) {
+      await sleep(1000);
+      StepTimeoutTestClass.zombieDone = true;
+      throw new Error('zombie rejection');
+    }
+    return 'fresh';
+  }
+
+  @DBOS.workflow()
+  static async uncooperativeStepWorkflow() {
+    return await StepTimeoutTestClass.uncooperativeStep();
+  }
+
+  @DBOS.workflow()
+  static async uncooperativeThrowingStepWorkflow() {
+    return await StepTimeoutTestClass.uncooperativeThrowingStep();
   }
 
   @DBOS.workflow()
@@ -200,6 +240,51 @@ describe('step-timeout-tests', () => {
 
   test('no-timeout-no-signal', async () => {
     await expect(StepTimeoutTestClass.plainStep()).resolves.toBe('plain');
+  });
+
+  test('uncooperative-zombie-resolution-is-discarded', async () => {
+    const wfid = randomUUID();
+
+    await DBOS.withNextWorkflowID(wfid, async () => {
+      await expect(StepTimeoutTestClass.uncooperativeStepWorkflow()).resolves.toBe('fresh');
+    });
+    expect(StepTimeoutTestClass.attempts).toBe(2);
+    // The retry won while the abandoned first attempt was still running
+    expect(StepTimeoutTestClass.zombieDone).toBe(false);
+
+    // Let the abandoned attempt run to completion, then confirm its result went nowhere
+    while (!StepTimeoutTestClass.zombieDone) {
+      await sleep(50);
+    }
+    const steps = (await DBOS.listWorkflowSteps(wfid))!;
+    expect(steps.length).toBe(1);
+    expect(steps[0].output).toBe('fresh');
+
+    const status = await DBOS.getWorkflowStatus(wfid);
+    expect(status?.status).toBe(StatusString.SUCCESS);
+  });
+
+  test('uncooperative-zombie-rejection-is-swallowed', async () => {
+    const zombieRejections: unknown[] = [];
+    const onUnhandled = (reason: unknown) => {
+      if (reason instanceof Error && reason.message === 'zombie rejection') {
+        zombieRejections.push(reason);
+      }
+    };
+    process.on('unhandledRejection', onUnhandled);
+    try {
+      await expect(StepTimeoutTestClass.uncooperativeThrowingStepWorkflow()).resolves.toBe('fresh');
+      expect(StepTimeoutTestClass.attempts).toBe(2);
+
+      // Let the abandoned attempt reject, then give the event loop a beat to surface any unhandled rejection
+      while (!StepTimeoutTestClass.zombieDone) {
+        await sleep(50);
+      }
+      await sleep(100);
+      expect(zombieRejections.length).toBe(0);
+    } finally {
+      process.removeListener('unhandledRejection', onUnhandled);
+    }
   });
 
   test('invalid-timeoutMS-is-rejected', async () => {

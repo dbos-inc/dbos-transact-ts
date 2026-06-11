@@ -836,7 +836,8 @@ export class DBOSExecutor {
     // If `timeoutMS` is set, race the attempt against a timer, firing the attempt's AbortSignal
     // (exposed as `DBOS.stepStatus.timeoutSignal`) so the step can cancel its underlying operation.
     // A timed-out attempt is abandoned: it has no path to record a result, and its eventual
-    // rejection (if any) is swallowed.
+    // settlement is discarded (Promise.race keeps the abandoned promise's rejection handled,
+    // so it never surfaces as an unhandled rejection).
     const invokeStepAttempt = async (attemptNum: number | undefined): Promise<R> => {
       const timeoutAbort = timeoutMS === undefined ? undefined : new AbortController();
       let cresult: R | undefined;
@@ -862,11 +863,6 @@ export class DBOSExecutor {
       try {
         await Promise.race([attemptPromise, timeoutPromise]);
         return cresult!;
-      } catch (e) {
-        if (e === timeoutError) {
-          attemptPromise.catch(() => {});
-        }
-        throw e;
       } finally {
         clearTimeout(timeoutID);
       }
