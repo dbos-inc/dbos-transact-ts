@@ -93,6 +93,11 @@ class StepTimeoutTestClass {
   }
 
   @DBOS.workflow()
+  static async badRunStepWorkflow() {
+    return await DBOS.runStep(async () => Promise.resolve(1), { name: 'bad-run-step', timeoutMS: -5 });
+  }
+
+  @DBOS.workflow()
   static async runStepTimeoutWorkflow() {
     return await DBOS.runStep(
       async () => {
@@ -195,6 +200,33 @@ describe('step-timeout-tests', () => {
 
   test('no-timeout-no-signal', async () => {
     await expect(StepTimeoutTestClass.plainStep()).resolves.toBe('plain');
+  });
+
+  test('invalid-timeoutMS-is-rejected', async () => {
+    // At registration, via DBOS.registerStep
+    for (const timeoutMS of [0, -100, NaN, Infinity]) {
+      expect(() =>
+        DBOS.registerStep(async () => Promise.resolve(), { name: `bad-step-${timeoutMS}`, timeoutMS }),
+      ).toThrow(`Invalid timeoutMS (${timeoutMS}) in configuration of step bad-step-${timeoutMS}`);
+    }
+
+    // At class definition, via the @DBOS.step decorator (registration requires DBOS to not be launched)
+    await DBOS.shutdown();
+    expect(() => {
+      class BadStepClass {
+        @DBOS.step({ name: 'bad-decorated-step', timeoutMS: -1 })
+        static async badStep() {
+          return Promise.resolve();
+        }
+      }
+      void BadStepClass;
+    }).toThrow('Invalid timeoutMS (-1)');
+    await DBOS.launch();
+
+    // At call time, via DBOS.runStep
+    await expect(StepTimeoutTestClass.badRunStepWorkflow()).rejects.toThrow(
+      'Invalid timeoutMS (-5) in configuration of step bad-run-step',
+    );
   });
 
   test('workflow-deadline-wins-over-step-timeout', async () => {

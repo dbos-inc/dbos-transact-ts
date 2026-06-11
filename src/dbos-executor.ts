@@ -24,7 +24,7 @@ import {
   WorkflowSerializationFormat,
 } from './workflow';
 
-import { type StepConfig } from './step';
+import { type StepConfig, validateStepConfig } from './step';
 import { TelemetryCollector } from './telemetry/collector';
 import { getActiveSpan, runWithTrace, SpanStatusCode, Tracer } from './telemetry/traces';
 import { DBOSContextualLogger, DLogger, GlobalLogger } from './telemetry/logs';
@@ -791,6 +791,7 @@ export class DBOSExecutor {
     if (stepConfig === undefined) {
       throw new DBOSNotRegisteredError(stepFnName);
     }
+    validateStepConfig(stepConfig, stepFnName);
 
     // Intentionally advance the function ID before any awaits, then work with a copy of the context.
     const funcID = functionIDGetIncrement();

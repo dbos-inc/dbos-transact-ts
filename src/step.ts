@@ -1,3 +1,5 @@
+import { DBOSError } from './error';
+
 /**
  * Configuration options for a `DBOS.step` function
  */
@@ -21,4 +23,14 @@ export interface StepConfig {
   timeoutMS?: number;
   /** If specified, override step function name */
   name?: string;
+}
+
+/** Validate a step configuration, throwing `DBOSError` if it is invalid. */
+export function validateStepConfig(config: StepConfig, stepName: string): void {
+  const timeoutMS = config.timeoutMS;
+  if (timeoutMS !== undefined && (typeof timeoutMS !== 'number' || !Number.isFinite(timeoutMS) || timeoutMS <= 0)) {
+    throw new DBOSError(
+      `Invalid timeoutMS (${timeoutMS}) in configuration of step ${stepName}: must be a positive number`,
+    );
+  }
 }
