@@ -519,7 +519,6 @@ export class DBOSExecutor {
       parentWorkflowID: callerID,
       serialization: funcArgs.sername,
       delayUntilEpochMS,
-      // On recovery/dequeue this value is ignored: the upsert never overwrites the stored attributes.
       attributes: params.workflowAttributes,
     };
 

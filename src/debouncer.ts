@@ -91,8 +91,7 @@ export class Debouncer<Args extends unknown[], Return> {
     while (true) {
       const deduplicationID = `${cfg.workflowClassName}.${cfg.workflowName}-${debounceKey}`;
       try {
-        // Attempt to enqueue a debouncer for this workflow. The internal debouncer carries no
-        // attributes; the user workflow gets cfg.startWorkflowParams.workflowAttributes when started.
+        // Attempt to enqueue a debouncer for this workflow
         await DBOS.startWorkflow(DBOSExecutor.debouncerWorkflow!, {
           queueName: INTERNAL_QUEUE_NAME,
           enqueueOptions: { deduplicationID },
