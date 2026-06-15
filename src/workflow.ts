@@ -18,6 +18,9 @@ export interface WorkflowParams {
   // executor skips its dedup-error pre-recording at the parent's funcID — the wrapper records the
   // child mapping itself after attaching to the existing workflow.
   duplicationPolicy?: DuplicationPolicy;
+  // Custom key-value attributes to attach to the workflow at creation. Overrides any
+  // attributes set on the surrounding context via `DBOS.withWorkflowAttributes`.
+  workflowAttributes?: Record<string, unknown>;
 }
 
 export const DEFAULT_MAX_RECOVERY_ATTEMPTS = 100;
@@ -116,6 +119,9 @@ export interface WorkflowStatus {
   // If this workflow was started by another workflow, that workflow's ID.
   readonly parentWorkflowID?: string;
 
+  // Custom key-value attributes attached to the workflow at creation, if any.
+  readonly attributes?: Record<string, unknown>;
+
   // INTERNAL
   // Deprecated field
   readonly applicationID: string;
@@ -145,6 +151,7 @@ export interface GetWorkflowsInput {
   wasForkedFrom?: boolean; // Filter workflows that have (or have not) been forked from.
   parentWorkflowID?: string | string[]; // Get workflows started by this parent workflow ID (or any of these parent workflow IDs).
   hasParent?: boolean; // Filter workflows that have (or do not have) a parent workflow.
+  attributes?: Record<string, unknown>; // Retrieve workflows whose custom attributes contain all of these key-value pairs.
   limit?: number; // Return up to this many workflows IDs. IDs are ordered by workflow creation time.
   offset?: number; // Skip this many workflows IDs. IDs are ordered by workflow creation time.
   sortDesc?: boolean; // Sort the workflows in descending order by creation time (default ascending order).

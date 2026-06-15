@@ -65,6 +65,11 @@ interface ScheduleLoopEntry {
   scheduleId: string;
 }
 
+// During the first minute after startup, poll for schedules every second so schedules
+// registered around launch are picked up promptly rather than after a full polling interval.
+const STARTUP_FAST_POLL_DURATION_MS = 60_000;
+const STARTUP_FAST_POLL_INTERVAL_MS = 1_000;
+
 export class DynamicSchedulerLoop implements DBOSLifecycleCallback {
   readonly #mainController = new AbortController();
   #pollingPromise: Promise<void> | undefined;
@@ -99,6 +104,12 @@ export class DynamicSchedulerLoop implements DBOSLifecycleCallback {
   }
 
   async #pollingLoop(signal: AbortSignal): Promise<void> {
+    const startupDeadline = Date.now() + STARTUP_FAST_POLL_DURATION_MS;
+    const pollTimeout = () =>
+      Date.now() < startupDeadline
+        ? Math.min(STARTUP_FAST_POLL_INTERVAL_MS, this.#pollingIntervalMs)
+        : this.#pollingIntervalMs;
+
     while (!signal.aborted) {
       let schedules: WorkflowScheduleInternal[];
       try {
@@ -106,7 +117,7 @@ export class DynamicSchedulerLoop implements DBOSLifecycleCallback {
         schedules = await executor.systemDatabase.listSchedules();
       } catch (e) {
         DBOS.logger.warn(`Dynamic scheduler: error listing schedules: ${(e as Error).message}`);
-        await interruptibleSleep(this.#pollingIntervalMs, signal);
+        await interruptibleSleep(pollTimeout(), signal);
         continue;
       }
 
@@ -179,7 +190,7 @@ export class DynamicSchedulerLoop implements DBOSLifecycleCallback {
         }
       }
 
-      await interruptibleSleep(this.#pollingIntervalMs, signal);
+      await interruptibleSleep(pollTimeout(), signal);
     }
   }
 

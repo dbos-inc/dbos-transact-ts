@@ -143,6 +143,11 @@ export interface ClientEnqueueOptions {
    *     and the handle resolves with the original workflow's result.
    */
   duplicationPolicy?: DuplicationPolicy;
+  /**
+   * Custom key-value attributes to attach to the workflow at creation.
+   * Attributes are searchable via the `attributes` filter of `listWorkflows`.
+   */
+  attributes?: Record<string, unknown>;
 }
 
 /**
@@ -325,6 +330,7 @@ export class DBOSClient {
       queuePartitionKey: options.queuePartitionKey,
       serialization: serparam.serialization,
       delayUntilEpochMS,
+      attributes: options.attributes,
     };
 
     let finalID: string;
@@ -414,6 +420,7 @@ export class DBOSClient {
       queuePartitionKey: options.queuePartitionKey,
       serialization: serparam.serialization,
       delayUntilEpochMS,
+      attributes: options.attributes,
     };
 
     let finalID: string;

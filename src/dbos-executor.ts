@@ -519,6 +519,9 @@ export class DBOSExecutor {
       parentWorkflowID: callerID,
       serialization: funcArgs.sername,
       delayUntilEpochMS,
+      // Attributes set explicitly on the start params take precedence over the surrounding context's.
+      // On recovery/dequeue this value is ignored: the upsert never overwrites the stored attributes.
+      attributes: params.workflowAttributes ?? pctx?.workflowAttributes,
     };
 
     if (isTempWorkflow) {
@@ -644,6 +647,8 @@ export class DBOSExecutor {
               logger: this.ctxLogger,
               curWFFunctionId: undefined,
               serializationType,
+              // Consumed at creation: workflows started inside this one do not inherit its attributes.
+              workflowAttributes: undefined,
             },
             () => {
               const callPromise = wf.call(params.configuredInstance, ...args);

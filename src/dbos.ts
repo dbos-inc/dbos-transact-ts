@@ -171,6 +171,9 @@ export interface StartWorkflowParams {
   //     Requires `queueName` and `enqueueOptions.deduplicationID`. Arguments passed by the
   //     colliding caller are discarded and the handle resolves with the original workflow's result.
   duplicationPolicy?: DuplicationPolicy;
+  // Custom key-value attributes to attach to the workflow at creation. Overrides any
+  // attributes set on the surrounding context via `DBOS.withWorkflowAttributes`.
+  workflowAttributes?: Record<string, unknown>;
 }
 
 /**
@@ -1246,6 +1249,22 @@ export class DBOS {
   }
 
   /**
+   * Attach custom key-value attributes to any workflows started or enqueued within the `callback`.
+   * Attributes are recorded in the workflow status at creation, are searchable via the `attributes`
+   * filter of `DBOS.listWorkflows`, and are not inherited by child workflows.
+   * @param attributes - JSON-serializable attributes to attach, or `undefined` to clear them
+   * @param callback - Function to run, which would call or start workflows
+   * @returns - Return value from `callback`
+   */
+  static async withWorkflowAttributes<R>(
+    attributes: Record<string, unknown> | undefined,
+    callback: () => Promise<R>,
+  ): Promise<R> {
+    ensureDBOSIsLaunched('workflows');
+    return DBOS.#withTopContext({ workflowAttributes: attributes }, callback);
+  }
+
+  /**
    * Run a workflow with the option to set any of the contextual items
    *
    * @param options - Overrides for options
@@ -1265,8 +1284,10 @@ export class DBOS {
       const existing: any = {};
       for (const k of Object.keys(options) as (keyof DBOSContextOptions)[]) {
         if (Object.hasOwn(pctx, k))
+          // Save the current value so it can be restored after the callback,
+          // letting nested `with*` blocks correctly roll back to the outer value.
           // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-          existing[k] = options[k];
+          existing[k] = pctx[k];
         // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
         (pctx as any)[k] = options[k];
       }
@@ -1778,6 +1799,7 @@ export class DBOS {
 
     const queueName = params.queueName ?? ppctx?.queueAssignedForWorkflows;
     const timeoutMS = params.timeoutMS ?? ppctx?.workflowTimeoutMS;
+    const workflowAttributes = params.workflowAttributes ?? ppctx?.workflowAttributes;
 
     const instance = $this === undefined || typeof $this === 'function' ? undefined : ($this as ConfiguredInstance);
     if (instance && !(instance instanceof ConfiguredInstance)) {
@@ -1839,6 +1861,7 @@ export class DBOS {
           params.timeoutMS === null || ppctx?.workflowTimeoutMS === null ? undefined : ppctx?.deadlineEpochMS,
         enqueueOptions: params.enqueueOptions,
         duplicationPolicy: params.duplicationPolicy,
+        workflowAttributes,
       };
 
       return await invokeRegOp(wfParams, pwfid, funcId);
@@ -1850,6 +1873,7 @@ export class DBOS {
         configuredInstance: instance,
         timeoutMS,
         duplicationPolicy: params.duplicationPolicy,
+        workflowAttributes,
       };
 
       return await invokeRegOp(wfParams, undefined, undefined);

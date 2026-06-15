@@ -215,6 +215,8 @@ export interface WorkflowStatusInternal {
   serialization: string | null;
   delayUntilEpochMS?: number;
   completedAt?: number;
+  // Custom key-value attributes attached to the workflow at creation. Not inherited by child workflows.
+  attributes?: Record<string, unknown>;
 }
 
 export interface EnqueueOptions {
@@ -429,6 +431,7 @@ function mapWorkflowStatus(row: workflow_status): WorkflowStatusInternal {
     serialization: row.serialization,
     delayUntilEpochMS: row.delay_until_epoch_ms ? Number(row.delay_until_epoch_ms) : undefined,
     completedAt: row.completed_at ? Number(row.completed_at) : undefined,
+    attributes: row.attributes ?? undefined,
   };
 }
 
@@ -1301,7 +1304,7 @@ export class SystemDatabase {
       const { rows: statusRows } = await client.query<workflow_status>(
         `SELECT workflow_uuid, name, class_name, config_name, application_id,
                 authenticated_user, authenticated_roles, assumed_role, inputs, serialization,
-                request, application_version
+                request, application_version, attributes
          FROM "${this.schemaName}".workflow_status
          WHERE workflow_uuid = ANY($1)`,
         [originalWorkflowIDs],
@@ -1334,6 +1337,7 @@ export class SystemDatabase {
         'queue_partition_key',
         'forked_from',
         'serialization',
+        'attributes',
       ];
       if (options.timeoutMS !== undefined) {
         insertCols.push('workflow_timeout_ms');
@@ -1364,6 +1368,7 @@ export class SystemDatabase {
           options.queuePartitionKey ?? null,
           origID,
           ws.serialization,
+          ws.attributes ? JSON.stringify(ws.attributes) : null,
         );
         if (options.timeoutMS !== undefined) {
           params.push(options.timeoutMS);
@@ -2724,6 +2729,7 @@ export class SystemDatabase {
       'parent_workflow_id',
       'delay_until_epoch_ms',
       'completed_at',
+      'attributes',
     ];
 
     input.loadInput = input.loadInput ?? true;
@@ -2809,6 +2815,14 @@ export class SystemDatabase {
       } else {
         whereClauses.push(`parent_workflow_id IS NULL`);
       }
+    }
+
+    // Match workflows whose attributes JSONB contains all the given key-value pairs.
+    // The `@>` containment operator is served by the GIN index on the attributes column.
+    if (input.attributes && Object.keys(input.attributes).length > 0) {
+      whereClauses.push(`attributes @> $${paramCounter}::jsonb`);
+      params.push(JSON.stringify(input.attributes));
+      paramCounter++;
     }
 
     if (input.startTime) {
@@ -3555,8 +3569,9 @@ export class SystemDatabase {
           parent_workflow_id,
           serialization,
           owner_xid,
-          delay_until_epoch_ms
-        ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $26, $27, $28)
+          delay_until_epoch_ms,
+          attributes
+        ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $26, $27, $28, $29)
         ON CONFLICT (workflow_uuid)
           DO UPDATE SET
             recovery_attempts = CASE
@@ -3601,6 +3616,7 @@ export class SystemDatabase {
           initStatus.serialization,
           ownerXid,
           initStatus.delayUntilEpochMS ?? null,
+          initStatus.attributes ? JSON.stringify(initStatus.attributes) : null,
         ],
       );
       if (rows.length === 0) {
