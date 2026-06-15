@@ -92,6 +92,33 @@ describe('workflow-attributes', () => {
     expect((await handleNoAttrs.getStatus())?.attributes).toBeUndefined();
   });
 
+  test('rejects non-JSON-serializable attributes', async () => {
+    // BigInt values cannot be serialized to JSON.
+    await expect(
+      DBOS.startWorkflow(noopWorkflow, { workflowAttributes: { count: 1n } as unknown as Record<string, unknown> })(),
+    ).rejects.toThrow(/must be JSON-serializable/);
+
+    // Circular references cannot be serialized to JSON.
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+    await expect(DBOS.startWorkflow(noopWorkflow, { workflowAttributes: circular })()).rejects.toThrow(
+      /must be JSON-serializable/,
+    );
+
+    const client = await DBOSClient.create({ systemDatabaseUrl });
+    try {
+      await expect(
+        client.enqueue({
+          queueName: 'unconsumed_queue',
+          workflowName: 'clientWorkflow',
+          attributes: { count: 1n } as unknown as Record<string, unknown>,
+        }),
+      ).rejects.toThrow(/must be JSON-serializable/);
+    } finally {
+      await client.destroy();
+    }
+  });
+
   test('records attributes on enqueue', async () => {
     const handle = await DBOS.startWorkflow(echoWorkflow, {
       queueName: attrQueue.name,

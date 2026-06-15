@@ -29,6 +29,7 @@ import {
   WorkflowParams,
   WorkflowSerializationFormat,
   WorkflowStatus,
+  validateWorkflowAttributes,
 } from './workflow';
 import { DLogger, GlobalLogger } from './telemetry/logs';
 import {
@@ -1779,6 +1780,7 @@ export class DBOS {
     startWfFuncId?: number,
   ): Promise<InternalWFHandle<Return>> {
     ensureDBOSIsLaunched('workflows');
+    validateWorkflowAttributes(params.workflowAttributes);
     const wfId = getNextWFID(params.workflowID);
     const ppctx = getCurrentContextStore();
 

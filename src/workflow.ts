@@ -5,6 +5,24 @@ import { deserializePositionalArgs, registerSerializationRecipe } from './serial
 import { DBOS, resolvePollingIntervalMs, runInternalStep, type PollingOptions } from './dbos';
 import { DuplicationPolicy, EnqueueOptions } from './system_database';
 import { DBOSExecutor } from './dbos-executor';
+import { DBOSError } from './error';
+
+/**
+ * Validate that custom workflow attributes, if provided, can be serialized to JSON for
+ * storage in the JSONB `attributes` column. Called at the workflow-creation entry points
+ * (`startWorkflow`/enqueue) so invalid input fails fast at the call site rather than
+ * surfacing as a database error at insert time.
+ */
+export function validateWorkflowAttributes(attributes: unknown): void {
+  if (attributes === undefined || attributes === null) {
+    return;
+  }
+  try {
+    JSON.stringify(attributes);
+  } catch (e) {
+    throw new DBOSError(`Invalid workflow attributes: must be JSON-serializable. ${(e as Error).message}`);
+  }
+}
 
 export interface WorkflowParams {
   workflowUUID?: string;
