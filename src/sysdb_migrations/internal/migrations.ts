@@ -657,5 +657,15 @@ export function allMigrations(
           ]
         : [],
     },
+    // ADD COLUMN with no default is catalog-only; the GIN index built in the same
+    // transaction covers zero rows, so no CONCURRENTLY is needed. The index serves
+    // containment (@>) filters on workflow attributes; on CockroachDB, USING GIN
+    // creates an inverted index.
+    {
+      pg: [
+        `ALTER TABLE "${schemaName}"."workflow_status" ADD COLUMN IF NOT EXISTS "attributes" JSONB`,
+        `CREATE INDEX IF NOT EXISTS "idx_workflow_status_attributes" ON "${schemaName}"."workflow_status" USING GIN ("attributes") WHERE "attributes" IS NOT NULL`,
+      ],
+    },
   ];
 }

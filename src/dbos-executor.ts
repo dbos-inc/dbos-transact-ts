@@ -520,6 +520,7 @@ export class DBOSExecutor {
       parentWorkflowID: callerID,
       serialization: funcArgs.sername,
       delayUntilEpochMS,
+      attributes: params.workflowAttributes,
     };
 
     if (isTempWorkflow) {

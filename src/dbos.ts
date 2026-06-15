@@ -29,6 +29,7 @@ import {
   WorkflowParams,
   WorkflowSerializationFormat,
   WorkflowStatus,
+  validateWorkflowAttributes,
 } from './workflow';
 import { DLogger, GlobalLogger } from './telemetry/logs';
 import {
@@ -171,6 +172,10 @@ export interface StartWorkflowParams {
   //     Requires `queueName` and `enqueueOptions.deduplicationID`. Arguments passed by the
   //     colliding caller are discarded and the handle resolves with the original workflow's result.
   duplicationPolicy?: DuplicationPolicy;
+  // Custom key-value attributes to attach to the workflow at creation. Recorded in the
+  // workflow status and searchable via the `attributes` filter of `DBOS.listWorkflows`.
+  // Not inherited by child workflows.
+  workflowAttributes?: Record<string, unknown>;
 }
 
 /**
@@ -1265,8 +1270,10 @@ export class DBOS {
       const existing: any = {};
       for (const k of Object.keys(options) as (keyof DBOSContextOptions)[]) {
         if (Object.hasOwn(pctx, k))
+          // Save the current value (not the incoming one) so the finally block can restore it,
+          // letting nested `with*` blocks correctly roll back to the outer value.
           // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-          existing[k] = options[k];
+          existing[k] = pctx[k];
         // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
         (pctx as any)[k] = options[k];
       }
@@ -1773,6 +1780,7 @@ export class DBOS {
     startWfFuncId?: number,
   ): Promise<InternalWFHandle<Return>> {
     ensureDBOSIsLaunched('workflows');
+    validateWorkflowAttributes(params.workflowAttributes);
     const wfId = getNextWFID(params.workflowID);
     const ppctx = getCurrentContextStore();
 
@@ -1839,6 +1847,7 @@ export class DBOS {
           params.timeoutMS === null || ppctx?.workflowTimeoutMS === null ? undefined : ppctx?.deadlineEpochMS,
         enqueueOptions: params.enqueueOptions,
         duplicationPolicy: params.duplicationPolicy,
+        workflowAttributes: params.workflowAttributes,
       };
 
       return await invokeRegOp(wfParams, pwfid, funcId);
@@ -1850,6 +1859,7 @@ export class DBOS {
         configuredInstance: instance,
         timeoutMS,
         duplicationPolicy: params.duplicationPolicy,
+        workflowAttributes: params.workflowAttributes,
       };
 
       return await invokeRegOp(wfParams, undefined, undefined);

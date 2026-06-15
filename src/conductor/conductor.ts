@@ -284,6 +284,7 @@ export class Conductor {
               queuesOnly: body.queues_only,
               wasForkedFrom: body.was_forked_from,
               hasParent: body.has_parent,
+              attributes: body.attributes,
             };
             let workflowsOutput: protocol.WorkflowsOutput[] = [];
             try {
@@ -323,6 +324,7 @@ export class Conductor {
               executorId: bodyQueued.executor_id,
               wasForkedFrom: bodyQueued.was_forked_from,
               hasParent: bodyQueued.has_parent,
+              attributes: bodyQueued.attributes,
             };
             let queuedWFOutput: protocol.WorkflowsOutput[] = [];
             try {
