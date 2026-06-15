@@ -18,8 +18,7 @@ export interface WorkflowParams {
   // executor skips its dedup-error pre-recording at the parent's funcID — the wrapper records the
   // child mapping itself after attaching to the existing workflow.
   duplicationPolicy?: DuplicationPolicy;
-  // Custom key-value attributes to attach to the workflow at creation. Overrides any
-  // attributes set on the surrounding context via `DBOS.withWorkflowAttributes`.
+  // Custom key-value attributes to attach to the workflow at creation. Not inherited by child workflows.
   workflowAttributes?: Record<string, unknown>;
 }
 

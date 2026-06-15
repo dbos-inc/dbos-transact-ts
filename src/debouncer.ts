@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { DBOS, DBOSClient } from '.';
 import { StartWorkflowParams } from './dbos';
-import { getCurrentContextStore } from './context';
 import { DBOSExecutor } from './dbos-executor';
 import {
   getFunctionRegistration,
@@ -89,22 +88,15 @@ export class Debouncer<Args extends unknown[], Return> {
     const cfg = { ...this.cfg };
     cfg.startWorkflowParams = this.cfg.startWorkflowParams ? { ...this.cfg.startWorkflowParams } : {};
     cfg.startWorkflowParams.workflowID = cfg.startWorkflowParams.workflowID ?? (await DBOS.randomUUID());
-    // Capture the caller's context attributes so the debounced user workflow receives them.
-    // The internal debouncer workflow is enqueued with attributes cleared (below).
-    cfg.startWorkflowParams.workflowAttributes =
-      cfg.startWorkflowParams.workflowAttributes ?? getCurrentContextStore()?.workflowAttributes;
     while (true) {
       const deduplicationID = `${cfg.workflowClassName}.${cfg.workflowName}-${debounceKey}`;
       try {
-        // Attempt to enqueue a debouncer for this workflow. Clear attributes so the internal
-        // debouncer does not inherit the user's; the user workflow gets them from
-        // cfg.startWorkflowParams when the debouncer starts it.
-        await DBOS.withWorkflowAttributes(undefined, () =>
-          DBOS.startWorkflow(DBOSExecutor.debouncerWorkflow!, {
-            queueName: INTERNAL_QUEUE_NAME,
-            enqueueOptions: { deduplicationID },
-          })(debouncePeriodMs, cfg, ...args),
-        );
+        // Attempt to enqueue a debouncer for this workflow. The internal debouncer carries no
+        // attributes; the user workflow gets cfg.startWorkflowParams.workflowAttributes when started.
+        await DBOS.startWorkflow(DBOSExecutor.debouncerWorkflow!, {
+          queueName: INTERNAL_QUEUE_NAME,
+          enqueueOptions: { deduplicationID },
+        })(debouncePeriodMs, cfg, ...args);
         return DBOS.retrieveWorkflow<Return>(cfg.startWorkflowParams.workflowID);
       } catch (e) {
         // If there is already a debouncer, send a message to it.

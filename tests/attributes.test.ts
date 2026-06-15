@@ -1,12 +1,13 @@
 import { randomUUID } from 'crypto';
-import { DBOS, DBOSClient, Debouncer, WorkflowHandle } from '../src';
+import { DBOS, DBOSClient, Debouncer } from '../src';
 import { DBOSConfig } from '../src/dbos-executor';
 import { DEBOUNCER_WORKLOW_NAME } from '../src/utils';
 import * as protocol from '../src/conductor/protocol';
 import { generateDBOSTestConfig, setUpDBOSTestSysDb, Event } from './helpers';
 
-// Custom workflow attributes: a JSON-serializable Record attached to a workflow at creation,
-// stored as GIN-indexed JSONB and searchable via the `attributes` containment filter.
+// Custom workflow attributes: a JSON-serializable Record attached to a workflow at creation
+// via `StartWorkflowParams.workflowAttributes`, stored as GIN-indexed JSONB and searchable
+// via the `attributes` containment filter.
 describe('workflow-attributes', () => {
   let config: DBOSConfig;
   let systemDatabaseUrl: string;
@@ -72,12 +73,11 @@ describe('workflow-attributes', () => {
     return new Set((await DBOS.listWorkflows(input)).map((s) => s.workflowID));
   };
 
-  test('records attributes on direct invocation without leaking to children', async () => {
+  test('records attributes on startWorkflow without leaking to children', async () => {
     const wfid = randomUUID();
     const attributes = { customer: 'acme', tier: 3 };
-    const childId = await DBOS.withWorkflowAttributes(attributes, () =>
-      DBOS.withNextWorkflowID(wfid, () => parentWorkflow()),
-    );
+    const handle = await DBOS.startWorkflow(parentWorkflow, { workflowID: wfid, workflowAttributes: attributes })();
+    const childId = await handle.getResult();
 
     const status = (await DBOS.listWorkflows({ workflowIDs: [wfid] }))[0];
     expect(status.attributes).toEqual(attributes);
@@ -86,48 +86,26 @@ describe('workflow-attributes', () => {
     const childStatus = (await DBOS.listWorkflows({ workflowIDs: [childId] }))[0];
     expect(childStatus.attributes).toBeUndefined();
 
-    // Workflows started outside the block have no attributes
-    const wfidNoAttrs = randomUUID();
-    await DBOS.withNextWorkflowID(wfidNoAttrs, () => parentWorkflow());
-    expect((await DBOS.listWorkflows({ workflowIDs: [wfidNoAttrs] }))[0].attributes).toBeUndefined();
-  });
-
-  test('nested blocks override and restore attributes', async () => {
-    let innerHandle: WorkflowHandle<void>;
-    let outerHandle: WorkflowHandle<void>;
-    await DBOS.withWorkflowAttributes({ region: 'us-east-1' }, async () => {
-      innerHandle = await DBOS.withWorkflowAttributes({ region: 'eu-west-1' }, () =>
-        DBOS.startWorkflow(noopWorkflow)(),
-      );
-      outerHandle = await DBOS.startWorkflow(noopWorkflow)();
-    });
-
-    await innerHandle!.getResult();
-    await outerHandle!.getResult();
-    expect((await innerHandle!.getStatus())?.attributes).toEqual({ region: 'eu-west-1' });
-    expect((await outerHandle!.getStatus())?.attributes).toEqual({ region: 'us-east-1' });
+    // Workflows started without attributes have none
+    const handleNoAttrs = await DBOS.startWorkflow(parentWorkflow)();
+    await handleNoAttrs.getResult();
+    expect((await handleNoAttrs.getStatus())?.attributes).toBeUndefined();
   });
 
   test('records attributes on enqueue', async () => {
-    const handle = await DBOS.withWorkflowAttributes({ source: 'queue' }, () =>
-      DBOS.startWorkflow(echoWorkflow, { queueName: attrQueue.name })(5),
-    );
+    const handle = await DBOS.startWorkflow(echoWorkflow, {
+      queueName: attrQueue.name,
+      workflowAttributes: { source: 'queue' },
+    })(5);
     expect(await handle.getResult()).toBe(5);
     expect((await handle.getStatus())?.attributes).toEqual({ source: 'queue' });
-  });
-
-  test('start params override surrounding context attributes', async () => {
-    const handle = await DBOS.withWorkflowAttributes({ from: 'context' }, () =>
-      DBOS.startWorkflow(noopWorkflow, { workflowAttributes: { from: 'params' } })(),
-    );
-    await handle.getResult();
-    expect((await handle.getStatus())?.attributes).toEqual({ from: 'params' });
   });
 
   test('forked workflows inherit attributes', async () => {
     const wfid = randomUUID();
     const attributes = { customer: 'acme' };
-    await DBOS.withWorkflowAttributes(attributes, () => DBOS.withNextWorkflowID(wfid, () => noopWorkflow()));
+    const handle = await DBOS.startWorkflow(noopWorkflow, { workflowID: wfid, workflowAttributes: attributes })();
+    await handle.getResult();
 
     const forkedHandle = await DBOS.forkWorkflow<void>(wfid, 1);
     await forkedHandle.getResult();
@@ -154,12 +132,12 @@ describe('workflow-attributes', () => {
   });
 
   test('filters listWorkflows by attribute containment', async () => {
-    const h1 = await DBOS.withWorkflowAttributes({ customer: 'acme', tier: 1, beta: true, note: null }, () =>
-      DBOS.startWorkflow(noopWorkflow)(),
-    );
-    const h2 = await DBOS.withWorkflowAttributes({ customer: 'bigco', tier: 2, meta: { region: 'us-east-1' } }, () =>
-      DBOS.startWorkflow(noopWorkflow)(),
-    );
+    const h1 = await DBOS.startWorkflow(noopWorkflow, {
+      workflowAttributes: { customer: 'acme', tier: 1, beta: true, note: null },
+    })();
+    const h2 = await DBOS.startWorkflow(noopWorkflow, {
+      workflowAttributes: { customer: 'bigco', tier: 2, meta: { region: 'us-east-1' } },
+    })();
     await h1.getResult();
     await h2.getResult();
 
@@ -184,9 +162,10 @@ describe('workflow-attributes', () => {
     sync.start = new Event();
     sync.block = new Event();
 
-    const handle = await DBOS.withWorkflowAttributes({ side: 'queued' }, () =>
-      DBOS.startWorkflow(blockingWorkflow, { queueName: attrQueue.name })(),
-    );
+    const handle = await DBOS.startWorkflow(blockingWorkflow, {
+      queueName: attrQueue.name,
+      workflowAttributes: { side: 'queued' },
+    })();
     await sync.start.wait();
 
     const statuses = await DBOS.listQueuedWorkflows({ attributes: { side: 'queued' } });
@@ -198,9 +177,9 @@ describe('workflow-attributes', () => {
   });
 
   test('attributes survive the conductor protocol as JSON', async () => {
-    const handle = await DBOS.withWorkflowAttributes({ customer: 'acme', tier: 1 }, () =>
-      DBOS.startWorkflow(noopWorkflow)(),
-    );
+    const handle = await DBOS.startWorkflow(noopWorkflow, {
+      workflowAttributes: { customer: 'acme', tier: 1 },
+    })();
     await handle.getResult();
 
     const statuses = await DBOS.listWorkflows({ attributes: { customer: 'acme' } });
@@ -217,8 +196,11 @@ describe('workflow-attributes', () => {
   });
 
   test('debounced user workflow gets attributes; internal debouncer does not', async () => {
-    const debouncer = new Debouncer({ workflow: echoWorkflow });
-    const handle = await DBOS.withWorkflowAttributes({ source: 'debouncer' }, () => debouncer.debounce('key', 1000, 5));
+    const debouncer = new Debouncer({
+      workflow: echoWorkflow,
+      startWorkflowParams: { workflowAttributes: { source: 'debouncer' } },
+    });
+    const handle = await debouncer.debounce('key', 1000, 5);
     expect(await handle.getResult()).toBe(5);
     expect((await handle.getStatus())?.attributes).toEqual({ source: 'debouncer' });
 

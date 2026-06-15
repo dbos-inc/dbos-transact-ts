@@ -25,9 +25,6 @@ export interface DBOSContextOptions {
   operationCaller?: string; // This is made to pass through the operationName to DBOS contexts, and potentially the caller span name.
   workflowTimeoutMS?: number | null;
   serializationType?: WorkflowSerializationFormat;
-  // Custom key-value attributes to attach to the next workflow started within the context.
-  // Not inherited by workflows started inside that workflow.
-  workflowAttributes?: Record<string, unknown>;
 }
 
 export interface DBOSLocalCtx extends DBOSContextOptions {
