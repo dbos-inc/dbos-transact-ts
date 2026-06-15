@@ -92,28 +92,42 @@ describe('workflow-attributes', () => {
     expect((await handleNoAttrs.getStatus())?.attributes).toBeUndefined();
   });
 
-  test('rejects non-JSON-serializable attributes', async () => {
-    // BigInt values cannot be serialized to JSON.
+  test('rejects invalid attributes', async () => {
+    // Non-object shapes are rejected (casts simulate untyped JS callers).
+    await expect(
+      DBOS.startWorkflow(noopWorkflow, { workflowAttributes: 'nope' as unknown as Record<string, unknown> })(),
+    ).rejects.toThrow(/must be a key-value object/);
+    await expect(
+      DBOS.startWorkflow(noopWorkflow, { workflowAttributes: [1, 2] as unknown as Record<string, unknown> })(),
+    ).rejects.toThrow(/must be a key-value object/);
+
+    // Objects that cannot be serialized to JSON are rejected.
     await expect(
       DBOS.startWorkflow(noopWorkflow, { workflowAttributes: { count: 1n } as unknown as Record<string, unknown> })(),
     ).rejects.toThrow(/must be JSON-serializable/);
-
-    // Circular references cannot be serialized to JSON.
     const circular: Record<string, unknown> = {};
     circular.self = circular;
     await expect(DBOS.startWorkflow(noopWorkflow, { workflowAttributes: circular })()).rejects.toThrow(
       /must be JSON-serializable/,
     );
 
+    // Objects whose only keys are non-serializable serialize to "{}" and are rejected.
+    await expect(
+      DBOS.startWorkflow(noopWorkflow, {
+        workflowAttributes: { fn: () => {} } as unknown as Record<string, unknown>,
+      })(),
+    ).rejects.toThrow(/no JSON-serializable properties/);
+
+    // The client enqueue path validates too.
     const client = await DBOSClient.create({ systemDatabaseUrl });
     try {
       await expect(
         client.enqueue({
           queueName: 'unconsumed_queue',
           workflowName: 'clientWorkflow',
-          attributes: { count: 1n } as unknown as Record<string, unknown>,
+          attributes: 5 as unknown as Record<string, unknown>,
         }),
-      ).rejects.toThrow(/must be JSON-serializable/);
+      ).rejects.toThrow(/must be a key-value object/);
     } finally {
       await client.destroy();
     }

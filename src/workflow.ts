@@ -8,19 +8,35 @@ import { DBOSExecutor } from './dbos-executor';
 import { DBOSError } from './error';
 
 /**
- * Validate that custom workflow attributes, if provided, can be serialized to JSON for
- * storage in the JSONB `attributes` column. Called at the workflow-creation entry points
- * (`startWorkflow`/enqueue) so invalid input fails fast at the call site rather than
+ * Validate that custom workflow attributes, if provided, are a plain key-value object that
+ * can be serialized to JSON for storage in the JSONB `attributes` column. A key-value object
+ * is required because attributes are queried with the `@>` containment filter; scalars and
+ * arrays would store but never match meaningfully. Called at the workflow-creation entry
+ * points (`startWorkflow`/enqueue) so invalid input fails fast at the call site rather than
  * surfacing as a database error at insert time.
  */
 export function validateWorkflowAttributes(attributes: unknown): void {
   if (attributes === undefined || attributes === null) {
     return;
   }
+  if (typeof attributes !== 'object' || Array.isArray(attributes)) {
+    throw new DBOSError(
+      `Invalid workflow attributes: must be a key-value object, got ${
+        Array.isArray(attributes) ? 'array' : typeof attributes
+      }.`,
+    );
+  }
+  let serialized: string;
   try {
-    JSON.stringify(attributes);
+    serialized = JSON.stringify(attributes);
   } catch (e) {
     throw new DBOSError(`Invalid workflow attributes: must be JSON-serializable. ${(e as Error).message}`);
+  }
+  // JSON.stringify silently drops keys whose values are functions or undefined, and returns
+  // "{}" for objects with no serializable keys (e.g. a class instance). Reject these rather
+  // than store an empty object that does not reflect what the caller passed.
+  if (serialized === '{}' && Object.keys(attributes).length > 0) {
+    throw new DBOSError('Invalid workflow attributes: object has no JSON-serializable properties.');
   }
 }
 
