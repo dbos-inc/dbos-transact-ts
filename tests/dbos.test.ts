@@ -328,6 +328,27 @@ describe('dbos-tests', () => {
       expect(status?.status).toBe(StatusString.CANCELLED);
     });
 
+    test('nested-withWorkflowTimeout-restores-outer', async () => {
+      // Timeouts large enough that the quick workflows complete without cancelling;
+      // we only inspect the recorded timeoutMS. Regression test for nested `with*`
+      // restore: the inner block must not leak its value to the outer scope.
+      const innerID = randomUUID();
+      const afterID = randomUUID();
+      await DBOS.withWorkflowTimeout(30000, async () => {
+        await DBOS.withWorkflowTimeout(5000, async () => {
+          await DBOS.startWorkflow(DBOSTimeoutTestClass, { workflowID: innerID })
+            .sleepingWorkflow(10)
+            .then((h) => h.getResult());
+        });
+        // The outer 30000ms timeout must be restored here, not the inner 5000ms.
+        await DBOS.startWorkflow(DBOSTimeoutTestClass, { workflowID: afterID })
+          .sleepingWorkflow(10)
+          .then((h) => h.getResult());
+      });
+      expect((await DBOS.getWorkflowStatus(innerID))?.timeoutMS).toBe(5000);
+      expect((await DBOS.getWorkflowStatus(afterID))?.timeoutMS).toBe(30000);
+    });
+
     test('workflow-timeout-startWorkflow-params', async () => {
       const workflowID = randomUUID();
       const handle = await DBOS.startWorkflow(DBOSTimeoutTestClass, { workflowID, timeoutMS: 100 }).blockedWorkflow();

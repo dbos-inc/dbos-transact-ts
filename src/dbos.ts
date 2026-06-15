@@ -1269,8 +1269,10 @@ export class DBOS {
       const existing: any = {};
       for (const k of Object.keys(options) as (keyof DBOSContextOptions)[]) {
         if (Object.hasOwn(pctx, k))
+          // Save the current value (not the incoming one) so the finally block can restore it,
+          // letting nested `with*` blocks correctly roll back to the outer value.
           // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-          existing[k] = options[k];
+          existing[k] = pctx[k];
         // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
         (pctx as any)[k] = options[k];
       }
