@@ -34,6 +34,7 @@ export interface workflow_status {
   delay_until_epoch_ms?: number | null;
   rate_limited?: boolean;
   completed_at?: number | null;
+  attributes?: Record<string, unknown> | null; // Custom key-value attributes attached at creation, stored as JSONB.
 }
 
 export interface notifications {

@@ -5,6 +5,40 @@ import { deserializePositionalArgs, registerSerializationRecipe } from './serial
 import { DBOS, resolvePollingIntervalMs, runInternalStep, type PollingOptions } from './dbos';
 import { DuplicationPolicy, EnqueueOptions } from './system_database';
 import { DBOSExecutor } from './dbos-executor';
+import { DBOSError } from './error';
+
+/**
+ * Validate that custom workflow attributes, if provided, are a plain key-value object that
+ * can be serialized to JSON for storage in the JSONB `attributes` column. A key-value object
+ * is required because attributes are queried with the `@>` containment filter; scalars and
+ * arrays would store but never match meaningfully. Called at the workflow-creation entry
+ * points (`startWorkflow`/enqueue) so invalid input fails fast at the call site rather than
+ * surfacing as a database error at insert time.
+ */
+export function validateWorkflowAttributes(attributes: unknown): void {
+  if (attributes === undefined || attributes === null) {
+    return;
+  }
+  if (typeof attributes !== 'object' || Array.isArray(attributes)) {
+    throw new DBOSError(
+      `Invalid workflow attributes: must be a key-value object, got ${
+        Array.isArray(attributes) ? 'array' : typeof attributes
+      }.`,
+    );
+  }
+  let serialized: string;
+  try {
+    serialized = JSON.stringify(attributes);
+  } catch (e) {
+    throw new DBOSError(`Invalid workflow attributes: must be JSON-serializable. ${(e as Error).message}`);
+  }
+  // JSON.stringify silently drops keys whose values are functions or undefined, and returns
+  // "{}" for objects with no serializable keys (e.g. a class instance). Reject these rather
+  // than store an empty object that does not reflect what the caller passed.
+  if (serialized === '{}' && Object.keys(attributes).length > 0) {
+    throw new DBOSError('Invalid workflow attributes: object has no JSON-serializable properties.');
+  }
+}
 
 export interface WorkflowParams {
   workflowUUID?: string;
@@ -18,6 +52,8 @@ export interface WorkflowParams {
   // executor skips its dedup-error pre-recording at the parent's funcID — the wrapper records the
   // child mapping itself after attaching to the existing workflow.
   duplicationPolicy?: DuplicationPolicy;
+  // Custom key-value attributes to attach to the workflow at creation. Not inherited by child workflows.
+  workflowAttributes?: Record<string, unknown>;
 }
 
 export const DEFAULT_MAX_RECOVERY_ATTEMPTS = 100;
@@ -116,6 +152,9 @@ export interface WorkflowStatus {
   // If this workflow was started by another workflow, that workflow's ID.
   readonly parentWorkflowID?: string;
 
+  // Custom key-value attributes attached to the workflow at creation, if any.
+  readonly attributes?: Record<string, unknown>;
+
   // INTERNAL
   // Deprecated field
   readonly applicationID: string;
@@ -145,6 +184,7 @@ export interface GetWorkflowsInput {
   wasForkedFrom?: boolean; // Filter workflows that have (or have not) been forked from.
   parentWorkflowID?: string | string[]; // Get workflows started by this parent workflow ID (or any of these parent workflow IDs).
   hasParent?: boolean; // Filter workflows that have (or do not have) a parent workflow.
+  attributes?: Record<string, unknown>; // Retrieve workflows whose custom attributes contain all of these key-value pairs.
   limit?: number; // Return up to this many workflows IDs. IDs are ordered by workflow creation time.
   offset?: number; // Skip this many workflows IDs. IDs are ordered by workflow creation time.
   sortDesc?: boolean; // Sort the workflows in descending order by creation time (default ascending order).

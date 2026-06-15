@@ -108,6 +108,7 @@ export async function toWorkflowStatus(
     parentWorkflowID: internal.parentWorkflowID,
     delayUntilEpochMS: internal.delayUntilEpochMS,
     completedAt: internal.completedAt,
+    attributes: internal.attributes,
   };
 }
 

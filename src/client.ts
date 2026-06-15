@@ -19,6 +19,7 @@ import {
   type WorkflowHandle,
   WorkflowSerializationFormat,
   type WorkflowStatus,
+  validateWorkflowAttributes,
 } from './workflow';
 import { cancellableSleep } from './utils';
 import {
@@ -143,6 +144,11 @@ export interface ClientEnqueueOptions {
    *     and the handle resolves with the original workflow's result.
    */
   duplicationPolicy?: DuplicationPolicy;
+  /**
+   * Custom key-value attributes to attach to the workflow at creation.
+   * Attributes are searchable via the `attributes` filter of `listWorkflows`.
+   */
+  attributes?: Record<string, unknown>;
 }
 
 /**
@@ -292,6 +298,7 @@ export class DBOSClient {
     options: ClientEnqueueOptions,
     ...args: Parameters<T>
   ): Promise<WorkflowHandle<Awaited<ReturnType<T>>>> {
+    validateWorkflowAttributes(options.attributes);
     const { workflowName, workflowClassName, workflowConfigName, queueName, appVersion } = options;
     const workflowUUID = options.workflowID ?? randomUUID();
 
@@ -325,6 +332,7 @@ export class DBOSClient {
       queuePartitionKey: options.queuePartitionKey,
       serialization: serparam.serialization,
       delayUntilEpochMS,
+      attributes: options.attributes,
     };
 
     let finalID: string;
@@ -376,6 +384,7 @@ export class DBOSClient {
     positionalArgs: unknown[],
     namedArgs?: { [key: string]: unknown },
   ): Promise<WorkflowHandle<T>> {
+    validateWorkflowAttributes(options.attributes);
     const { workflowName, workflowClassName, workflowConfigName, queueName, appVersion } = options;
     const workflowUUID = options.workflowID ?? randomUUID();
 
@@ -414,6 +423,7 @@ export class DBOSClient {
       queuePartitionKey: options.queuePartitionKey,
       serialization: serparam.serialization,
       delayUntilEpochMS,
+      attributes: options.attributes,
     };
 
     let finalID: string;
