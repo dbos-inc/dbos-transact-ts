@@ -306,6 +306,7 @@ async function enqueueScheduledWorkflow(
     priority: 0,
     queuePartitionKey: undefined,
     serialization: serparam.serialization,
+    scheduleName: sched.scheduleName,
   };
   await systemDatabase.initWorkflowStatus(internalStatus, null);
   return;

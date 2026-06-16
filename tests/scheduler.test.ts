@@ -620,6 +620,90 @@ describe('dynamic-scheduler-tests', () => {
   });
 
   // ---------------------------------------------------------------------------
+  // Query workflows by the schedule that enqueued them
+  // ---------------------------------------------------------------------------
+  async function scheduledWorkflow(_scheduledDate: Date, _context: unknown) {}
+  const regScheduledWf = DBOS.registerWorkflow(scheduledWorkflow, { name: 'scheduledWorkflow' });
+
+  async function manualWorkflow() {
+    return Promise.resolve('manual');
+  }
+  const regManualWf = DBOS.registerWorkflow(manualWorkflow, { name: 'manualWorkflow' });
+
+  test('list-workflows-by-schedule-name', async () => {
+    // A directly-invoked workflow has no scheduleName and is not returned by the scheduleName filter.
+    const manualHandle = await DBOS.startWorkflow(regManualWf)();
+    expect(await manualHandle.getResult()).toBe('manual');
+    const manualStatus = await DBOS.listWorkflows({ workflowIDs: [manualHandle.workflowID] });
+    expect(manualStatus.length).toBe(1);
+    expect(manualStatus[0].scheduleName).toBeUndefined();
+
+    // Two distinct schedules sharing the same workflow function. scheduleName is what
+    // distinguishes their runs, since both have the same workflow name.
+    for (const name of ['search-a', 'search-b']) {
+      await DBOS.createSchedule({
+        scheduleName: name,
+        workflowFn: regScheduledWf,
+        schedule: '0 0 * * *', // daily, won't fire on its own during the test
+      });
+    }
+
+    const handleA = await DBOS.triggerSchedule('search-a');
+    const handleB = await DBOS.triggerSchedule('search-b');
+    await handleA.getResult();
+    await handleB.getResult();
+
+    // Filter by a single schedule name
+    const runsA = await DBOS.listWorkflows({ scheduleName: 'search-a' });
+    expect(runsA.length).toBe(1);
+    expect(runsA[0].workflowID).toBe(handleA.workflowID);
+    expect(runsA[0].scheduleName).toBe('search-a');
+    expect(runsA[0].workflowName).toBe('scheduledWorkflow');
+
+    // Filter by a list of schedule names
+    const runsBoth = await DBOS.listWorkflows({ scheduleName: ['search-a', 'search-b'] });
+    expect(new Set(runsBoth.map((w) => w.workflowID))).toEqual(new Set([handleA.workflowID, handleB.workflowID]));
+    expect(runsBoth.every((w) => w.scheduleName === 'search-a' || w.scheduleName === 'search-b')).toBe(true);
+
+    // A schedule name that produced no runs returns nothing
+    expect(await DBOS.listWorkflows({ scheduleName: 'never-fired' })).toEqual([]);
+
+    await DBOS.deleteSchedule('search-a');
+    await DBOS.deleteSchedule('search-b');
+  });
+
+  test('schedule-name-survives-export-import', async () => {
+    await DBOS.createSchedule({
+      scheduleName: 'export-test',
+      workflowFn: regScheduledWf,
+      schedule: '0 0 * * *', // daily, won't fire on its own during the test
+    });
+    const handle = await DBOS.triggerSchedule('export-test');
+    await handle.getResult();
+    const workflowID = handle.workflowID;
+
+    const original = await DBOS.getWorkflowStatus(workflowID);
+    expect(original).not.toBeNull();
+    expect(original!.scheduleName).toBe('export-test');
+
+    // Export, delete, then reimport: scheduleName must survive the round-trip.
+    const sysDb = DBOSExecutor.globalInstance!.systemDatabase;
+    const exported = await sysDb.exportWorkflow(workflowID, true);
+    await DBOS.deleteWorkflow(workflowID);
+    expect(await DBOS.listWorkflows({ workflowIDs: [workflowID] })).toEqual([]);
+
+    await sysDb.importWorkflow(exported);
+    const imported = await DBOS.getWorkflowStatus(workflowID);
+    expect(imported).not.toBeNull();
+    expect(imported!.scheduleName).toBe('export-test');
+    // The reimported run is still found by the scheduleName filter.
+    const found = await DBOS.listWorkflows({ scheduleName: 'export-test' });
+    expect(found.map((w) => w.workflowID)).toEqual([workflowID]);
+
+    await DBOS.deleteSchedule('export-test');
+  });
+
+  // ---------------------------------------------------------------------------
   // Backfill schedule
   // ---------------------------------------------------------------------------
   const backfillResults: { dates: Date[]; contexts: unknown[] } = { dates: [], contexts: [] };

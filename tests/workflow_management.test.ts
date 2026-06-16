@@ -2429,11 +2429,22 @@ describe('wf-cancel-tests', () => {
 
   test('test-workflow-export-import', async () => {
     const workflowId = randomUUID();
-    const handle = await DBOS.startWorkflow(ExportImportTest, { workflowID: workflowId }).parentWorkflow();
+    const attributes = { customer: 'acme', region: 'us-east-1' };
+    const handle = await DBOS.startWorkflow(ExportImportTest, {
+      workflowID: workflowId,
+      workflowAttributes: attributes,
+    }).parentWorkflow();
     const result = await handle.getResult();
     expect(result).toBe(workflowId);
 
     const sysDb = DBOSExecutor.globalInstance!.systemDatabase;
+
+    // Capture the original status so we can confirm a faithful round-trip of every
+    // persisted status field (not just the input/output/steps).
+    const originalStatus = await DBOS.getWorkflowStatus(workflowId);
+    expect(originalStatus).not.toBeNull();
+    expect(originalStatus!.attributes).toEqual(attributes);
+    expect(originalStatus!.completedAt).toBeDefined();
 
     // Export with children
     const exported = await sysDb.exportWorkflow(workflowId, true);
@@ -2478,6 +2489,14 @@ describe('wf-cancel-tests', () => {
     const parentStatus = await DBOS.getWorkflowStatus(workflowId);
     expect(parentStatus).not.toBeNull();
     expect(parentStatus!.parentWorkflowID).toBeUndefined();
+
+    // Every persisted status field round-trips faithfully through export/import.
+    expect(parentStatus!.attributes).toEqual(attributes);
+    expect(parentStatus!.completedAt).toBe(originalStatus!.completedAt);
+    expect(parentStatus!.status).toBe(originalStatus!.status);
+    expect(parentStatus!.createdAt).toBe(originalStatus!.createdAt);
+    expect(parentStatus!.updatedAt).toBe(originalStatus!.updatedAt);
+    expect(parentStatus!.wasForkedFrom).toBe(originalStatus!.wasForkedFrom);
 
     // Find child workflows by filtering on parentWorkflowID
     const childWorkflows = await DBOS.listWorkflows({ parentWorkflowID: workflowId });

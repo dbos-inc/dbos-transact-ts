@@ -667,5 +667,15 @@ export function allMigrations(
         `CREATE INDEX IF NOT EXISTS "idx_workflow_status_attributes" ON "${schemaName}"."workflow_status" USING GIN ("attributes") WHERE "attributes" IS NOT NULL`,
       ],
     },
+    // ADD COLUMN with no default is catalog-only; the partial index built in the
+    // same transaction covers zero rows (no existing row has a non-NULL
+    // schedule_name), so no CONCURRENTLY is needed. The index serves filters on
+    // the named schedule that enqueued a workflow.
+    {
+      pg: [
+        `ALTER TABLE "${schemaName}"."workflow_status" ADD COLUMN IF NOT EXISTS "schedule_name" TEXT`,
+        `CREATE INDEX IF NOT EXISTS "idx_workflow_status_schedule_name" ON "${schemaName}"."workflow_status" ("schedule_name") WHERE "schedule_name" IS NOT NULL`,
+      ],
+    },
   ];
 }

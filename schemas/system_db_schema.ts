@@ -35,6 +35,7 @@ export interface workflow_status {
   rate_limited?: boolean;
   completed_at?: number | null;
   attributes?: Record<string, unknown> | null; // Custom key-value attributes attached at creation, stored as JSONB.
+  schedule_name?: string | null; // If enqueued by a named schedule, that schedule's name.
 }
 
 export interface notifications {
