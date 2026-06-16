@@ -109,6 +109,7 @@ export async function toWorkflowStatus(
     delayUntilEpochMS: internal.delayUntilEpochMS,
     completedAt: internal.completedAt,
     attributes: internal.attributes,
+    scheduleName: internal.scheduleName,
   };
 }
 

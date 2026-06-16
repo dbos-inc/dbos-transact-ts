@@ -285,6 +285,7 @@ export class Conductor {
               wasForkedFrom: body.was_forked_from,
               hasParent: body.has_parent,
               attributes: body.attributes,
+              scheduleName: body.schedule_name,
             };
             let workflowsOutput: protocol.WorkflowsOutput[] = [];
             try {
@@ -325,6 +326,7 @@ export class Conductor {
               wasForkedFrom: bodyQueued.was_forked_from,
               hasParent: bodyQueued.has_parent,
               attributes: bodyQueued.attributes,
+              scheduleName: bodyQueued.schedule_name,
             };
             let queuedWFOutput: protocol.WorkflowsOutput[] = [];
             try {

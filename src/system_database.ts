@@ -217,6 +217,8 @@ export interface WorkflowStatusInternal {
   completedAt?: number;
   // Custom key-value attributes attached to the workflow at creation. Not inherited by child workflows.
   attributes?: Record<string, unknown>;
+  // If this workflow was enqueued by a named schedule, that schedule's name. Only set by the persistent scheduler.
+  scheduleName?: string;
 }
 
 export interface EnqueueOptions {
@@ -432,6 +434,7 @@ function mapWorkflowStatus(row: workflow_status): WorkflowStatusInternal {
     delayUntilEpochMS: row.delay_until_epoch_ms ? Number(row.delay_until_epoch_ms) : undefined,
     completedAt: row.completed_at ? Number(row.completed_at) : undefined,
     attributes: row.attributes ?? undefined,
+    scheduleName: row.schedule_name ?? undefined,
   };
 }
 
@@ -1493,6 +1496,9 @@ export class SystemDatabase {
       for (const wfID of workflowIDs) {
         // Export workflow_status
         const statusResult = await client.query<workflow_status>(
+          // owner_xid is intentionally omitted: it is a transient transaction-ownership
+          // token, not logical workflow state, and a source database's xid is
+          // meaningless in the target.
           `SELECT
             workflow_uuid, status, name, authenticated_user, assumed_role,
             authenticated_roles, request, output, error, executor_id,
@@ -1500,7 +1506,8 @@ export class SystemDatabase {
             class_name, config_name, recovery_attempts, queue_name,
             workflow_timeout_ms, workflow_deadline_epoch_ms, started_at_epoch_ms,
             deduplication_id, inputs, priority, queue_partition_key, forked_from,
-            parent_workflow_id, serialization, delay_until_epoch_ms
+            parent_workflow_id, serialization, delay_until_epoch_ms,
+            was_forked_from, rate_limited, completed_at, attributes, schedule_name
           FROM "${this.schemaName}".workflow_status
           WHERE workflow_uuid = $1`,
           [wfID],
@@ -1579,8 +1586,9 @@ export class SystemDatabase {
             class_name, config_name, recovery_attempts, queue_name,
             workflow_timeout_ms, workflow_deadline_epoch_ms, started_at_epoch_ms,
             deduplication_id, inputs, priority, queue_partition_key, forked_from,
-            parent_workflow_id, serialization, delay_until_epoch_ms
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29)`,
+            parent_workflow_id, serialization, delay_until_epoch_ms,
+            was_forked_from, rate_limited, completed_at, attributes, schedule_name
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34)`,
           [
             status.workflow_uuid,
             status.status,
@@ -1611,6 +1619,13 @@ export class SystemDatabase {
             status.parent_workflow_id,
             status.serialization,
             status.delay_until_epoch_ms ?? null,
+            // NOT NULL columns: fall back to FALSE for payloads exported before
+            // these fields were included.
+            status.was_forked_from ?? false,
+            status.rate_limited ?? false,
+            status.completed_at ?? null,
+            status.attributes ? JSON.stringify(status.attributes) : null,
+            status.schedule_name ?? null,
           ],
         );
 
@@ -2730,6 +2745,7 @@ export class SystemDatabase {
       'delay_until_epoch_ms',
       'completed_at',
       'attributes',
+      'schedule_name',
     ];
 
     input.loadInput = input.loadInput ?? true;
@@ -2779,6 +2795,7 @@ export class SystemDatabase {
 
     addFilter('name', input.workflowName);
     addFilter('queue_name', input.queueName);
+    addFilter('schedule_name', input.scheduleName);
 
     if (input.workflow_id_prefix) {
       if (Array.isArray(input.workflow_id_prefix)) {
@@ -3570,8 +3587,9 @@ export class SystemDatabase {
           serialization,
           owner_xid,
           delay_until_epoch_ms,
-          attributes
-        ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $26, $27, $28, $29)
+          attributes,
+          schedule_name
+        ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $26, $27, $28, $29, $30)
         ON CONFLICT (workflow_uuid)
           DO UPDATE SET
             recovery_attempts = CASE
@@ -3617,6 +3635,7 @@ export class SystemDatabase {
           ownerXid,
           initStatus.delayUntilEpochMS ?? null,
           initStatus.attributes ? JSON.stringify(initStatus.attributes) : null,
+          initStatus.scheduleName ?? null,
         ],
       );
       if (rows.length === 0) {

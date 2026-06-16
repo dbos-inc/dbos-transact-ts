@@ -204,6 +204,7 @@ export interface ListWorkflowsBody {
   was_forked_from?: boolean;
   has_parent?: boolean;
   attributes?: Record<string, unknown>;
+  schedule_name?: string | string[];
 }
 
 export class WorkflowsOutput {
@@ -235,6 +236,7 @@ export class WorkflowsOutput {
   DelayUntilEpochMS?: string;
   CompletedAt?: string;
   Attributes?: string;
+  ScheduleName?: string;
 
   constructor(info: WorkflowStatus) {
     // Mark empty fields as undefined
@@ -268,6 +270,7 @@ export class WorkflowsOutput {
     this.CompletedAt = info.completedAt !== undefined ? String(info.completedAt) : undefined;
     // JSON rather than inspect() so the wire format stays parseable by Conductor.
     this.Attributes = info.attributes !== undefined ? JSON.stringify(info.attributes) : undefined;
+    this.ScheduleName = info.scheduleName;
   }
 }
 
@@ -334,6 +337,7 @@ export interface ListQueuedWorkflowsBody {
   was_forked_from?: boolean;
   has_parent?: boolean;
   attributes?: Record<string, unknown>;
+  schedule_name?: string | string[];
 }
 
 export class ListQueuedWorkflowsRequest implements BaseMessage {
