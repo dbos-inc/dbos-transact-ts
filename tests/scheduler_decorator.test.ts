@@ -185,12 +185,14 @@ describe('cf-scheduled-wf-tests-when-active', () => {
 
   test('wf-scheduled-recover', async () => {
     DBOSSchedTestClass.reset(false);
+    const firstLaunchTime = process.hrtime();
     await DBOS.launch();
     await DBOS.registerQueue(q.name, { onConflict: 'always_update', concurrency: 1 });
     try {
       await sleepms(3000);
       expect(DBOSSchedTestClass.nCalls).toBeGreaterThanOrEqual(1);
-      expect(DBOSSchedTestClass.nCalls).toBeLessThanOrEqual(4);
+      // Only the intervals elapsed since launch, +1 for boundary alignment and +1 for a recovered in-flight workflow
+      expect(DBOSSchedTestClass.nCalls).toBeLessThanOrEqual(process.hrtime(firstLaunchTime)[0] + 2);
       expect(DBOSSchedTestClass.nQCalls).toBeGreaterThanOrEqual(1); // This has some delay, potentially...
 
       const wfs = await DBOS.listWorkflows({
@@ -208,12 +210,15 @@ describe('cf-scheduled-wf-tests-when-active', () => {
     }
     await sleepms(5000);
     DBOSSchedTestClass.reset(false);
+    const secondLaunchTime = process.hrtime();
     await DBOS.launch();
     await DBOS.registerQueue(q.name, { onConflict: 'always_update', concurrency: 1 });
     try {
       await sleepms(3000);
       expect(DBOSSchedTestClass.nCalls).toBeGreaterThanOrEqual(1); // 3 new ones, +/- 1
-      expect(DBOSSchedTestClass.nCalls).toBeLessThanOrEqual(4); // No old ones from recovery or sleep interval
+      // None of the ~5 missed during the downtime: only the intervals elapsed since relaunch,
+      // +1 for boundary alignment and +1 for a recovered in-flight workflow
+      expect(DBOSSchedTestClass.nCalls).toBeLessThanOrEqual(process.hrtime(secondLaunchTime)[0] + 2);
     } finally {
       await DBOS.shutdown();
     }

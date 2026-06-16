@@ -1,5 +1,5 @@
 import { WorkflowConfig } from './workflow';
-import { StepConfig } from './step';
+import { StepConfig, validateStepConfig } from './step';
 import { DBOSConflictingRegistrationError, DBOSNotRegisteredError } from './error';
 import { DataSourceTransactionHandler } from './datasource';
 
@@ -407,6 +407,7 @@ export class MethodRegistration<This, Args extends unknown[], Return> implements
 
   setStepConfig(stepCfg: StepConfig): void {
     this.checkFuncTypeUnassigned('Step');
+    validateStepConfig(stepCfg, `${this.getClassName()}.${this.name}`);
     this.stepConfig = stepCfg;
   }
 

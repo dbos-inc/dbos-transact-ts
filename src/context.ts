@@ -11,6 +11,11 @@ export interface StepStatus {
   stepID: number;
   currentAttempt?: number;
   maxAttempts?: number;
+  /**
+   * If the step is configured with `timeoutMS`: fires when the current attempt's timeout expires,
+   * so the step can cancel its underlying operation. A fresh signal is issued for each retry attempt.
+   */
+  timeoutSignal?: AbortSignal;
 }
 
 export interface DBOSContextOptions {
@@ -143,6 +148,7 @@ export async function runInStepContext<R>(
   stepID: number,
   maxAttempts: number | undefined,
   currentAttempt: number | undefined,
+  timeoutSignal: AbortSignal | undefined,
   callback: () => Promise<R>,
 ) {
   // Check we are in a workflow context and not in a step / transaction already
@@ -153,6 +159,7 @@ export async function runInStepContext<R>(
     stepID: stepID,
     currentAttempt: currentAttempt,
     maxAttempts: currentAttempt ? maxAttempts : undefined,
+    timeoutSignal: timeoutSignal,
   };
 
   return await runWithParentContext(

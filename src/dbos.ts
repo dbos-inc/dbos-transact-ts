@@ -105,7 +105,7 @@ import { Server } from 'http';
 
 import { randomUUID } from 'node:crypto';
 
-import { StepConfig } from './step';
+import { StepConfig, validateStepConfig } from './step';
 import { Conductor } from './conductor/conductor';
 import {
   DuplicationPolicy,
@@ -2075,6 +2075,7 @@ export class DBOS {
     config: StepConfig & FunctionName = {},
   ): (this: This, ...args: Args) => Promise<Return> {
     const name = config.name ?? func.name;
+    validateStepConfig(config, name);
 
     const reg = wrapDBOSFunctionAndRegister(config?.ctorOrProto, config?.className, name, name, func);
 
