@@ -3389,10 +3389,7 @@ export class SystemDatabase {
     try {
       await client.query('BEGIN');
       for (const sched of schedules) {
-        // Idempotent upsert keyed on schedule_name. Using ON CONFLICT rather than
-        // delete-then-insert keeps this safe when many processes apply the same
-        // schedules concurrently (e.g. a fleet of identical pods starting up): a
-        // delete-then-insert would race and fail on the schedule_name unique constraint.
+        // Idempotent upsert keyed on schedule_name.
         await client.query(
           `INSERT INTO "${this.schemaName}".workflow_schedules
            (schedule_id, schedule_name, workflow_name, workflow_class_name, schedule, status, context, last_fired_at, automatic_backfill, cron_timezone, queue_name)
