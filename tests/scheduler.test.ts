@@ -253,6 +253,51 @@ describe('dynamic-scheduler-tests', () => {
   });
 
   // ---------------------------------------------------------------------------
+  // apply-schedules-concurrent
+  //
+  // Simulates many identical pods booting at once, each applying the same set of
+  // schedules concurrently. Every call should succeed and the schedules should
+  // end up applied exactly once — none of the calls should fail on a unique
+  // constraint violation from the delete-then-insert race inside applySchedules.
+  // ---------------------------------------------------------------------------
+
+  test('apply-schedules-concurrent', async () => {
+    const POD_COUNT = 8; // <= sysDb pool size (10) so the calls truly overlap
+    const desired = [
+      {
+        scheduleName: 'pod-sched-a',
+        workflowFn: regMyWf,
+        schedule: '* * * * *',
+        context: { region: 'us' },
+      },
+      {
+        scheduleName: 'pod-sched-b',
+        workflowFn: regOtherWf,
+        schedule: '0 0 * * *',
+        context: { region: 'eu' },
+      },
+    ];
+
+    // All "pods" apply the identical schedule set at the same time.
+    const results = await Promise.allSettled(Array.from({ length: POD_COUNT }, () => DBOS.applySchedules(desired)));
+
+    const failures = results.filter((r) => r.status === 'rejected') as PromiseRejectedResult[];
+    expect(failures.map((f) => `${f.reason}`)).toEqual([]);
+
+    // The schedules should be applied exactly once, with the expected contents.
+    const schedules = await DBOS.listSchedules();
+    const byName = Object.fromEntries(schedules.map((s) => [s.scheduleName, s]));
+    expect(Object.keys(byName).sort()).toEqual(['pod-sched-a', 'pod-sched-b']);
+    expect(byName['pod-sched-a'].schedule).toBe('* * * * *');
+    expect(byName['pod-sched-a'].context).toEqual({ region: 'us' });
+    expect(byName['pod-sched-b'].schedule).toBe('0 0 * * *');
+    expect(byName['pod-sched-b'].context).toEqual({ region: 'eu' });
+
+    await DBOS.deleteSchedule('pod-sched-a');
+    await DBOS.deleteSchedule('pod-sched-b');
+  });
+
+  // ---------------------------------------------------------------------------
   // schedule-crud-from-workflow
   // ---------------------------------------------------------------------------
 

@@ -3389,8 +3389,39 @@ export class SystemDatabase {
     try {
       await client.query('BEGIN');
       for (const sched of schedules) {
-        await this.deleteSchedule(sched.scheduleName, client);
-        await this.createSchedule(sched, client);
+        // Idempotent upsert keyed on schedule_name. Using ON CONFLICT rather than
+        // delete-then-insert keeps this safe when many processes apply the same
+        // schedules concurrently (e.g. a fleet of identical pods starting up): a
+        // delete-then-insert would race and fail on the schedule_name unique constraint.
+        await client.query(
+          `INSERT INTO "${this.schemaName}".workflow_schedules
+           (schedule_id, schedule_name, workflow_name, workflow_class_name, schedule, status, context, last_fired_at, automatic_backfill, cron_timezone, queue_name)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+           ON CONFLICT (schedule_name) DO UPDATE SET
+             schedule_id = EXCLUDED.schedule_id,
+             workflow_name = EXCLUDED.workflow_name,
+             workflow_class_name = EXCLUDED.workflow_class_name,
+             schedule = EXCLUDED.schedule,
+             status = EXCLUDED.status,
+             context = EXCLUDED.context,
+             last_fired_at = EXCLUDED.last_fired_at,
+             automatic_backfill = EXCLUDED.automatic_backfill,
+             cron_timezone = EXCLUDED.cron_timezone,
+             queue_name = EXCLUDED.queue_name`,
+          [
+            sched.scheduleId,
+            sched.scheduleName,
+            sched.workflowName,
+            sched.workflowClassName,
+            sched.schedule,
+            sched.status,
+            sched.context,
+            sched.lastFiredAt,
+            sched.automaticBackfill,
+            sched.cronTimezone,
+            sched.queueName,
+          ],
+        );
       }
       await client.query('COMMIT');
     } catch (e) {
