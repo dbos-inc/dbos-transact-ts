@@ -253,6 +253,50 @@ describe('dynamic-scheduler-tests', () => {
   });
 
   // ---------------------------------------------------------------------------
+  // apply-schedules-preserves-runtime-state
+  //
+  // Re-applying a schedule updates its definition but preserves runtime state the caller doesn't own (status, last_fired_at).
+  // ---------------------------------------------------------------------------
+
+  test('apply-schedules-preserves-runtime-state', async () => {
+    await DBOS.applySchedules([
+      {
+        scheduleName: 'preserve-sched',
+        workflowFn: regMyWf,
+        schedule: '0 0 1 1 *',
+        context: { region: 'us' },
+      },
+    ]);
+
+    // Simulate runtime state: the user pauses it and the scheduler records a firing.
+    await DBOS.pauseSchedule('preserve-sched');
+    const firedAt = new Date('2020-01-01T00:00:00.000Z').toISOString();
+    await DBOSExecutor.globalInstance!.systemDatabase.updateLastFiredAt('preserve-sched', firedAt);
+
+    // Re-apply the same schedule with a changed definition.
+    await DBOS.applySchedules([
+      {
+        scheduleName: 'preserve-sched',
+        workflowFn: regMyWf,
+        schedule: '0 0 2 2 *',
+        context: { region: 'eu' },
+      },
+    ]);
+
+    const sched = await DBOS.getSchedule('preserve-sched');
+    expect(sched).not.toBeNull();
+    // Declared fields are updated...
+    expect(sched!.schedule).toBe('0 0 2 2 *');
+    expect(sched!.context).toEqual({ region: 'eu' });
+    // ...but runtime state is preserved.
+    expect(sched!.status).toBe('PAUSED');
+    expect(sched!.lastFiredAt).toBe(firedAt);
+
+    await DBOS.deleteSchedule('preserve-sched');
+    expect((await DBOS.listSchedules()).length).toBe(0);
+  });
+
+  // ---------------------------------------------------------------------------
   // apply-schedules-concurrent
   //
   // Simulates many identical pods booting at once, each applying the same set of

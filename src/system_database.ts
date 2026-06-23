@@ -3389,7 +3389,7 @@ export class SystemDatabase {
     try {
       await client.query('BEGIN');
       for (const sched of schedules) {
-        // Idempotent upsert keyed on schedule_name.
+        // Upsert keyed on schedule_name; on conflict, preserve runtime state the caller doesn't own (status, last_fired_at).
         await client.query(
           `INSERT INTO "${this.schemaName}".workflow_schedules
            (schedule_id, schedule_name, workflow_name, workflow_class_name, schedule, status, context, last_fired_at, automatic_backfill, cron_timezone, queue_name)
@@ -3399,9 +3399,7 @@ export class SystemDatabase {
              workflow_name = EXCLUDED.workflow_name,
              workflow_class_name = EXCLUDED.workflow_class_name,
              schedule = EXCLUDED.schedule,
-             status = EXCLUDED.status,
              context = EXCLUDED.context,
-             last_fired_at = EXCLUDED.last_fired_at,
              automatic_backfill = EXCLUDED.automatic_backfill,
              cron_timezone = EXCLUDED.cron_timezone,
              queue_name = EXCLUDED.queue_name`,
