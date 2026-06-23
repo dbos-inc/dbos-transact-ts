@@ -9,6 +9,11 @@ describe('dynamic-scheduler-tests', () => {
   beforeAll(async () => {
     config = generateDBOSTestConfig();
     config.schedulerPollingIntervalMs = 1000;
+    // apply-schedules-concurrent holds one pooled connection per overlapping call for the whole
+    // transaction. Size the system-DB pool well above that fan-out so those calls never starve the
+    // pool of connections needed by the scheduler/control plane — no connect timeout is configured,
+    // so exhaustion would hang to the jest timeout rather than fail fast.
+    config.systemDatabasePoolSize = 20;
     await setUpDBOSTestSysDb(config);
     DBOS.setConfig(config);
     expect(config.systemDatabaseUrl).toBeDefined();
@@ -306,7 +311,9 @@ describe('dynamic-scheduler-tests', () => {
   // ---------------------------------------------------------------------------
 
   test('apply-schedules-concurrent', async () => {
-    const POD_COUNT = 8; // <= sysDb pool size (10) so the calls truly overlap
+    // POD_COUNT calls overlap concurrently (each holds a pooled connection for its transaction);
+    // the system-DB pool is sized above this in beforeAll so the overlap can't exhaust the pool.
+    const POD_COUNT = 8;
     const desired = [
       {
         scheduleName: 'pod-sched-a',
@@ -322,34 +329,36 @@ describe('dynamic-scheduler-tests', () => {
       },
     ];
 
-    // All "pods" apply the identical schedule set at the same time.
-    const results = await Promise.allSettled(Array.from({ length: POD_COUNT }, () => DBOS.applySchedules(desired)));
+    try {
+      // All "pods" apply the identical schedule set at the same time.
+      const results = await Promise.allSettled(Array.from({ length: POD_COUNT }, () => DBOS.applySchedules(desired)));
 
-    const failures = results.filter((r) => r.status === 'rejected') as PromiseRejectedResult[];
-    expect(failures.map((f) => `${f.reason}`)).toEqual([]);
+      const failures = results.filter((r) => r.status === 'rejected') as PromiseRejectedResult[];
+      expect(failures.map((f) => `${f.reason}`)).toEqual([]);
 
-    // The schedules should be applied exactly once, with the expected contents.
-    const schedules = await DBOS.listSchedules();
-    const byName = Object.fromEntries(schedules.map((s) => [s.scheduleName, s]));
-    expect(Object.keys(byName).sort()).toEqual(['pod-sched-a', 'pod-sched-b']);
-    expect(byName['pod-sched-a'].schedule).toBe('* * * * *');
-    expect(byName['pod-sched-a'].context).toEqual({ region: 'us' });
-    expect(byName['pod-sched-b'].schedule).toBe('0 0 * * *');
-    expect(byName['pod-sched-b'].context).toEqual({ region: 'eu' });
+      // The schedules should be applied exactly once, with the expected contents.
+      const schedules = await DBOS.listSchedules();
+      const byName = Object.fromEntries(schedules.map((s) => [s.scheduleName, s]));
+      expect(Object.keys(byName).sort()).toEqual(['pod-sched-a', 'pod-sched-b']);
+      expect(byName['pod-sched-a'].schedule).toBe('* * * * *');
+      expect(byName['pod-sched-a'].context).toEqual({ region: 'us' });
+      expect(byName['pod-sched-b'].schedule).toBe('0 0 * * *');
+      expect(byName['pod-sched-b'].context).toEqual({ region: 'eu' });
 
-    // Re-applying updates the row in place but resets schedule_id (the scheduler's signal to reload).
-    const originalIdA = byName['pod-sched-a'].scheduleId;
-    await DBOS.applySchedules([
-      { scheduleName: 'pod-sched-a', workflowFn: regMyWf, schedule: '*/5 * * * *', context: { region: 'us-west' } },
-    ]);
-    const reapplied = Object.fromEntries((await DBOS.listSchedules()).map((s) => [s.scheduleName, s]));
-    expect((await DBOS.listSchedules()).length).toBe(2);
-    expect(reapplied['pod-sched-a'].scheduleId).not.toBe(originalIdA);
-    expect(reapplied['pod-sched-a'].schedule).toBe('*/5 * * * *');
-    expect(reapplied['pod-sched-a'].context).toEqual({ region: 'us-west' });
-
-    await DBOS.deleteSchedule('pod-sched-a');
-    await DBOS.deleteSchedule('pod-sched-b');
+      // Re-applying updates the row in place but resets schedule_id (the scheduler's signal to reload).
+      const originalIdA = byName['pod-sched-a'].scheduleId;
+      await DBOS.applySchedules([
+        { scheduleName: 'pod-sched-a', workflowFn: regMyWf, schedule: '*/5 * * * *', context: { region: 'us-west' } },
+      ]);
+      const reapplied = Object.fromEntries((await DBOS.listSchedules()).map((s) => [s.scheduleName, s]));
+      expect((await DBOS.listSchedules()).length).toBe(2);
+      expect(reapplied['pod-sched-a'].scheduleId).not.toBe(originalIdA);
+      expect(reapplied['pod-sched-a'].schedule).toBe('*/5 * * * *');
+      expect(reapplied['pod-sched-a'].context).toEqual({ region: 'us-west' });
+    } finally {
+      await DBOS.deleteSchedule('pod-sched-a');
+      await DBOS.deleteSchedule('pod-sched-b');
+    }
   });
 
   // ---------------------------------------------------------------------------
@@ -370,26 +379,33 @@ describe('dynamic-scheduler-tests', () => {
     liveUpdateResults.contexts = [];
     const isVersion = (c: unknown, v: number) => JSON.stringify(c) === JSON.stringify({ version: v });
 
-    await DBOS.applySchedules([
-      { scheduleName: 'live-update', workflowFn: regLiveUpdateWf, schedule: '* * * * * *', context: { version: 1 } },
-    ]);
-    await retryUntilSuccess(() => {
-      expect(liveUpdateResults.contexts.some((c) => isVersion(c, 1))).toBe(true);
-    });
+    try {
+      await DBOS.applySchedules([
+        { scheduleName: 'live-update', workflowFn: regLiveUpdateWf, schedule: '* * * * * *', context: { version: 1 } },
+      ]);
+      await retryUntilSuccess(() => {
+        expect(liveUpdateResults.contexts.some((c) => isVersion(c, 1))).toBe(true);
+      });
 
-    // Re-apply the same schedule with a new context.
-    const countBefore = liveUpdateResults.contexts.length;
-    await DBOS.applySchedules([
-      { scheduleName: 'live-update', workflowFn: regLiveUpdateWf, schedule: '* * * * * *', context: { version: 2 } },
-    ]);
+      // Re-apply the same schedule with a new context.
+      const countBefore = liveUpdateResults.contexts.length;
+      await DBOS.applySchedules([
+        { scheduleName: 'live-update', workflowFn: regLiveUpdateWf, schedule: '* * * * * *', context: { version: 2 } },
+      ]);
 
-    // The running scheduler must pick up the new context and fire it.
-    await retryUntilSuccess(() => {
-      const v2 = liveUpdateResults.contexts.slice(countBefore).filter((c) => isVersion(c, 2));
-      expect(v2.length).toBeGreaterThanOrEqual(2);
-    });
-
-    await DBOS.deleteSchedule('live-update');
+      // The running scheduler must pick up the new context and fire it. Re-applying assigns a fresh
+      // schedule_id, which the poller (1s interval here) uses to restart the loop with the new
+      // context. The handoff is not instantaneous, and while the old loop winds down it can still
+      // claim a shared per-second workflow ID, so a second or two may fire with version 1 and not
+      // count here. Use a generous budget so the new loop can accumulate its own firings instead of
+      // racing that handoff.
+      await retryUntilSuccess(() => {
+        const v2 = liveUpdateResults.contexts.slice(countBefore).filter((c) => isVersion(c, 2));
+        expect(v2.length).toBeGreaterThanOrEqual(2);
+      }, 30000);
+    } finally {
+      await DBOS.deleteSchedule('live-update');
+    }
   });
 
   // ---------------------------------------------------------------------------
