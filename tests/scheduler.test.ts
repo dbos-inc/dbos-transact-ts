@@ -337,8 +337,59 @@ describe('dynamic-scheduler-tests', () => {
     expect(byName['pod-sched-b'].schedule).toBe('0 0 * * *');
     expect(byName['pod-sched-b'].context).toEqual({ region: 'eu' });
 
+    // Re-applying updates the row in place but resets schedule_id (the scheduler's signal to reload).
+    const originalIdA = byName['pod-sched-a'].scheduleId;
+    await DBOS.applySchedules([
+      { scheduleName: 'pod-sched-a', workflowFn: regMyWf, schedule: '*/5 * * * *', context: { region: 'us-west' } },
+    ]);
+    const reapplied = Object.fromEntries((await DBOS.listSchedules()).map((s) => [s.scheduleName, s]));
+    expect((await DBOS.listSchedules()).length).toBe(2);
+    expect(reapplied['pod-sched-a'].scheduleId).not.toBe(originalIdA);
+    expect(reapplied['pod-sched-a'].schedule).toBe('*/5 * * * *');
+    expect(reapplied['pod-sched-a'].context).toEqual({ region: 'us-west' });
+
     await DBOS.deleteSchedule('pod-sched-a');
     await DBOS.deleteSchedule('pod-sched-b');
+  });
+
+  // ---------------------------------------------------------------------------
+  // apply-schedules-live-update
+  //
+  // Re-applying a changed schedule must take effect live: the fresh schedule_id
+  // restarts the running scheduler loop with the new context.
+  // ---------------------------------------------------------------------------
+
+  const liveUpdateResults: { contexts: unknown[] } = { contexts: [] };
+  async function liveUpdateWorkflow(_scheduledDate: Date, context: unknown) {
+    liveUpdateResults.contexts.push(context);
+    await Promise.resolve();
+  }
+  const regLiveUpdateWf = DBOS.registerWorkflow(liveUpdateWorkflow, { name: 'liveUpdateWorkflow' });
+
+  test('apply-schedules-live-update', async () => {
+    liveUpdateResults.contexts = [];
+    const isVersion = (c: unknown, v: number) => JSON.stringify(c) === JSON.stringify({ version: v });
+
+    await DBOS.applySchedules([
+      { scheduleName: 'live-update', workflowFn: regLiveUpdateWf, schedule: '* * * * * *', context: { version: 1 } },
+    ]);
+    await retryUntilSuccess(() => {
+      expect(liveUpdateResults.contexts.some((c) => isVersion(c, 1))).toBe(true);
+    });
+
+    // Re-apply the same schedule with a new context.
+    const countBefore = liveUpdateResults.contexts.length;
+    await DBOS.applySchedules([
+      { scheduleName: 'live-update', workflowFn: regLiveUpdateWf, schedule: '* * * * * *', context: { version: 2 } },
+    ]);
+
+    // The running scheduler must pick up the new context and fire it.
+    await retryUntilSuccess(() => {
+      const v2 = liveUpdateResults.contexts.slice(countBefore).filter((c) => isVersion(c, 2));
+      expect(v2.length).toBeGreaterThanOrEqual(2);
+    });
+
+    await DBOS.deleteSchedule('live-update');
   });
 
   // ---------------------------------------------------------------------------
