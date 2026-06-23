@@ -3389,13 +3389,12 @@ export class SystemDatabase {
     try {
       await client.query('BEGIN');
       for (const sched of schedules) {
-        // Upsert keyed on schedule_name; on conflict, preserve runtime state the caller doesn't own (status, last_fired_at).
+        // Upsert on schedule_name; on conflict, preserve schedule_id and runtime state (status, last_fired_at) and update only the declared definition fields, so an unchanged re-apply is a no-op.
         await client.query(
           `INSERT INTO "${this.schemaName}".workflow_schedules
            (schedule_id, schedule_name, workflow_name, workflow_class_name, schedule, status, context, last_fired_at, automatic_backfill, cron_timezone, queue_name)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
            ON CONFLICT (schedule_name) DO UPDATE SET
-             schedule_id = EXCLUDED.schedule_id,
              workflow_name = EXCLUDED.workflow_name,
              workflow_class_name = EXCLUDED.workflow_class_name,
              schedule = EXCLUDED.schedule,

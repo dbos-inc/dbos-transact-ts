@@ -9,10 +9,7 @@ describe('dynamic-scheduler-tests', () => {
   beforeAll(async () => {
     config = generateDBOSTestConfig();
     config.schedulerPollingIntervalMs = 1000;
-    // apply-schedules-concurrent holds one pooled connection per overlapping call for the whole
-    // transaction. Size the system-DB pool well above that fan-out so those calls never starve the
-    // pool of connections needed by the scheduler/control plane — no connect timeout is configured,
-    // so exhaustion would hang to the jest timeout rather than fail fast.
+    // Size the system-DB pool above apply-schedules-concurrent's connection fan-out; with no connect timeout, exhaustion would hang to the jest timeout.
     config.systemDatabasePoolSize = 20;
     await setUpDBOSTestSysDb(config);
     DBOS.setConfig(config);
@@ -311,8 +308,7 @@ describe('dynamic-scheduler-tests', () => {
   // ---------------------------------------------------------------------------
 
   test('apply-schedules-concurrent', async () => {
-    // POD_COUNT calls overlap concurrently (each holds a pooled connection for its transaction);
-    // the system-DB pool is sized above this in beforeAll so the overlap can't exhaust the pool.
+    // Each call holds a pooled connection for its transaction; beforeAll sizes the pool above POD_COUNT so the overlap can't exhaust it.
     const POD_COUNT = 8;
     const desired = [
       {
@@ -345,14 +341,14 @@ describe('dynamic-scheduler-tests', () => {
       expect(byName['pod-sched-b'].schedule).toBe('0 0 * * *');
       expect(byName['pod-sched-b'].context).toEqual({ region: 'eu' });
 
-      // Re-applying updates the row in place but resets schedule_id (the scheduler's signal to reload).
+      // Re-applying updates the definition in place but preserves schedule_id; the scheduler detects the change itself, so an unchanged re-apply stays a no-op.
       const originalIdA = byName['pod-sched-a'].scheduleId;
       await DBOS.applySchedules([
         { scheduleName: 'pod-sched-a', workflowFn: regMyWf, schedule: '*/5 * * * *', context: { region: 'us-west' } },
       ]);
       const reapplied = Object.fromEntries((await DBOS.listSchedules()).map((s) => [s.scheduleName, s]));
       expect((await DBOS.listSchedules()).length).toBe(2);
-      expect(reapplied['pod-sched-a'].scheduleId).not.toBe(originalIdA);
+      expect(reapplied['pod-sched-a'].scheduleId).toBe(originalIdA);
       expect(reapplied['pod-sched-a'].schedule).toBe('*/5 * * * *');
       expect(reapplied['pod-sched-a'].context).toEqual({ region: 'us-west' });
     } finally {
@@ -364,8 +360,8 @@ describe('dynamic-scheduler-tests', () => {
   // ---------------------------------------------------------------------------
   // apply-schedules-live-update
   //
-  // Re-applying a changed schedule must take effect live: the fresh schedule_id
-  // restarts the running scheduler loop with the new context.
+  // Re-applying a changed schedule must take effect live: the scheduler detects the
+  // changed definition and restarts the running loop with the new context.
   // ---------------------------------------------------------------------------
 
   const liveUpdateResults: { contexts: unknown[] } = { contexts: [] };
@@ -393,12 +389,7 @@ describe('dynamic-scheduler-tests', () => {
         { scheduleName: 'live-update', workflowFn: regLiveUpdateWf, schedule: '* * * * * *', context: { version: 2 } },
       ]);
 
-      // The running scheduler must pick up the new context and fire it. Re-applying assigns a fresh
-      // schedule_id, which the poller (1s interval here) uses to restart the loop with the new
-      // context. The handoff is not instantaneous, and while the old loop winds down it can still
-      // claim a shared per-second workflow ID, so a second or two may fire with version 1 and not
-      // count here. Use a generous budget so the new loop can accumulate its own firings instead of
-      // racing that handoff.
+      // Re-applying changes the definition, which the poller detects and uses to restart the loop with the new context; use a generous budget since during the handoff the old loop can still claim shared per-second workflow IDs, so a firing or two may land as version 1.
       await retryUntilSuccess(() => {
         const v2 = liveUpdateResults.contexts.slice(countBefore).filter((c) => isVersion(c, 2));
         expect(v2.length).toBeGreaterThanOrEqual(2);
