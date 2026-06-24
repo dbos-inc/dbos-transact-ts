@@ -133,8 +133,7 @@ const dateWorkflow = DBOS.registerWorkflow(
   },
 );
 
-// Re-sets the same event key twice with different serialization formats. The
-// second setEvent must overwrite both the value and the serialization column.
+// Re-sets one event key twice with different formats; the second setEvent must overwrite value AND serialization.
 const reSetEventWorkflow = DBOS.registerWorkflow(
   async () => {
     await DBOS.setEvent('rekey', 10n, { serializationType: 'portable' });
@@ -143,8 +142,7 @@ const reSetEventWorkflow = DBOS.registerWorkflow(
   { name: 'reSetEventWorkflow' },
 );
 
-// Workflows for the OAOO serialization-replay test (recv / getEvent must keep
-// the format of their recorded output across workflow replay).
+// Workflows for the OAOO replay test: recv/getEvent must keep their recorded serialization across replay.
 const portableEventSetterWF = DBOS.registerWorkflow(
   async (input: string) => {
     await DBOS.setEvent('evt', input, { serializationType: 'portable' });
@@ -367,11 +365,7 @@ describe('portable-serizlization-tests', () => {
   });
 
   test('test-setevent-reset-updates-serialization', async () => {
-    // Re-setting an event with a different serialization format must update the
-    // stored `serialization` column, not just the value. Otherwise getEvent reads
-    // the new bytes with the old format. Here the value is first written portable
-    // then native (superjson); the native format must win so that getEvent
-    // recovers the bigint 10n rather than the raw superjson envelope object.
+    // Re-set portable then native: the native format must win so getEvent recovers 10n, not the superjson envelope.
     const handle = await DBOS.startWorkflow(reSetEventWorkflow)();
     await handle.getResult();
 
@@ -1011,11 +1005,7 @@ describe('custom-serializer-restart-tests', () => {
   });
 
   test('test-recv-getevent-preserve-serialization-on-replay', async () => {
-    // recv and getEvent must preserve the serialization format of their recorded
-    // output across OAOO replay. The global serializer here is the custom base64
-    // one, which cannot parse portable/superjson bytes — so if a replayed
-    // getEvent/recv falls back to it instead of using the stored 'portable_json'
-    // format, deserialization throws and the replayed workflow fails.
+    // Under the base64 global serializer, replayed recv/getEvent must use the stored portable format or deserialization throws.
     process.env.DBOS__APPVERSION = 'v0';
     await setUpDBOSTestSysDb(config);
     config.serializer = base64Serializer;

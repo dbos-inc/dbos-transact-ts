@@ -119,8 +119,7 @@ describe('week-day-names-conversion', () => {
     expect(weekDays).toBe('0');
   });
 
-  // Regression for the day-of-week range bug: 7 (Sunday) must be folded into 0
-  // only AFTER ranges are expanded, so ranges ending in 7 are not corrupted.
+  // Regression: day-of-week 7 (Sunday) must fold to 0 only after ranges expand, so ranges ending in 7 survive.
   it('should expand day-of-week ranges that include 7 (Sunday) correctly', () => {
     expect(conversion('* * * * 5-7').split(' ')[5]).toBe('5,6,0'); // Fri,Sat,Sun
     expect(conversion('* * * * 6-7').split(' ')[5]).toBe('6,0'); // Sat,Sun

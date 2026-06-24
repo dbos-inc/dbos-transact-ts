@@ -103,8 +103,7 @@ class ClientTest {
 const DLQ_MAX_RECOVERY_ATTEMPTS = 2;
 
 class ClientDLQTest {
-  // Succeeds when run, but is repeatedly forced back to PENDING so it exhausts
-  // its recovery attempts and lands in the dead-letter queue.
+  // Succeeds when run, but is forced back to PENDING repeatedly until it exhausts recovery attempts (DLQ).
   @DBOS.workflow({ maxRecoveryAttempts: DLQ_MAX_RECOVERY_ATTEMPTS })
   static async dlqWorkflow(): Promise<string> {
     return Promise.resolve('should-not-be-returned');
@@ -415,17 +414,14 @@ describe('DBOSClient', () => {
   });
 
   test('DBOSClient-getResult-throws-on-max-recovery-attempts-exceeded', async () => {
-    // A workflow that exceeds its max recovery attempts must cause the client's
-    // getResult to throw, matching the in-process getResult — not silently return
-    // null as if the workflow had succeeded with a null result.
+    // A workflow past its max recovery attempts must make client getResult throw, not silently return null.
     await DBOS.launch();
     const client = await DBOSClient.create({ systemDatabaseUrl });
     try {
       const handle = await DBOS.startWorkflow(ClientDLQTest).dlqWorkflow();
       await handle.getResult();
 
-      // Repeatedly force the workflow back to PENDING and recover it until it
-      // exhausts its recovery attempts and is sent to the dead-letter queue.
+      // Force back to PENDING and recover repeatedly until it exhausts recovery attempts and lands in the DLQ.
       for (let i = 0; i < DLQ_MAX_RECOVERY_ATTEMPTS; i++) {
         await setWfAndChildrenToPending(handle.workflowID, false);
         await (await recoverPendingWorkflows())[0].getResult();

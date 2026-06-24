@@ -3870,9 +3870,7 @@ export class SystemDatabase {
         error: rows[0].error,
         childWorkflowID: rows[0].child_workflow_id,
         functionName: rows[0].function_name,
-        // Steps such as recv/getEvent persist the serialization format used for
-        // their output; it must be returned so OAOO replay deserializes with the
-        // same serializer rather than falling back to the default one.
+        // Return serialization so recv/getEvent replay deserializes with the stored format, not the default.
         serialization: rows[0].serialization,
       };
     }

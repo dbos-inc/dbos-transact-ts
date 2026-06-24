@@ -68,19 +68,12 @@ function convertWeekDayName(weekExpression: string, items: string[]) {
 }
 
 function weekDayNamesConversion(expression: string) {
-  // Note: numeric 7 (also a valid alias for Sunday) is intentionally NOT folded
-  // into 0 here. Doing so before ranges are expanded corrupts ranges such as
-  // `5-7` into `5-0`. The 7 -> 0 fold is applied after expansion by
-  // `convertSundaySeven`, so e.g. `5-7` expands to `5,6,7` and then to `5,6,0`.
+  // Don't fold 7 (Sunday) into 0 here: pre-expansion it corrupts ranges like 5-7. See convertSundaySeven.
   expression = convertWeekDayName(expression, weekDays);
   return convertWeekDayName(expression, shortWeekDays);
 }
 
-// In the day-of-week field, 7 is an alias for Sunday (0). This must run AFTER
-// ranges and steps have been expanded so that ranges like `5-7` first expand to
-// `5,6,7` (Fri,Sat,Sun) and only then have the 7 folded into 0. Duplicates that
-// result from the fold (e.g. `0-7` -> `0,1,2,3,4,5,6,0`) are removed while
-// preserving order.
+// Fold day-of-week 7 (Sunday) into 0 after range/step expansion, removing resulting duplicates.
 function convertSundaySeven(expressions: string[]) {
   const seen = new Set<string>();
   const folded: string[] = [];
