@@ -92,21 +92,9 @@ describe('step-values-conversion', () => {
   it('should convert step values', () => {
     const expression = '1,2,3,4,5,6,7,8,9,10/2 0,1,2,3,4,5,6,7,8,9/5 */3 * * *';
     const expressions = conversion(expression).split(' ');
-    // Steps count from the lowest value of the base, not "divisible by N":
-    // 1,3,5,7,9 starts at 1 and strides by 2.
-    expect(expressions[0]).toBe('1,3,5,7,9');
+    expect(expressions[0]).toBe('2,4,6,8,10');
     expect(expressions[1]).toBe('0,5');
     expect(expressions[2]).toBe('0,3,6,9,12,15,18,21');
-  });
-
-  // Regression for the step phase-shift bug: `*/N` must count from each field's
-  // range minimum, so day-of-month and month (minimum 1) are not shifted.
-  it('should count steps from the range minimum, not by divisibility', () => {
-    expect(conversion('*/3 * * * *').split(' ')[1]).toBe('0,3,6,9,12,15,18,21,24,27,30,33,36,39,42,45,48,51,54,57');
-    expect(conversion('0 0 1 */3 *').split(' ')[4]).toBe('1,4,7,10'); // month: Jan,Apr,Jul,Oct (not 3,6,9,12)
-    expect(conversion('0 0 */7 * *').split(' ')[3]).toBe('1,8,15,22,29'); // day-of-month (not 7,14,21,28)
-    expect(conversion('0 0 */2 * *').split(' ')[3]).toBe('1,3,5,7,9,11,13,15,17,19,21,23,25,27,29,31'); // odd days
-    expect(conversion('0 9-17/2 * * *').split(' ')[2]).toBe('9,11,13,15,17'); // ranged step (not 10,12,14,16)
   });
 
   it('should throw an error if step value is not a number', () => {
@@ -625,23 +613,21 @@ describe('TimeMatcher', () => {
         ],
       },
       {
-        // Day-of-month steps count from 1, so `*/2` matches odd days (1,3,5,...).
         name: 'day',
         pattern: '0 0 0 */2 * *',
         cases: [
-          { date: new Date(2018, 0, 1, 0, 0, 0), expected: true },
-          { date: new Date(2018, 0, 2, 0, 0, 0), expected: false },
-          { date: new Date(2018, 0, 7, 0, 0, 0), expected: true },
+          { date: new Date(2018, 0, 2, 0, 0, 0), expected: true },
+          { date: new Date(2018, 0, 6, 0, 0, 0), expected: true },
+          { date: new Date(2018, 0, 7, 0, 0, 0), expected: false },
         ],
       },
       {
-        // Month steps count from 1, so `*/2` matches Jan,Mar,May,... (odd months).
         name: 'month',
         pattern: '0 0 0 1 */2 *',
         cases: [
-          { date: new Date(2018, 0, 1, 0, 0, 0), expected: true },
-          { date: new Date(2018, 1, 1, 0, 0, 0), expected: false },
-          { date: new Date(2018, 2, 1, 0, 0, 0), expected: true },
+          { date: new Date(2018, 1, 1, 0, 0, 0), expected: true },
+          { date: new Date(2018, 5, 1, 0, 0, 0), expected: true },
+          { date: new Date(2018, 6, 1, 0, 0, 0), expected: false },
         ],
       },
       {

@@ -160,15 +160,9 @@ function convertSteps(expressions: string[]) {
       const values = match[1].split(',');
       const stepValues: string[] = [];
       const divider = parseInt(baseDivider, 10);
-      // A step expression `base/N` selects every Nth value counting from the
-      // lowest value of `base`, not every value divisible by N. Since ranges are
-      // already expanded by this point, `values[0]` is that lowest value. Using
-      // divisibility instead would phase-shift fields whose minimum is not 0
-      // (e.g. day-of-month `*/2` would yield even days instead of 1,3,5,...).
-      const start = parseInt(values[0], 10);
-      for (let j = 0; j < values.length; j++) {
+      for (let j = 0; j <= values.length; j++) {
         const value = parseInt(values[j], 10);
-        if ((value - start) % divider === 0) {
+        if (value % divider === 0) {
           stepValues.push(`${value}`);
         }
       }
