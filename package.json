@@ -45,6 +45,13 @@
       "types": "./dist/src/datasource.d.ts"
     }
   },
+  "typesVersions": {
+    "*": {
+      "datasource": [
+        "./dist/src/datasource.d.ts"
+      ]
+    }
+  },
   "workspaces": [
     "packages/*"
   ],
@@ -75,7 +82,7 @@
     "prettier": "^3.4.2",
     "supertest": "^7.0.0",
     "testcontainers": "^12.0.1",
-    "ts-jest": "29.4.8",
+    "ts-jest": "^29.2.4",
     "typescript": "^5.4.5",
     "typescript-eslint": "^8.26.1",
     "zod": "^4.3.6"
