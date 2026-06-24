@@ -90,5 +90,8 @@
   },
   "lint-staged": {
     "*.{js,jsx,ts,tsx,json,css,scss,md}": "prettier --write"
+  },
+  "overrides": {
+    "js-yaml@<4.2.0": "^4.2.0"
   }
 }
