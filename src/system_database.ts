@@ -2108,7 +2108,7 @@ export class SystemDatabase {
           `INSERT INTO "${this.schemaName}".workflow_events_history (workflow_uuid, function_id, key, value, serialization)
              VALUES ($1, $2, $3, $4, $5)
              ON CONFLICT (workflow_uuid, function_id, key)
-             DO UPDATE SET value = $4;`,
+             DO UPDATE SET value = $4, serialization = $5;`,
           [workflowID, functionID, key, message, serialization],
         );
         return undefined;
