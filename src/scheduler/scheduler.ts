@@ -62,7 +62,19 @@ export function createScheduleId(): string {
 interface ScheduleLoopEntry {
   controller: AbortController;
   promise: Promise<void>;
-  scheduleId: string;
+  signature: string;
+}
+
+// Definition fields a running loop captures at start; a change requires restarting it. Runtime state (schedule_id, status, last_fired_at) is excluded so an unchanged re-apply doesn't restart the loop.
+function scheduleSignature(sched: WorkflowScheduleInternal): string {
+  return JSON.stringify([
+    sched.workflowName,
+    sched.workflowClassName,
+    sched.schedule,
+    sched.context,
+    sched.cronTimezone ?? null,
+    sched.queueName ?? null,
+  ]);
 }
 
 // During the first minute after startup, poll for schedules every second so schedules
@@ -135,14 +147,15 @@ export class DynamicSchedulerLoop implements DBOSLifecycleCallback {
       // Process each schedule
       for (const sched of schedules) {
         const existing = this.#scheduleLoops.get(sched.scheduleName);
+        const signature = scheduleSignature(sched);
 
         if (sched.status === 'PAUSED' && existing) {
           // Paused but has a running loop — stop it
           existing.controller.abort();
           this.#scheduleLoops.delete(sched.scheduleName);
         } else if (sched.status === 'ACTIVE') {
-          // If schedule was replaced (different scheduleId), restart the loop
-          if (existing && existing.scheduleId !== sched.scheduleId) {
+          // If the schedule's definition changed, restart the loop so it fires with the new definition.
+          if (existing && existing.signature !== signature) {
             existing.controller.abort();
             this.#scheduleLoops.delete(sched.scheduleName);
           }
@@ -185,7 +198,7 @@ export class DynamicSchedulerLoop implements DBOSLifecycleCallback {
               sched.cronTimezone ?? undefined,
               sched.queueName ?? undefined,
             );
-            this.#scheduleLoops.set(sched.scheduleName, { controller, promise, scheduleId: sched.scheduleId });
+            this.#scheduleLoops.set(sched.scheduleName, { controller, promise, signature });
           }
         }
       }
