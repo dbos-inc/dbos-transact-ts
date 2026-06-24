@@ -35,14 +35,14 @@
   "types": "dist/src/index.d.ts",
   "exports": {
     ".": {
+      "types": "./dist/src/index.d.ts",
       "import": "./dist/src/index.js",
-      "require": "./dist/src/index.js",
-      "types": "./dist/src/index.d.ts"
+      "require": "./dist/src/index.js"
     },
     "./datasource": {
+      "types": "./dist/src/datasource.d.ts",
       "import": "./dist/src/datasource.js",
-      "require": "./dist/src/datasource.js",
-      "types": "./dist/src/datasource.d.ts"
+      "require": "./dist/src/datasource.js"
     }
   },
   "typesVersions": {
@@ -60,6 +60,7 @@
     "lint": "eslint --ignore-pattern **/coverage/ .",
     "setversion": "npm run --workspaces setversion && grunt setversion",
     "test": "npm run build && npm run --workspaces test  && jest ./tests --coverage --collectCoverageFrom='src/**/*' --detectOpenHandles",
+    "check:package": "npm run build && publint && attw --pack .",
     "prepare": "husky"
   },
   "bin": {
@@ -67,6 +68,7 @@
     "dbos-sdk": "./dist/src/cli/cli.js"
   },
   "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.4",
     "@dbos-inc/otel": "packages/otel",
     "@eslint/js": "^9.22.0",
     "@testcontainers/postgresql": "^12.0.1",
@@ -80,6 +82,7 @@
     "jest": "^29.7.0",
     "lint-staged": "^15.4.3",
     "prettier": "^3.4.2",
+    "publint": "^0.3.21",
     "supertest": "^7.0.0",
     "testcontainers": "^12.0.1",
     "ts-jest": "^29.2.4",
