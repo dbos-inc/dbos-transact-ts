@@ -52,6 +52,7 @@ import {
 import { DBOSExecutor } from './dbos-executor';
 import {
   DBOSAwaitedWorkflowCancelledError,
+  DBOSAwaitedWorkflowExceededMaxRecoveryAttempts,
   DBOSInvalidWorkflowTransitionError,
   DBOSQueueDuplicatedError,
 } from './error';
@@ -194,6 +195,9 @@ export class ClientHandle<R> implements WorkflowHandle<R> {
     );
     if (res?.cancelled) {
       throw new DBOSAwaitedWorkflowCancelledError(this.workflowID);
+    }
+    if (res?.maxRecoveryAttemptsExceeded) {
+      throw new DBOSAwaitedWorkflowExceededMaxRecoveryAttempts(this.workflowID);
     }
     return await DBOSExecutor.reviveResultOrError<R>(res!, this.systemDatabase.getSerializer());
   }

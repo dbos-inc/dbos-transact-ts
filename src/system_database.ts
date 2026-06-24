@@ -48,7 +48,7 @@ export interface SystemDatabaseStoredResult {
   maxRecoveryAttemptsExceeded?: boolean;
   childWorkflowID?: string | null;
   functionName?: string;
-  serialization?: string | null; // Only for WF result, not step
+  serialization?: string | null; // For WF result, and for steps that persist a format (recv/getEvent)
 }
 
 /* Exported workflow format for import/export */
@@ -2099,7 +2099,7 @@ export class SystemDatabase {
           `INSERT INTO "${this.schemaName}".workflow_events (workflow_uuid, key, value, serialization)
              VALUES ($1, $2, $3, $4)
              ON CONFLICT (workflow_uuid, key)
-             DO UPDATE SET value = $3
+             DO UPDATE SET value = $3, serialization = $4
              RETURNING workflow_uuid;`,
           [workflowID, key, message, serialization],
         );
@@ -2151,7 +2151,7 @@ export class SystemDatabase {
             res.functionName!,
           );
         }
-        return { serializedValue: res.output!, serialization: null };
+        return { serializedValue: res.output!, serialization: res.serialization ?? null };
       }
     }
 
@@ -3857,7 +3857,7 @@ export class SystemDatabase {
     await this.#checkIfCanceled(client, workflowID);
 
     const { rows } = await client.query<operation_outputs>(
-      `SELECT output, error, child_workflow_id, function_name
+      `SELECT output, error, child_workflow_id, function_name, serialization
        FROM "${this.schemaName}".operation_outputs
       WHERE workflow_uuid=$1 AND function_id=$2`,
       [workflowID, functionID],
@@ -3870,6 +3870,10 @@ export class SystemDatabase {
         error: rows[0].error,
         childWorkflowID: rows[0].child_workflow_id,
         functionName: rows[0].function_name,
+        // Steps such as recv/getEvent persist the serialization format used for
+        // their output; it must be returned so OAOO replay deserializes with the
+        // same serializer rather than falling back to the default one.
+        serialization: rows[0].serialization,
       };
     }
   }

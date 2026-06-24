@@ -133,6 +133,39 @@ const dateWorkflow = DBOS.registerWorkflow(
   },
 );
 
+// Re-sets the same event key twice with different serialization formats. The
+// second setEvent must overwrite both the value and the serialization column.
+const reSetEventWorkflow = DBOS.registerWorkflow(
+  async () => {
+    await DBOS.setEvent('rekey', 10n, { serializationType: 'portable' });
+    await DBOS.setEvent('rekey', 10n, { serializationType: 'native' });
+  },
+  { name: 'reSetEventWorkflow' },
+);
+
+// Workflows for the OAOO serialization-replay test (recv / getEvent must keep
+// the format of their recorded output across workflow replay).
+const portableEventSetterWF = DBOS.registerWorkflow(
+  async (input: string) => {
+    await DBOS.setEvent('evt', input, { serializationType: 'portable' });
+  },
+  { name: 'portableEventSetterWF' },
+);
+
+const eventGetterWF = DBOS.registerWorkflow(
+  async (setterId: string) => {
+    return await DBOS.getEvent<string>(setterId, 'evt');
+  },
+  { name: 'eventGetterWF' },
+);
+
+const portableRecvWF = DBOS.registerWorkflow(
+  async () => {
+    return await DBOS.recv<string>('topic');
+  },
+  { name: 'portableRecvWF' },
+);
+
 describe('portable-serizlization-tests', () => {
   let config: DBOSConfig;
   let systemDBClient: Client;
@@ -331,6 +364,24 @@ describe('portable-serizlization-tests', () => {
       expect((e as PortableWorkflowError).name).toBe('Error');
       expect((e as object).constructor.name).toBe('PortableWorkflowError');
     }
+  });
+
+  test('test-setevent-reset-updates-serialization', async () => {
+    // Re-setting an event with a different serialization format must update the
+    // stored `serialization` column, not just the value. Otherwise getEvent reads
+    // the new bytes with the old format. Here the value is first written portable
+    // then native (superjson); the native format must win so that getEvent
+    // recovers the bigint 10n rather than the raw superjson envelope object.
+    const handle = await DBOS.startWorkflow(reSetEventWorkflow)();
+    await handle.getResult();
+
+    const row = await systemDBClient.query<workflow_events>(
+      `SELECT * FROM dbos.workflow_events WHERE workflow_uuid = $1 AND key = $2`,
+      [handle.workflowID, 'rekey'],
+    );
+    expect(row.rows[0].serialization).toBe(DBOSJSON.name());
+
+    expect(await DBOS.getEvent(handle.workflowID, 'rekey')).toBe(10n);
   });
 
   // Reproduces https://github.com/dbos-inc/dbos-transact-ts/issues/1208
@@ -955,6 +1006,48 @@ describe('custom-serializer-restart-tests', () => {
     expect(custSteps).toBeDefined();
     const setEventStep = custSteps!.find((s) => s.name.includes('setEvent'));
     expect(setEventStep).toBeDefined();
+
+    process.env.DBOS__APPVERSION = undefined;
+  });
+
+  test('test-recv-getevent-preserve-serialization-on-replay', async () => {
+    // recv and getEvent must preserve the serialization format of their recorded
+    // output across OAOO replay. The global serializer here is the custom base64
+    // one, which cannot parse portable/superjson bytes — so if a replayed
+    // getEvent/recv falls back to it instead of using the stored 'portable_json'
+    // format, deserialization throws and the replayed workflow fails.
+    process.env.DBOS__APPVERSION = 'v0';
+    await setUpDBOSTestSysDb(config);
+    config.serializer = base64Serializer;
+    DBOS.setConfig(config);
+    await DBOS.launch();
+
+    systemDBClient = new Client({ connectionString: config.systemDatabaseUrl });
+    await systemDBClient.connect();
+
+    // --- getEvent path ---
+    const setter = await DBOS.startWorkflow(portableEventSetterWF)('event-payload');
+    await setter.getResult();
+    // Sanity check: the event was stored in portable format, not base64.
+    const evtRow = await systemDBClient.query<workflow_events>(
+      `SELECT * FROM dbos.workflow_events WHERE workflow_uuid = $1 AND key = $2`,
+      [setter.workflowID, 'evt'],
+    );
+    expect(evtRow.rows[0].serialization).toBe(DBOSPortableJSON.name());
+
+    const getter = await DBOS.startWorkflow(eventGetterWF)(setter.workflowID);
+    expect(await getter.getResult()).toBe('event-payload');
+    // Replay the getter: getEvent hits OAOO and must still return the value.
+    const reGetter = await reexecuteWorkflowById(getter.workflowID);
+    expect(await reGetter?.getResult()).toBe('event-payload');
+
+    // --- recv path ---
+    const receiver = await DBOS.startWorkflow(portableRecvWF)();
+    await DBOS.send(receiver.workflowID, 'msg-payload', 'topic', undefined, { serializationType: 'portable' });
+    expect(await receiver.getResult()).toBe('msg-payload');
+    // Replay the receiver: recv hits OAOO and must still return the message.
+    const reReceiver = await reexecuteWorkflowById(receiver.workflowID);
+    expect(await reReceiver?.getResult()).toBe('msg-payload');
 
     process.env.DBOS__APPVERSION = undefined;
   });

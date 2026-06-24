@@ -68,9 +68,31 @@ function convertWeekDayName(weekExpression: string, items: string[]) {
 }
 
 function weekDayNamesConversion(expression: string) {
-  expression = expression.replace('7', '0');
+  // Note: numeric 7 (also a valid alias for Sunday) is intentionally NOT folded
+  // into 0 here. Doing so before ranges are expanded corrupts ranges such as
+  // `5-7` into `5-0`. The 7 -> 0 fold is applied after expansion by
+  // `convertSundaySeven`, so e.g. `5-7` expands to `5,6,7` and then to `5,6,0`.
   expression = convertWeekDayName(expression, weekDays);
   return convertWeekDayName(expression, shortWeekDays);
+}
+
+// In the day-of-week field, 7 is an alias for Sunday (0). This must run AFTER
+// ranges and steps have been expanded so that ranges like `5-7` first expand to
+// `5,6,7` (Fri,Sat,Sun) and only then have the 7 folded into 0. Duplicates that
+// result from the fold (e.g. `0-7` -> `0,1,2,3,4,5,6,0`) are removed while
+// preserving order.
+function convertSundaySeven(expressions: string[]) {
+  const seen = new Set<string>();
+  const folded: string[] = [];
+  for (const value of expressions[5].split(',')) {
+    const day = value === '7' ? '0' : value;
+    if (!seen.has(day)) {
+      seen.add(day);
+      folded.push(day);
+    }
+  }
+  expressions[5] = folded.join(',');
+  return expressions;
 }
 
 function convertAsterisk(expression: string, replacement: string) {
@@ -138,9 +160,15 @@ function convertSteps(expressions: string[]) {
       const values = match[1].split(',');
       const stepValues: string[] = [];
       const divider = parseInt(baseDivider, 10);
-      for (let j = 0; j <= values.length; j++) {
+      // A step expression `base/N` selects every Nth value counting from the
+      // lowest value of `base`, not every value divisible by N. Since ranges are
+      // already expanded by this point, `values[0]` is that lowest value. Using
+      // divisibility instead would phase-shift fields whose minimum is not 0
+      // (e.g. day-of-month `*/2` would yield even days instead of 1,3,5,...).
+      const start = parseInt(values[0], 10);
+      for (let j = 0; j < values.length; j++) {
         const value = parseInt(values[j], 10);
-        if (value % divider === 0) {
+        if ((value - start) % divider === 0) {
           stepValues.push(`${value}`);
         }
       }
@@ -268,6 +296,7 @@ export function convertExpression(crontab: string) {
   expressions = convertSteps(expressions);
 
   expressions = normalizeIntegers(expressions);
+  expressions = convertSundaySeven(expressions);
 
   return expressions.join(' ');
 }
