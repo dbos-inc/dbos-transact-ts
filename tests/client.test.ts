@@ -1,10 +1,19 @@
 import { workflow_status } from '../schemas/system_db_schema';
 import { DBOS, DBOSClient, StatusString } from '../src';
 import { globalParams, sleepms } from '../src/utils';
-import { generateDBOSTestConfig, recoverPendingWorkflows, setUpDBOSTestSysDb } from './helpers';
+import {
+  generateDBOSTestConfig,
+  recoverPendingWorkflows,
+  setUpDBOSTestSysDb,
+  setWfAndChildrenToPending,
+} from './helpers';
 import { Client, PoolConfig } from 'pg';
 import { spawnSync } from 'child_process';
-import { DBOSQueueDuplicatedError, DBOSAwaitedWorkflowCancelledError } from '../src/error';
+import {
+  DBOSQueueDuplicatedError,
+  DBOSAwaitedWorkflowCancelledError,
+  DBOSAwaitedWorkflowExceededMaxRecoveryAttempts,
+} from '../src/error';
 import { randomUUID } from 'crypto';
 import { DBOSConfig } from '../src/dbos-executor';
 import { DEFAULT_POOL_SIZE } from '../src/system_database';
@@ -88,6 +97,16 @@ class ClientTest {
   @DBOS.workflow()
   static async blockingParentDirect() {
     await ClientTest.blockingWorkflow();
+  }
+}
+
+const DLQ_MAX_RECOVERY_ATTEMPTS = 2;
+
+class ClientDLQTest {
+  // Succeeds when run, but is forced back to PENDING repeatedly until it exhausts recovery attempts (DLQ).
+  @DBOS.workflow({ maxRecoveryAttempts: DLQ_MAX_RECOVERY_ATTEMPTS })
+  static async dlqWorkflow(): Promise<string> {
+    return Promise.resolve('should-not-be-returned');
   }
 }
 
@@ -391,6 +410,31 @@ describe('DBOSClient', () => {
       expect(result.rows[0].application_version).toBe(version);
     } finally {
       await dbClient.end();
+    }
+  });
+
+  test('DBOSClient-getResult-throws-on-max-recovery-attempts-exceeded', async () => {
+    // A workflow past its max recovery attempts must make client getResult throw, not silently return null.
+    await DBOS.launch();
+    const client = await DBOSClient.create({ systemDatabaseUrl });
+    try {
+      const handle = await DBOS.startWorkflow(ClientDLQTest).dlqWorkflow();
+      await handle.getResult();
+
+      // Force back to PENDING and recover repeatedly until it exhausts recovery attempts and lands in the DLQ.
+      for (let i = 0; i < DLQ_MAX_RECOVERY_ATTEMPTS; i++) {
+        await setWfAndChildrenToPending(handle.workflowID, false);
+        await (await recoverPendingWorkflows())[0].getResult();
+      }
+      await setWfAndChildrenToPending(handle.workflowID, false);
+      await recoverPendingWorkflows();
+      expect((await handle.getStatus())?.status).toBe(StatusString.MAX_RECOVERY_ATTEMPTS_EXCEEDED);
+
+      await expect(client.retrieveWorkflow(handle.workflowID).getResult()).rejects.toThrow(
+        DBOSAwaitedWorkflowExceededMaxRecoveryAttempts,
+      );
+    } finally {
+      await client.destroy();
     }
   });
 

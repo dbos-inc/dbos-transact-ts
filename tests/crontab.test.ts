@@ -118,6 +118,15 @@ describe('week-day-names-conversion', () => {
     const weekDays = conversion('* * * * 7').split(' ')[5];
     expect(weekDays).toBe('0');
   });
+
+  // Regression: day-of-week 7 (Sunday) must fold to 0 only after ranges expand, so ranges ending in 7 survive.
+  it('should expand day-of-week ranges that include 7 (Sunday) correctly', () => {
+    expect(conversion('* * * * 5-7').split(' ')[5]).toBe('5,6,0'); // Fri,Sat,Sun
+    expect(conversion('* * * * 6-7').split(' ')[5]).toBe('6,0'); // Sat,Sun
+    expect(conversion('* * * * 1-7').split(' ')[5]).toBe('1,2,3,4,5,6,0'); // every day
+    expect(conversion('* * * * 0-7').split(' ')[5]).toBe('0,1,2,3,4,5,6'); // every day, deduped
+    expect(conversion('* * * * 1,7').split(' ')[5]).toBe('1,0'); // Mon,Sun
+  });
 });
 
 /////////////

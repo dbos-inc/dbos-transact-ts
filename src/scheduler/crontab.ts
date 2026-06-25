@@ -68,9 +68,24 @@ function convertWeekDayName(weekExpression: string, items: string[]) {
 }
 
 function weekDayNamesConversion(expression: string) {
-  expression = expression.replace('7', '0');
+  // Don't fold 7 (Sunday) into 0 here: pre-expansion it corrupts ranges like 5-7. See convertSundaySeven.
   expression = convertWeekDayName(expression, weekDays);
   return convertWeekDayName(expression, shortWeekDays);
+}
+
+// Fold day-of-week 7 (Sunday) into 0 after range/step expansion, removing resulting duplicates.
+function convertSundaySeven(expressions: string[]) {
+  const seen = new Set<string>();
+  const folded: string[] = [];
+  for (const value of expressions[5].split(',')) {
+    const day = value === '7' ? '0' : value;
+    if (!seen.has(day)) {
+      seen.add(day);
+      folded.push(day);
+    }
+  }
+  expressions[5] = folded.join(',');
+  return expressions;
 }
 
 function convertAsterisk(expression: string, replacement: string) {
@@ -268,6 +283,7 @@ export function convertExpression(crontab: string) {
   expressions = convertSteps(expressions);
 
   expressions = normalizeIntegers(expressions);
+  expressions = convertSundaySeven(expressions);
 
   return expressions.join(' ');
 }
