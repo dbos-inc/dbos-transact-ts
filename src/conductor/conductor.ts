@@ -773,6 +773,15 @@ export class Conductor {
                 executorId: aggBody.executor_id,
                 queueName: aggBody.queue_name,
                 workflowIdPrefix: aggBody.workflow_id_prefix,
+                workflowIDs: aggBody.workflow_uuids,
+                authenticatedUser: aggBody.authenticated_user,
+                forkedFrom: aggBody.forked_from,
+                parentWorkflowID: aggBody.parent_workflow_id,
+                scheduleName: aggBody.schedule_name,
+                queuesOnly: aggBody.queues_only,
+                wasForkedFrom: aggBody.was_forked_from,
+                hasParent: aggBody.has_parent,
+                attributes: aggBody.attributes,
               });
               aggOutput = rows.map((r) => ({
                 group: r.group,

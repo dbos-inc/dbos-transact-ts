@@ -2934,6 +2934,8 @@ describe('test-workflow-aggregates', () => {
   });
 
   class AggWorkflows {
+    static blockEvent = new Event();
+
     @DBOS.workflow()
     static async successWorkflow() {
       return await Promise.resolve('ok');
@@ -2948,6 +2950,22 @@ describe('test-workflow-aggregates', () => {
     @DBOS.workflow()
     static async queuedWorkflow() {
       return await Promise.resolve('queued');
+    }
+
+    @DBOS.workflow()
+    static async childWorkflow() {
+      return await Promise.resolve('child');
+    }
+
+    @DBOS.workflow()
+    static async parentWorkflow() {
+      return await AggWorkflows.childWorkflow();
+    }
+
+    @DBOS.workflow()
+    static async blockingWorkflow() {
+      await AggWorkflows.blockEvent.wait();
+      return 'unblocked';
     }
   }
 
@@ -3505,6 +3523,307 @@ describe('test-workflow-aggregates', () => {
     // the row producing MAX(wait) has total >= its wait, and MAX(total)
     // is at least that row's total.
     expect(queuedRow.maxTotalLatencyMs!).toBeGreaterThanOrEqual(queuedRow.maxQueueWaitMs!);
+  });
+
+  test('filter-by-workflow-ids', async () => {
+    const idA = `agg-ids-a-${randomUUID()}`;
+    const idB = `agg-ids-b-${randomUUID()}`;
+    const idC = `agg-ids-c-${randomUUID()}`;
+    for (const id of [idA, idB, idC]) {
+      const handle = await DBOS.startWorkflow(AggWorkflows, { workflowID: id }).successWorkflow();
+      await handle.getResult();
+    }
+
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+
+    // Filter to two of the three IDs
+    const results = await sysdb.getWorkflowAggregates({
+      groupByStatus: true,
+      workflowIDs: [idA, idB],
+      selectCount: true,
+    });
+    expect(results.length).toBe(1);
+    expect(results[0].group['status']).toBe('SUCCESS');
+    expect(results[0].count).toBe(2);
+
+    // Non-existent ID returns empty
+    const empty = await sysdb.getWorkflowAggregates({
+      groupByStatus: true,
+      workflowIDs: ['nonexistent-id'],
+      selectCount: true,
+    });
+    expect(empty.length).toBe(0);
+  });
+
+  test('filter-by-authenticated-user', async () => {
+    // Two workflows as alice, one as bob.
+    await DBOS.withAuthedContext('alice', [], async () => {
+      await AggWorkflows.successWorkflow();
+      await AggWorkflows.successWorkflow();
+    });
+    await DBOS.withAuthedContext('bob', [], async () => {
+      await AggWorkflows.successWorkflow();
+    });
+
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+
+    const alice = await sysdb.getWorkflowAggregates({
+      groupByStatus: true,
+      authenticatedUser: ['alice'],
+      selectCount: true,
+    });
+    expect(alice.length).toBe(1);
+    expect(alice[0].count).toBe(2);
+
+    const bob = await sysdb.getWorkflowAggregates({
+      groupByStatus: true,
+      authenticatedUser: ['bob'],
+      selectCount: true,
+    });
+    expect(bob[0].count).toBe(1);
+
+    // Both users together
+    const both = await sysdb.getWorkflowAggregates({
+      groupByStatus: true,
+      authenticatedUser: ['alice', 'bob'],
+      selectCount: true,
+    });
+    expect(both[0].count).toBe(3);
+
+    // Unknown user returns empty
+    const empty = await sysdb.getWorkflowAggregates({
+      groupByStatus: true,
+      authenticatedUser: ['carol'],
+      selectCount: true,
+    });
+    expect(empty.length).toBe(0);
+  });
+
+  test('filter-by-fork', async () => {
+    // Run a workflow, then fork it twice.
+    const origId = `agg-fork-orig-${randomUUID()}`;
+    const handle = await DBOS.startWorkflow(AggWorkflows, { workflowID: origId }).successWorkflow();
+    await handle.getResult();
+
+    await (await DBOS.forkWorkflow(origId, 0)).getResult();
+    await (await DBOS.forkWorkflow(origId, 0)).getResult();
+
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+
+    // forkedFrom: the two forks were forked from origId
+    const forks = await sysdb.getWorkflowAggregates({
+      groupByStatus: true,
+      forkedFrom: [origId],
+      selectCount: true,
+    });
+    expect(forks.length).toBe(1);
+    expect(forks[0].count).toBe(2);
+
+    // wasForkedFrom=true: only the original has been forked from
+    const wasForked = await sysdb.getWorkflowAggregates({
+      groupByStatus: true,
+      wasForkedFrom: true,
+      selectCount: true,
+    });
+    expect(wasForked.length).toBe(1);
+    expect(wasForked[0].count).toBe(1);
+
+    // wasForkedFrom=false: the two forks
+    const notForked = await sysdb.getWorkflowAggregates({
+      groupByStatus: true,
+      wasForkedFrom: false,
+      selectCount: true,
+    });
+    expect(notForked.length).toBe(1);
+    expect(notForked[0].count).toBe(2);
+
+    // Non-existent origin returns empty
+    const empty = await sysdb.getWorkflowAggregates({
+      groupByStatus: true,
+      forkedFrom: ['nonexistent-id'],
+      selectCount: true,
+    });
+    expect(empty.length).toBe(0);
+  });
+
+  test('filter-by-parent', async () => {
+    const parentId = `agg-parent-${randomUUID()}`;
+    const handle = await DBOS.startWorkflow(AggWorkflows, { workflowID: parentId }).parentWorkflow();
+    await handle.getResult();
+
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+
+    // parentWorkflowID: the child has parent_workflow_id = parentId
+    const children = await sysdb.getWorkflowAggregates({
+      groupByStatus: true,
+      parentWorkflowID: [parentId],
+      selectCount: true,
+    });
+    expect(children.length).toBe(1);
+    expect(children[0].count).toBe(1);
+
+    // hasParent=true returns only the child
+    const withParent = await sysdb.getWorkflowAggregates({
+      groupByStatus: true,
+      hasParent: true,
+      selectCount: true,
+    });
+    expect(withParent.length).toBe(1);
+    expect(withParent[0].count).toBe(1);
+
+    // hasParent=false returns only the parent
+    const withoutParent = await sysdb.getWorkflowAggregates({
+      groupByStatus: true,
+      hasParent: false,
+      selectCount: true,
+    });
+    expect(withoutParent.length).toBe(1);
+    expect(withoutParent[0].count).toBe(1);
+
+    // Non-existent parent returns empty
+    const empty = await sysdb.getWorkflowAggregates({
+      groupByStatus: true,
+      parentWorkflowID: ['nonexistent-parent'],
+      selectCount: true,
+    });
+    expect(empty.length).toBe(0);
+  });
+
+  test('filter-by-attributes', async () => {
+    // Two workflows tagged acme, one tagged globex.
+    for (let i = 0; i < 2; i++) {
+      const h = await DBOS.startWorkflow(AggWorkflows, {
+        workflowAttributes: { customer: 'acme', region: 'us-east-1' },
+      }).successWorkflow();
+      await h.getResult();
+    }
+    const h = await DBOS.startWorkflow(AggWorkflows, {
+      workflowAttributes: { customer: 'globex' },
+    }).successWorkflow();
+    await h.getResult();
+
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+
+    // Containment match on a single key
+    const acme = await sysdb.getWorkflowAggregates({
+      groupByStatus: true,
+      attributes: { customer: 'acme' },
+      selectCount: true,
+    });
+    expect(acme.length).toBe(1);
+    expect(acme[0].count).toBe(2);
+
+    // Match requires all provided key-value pairs
+    const acmeEast = await sysdb.getWorkflowAggregates({
+      groupByStatus: true,
+      attributes: { customer: 'acme', region: 'us-east-1' },
+      selectCount: true,
+    });
+    expect(acmeEast[0].count).toBe(2);
+
+    // A key-value pair that no workflow has returns empty
+    const empty = await sysdb.getWorkflowAggregates({
+      groupByStatus: true,
+      attributes: { customer: 'acme', region: 'eu-west-1' },
+      selectCount: true,
+    });
+    expect(empty.length).toBe(0);
+  });
+
+  test('filter-by-queues-only', async () => {
+    AggWorkflows.blockEvent = new Event();
+
+    // Three workflows enqueued and blocked: ENQUEUED/PENDING with queue_name set.
+    const blocked: WorkflowHandle<unknown>[] = [];
+    for (let i = 0; i < 3; i++) {
+      blocked.push(await DBOS.startWorkflow(AggWorkflows, { queueName: 'agg-test-queue' }).blockingWorkflow());
+    }
+    // Two completed, non-queued workflows (SUCCESS, no queue).
+    for (let i = 0; i < 2; i++) await AggWorkflows.successWorkflow();
+
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+
+    // queuesOnly counts only the actively enqueued workflows.
+    const results = await sysdb.getWorkflowAggregates({
+      groupByQueueName: true,
+      queuesOnly: true,
+      selectCount: true,
+    });
+    expect(results.length).toBe(1);
+    expect(results[0].group['queue_name']).toBe('agg-test-queue');
+    expect(results[0].count).toBe(3);
+
+    // Release the blocked workflows so they complete before shutdown.
+    AggWorkflows.blockEvent.set();
+    await Promise.all(blocked.map((h) => h.getResult()));
+
+    // Once complete, none are actively enqueued.
+    const afterDone = await sysdb.getWorkflowAggregates({
+      groupByQueueName: true,
+      queuesOnly: true,
+      selectCount: true,
+    });
+    expect(afterDone.length).toBe(0);
+  });
+
+  test('filter-by-schedule-name', async () => {
+    // schedule_name is only populated by the persistent scheduler; set it directly
+    // on completed workflows to exercise the aggregate filter deterministically.
+    const ids: string[] = [];
+    for (let i = 0; i < 3; i++) {
+      const id = `agg-sched-${randomUUID()}`;
+      const h = await DBOS.startWorkflow(AggWorkflows, { workflowID: id }).successWorkflow();
+      await h.getResult();
+      ids.push(id);
+    }
+
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+
+    const client = new Client({ connectionString: config.systemDatabaseUrl });
+    await client.connect();
+    try {
+      await client.query(
+        `UPDATE "${sysdb.schemaName}".workflow_status SET schedule_name = $1 WHERE workflow_uuid = ANY($2)`,
+        ['sched-a', [ids[0], ids[1]]],
+      );
+      await client.query(
+        `UPDATE "${sysdb.schemaName}".workflow_status SET schedule_name = $1 WHERE workflow_uuid = $2`,
+        ['sched-b', ids[2]],
+      );
+    } finally {
+      await client.end();
+    }
+
+    const a = await sysdb.getWorkflowAggregates({
+      groupByStatus: true,
+      scheduleName: ['sched-a'],
+      selectCount: true,
+    });
+    expect(a.length).toBe(1);
+    expect(a[0].count).toBe(2);
+
+    const b = await sysdb.getWorkflowAggregates({
+      groupByStatus: true,
+      scheduleName: ['sched-b'],
+      selectCount: true,
+    });
+    expect(b[0].count).toBe(1);
+
+    // Both schedules together
+    const both = await sysdb.getWorkflowAggregates({
+      groupByStatus: true,
+      scheduleName: ['sched-a', 'sched-b'],
+      selectCount: true,
+    });
+    expect(both[0].count).toBe(3);
+
+    // Unknown schedule returns empty
+    const empty = await sysdb.getWorkflowAggregates({
+      groupByStatus: true,
+      scheduleName: ['sched-c'],
+      selectCount: true,
+    });
+    expect(empty.length).toBe(0);
   });
 });
 

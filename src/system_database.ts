@@ -167,6 +167,15 @@ export interface GetWorkflowAggregatesInput {
   executorId?: string[];
   queueName?: string[];
   workflowIdPrefix?: string[];
+  workflowIDs?: string[];
+  authenticatedUser?: string[];
+  forkedFrom?: string[];
+  wasForkedFrom?: boolean;
+  parentWorkflowID?: string[];
+  hasParent?: boolean;
+  queuesOnly?: boolean;
+  attributes?: Record<string, unknown>;
+  scheduleName?: string[];
 }
 
 export interface GetStepAggregatesInput {
@@ -2980,6 +2989,37 @@ export class SystemDatabase {
         return `workflow_uuid LIKE $${paramIdx++}`;
       });
       whereClauses.push(`(${likeClauses.join(' OR ')})`);
+    }
+
+    addFilter('workflow_uuid', input.workflowIDs);
+    addFilter('authenticated_user', input.authenticatedUser);
+    addFilter('forked_from', input.forkedFrom);
+    addFilter('parent_workflow_id', input.parentWorkflowID);
+    addFilter('schedule_name', input.scheduleName);
+
+    // Only workflows that are actively enqueued.
+    if (input.queuesOnly) {
+      whereClauses.push(`queue_name IS NOT NULL`);
+      whereClauses.push(`status IN ($${paramIdx}, $${paramIdx + 1}, $${paramIdx + 2})`);
+      params.push(StatusString.ENQUEUED, StatusString.PENDING, StatusString.DELAYED);
+      paramIdx += 3;
+    }
+
+    if (input.wasForkedFrom !== undefined) {
+      whereClauses.push(`was_forked_from = $${paramIdx}`);
+      params.push(input.wasForkedFrom);
+      paramIdx++;
+    }
+
+    if (input.hasParent !== undefined) {
+      whereClauses.push(input.hasParent ? `parent_workflow_id IS NOT NULL` : `parent_workflow_id IS NULL`);
+    }
+
+    // Match workflows whose attributes JSONB contains all the given key-value pairs.
+    if (input.attributes && Object.keys(input.attributes).length > 0) {
+      whereClauses.push(`attributes @> $${paramIdx}::jsonb`);
+      params.push(JSON.stringify(input.attributes));
+      paramIdx++;
     }
 
     if (input.startTime) {
