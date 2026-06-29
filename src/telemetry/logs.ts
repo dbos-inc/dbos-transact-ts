@@ -256,7 +256,7 @@ export class GlobalLogger {
  * Contract for custom implementations:
  * - Log entries arrive as strings: DBOS stringifies non-string entries before
  *   delegating, and `error()` receives the message of an `Error` with its
- *   stack trace in `metadata.stack`.
+ *   stack trace (including any `cause` chain) in `metadata.stack`.
  * - When called from a workflow or step, `metadata.span?.attributes` carries
  *   the operation context (workflow ID, operation name and type, etc.).
  * - DBOS does not filter by `logLevel` before delegating; level routing is the
