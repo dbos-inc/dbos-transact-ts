@@ -11,6 +11,7 @@ import { DBOSJSON } from '../serialization';
 import { LoggerConfig } from '../dbos-executor';
 import { DBOSSpan } from './traces';
 import type { format as formatT } from 'winston';
+import { inspect } from 'node:util';
 
 // As DBOS OTLP is optional, OTLP objects must only be dynamically imported
 // and only when OTLP is enabled. Importing OTLP types is fine as long
@@ -223,7 +224,8 @@ export class GlobalLogger {
   error(inputError: unknown, metadata?: ContextualMetadata & StackTrace): void {
     this.isLogging = true;
     if (inputError instanceof Error) {
-      this.logger.error(inputError.message, { ...metadata, stack: inputError.stack });
+      // inspect() includes the `cause` chain and extra own properties that Error.stack omits.
+      this.logger.error(inputError.message, { ...metadata, stack: inspect(inputError, { depth: null }) });
     } else if (typeof inputError === 'string') {
       this.logger.error(inputError, { ...metadata, stack: new Error().stack });
     } else {

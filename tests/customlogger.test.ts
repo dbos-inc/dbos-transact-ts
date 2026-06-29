@@ -113,6 +113,17 @@ describe('custom-logger', () => {
     expect(typeof entry?.metadata?.stack).toBe('string');
   });
 
+  test('error cause chain is preserved in the stack metadata', async () => {
+    DBOS.setConfig({ ...generateDBOSTestConfig(), logger: recorder });
+    await DBOS.launch();
+
+    DBOS.logger.error(new Error('outer', { cause: new Error('inner') }));
+    const entry = recorder.find('error', 'outer');
+    expect(entry).toBeDefined();
+    expect(entry?.metadata?.stack).toContain('[cause]');
+    expect(entry?.metadata?.stack).toContain('inner');
+  });
+
   test('non-string entries are stringified before delegation', async () => {
     DBOS.setConfig({ ...generateDBOSTestConfig(), logger: recorder });
     await DBOS.launch();
