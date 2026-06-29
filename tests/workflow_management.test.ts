@@ -1094,12 +1094,16 @@ describe('test-list-steps', () => {
   test('test-step-timing', async () => {
     const startTime = Date.now();
     const handle = await DBOS.startWorkflow(stepTimingWorkflow)();
+    await handle.getResult();
 
     const steps = await DBOS.listWorkflowSteps(handle.workflowID);
     assert(steps);
+    assert(steps.length > 0);
     for (const s of steps) {
       assert(s.startedAtEpochMs);
       assert(s.completedAtEpochMs);
+      assert.strictEqual(typeof s.startedAtEpochMs, 'number');
+      assert.strictEqual(typeof s.completedAtEpochMs, 'number');
       assert(s.startedAtEpochMs >= startTime);
       assert(s.completedAtEpochMs >= s.startedAtEpochMs);
       if (s.functionID < numStepTimingSteps) {

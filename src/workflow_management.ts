@@ -42,8 +42,8 @@ export async function listWorkflowSteps(
       error:
         loadOutput && step.error ? await safeParseError(sysdb.getSerializer(), step.error, step.serialization) : null,
       childWorkflowID: step.child_workflow_id,
-      startedAtEpochMs: step.started_at_epoch_ms,
-      completedAtEpochMs: step.completed_at_epoch_ms,
+      startedAtEpochMs: step.started_at_epoch_ms ? Number(step.started_at_epoch_ms) : undefined,
+      completedAtEpochMs: step.completed_at_epoch_ms ? Number(step.completed_at_epoch_ms) : undefined,
     })),
   );
 
