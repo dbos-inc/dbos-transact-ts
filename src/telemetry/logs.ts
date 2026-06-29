@@ -58,6 +58,23 @@ export interface StackTrace {
   stack?: string;
 }
 
+// Append an error's `cause` chain to its stack trace, which `Error.stack` omits.
+// Targeted on purpose: inspecting the whole error would also dump every own
+// property (e.g. dbosErrorCode) onto every error log. Errors without a cause are
+// unchanged; non-Error causes are rendered with inspect() for readability.
+function errorStackWithCause(error: Error): string {
+  let stack = error.stack ?? `${error.name}: ${error.message}`;
+  const seen = new Set<unknown>([error]);
+  let cause: unknown = error.cause;
+  while (cause !== undefined && cause !== null && !seen.has(cause)) {
+    seen.add(cause);
+    const causeStack = cause instanceof Error ? (cause.stack ?? `${cause.name}: ${cause.message}`) : inspect(cause);
+    stack += '\n    [cause]: ' + causeStack.replace(/\n/g, '\n    ');
+    cause = cause instanceof Error ? cause.cause : undefined;
+  }
+  return stack;
+}
+
 export class GlobalLogger {
   private readonly logger: DLogger;
   readonly addContextMetadata: boolean;
@@ -224,8 +241,7 @@ export class GlobalLogger {
   error(inputError: unknown, metadata?: ContextualMetadata & StackTrace): void {
     this.isLogging = true;
     if (inputError instanceof Error) {
-      // inspect() includes the `cause` chain and extra own properties that Error.stack omits.
-      this.logger.error(inputError.message, { ...metadata, stack: inspect(inputError, { depth: null }) });
+      this.logger.error(inputError.message, { ...metadata, stack: errorStackWithCause(inputError) });
     } else if (typeof inputError === 'string') {
       this.logger.error(inputError, { ...metadata, stack: new Error().stack });
     } else {
