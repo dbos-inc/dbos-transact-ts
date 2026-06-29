@@ -113,6 +113,37 @@ describe('custom-logger', () => {
     expect(typeof entry?.metadata?.stack).toBe('string');
   });
 
+  test('error cause chain is preserved in the stack metadata', async () => {
+    DBOS.setConfig({ ...generateDBOSTestConfig(), logger: recorder });
+    await DBOS.launch();
+
+    DBOS.logger.error(new Error('outer', { cause: new Error('inner') }));
+    const entry = recorder.find('error', 'outer');
+    expect(entry).toBeDefined();
+    expect(entry?.metadata?.stack).toContain('[cause]');
+    expect(entry?.metadata?.stack).toContain('inner');
+
+    // A non-Error cause is rendered readably (not via the superjson envelope).
+    DBOS.logger.error(new Error('strcause', { cause: 'plain reason' }));
+    const strEntry = recorder.find('error', 'strcause');
+    expect(strEntry?.metadata?.stack).toContain("[cause]: 'plain reason'");
+    expect(strEntry?.metadata?.stack).not.toContain('__dbos_serializer');
+  });
+
+  test('error without a cause keeps an unmodified stack', async () => {
+    DBOS.setConfig({ ...generateDBOSTestConfig(), logger: recorder });
+    await DBOS.launch();
+
+    // An error's own properties (like DBOS errors' dbosErrorCode) must not be dumped into the stack.
+    const err = Object.assign(new Error('plain'), { dbosErrorCode: 7 });
+    DBOS.logger.error(err);
+    const entry = recorder.find('error', 'plain');
+    expect(entry).toBeDefined();
+    expect(entry?.metadata?.stack).toBe(err.stack);
+    expect(entry?.metadata?.stack).not.toContain('[cause]');
+    expect(entry?.metadata?.stack).not.toContain('dbosErrorCode');
+  });
+
   test('non-string entries are stringified before delegation', async () => {
     DBOS.setConfig({ ...generateDBOSTestConfig(), logger: recorder });
     await DBOS.launch();

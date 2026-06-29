@@ -11,6 +11,7 @@ import { DBOSJSON } from '../serialization';
 import { LoggerConfig } from '../dbos-executor';
 import { DBOSSpan } from './traces';
 import type { format as formatT } from 'winston';
+import { inspect } from 'node:util';
 
 // As DBOS OTLP is optional, OTLP objects must only be dynamically imported
 // and only when OTLP is enabled. Importing OTLP types is fine as long
@@ -55,6 +56,12 @@ export type ContextualMetadata = {
 
 export interface StackTrace {
   stack?: string;
+}
+
+// Append the `cause` (which Error.stack omits) to the stack; inspect() handles nested/circular/non-Error causes.
+function errorStackWithCause(error: Error): string {
+  const stack = error.stack ?? `${error.name}: ${error.message}`;
+  return error.cause === undefined ? stack : `${stack}\n  [cause]: ${inspect(error.cause)}`;
 }
 
 export class GlobalLogger {
@@ -223,7 +230,7 @@ export class GlobalLogger {
   error(inputError: unknown, metadata?: ContextualMetadata & StackTrace): void {
     this.isLogging = true;
     if (inputError instanceof Error) {
-      this.logger.error(inputError.message, { ...metadata, stack: inputError.stack });
+      this.logger.error(inputError.message, { ...metadata, stack: errorStackWithCause(inputError) });
     } else if (typeof inputError === 'string') {
       this.logger.error(inputError, { ...metadata, stack: new Error().stack });
     } else {
@@ -249,7 +256,7 @@ export class GlobalLogger {
  * Contract for custom implementations:
  * - Log entries arrive as strings: DBOS stringifies non-string entries before
  *   delegating, and `error()` receives the message of an `Error` with its
- *   stack trace in `metadata.stack`.
+ *   stack trace (including any `cause` chain) in `metadata.stack`.
  * - When called from a workflow or step, `metadata.span?.attributes` carries
  *   the operation context (workflow ID, operation name and type, etc.).
  * - DBOS does not filter by `logLevel` before delegating; level routing is the
