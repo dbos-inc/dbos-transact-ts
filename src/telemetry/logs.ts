@@ -58,21 +58,13 @@ export interface StackTrace {
   stack?: string;
 }
 
-// Append an error's `cause` chain to its stack trace, which `Error.stack` omits.
-// Targeted on purpose: inspecting the whole error would also dump every own
-// property (e.g. dbosErrorCode) onto every error log. Errors without a cause are
-// unchanged; non-Error causes are rendered with inspect() for readability.
+// Append an error's `cause` to its stack trace, which `Error.stack` omits.
+// We keep the main error's own `.stack` (so its own properties, e.g. dbosErrorCode,
+// aren't dumped into every error log) and let inspect() render the cause — which
+// handles nested cause chains, circular references, and non-Error causes itself.
 function errorStackWithCause(error: Error): string {
-  let stack = error.stack ?? `${error.name}: ${error.message}`;
-  const seen = new Set<unknown>([error]);
-  let cause: unknown = error.cause;
-  while (cause !== undefined && cause !== null && !seen.has(cause)) {
-    seen.add(cause);
-    const causeStack = cause instanceof Error ? (cause.stack ?? `${cause.name}: ${cause.message}`) : inspect(cause);
-    stack += '\n    [cause]: ' + causeStack.replace(/\n/g, '\n    ');
-    cause = cause instanceof Error ? cause.cause : undefined;
-  }
-  return stack;
+  const stack = error.stack ?? `${error.name}: ${error.message}`;
+  return error.cause === undefined ? stack : `${stack}\n  [cause]: ${inspect(error.cause)}`;
 }
 
 export class GlobalLogger {
