@@ -32,6 +32,7 @@ import { getClientConfig } from './utils';
 import { connectToPGAndReportOutcome, ensurePGDatabase, maskDatabaseUrl } from './database_utils';
 import { runSysMigrationsPg } from './sysdb_migrations/migration_runner';
 import { allMigrations } from './sysdb_migrations/internal/migrations';
+import { ensureSQLiteSystemDatabase, isSQLiteSystemDatabaseUrl, SQLitePool } from './sqlite_system_database';
 import {
   DEBUG_TRIGGER_STEP_COMMIT,
   DEBUG_TRIGGER_INITWF_COMMIT,
@@ -319,6 +320,14 @@ export async function ensureSystemDatabase(
   schemaName: string = 'dbos',
   useListenNotify: boolean = true,
 ) {
+  if (isSQLiteSystemDatabaseUrl(sysDbUrl)) {
+    if (customPool) {
+      throw new DBOSInitializationError('Custom systemDatabasePool is not supported for SQLite system databases');
+    }
+    await ensureSQLiteSystemDatabase(sysDbUrl, logger, schemaName);
+    return;
+  }
+
   let client: ClientBase | null = null;
   if (customPool) {
     // If a custom pool is passed in, assume the database already exists and create
@@ -669,8 +678,14 @@ export class SystemDatabase {
     this.shouldUseDBNotifications = useListenNotify;
 
     if (systemDatabasePool) {
+      if (isSQLiteSystemDatabaseUrl(systemDatabaseUrl)) {
+        throw new DBOSInitializationError('Custom systemDatabasePool is not supported for SQLite system databases');
+      }
       this.pool = systemDatabasePool;
       this.customPool = true;
+    } else if (isSQLiteSystemDatabaseUrl(systemDatabaseUrl)) {
+      this.shouldUseDBNotifications = false;
+      this.pool = new SQLitePool(systemDatabaseUrl, schemaName, sysDbPoolSize) as unknown as Pool;
     } else {
       const systemPoolConfig: PoolConfig = {
         ...getClientConfig(systemDatabaseUrl),

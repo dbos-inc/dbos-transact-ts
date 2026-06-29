@@ -86,6 +86,7 @@ import {
 import { maskDatabaseUrl } from './database_utils';
 import { debouncerWorkflowFunction } from './debouncer';
 import { Pool } from 'pg';
+import { isSQLiteSystemDatabaseUrl } from './sqlite_system_database';
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 interface DBOSNull {}
@@ -307,7 +308,13 @@ export class DBOSExecutor {
       this.logger.debug('Using provided system database'); // XXX print the name or something
       this.systemDatabase = systemDatabase;
     } else {
-      this.logger.debug('Using Postgres system database');
+      if (isSQLiteSystemDatabaseUrl(this.config.systemDatabaseUrl)) {
+        this.logger.info(
+          'Using SQLite as a system database. The SQLite system database is for development and testing. PostgreSQL is recommended for production use.',
+        );
+      } else {
+        this.logger.debug('Using Postgres system database');
+      }
       this.systemDatabase = new SystemDatabase(
         this.config.systemDatabaseUrl,
         this.logger,

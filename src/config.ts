@@ -6,6 +6,7 @@ import path from 'path';
 import assert from 'assert';
 import { maskDatabaseUrl } from './database_utils';
 import { DBOSJSON } from './serialization';
+import { isSQLiteSystemDatabaseUrl } from './sqlite_system_database';
 
 export const dbosConfigFilePath = 'dbos-config.yaml';
 
@@ -95,6 +96,10 @@ export function isValidDatabaseName(dbName: string): boolean {
 export function getSystemDatabaseUrl(configFile: Pick<ConfigFile, 'name' | 'system_database_url'>): string {
   const databaseUrl = configFile.system_database_url || defaultSysDatabaseUrl(configFile.name);
 
+  if (isSQLiteSystemDatabaseUrl(databaseUrl)) {
+    return databaseUrl;
+  }
+
   const url = new URL(databaseUrl);
   const dbName = url.pathname.slice(1);
 
@@ -114,25 +119,7 @@ export function getSystemDatabaseUrl(configFile: Pick<ConfigFile, 'name' | 'syst
 
   function defaultSysDatabaseUrl(appName?: string): string {
     assert(appName, 'Application name must be defined to construct a valid database URL.');
-
-    const host = process.env.PGHOST || 'localhost';
-    const port = process.env.PGPORT || '5432';
-    const username = process.env.PGUSER || 'postgres';
-    const password = process.env.PGPASSWORD || 'dbos';
-    const database = toDbName(appName) + '_dbos_sys';
-    const timeout = process.env.PGCONNECT_TIMEOUT || '10';
-    const sslmode = process.env.PGSSLMODE || (host === 'localhost' ? 'disable' : 'allow');
-
-    const dbUrl = new URL(`postgresql://host/database`);
-    dbUrl.username = username;
-    dbUrl.password = password;
-    dbUrl.hostname = host;
-    dbUrl.port = port;
-    dbUrl.protocol = 'postgresql';
-    dbUrl.pathname = `/${database}`;
-    dbUrl.searchParams.set('connect_timeout', timeout);
-    dbUrl.searchParams.set('sslmode', sslmode);
-    return dbUrl.toString();
+    return `sqlite:///${toDbName(appName)}.sqlite`;
   }
 
   function toDbName(appName: string) {
