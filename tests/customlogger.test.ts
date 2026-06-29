@@ -134,8 +134,7 @@ describe('custom-logger', () => {
     DBOS.setConfig({ ...generateDBOSTestConfig(), logger: recorder });
     await DBOS.launch();
 
-    // An error carrying an own property (like DBOS errors) must not have that
-    // property dumped into the logged stack; only the cause chain is appended.
+    // An error's own properties (like DBOS errors' dbosErrorCode) must not be dumped into the stack.
     const err = Object.assign(new Error('plain'), { dbosErrorCode: 7 });
     DBOS.logger.error(err);
     const entry = recorder.find('error', 'plain');

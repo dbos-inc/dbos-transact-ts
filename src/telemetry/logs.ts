@@ -58,10 +58,7 @@ export interface StackTrace {
   stack?: string;
 }
 
-// Append an error's `cause` to its stack trace, which `Error.stack` omits.
-// We keep the main error's own `.stack` (so its own properties, e.g. dbosErrorCode,
-// aren't dumped into every error log) and let inspect() render the cause — which
-// handles nested cause chains, circular references, and non-Error causes itself.
+// Append the `cause` (which Error.stack omits) to the stack; inspect() handles nested/circular/non-Error causes.
 function errorStackWithCause(error: Error): string {
   const stack = error.stack ?? `${error.name}: ${error.message}`;
   return error.cause === undefined ? stack : `${stack}\n  [cause]: ${inspect(error.cause)}`;
