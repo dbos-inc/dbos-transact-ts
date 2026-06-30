@@ -460,8 +460,23 @@ function parseAttributes(
   attributes: workflow_status['attributes'] | string | null | undefined,
 ): Record<string, unknown> | undefined {
   if (attributes === null || attributes === undefined) return undefined;
-  if (typeof attributes === 'string') return JSON.parse(attributes) as Record<string, unknown>;
-  return attributes;
+  const parsed: unknown = typeof attributes === 'string' ? JSON.parse(attributes) : attributes;
+  if (!isPlainRecord(parsed)) {
+    throw new Error('Workflow attributes must be a JSON object');
+  }
+  return parsed;
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function getRequiredRow<T>(rows: readonly T[], error: Error): T {
+  const row = rows[0];
+  if (row === undefined) {
+    throw error;
+  }
+  return row;
 }
 
 function serializeAttributes(attributes: workflow_status['attributes'] | string | null | undefined): string | null {
@@ -1272,7 +1287,8 @@ export class SystemDatabase {
     let startSteps: number[];
 
     if (options.fromStep !== undefined) {
-      startSteps = Array(workflowIDs.length).fill(options.fromStep) as number[];
+      const fromStep = options.fromStep;
+      startSteps = workflowIDs.map(() => fromStep);
     } else {
       let query: string;
       const params: unknown[] = [workflowIDs];
@@ -1310,7 +1326,13 @@ export class SystemDatabase {
           throw new Error(`Workflow ${wid} has no steps`);
         }
       }
-      startSteps = workflowIDs.map((wid) => startStepByID.get(wid)!);
+      startSteps = workflowIDs.map((wid) => {
+        const startStep = startStepByID.get(wid);
+        if (startStep === undefined) {
+          throw new Error(`Workflow ${wid} has no steps`);
+        }
+        return startStep;
+      });
     }
 
     const forkedIDs = workflowIDs.map(() => randomUUID());
@@ -1388,7 +1410,13 @@ export class SystemDatabase {
       for (let i = 0; i < originalWorkflowIDs.length; i++) {
         const origID = originalWorkflowIDs[i];
         const forkID = forkedWorkflowIDs[i];
-        const ws = statusByID.get(origID)!;
+        if (origID === undefined || forkID === undefined) {
+          throw new Error('originalWorkflowIDs and forkedWorkflowIDs must contain a workflow ID for every fork');
+        }
+        const ws = statusByID.get(origID);
+        if (ws === undefined) {
+          throw new DBOSNonExistentWorkflowError(`Workflow ${origID} does not exist`);
+        }
         const placeholders = insertCols.map(() => `$${paramIdx++}`).join(', ');
         valuesPlaceholders.push(`(${placeholders})`);
         params.push(
@@ -1550,15 +1578,15 @@ export class SystemDatabase {
           [wfID],
         );
 
-        if (statusResult.rows.length === 0) {
-          throw new DBOSNonExistentWorkflowError(`Workflow ${wfID} does not exist`);
-        }
-
+        const statusRow = getRequiredRow(
+          statusResult.rows,
+          new DBOSNonExistentWorkflowError(`Workflow ${wfID} does not exist`),
+        );
         const workflowStatus = {
-          ...statusResult.rows[0],
-          attributes: parseAttributes(statusResult.rows[0].attributes),
-          was_forked_from: Boolean(statusResult.rows[0].was_forked_from),
-          rate_limited: Boolean(statusResult.rows[0].rate_limited),
+          ...statusRow,
+          attributes: parseAttributes(statusRow.attributes),
+          was_forked_from: Boolean(statusRow.was_forked_from),
+          rate_limited: Boolean(statusRow.rate_limited),
         };
 
         // Export operation_outputs

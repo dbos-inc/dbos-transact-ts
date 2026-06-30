@@ -18,6 +18,11 @@ type SQLiteRunResult = {
   changes: number;
 };
 
+type SQLitePoolWaiter = {
+  resolve: (release: () => void) => void;
+  reject: (error: Error) => void;
+};
+
 function sqliteNowMsExpr(): string {
   return "(CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER))";
 }
@@ -121,7 +126,7 @@ export class SQLitePool {
   readonly options: { max: number };
   private readonly db: Database.Database;
   private locked = false;
-  private readonly waiters: Array<(release: () => void) => void> = [];
+  private readonly waiters: SQLitePoolWaiter[] = [];
   private ended = false;
 
   constructor(
@@ -139,10 +144,11 @@ export class SQLitePool {
 
   async query<T = unknown>(sql: string, params: unknown[] = []): Promise<SQLiteQueryResult<T>> {
     const release = await this.acquire();
+    const client = new SQLiteClient(this.db, this.schemaName, release);
     try {
-      return await new SQLiteClient(this.db, this.schemaName).query<T>(sql, params);
+      return await client.query<T>(sql, params);
     } finally {
-      release();
+      client.release();
     }
   }
 
@@ -152,7 +158,15 @@ export class SQLitePool {
   }
 
   end(): Promise<void> {
+    if (this.ended) {
+      return Promise.resolve();
+    }
+
     this.ended = true;
+    const endedError = sqlitePoolEndedError();
+    for (const waiter of this.waiters.splice(0)) {
+      waiter.reject(endedError);
+    }
     this.db.close();
     return Promise.resolve();
   }
@@ -172,13 +186,7 @@ export class SQLitePool {
     }
 
     return new Promise((resolve, reject) => {
-      this.waiters.push((release) => {
-        if (this.ended) {
-          reject(new Error('SQLite system database pool has ended'));
-          return;
-        }
-        resolve(release);
-      });
+      this.waiters.push({ resolve, reject });
     });
   }
 
@@ -189,12 +197,16 @@ export class SQLitePool {
       released = true;
       const next = this.waiters.shift();
       if (next) {
-        next(this.makeRelease());
+        next.resolve(this.makeRelease());
       } else {
         this.locked = false;
       }
     };
   }
+}
+
+function sqlitePoolEndedError(): Error {
+  return new Error('SQLite system database pool has ended');
 }
 
 export async function ensureSQLiteSystemDatabase(
@@ -463,7 +475,7 @@ function translateQuery(sql: string, params: unknown[], schemaName: string): { s
   translated = translated.replace(
     /([A-Za-z0-9_".]+)\s*=\s*ANY\(\$(\d+)\)/g,
     (_match, column: string, index: string) => {
-      const value = params[Number(index) - 1];
+      const value = getPositionalParam(params, index);
       const values = Array.isArray(value) ? value : [value];
       if (values.length === 0) return '1 = 0';
       const tokens = values.map((v) => {
@@ -478,14 +490,32 @@ function translateQuery(sql: string, params: unknown[], schemaName: string): { s
   const sqliteParams: SQLiteParams = [];
   translated = translated.replace(/\$(\d+)|__sqlite_extra_\d+__/g, (token, index: string | undefined) => {
     if (token.startsWith('__sqlite_extra_')) {
-      sqliteParams.push(extras.get(token)!);
+      sqliteParams.push(getExtraParam(extras, token));
       return '?';
     }
-    sqliteParams.push(normalizeValue(params[Number(index) - 1]));
+    if (index === undefined) {
+      throw new Error(`Missing SQLite query parameter index for token ${token}`);
+    }
+    sqliteParams.push(normalizeValue(getPositionalParam(params, index)));
     return '?';
   });
 
   return { sql: translated, params: sqliteParams };
+}
+
+function getPositionalParam(params: unknown[], index: string): unknown {
+  const position = Number(index) - 1;
+  if (!Number.isInteger(position) || position < 0 || position >= params.length) {
+    throw new Error(`Missing SQLite query parameter $${index}`);
+  }
+  return params[position];
+}
+
+function getExtraParam(extras: ReadonlyMap<string, SQLiteValue>, token: string): SQLiteValue {
+  if (!extras.has(token)) {
+    throw new Error(`Missing generated SQLite query parameter ${token}`);
+  }
+  return extras.get(token) ?? null;
 }
 
 function mapSQLiteError(e: unknown): Error {
