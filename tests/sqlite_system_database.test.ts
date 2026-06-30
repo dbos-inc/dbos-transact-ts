@@ -4,6 +4,7 @@ import path from 'node:path';
 
 import { DBOS, DBOSClient } from '../src';
 import { DBOSConfig } from '../src/dbos-executor';
+import { SQLitePool } from '../src/sqlite_system_database';
 import { sleepms } from '../src/utils';
 
 class SQLiteQueueWorkflows {
@@ -11,6 +12,14 @@ class SQLiteQueueWorkflows {
   static async echo(input: string): Promise<string> {
     await Promise.resolve();
     return `sqlite:${input}`;
+  }
+}
+
+class SQLiteForkWorkflows {
+  @DBOS.workflow()
+  static async twoStep(input: string): Promise<string> {
+    const first = await DBOS.runStep(() => Promise.resolve(`${input}:first`), { name: 'sqlite-first-step' });
+    return DBOS.runStep(() => Promise.resolve(`${first}:second`), { name: 'sqlite-second-step' });
   }
 }
 
@@ -48,6 +57,53 @@ describe('SQLite system database', () => {
   afterEach(async () => {
     await DBOS.shutdown();
     fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  test('serializes logical clients on one SQLite connection', async () => {
+    const pool = new SQLitePool('sqlite:///:memory:');
+    try {
+      await pool.query('CREATE TABLE t (id INTEGER PRIMARY KEY, value TEXT)');
+      const firstClient = await pool.connect();
+      await firstClient.query('BEGIN');
+      await firstClient.query('INSERT INTO t(value) VALUES ($1)', ['uncommitted']);
+
+      let secondClientReady = false;
+      const secondClientPromise = pool.connect().then((client) => {
+        secondClientReady = true;
+        return client;
+      });
+      await sleepms(25);
+      expect(secondClientReady).toBe(false);
+
+      await firstClient.query('ROLLBACK');
+      firstClient.release();
+
+      const secondClient = await secondClientPromise;
+      try {
+        expect(secondClientReady).toBe(true);
+        const rows = await secondClient.query('SELECT * FROM t');
+        expect(rows.rows).toEqual([]);
+      } finally {
+        secondClient.release();
+      }
+    } finally {
+      await pool.end();
+    }
+  });
+
+  test('runs WITH INSERT statements on SQLite', async () => {
+    const pool = new SQLitePool('sqlite:///:memory:');
+    try {
+      await pool.query('CREATE TABLE t (id INTEGER PRIMARY KEY, value TEXT, count INTEGER)');
+      await pool.query(
+        'WITH mapping(value, count) AS (VALUES ($1::text, $2::int)) INSERT INTO t(value, count) SELECT value, count FROM mapping',
+        ['from-cte', 7],
+      );
+      const rows = await pool.query<{ value: string; count: number }>('SELECT value, count FROM t');
+      expect(rows.rows).toEqual([{ value: 'from-cte', count: 7 }]);
+    } finally {
+      await pool.end();
+    }
   });
 
   test('runs database-backed queues on SQLite', async () => {
@@ -95,5 +151,35 @@ describe('SQLite system database', () => {
     await expect(handle.getResult({ pollingIntervalMs: 25 })).resolves.toBe('sqlite:partition');
     const status = await handle.getStatus();
     expect(status?.queuePartitionKey).toBe('partition-a');
+  }, 10000);
+
+  test('returns boolean queue configuration values from SQLite', async () => {
+    await DBOS.launch();
+    const queue = await DBOS.registerQueue('sqlite-bool-queue', {
+      onConflict: 'always_update',
+      priorityEnabled: true,
+      partitionQueue: true,
+    });
+
+    expect(await queue.getPriorityEnabled()).toBe(true);
+    expect(await queue.getPartitionQueue()).toBe(true);
+
+    const client = await DBOSClient.create({ systemDatabaseUrl: config.systemDatabaseUrl! });
+    try {
+      const persisted = await client.retrieveQueue(queue.name);
+      expect(await persisted?.getPriorityEnabled()).toBe(true);
+      expect(await persisted?.getPartitionQueue()).toBe(true);
+    } finally {
+      await client.destroy();
+    }
+  }, 10000);
+
+  test('forks workflows from copied step state on SQLite', async () => {
+    await DBOS.launch();
+    const handle = await DBOS.startWorkflow(SQLiteForkWorkflows).twoStep('fork');
+    await expect(handle.getResult()).resolves.toBe('fork:first:second');
+
+    const forked = await DBOS.forkWorkflow(handle.workflowID, 1);
+    await expect(forked.getResult()).resolves.toBe('fork:first:second');
   }, 10000);
 });

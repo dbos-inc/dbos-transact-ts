@@ -45,16 +45,6 @@ function sqliteFileFromUrl(databaseUrl: string): string {
   throw new Error(`Invalid SQLite database URL: ${databaseUrl}`);
 }
 
-function isReadQuery(sql: string): boolean {
-  const normalized = sql.trim().toUpperCase();
-  return (
-    normalized.startsWith('SELECT') ||
-    normalized.startsWith('WITH') ||
-    normalized.startsWith('PRAGMA') ||
-    normalized.includes(' RETURNING ')
-  );
-}
-
 function normalizeValue(value: unknown): SQLiteValue {
   if (value === undefined) return null;
   if (typeof value === 'boolean') return value ? 1 : 0;
@@ -71,9 +61,12 @@ function normalizeValue(value: unknown): SQLiteValue {
 }
 
 export class SQLiteClient {
+  #released = false;
+
   constructor(
     private readonly db: Database.Database,
     private readonly schemaName: string,
+    private readonly releaseLock?: () => void,
   ) {}
 
   query<T = unknown>(sql: string, params: unknown[] = []): Promise<SQLiteQueryResult<T>> {
@@ -99,7 +92,7 @@ export class SQLiteClient {
       const { sql: sqliteSql, params: sqliteParams } = translateQuery(normalized, params, this.schemaName);
       const stmt = this.db.prepare(sqliteSql);
 
-      if (isReadQuery(sqliteSql)) {
+      if (stmt.reader) {
         const rows = stmt.all(...sqliteParams) as T[];
         return Promise.resolve({ rows, rowCount: rows.length });
       }
@@ -111,7 +104,11 @@ export class SQLiteClient {
     }
   }
 
-  release(): void {}
+  release(): void {
+    if (this.#released) return;
+    this.#released = true;
+    this.releaseLock?.();
+  }
   on(): this {
     return this;
   }
@@ -123,7 +120,9 @@ export class SQLiteClient {
 export class SQLitePool {
   readonly options: { max: number };
   private readonly db: Database.Database;
-  private readonly client: SQLiteClient;
+  private locked = false;
+  private readonly waiters: Array<(release: () => void) => void> = [];
+  private ended = false;
 
   constructor(
     databaseUrl: string,
@@ -136,24 +135,65 @@ export class SQLitePool {
     this.db.pragma('busy_timeout = 30000');
     this.db.pragma('foreign_keys = ON');
     this.db.pragma('journal_mode = WAL');
-    this.client = new SQLiteClient(this.db, schemaName);
   }
 
-  query<T = unknown>(sql: string, params: unknown[] = []): Promise<SQLiteQueryResult<T>> {
-    return this.client.query<T>(sql, params);
+  async query<T = unknown>(sql: string, params: unknown[] = []): Promise<SQLiteQueryResult<T>> {
+    const release = await this.acquire();
+    try {
+      return await new SQLiteClient(this.db, this.schemaName).query<T>(sql, params);
+    } finally {
+      release();
+    }
   }
 
-  connect(): Promise<SQLiteClient> {
-    return Promise.resolve(this.client);
+  async connect(): Promise<SQLiteClient> {
+    const release = await this.acquire();
+    return new SQLiteClient(this.db, this.schemaName, release);
   }
 
   end(): Promise<void> {
+    this.ended = true;
     this.db.close();
     return Promise.resolve();
   }
 
   on(): this {
     return this;
+  }
+
+  private acquire(): Promise<() => void> {
+    if (this.ended) {
+      return Promise.reject(new Error('SQLite system database pool has ended'));
+    }
+
+    if (!this.locked) {
+      this.locked = true;
+      return Promise.resolve(this.makeRelease());
+    }
+
+    return new Promise((resolve, reject) => {
+      this.waiters.push((release) => {
+        if (this.ended) {
+          reject(new Error('SQLite system database pool has ended'));
+          return;
+        }
+        resolve(release);
+      });
+    });
+  }
+
+  private makeRelease(): () => void {
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      const next = this.waiters.shift();
+      if (next) {
+        next(this.makeRelease());
+      } else {
+        this.locked = false;
+      }
+    };
   }
 }
 
@@ -164,14 +204,7 @@ export async function ensureSQLiteSystemDatabase(
 ): Promise<void> {
   const pool = new SQLitePool(sysDbUrl, schemaName);
   try {
-    await pool.query('BEGIN');
-    try {
-      await createCurrentSQLiteSchema(pool, logger);
-      await pool.query('COMMIT');
-    } catch (e) {
-      await pool.query('ROLLBACK');
-      throw e;
-    }
+    await createCurrentSQLiteSchema(pool, logger);
   } finally {
     await pool.end();
   }
@@ -195,8 +228,32 @@ export function resetSQLiteSystemDatabase(sysDbUrl: string, logger?: GlobalLogge
 
 async function createCurrentSQLiteSchema(pool: SQLitePool, logger: GlobalLogger): Promise<void> {
   logger.info('Ensuring DBOS SQLite system database schema...');
+
+  const client = await pool.connect();
+  let inTransaction = false;
+  try {
+    await client.query('BEGIN');
+    inTransaction = true;
+    for (const statement of currentSQLiteSchemaStatements()) {
+      await client.query(statement);
+    }
+    await client.query(`DELETE FROM dbos_migrations`);
+    await client.query(`INSERT INTO dbos_migrations (version) VALUES ($1)`, [allMigrations().length]);
+    await client.query('COMMIT');
+    inTransaction = false;
+  } catch (e) {
+    if (inTransaction) {
+      await client.query('ROLLBACK').catch(() => undefined);
+    }
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
+function currentSQLiteSchemaStatements(): ReadonlyArray<string> {
   const now = sqliteNowMsExpr();
-  const statements = [
+  return [
     `CREATE TABLE IF NOT EXISTS dbos_migrations (version INTEGER NOT NULL PRIMARY KEY)`,
     `CREATE TABLE IF NOT EXISTS workflow_status (
       workflow_uuid TEXT PRIMARY KEY,
@@ -351,12 +408,6 @@ async function createCurrentSQLiteSchema(pool: SQLitePool, logger: GlobalLogger)
     `CREATE INDEX IF NOT EXISTS idx_notifications ON notifications (destination_uuid, topic)`,
     `CREATE INDEX IF NOT EXISTS idx_operation_outputs_completed_at_function_name ON operation_outputs (completed_at_epoch_ms, function_name)`,
   ];
-
-  for (const statement of statements) {
-    await pool.query(statement);
-  }
-
-  await pool.query(`INSERT OR REPLACE INTO dbos_migrations (version) VALUES ($1)`, [allMigrations().length]);
 }
 
 function translateQuery(sql: string, params: unknown[], schemaName: string): { sql: string; params: SQLiteParams } {
@@ -368,13 +419,13 @@ function translateQuery(sql: string, params: unknown[], schemaName: string): { s
     .replace(new RegExp(`\\b${schemaName}\\.`, 'g'), '')
     .replace(/BEGIN ISOLATION LEVEL (?:READ COMMITTED|REPEATABLE READ)/gi, 'BEGIN IMMEDIATE')
     .replace(/FOR UPDATE(?: SKIP LOCKED| NOWAIT)?/gi, '')
-    .replace(/::(?:text\[\]|jsonb|bigint|int4|integer|text|json)/gi, '')
+    .replace(/::(?:text\[\]|jsonb|bigint|int4|integer|int|text|json)/gi, '')
     .replace(/\bINT4\b/gi, 'INTEGER')
     .replace(/\bBIGINT\b/gi, 'INTEGER')
     .replace(/\bDOUBLE PRECISION\b/gi, 'REAL')
     .replace(/\bJSONB\b/gi, 'TEXT')
-    .replace(/\bgen_random_uuid\(\)::TEXT\b/gi, `'${randomUUID()}'`)
-    .replace(/\buuid_generate_v4\(\)\b/gi, `'${randomUUID()}'`)
+    .replace(/\bgen_random_uuid\(\)::TEXT\b/gi, () => `'${randomUUID()}'`)
+    .replace(/\buuid_generate_v4\(\)\b/gi, () => `'${randomUUID()}'`)
     .replace(/\(EXTRACT\(EPOCH FROM now\(\)\)\s*\*\s*1000(?:\.0)?\)::bigint/gi, sqliteNowMsExpr())
     .replace(/\(EXTRACT\(epoch FROM now\(\)\s*\)\s*\*\s*1000(?:\.0)?\)::bigint/gi, sqliteNowMsExpr())
     .replace(/EXTRACT\(epoch FROM now\(\)\)\s*\*\s*1000/gi, sqliteNowMsExpr())

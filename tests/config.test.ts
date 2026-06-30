@@ -490,6 +490,14 @@ describe('dbos-config', () => {
       });
     });
 
+    test('preserves explicit Postgres systemDatabaseUrl when a name is present', () => {
+      const internalConfig = translateDbosConfig({
+        name: 'dbostest',
+        systemDatabaseUrl: 'postgres://foo:bar@father:1234/blahblahblah',
+      });
+      expect(internalConfig.systemDatabaseUrl).toBe('postgres://foo:bar@father:1234/blahblahblah');
+    });
+
     test('translate with db & sysdb urls', () => {
       const internalConfig = translateDbosConfig({
         systemDatabaseUrl: 'postgres://foo:bar@father:1234/blahblahblah',
