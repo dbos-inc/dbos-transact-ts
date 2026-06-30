@@ -451,35 +451,21 @@ function mapWorkflowStatus(row: workflow_status): WorkflowStatusInternal {
     serialization: row.serialization,
     delayUntilEpochMS: row.delay_until_epoch_ms ? Number(row.delay_until_epoch_ms) : undefined,
     completedAt: row.completed_at ? Number(row.completed_at) : undefined,
-    attributes: parseAttributes(row.attributes),
+    attributes: deserializeWorkflowAttributes(row.attributes),
     scheduleName: row.schedule_name ?? undefined,
   };
 }
 
-function parseAttributes(
+function deserializeWorkflowAttributes(
   attributes: workflow_status['attributes'] | string | null | undefined,
 ): Record<string, unknown> | undefined {
   if (attributes === null || attributes === undefined) return undefined;
-  const parsed: unknown = typeof attributes === 'string' ? JSON.parse(attributes) : attributes;
-  if (!isPlainRecord(parsed)) {
-    throw new Error('Workflow attributes must be a JSON object');
-  }
-  return parsed;
+  return typeof attributes === 'string' ? (JSON.parse(attributes) as Record<string, unknown>) : attributes;
 }
 
-function isPlainRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function getRequiredRow<T>(rows: readonly T[], error: Error): T {
-  const row = rows[0];
-  if (row === undefined) {
-    throw error;
-  }
-  return row;
-}
-
-function serializeAttributes(attributes: workflow_status['attributes'] | string | null | undefined): string | null {
+function serializeWorkflowAttributes(
+  attributes: workflow_status['attributes'] | string | null | undefined,
+): string | null {
   if (attributes === null || attributes === undefined) return null;
   return typeof attributes === 'string' ? attributes : JSON.stringify(attributes);
 }
@@ -1436,7 +1422,7 @@ export class SystemDatabase {
           options.queuePartitionKey ?? null,
           origID,
           ws.serialization,
-          serializeAttributes(ws.attributes),
+          serializeWorkflowAttributes(ws.attributes),
         );
         if (options.timeoutMS !== undefined) {
           params.push(options.timeoutMS);
@@ -1578,13 +1564,13 @@ export class SystemDatabase {
           [wfID],
         );
 
-        const statusRow = getRequiredRow(
-          statusResult.rows,
-          new DBOSNonExistentWorkflowError(`Workflow ${wfID} does not exist`),
-        );
+        const statusRow = statusResult.rows[0];
+        if (statusRow === undefined) {
+          throw new DBOSNonExistentWorkflowError(`Workflow ${wfID} does not exist`);
+        }
         const workflowStatus = {
           ...statusRow,
-          attributes: parseAttributes(statusRow.attributes),
+          attributes: deserializeWorkflowAttributes(statusRow.attributes),
           was_forked_from: Boolean(statusRow.was_forked_from),
           rate_limited: Boolean(statusRow.rate_limited),
         };
@@ -1694,7 +1680,7 @@ export class SystemDatabase {
             status.was_forked_from ?? false,
             status.rate_limited ?? false,
             status.completed_at ?? null,
-            serializeAttributes(status.attributes),
+            serializeWorkflowAttributes(status.attributes),
             status.schedule_name ?? null,
           ],
         );
