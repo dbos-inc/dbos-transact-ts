@@ -2649,7 +2649,8 @@ export class SystemDatabase {
       }
 
       // Retrieve the first max_tasks workflows in the queue.
-      // Only retrieve workflows of the local version (or without version set)
+      // Only retrieve workflows of the local version. Version-less workflows are
+      // only dequeued when this worker is running the latest registered version.
       const lockMode = queue.concurrency ? 'FOR UPDATE NOWAIT' : 'FOR UPDATE SKIP LOCKED';
       const limitClause = maxTasks !== Infinity ? `LIMIT ${maxTasks}` : '';
 
@@ -2659,7 +2660,9 @@ export class SystemDatabase {
         FROM "${this.schemaName}".workflow_status
         WHERE status = $1
           AND queue_name = $2
-          AND (application_version IS NULL OR application_version = $3)
+          AND (application_version = $3 OR (application_version IS NULL AND $3 = (
+                SELECT version_name FROM "${this.schemaName}".application_versions
+                ORDER BY version_timestamp DESC LIMIT 1)))
           ${partitionFilter.replace('$PARTITION', '$4')}
         ORDER BY priority ASC, created_at ASC
         ${limitClause}
