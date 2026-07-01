@@ -464,6 +464,13 @@ export class DBOS {
     recordDBOSLaunch();
 
     const executor: DBOSExecutor = DBOSExecutor.globalInstance;
+
+    // Initialize data sources before executor.init() dispatches recovery, so recovered
+    // workflows can run their transactions immediately instead of racing initialization.
+    for (const [_n, ds] of transactionalDataSources) {
+      await ds.initialize();
+    }
+
     await executor.init();
 
     // Register the current application version
@@ -476,9 +483,6 @@ export class DBOS {
     }
 
     await DBOSExecutor.globalInstance.initEventReceivers(this.#dbosConfig?.listenQueues || null);
-    for (const [_n, ds] of transactionalDataSources) {
-      await ds.initialize();
-    }
 
     if (globalParams.dbosCloud) {
       const cloudAppName = process.env.DBOS__CONDUCTOR_APP_NAME;
