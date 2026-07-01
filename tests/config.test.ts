@@ -310,20 +310,26 @@ describe('dbos-config', () => {
       expect(databaseUrl).toBe('postgresql://a:b@c:1234/appdb?connect_timeout=22&sslmode=disable');
     });
 
+    test('accepts sqlite system database URLs', () => {
+      const databaseUrl = getSystemDatabaseUrl({
+        name: 'Test App',
+        system_database_url: 'sqlite:///dbos-test.sqlite',
+      });
+      expect(databaseUrl).toBe('sqlite:///dbos-test.sqlite');
+    });
+
     test('uses default values when config is empty', () => {
       const databaseUrl = getSystemDatabaseUrl({
         name: 'Test App',
       });
-      expect(databaseUrl).toBe(
-        'postgresql://postgres:dbos@localhost:5432/test_app_dbos_sys?connect_timeout=10&sslmode=disable',
-      );
+      expect(databaseUrl).toBe('sqlite:///test_app.sqlite');
     });
 
     test('throws when db url not set and app name is missing', () => {
       expect(() => getSystemDatabaseUrl({})).toThrow(AssertionError);
     });
 
-    test('uses PG env values when config is empty', () => {
+    test('defaults to SQLite even when PG env values are present', () => {
       process.env.PGHOST = 'envhost';
       process.env.PGPORT = '7777';
       process.env.PGUSER = 'envuser';
@@ -332,18 +338,14 @@ describe('dbos-config', () => {
       const databaseUrl = getSystemDatabaseUrl({
         name: 'Test App',
       });
-      expect(databaseUrl).toBe(
-        'postgresql://envuser:envpass@envhost:7777/test_app_dbos_sys?connect_timeout=10&sslmode=allow',
-      );
+      expect(databaseUrl).toBe('sqlite:///test_app.sqlite');
     });
 
     test('correctly handles app names with spaces', () => {
       const url = getSystemDatabaseUrl({
         name: 'app name with spaces',
       });
-      expect(url).toBe(
-        'postgresql://postgres:dbos@localhost:5432/app_name_with_spaces_dbos_sys?connect_timeout=10&sslmode=disable',
-      );
+      expect(url).toBe('sqlite:///app_name_with_spaces.sqlite');
     });
 
     test('correctly handles db url w/o password', () => {
@@ -379,8 +381,7 @@ describe('dbos-config', () => {
       });
       expect(internalConfig).toEqual({
         name: 'dbostest',
-        systemDatabaseUrl:
-          'postgresql://postgres:dbos@localhost:5432/dbostest_dbos_sys?connect_timeout=10&sslmode=disable',
+        systemDatabaseUrl: 'sqlite:///dbostest.sqlite',
         sysDbPoolSize: undefined,
         systemDatabasePool: undefined,
         systemDatabaseSchemaName: 'dbos',
@@ -437,8 +438,7 @@ describe('dbos-config', () => {
       );
       expect(internalConfig).toEqual({
         name: 'dbostest',
-        systemDatabaseUrl:
-          'postgresql://postgres:dbos@localhost:5432/dbostest_dbos_sys?connect_timeout=10&sslmode=disable',
+        systemDatabaseUrl: 'sqlite:///dbostest.sqlite',
         sysDbPoolSize: undefined,
         systemDatabasePool: undefined,
         systemDatabaseSchemaName: 'dbos',
@@ -488,6 +488,14 @@ describe('dbos-config', () => {
           otelAttributeFormat: 'legacy',
         },
       });
+    });
+
+    test('preserves explicit Postgres systemDatabaseUrl when a name is present', () => {
+      const internalConfig = translateDbosConfig({
+        name: 'dbostest',
+        systemDatabaseUrl: 'postgres://foo:bar@father:1234/blahblahblah',
+      });
+      expect(internalConfig.systemDatabaseUrl).toBe('postgres://foo:bar@father:1234/blahblahblah');
     });
 
     test('translate with db & sysdb urls', () => {

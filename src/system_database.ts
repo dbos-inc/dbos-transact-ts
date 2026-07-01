@@ -32,6 +32,7 @@ import { getClientConfig } from './utils';
 import { connectToPGAndReportOutcome, ensurePGDatabase, maskDatabaseUrl } from './database_utils';
 import { runSysMigrationsPg } from './sysdb_migrations/migration_runner';
 import { allMigrations } from './sysdb_migrations/internal/migrations';
+import { ensureSQLiteSystemDatabase, isSQLiteSystemDatabaseUrl, SQLitePool } from './sqlite_system_database';
 import {
   DEBUG_TRIGGER_STEP_COMMIT,
   DEBUG_TRIGGER_INITWF_COMMIT,
@@ -124,8 +125,8 @@ function queueRecordFromRow(row: queues): QueueRecord {
     workerConcurrency: row.worker_concurrency,
     rateLimitMax: row.rate_limit_max,
     rateLimitPeriodSec: row.rate_limit_period_sec,
-    priorityEnabled: row.priority_enabled,
-    partitionQueue: row.partition_queue,
+    priorityEnabled: Boolean(row.priority_enabled),
+    partitionQueue: Boolean(row.partition_queue),
     pollingIntervalSec: row.polling_interval_sec,
   };
 }
@@ -319,6 +320,14 @@ export async function ensureSystemDatabase(
   schemaName: string = 'dbos',
   useListenNotify: boolean = true,
 ) {
+  if (isSQLiteSystemDatabaseUrl(sysDbUrl)) {
+    if (customPool) {
+      throw new DBOSInitializationError('Custom systemDatabasePool is not supported for SQLite system databases');
+    }
+    await ensureSQLiteSystemDatabase(sysDbUrl, logger, schemaName);
+    return;
+  }
+
   let client: ClientBase | null = null;
   if (customPool) {
     // If a custom pool is passed in, assume the database already exists and create
@@ -437,14 +446,28 @@ function mapWorkflowStatus(row: workflow_status): WorkflowStatusInternal {
     queuePartitionKey: row.queue_partition_key ?? undefined,
     startedAtEpochMs: row.started_at_epoch_ms ? Number(row.started_at_epoch_ms) : undefined,
     forkedFrom: row.forked_from ?? undefined,
-    wasForkedFrom: row.was_forked_from ?? false,
+    wasForkedFrom: Boolean(row.was_forked_from),
     parentWorkflowID: row.parent_workflow_id ?? undefined,
     serialization: row.serialization,
     delayUntilEpochMS: row.delay_until_epoch_ms ? Number(row.delay_until_epoch_ms) : undefined,
     completedAt: row.completed_at ? Number(row.completed_at) : undefined,
-    attributes: row.attributes ?? undefined,
+    attributes: deserializeWorkflowAttributes(row.attributes),
     scheduleName: row.schedule_name ?? undefined,
   };
+}
+
+function deserializeWorkflowAttributes(
+  attributes: workflow_status['attributes'] | string | null | undefined,
+): Record<string, unknown> | undefined {
+  if (attributes === null || attributes === undefined) return undefined;
+  return typeof attributes === 'string' ? (JSON.parse(attributes) as Record<string, unknown>) : attributes;
+}
+
+function serializeWorkflowAttributes(
+  attributes: workflow_status['attributes'] | string | null | undefined,
+): string | null {
+  if (attributes === null || attributes === undefined) return null;
+  return typeof attributes === 'string' ? attributes : JSON.stringify(attributes);
 }
 
 type AnyErr = { code?: string; errno?: number; message?: string; stack?: string; cause?: unknown };
@@ -669,8 +692,14 @@ export class SystemDatabase {
     this.shouldUseDBNotifications = useListenNotify;
 
     if (systemDatabasePool) {
+      if (isSQLiteSystemDatabaseUrl(systemDatabaseUrl)) {
+        throw new DBOSInitializationError('Custom systemDatabasePool is not supported for SQLite system databases');
+      }
       this.pool = systemDatabasePool;
       this.customPool = true;
+    } else if (isSQLiteSystemDatabaseUrl(systemDatabaseUrl)) {
+      this.shouldUseDBNotifications = false;
+      this.pool = new SQLitePool(systemDatabaseUrl, schemaName, sysDbPoolSize) as unknown as Pool;
     } else {
       const systemPoolConfig: PoolConfig = {
         ...getClientConfig(systemDatabaseUrl),
@@ -1244,7 +1273,8 @@ export class SystemDatabase {
     let startSteps: number[];
 
     if (options.fromStep !== undefined) {
-      startSteps = Array(workflowIDs.length).fill(options.fromStep) as number[];
+      const fromStep = options.fromStep;
+      startSteps = workflowIDs.map(() => fromStep);
     } else {
       let query: string;
       const params: unknown[] = [workflowIDs];
@@ -1282,7 +1312,13 @@ export class SystemDatabase {
           throw new Error(`Workflow ${wid} has no steps`);
         }
       }
-      startSteps = workflowIDs.map((wid) => startStepByID.get(wid)!);
+      startSteps = workflowIDs.map((wid) => {
+        const startStep = startStepByID.get(wid);
+        if (startStep === undefined) {
+          throw new Error(`Workflow ${wid} has no steps`);
+        }
+        return startStep;
+      });
     }
 
     const forkedIDs = workflowIDs.map(() => randomUUID());
@@ -1360,7 +1396,13 @@ export class SystemDatabase {
       for (let i = 0; i < originalWorkflowIDs.length; i++) {
         const origID = originalWorkflowIDs[i];
         const forkID = forkedWorkflowIDs[i];
-        const ws = statusByID.get(origID)!;
+        if (origID === undefined || forkID === undefined) {
+          throw new Error('originalWorkflowIDs and forkedWorkflowIDs must contain a workflow ID for every fork');
+        }
+        const ws = statusByID.get(origID);
+        if (ws === undefined) {
+          throw new DBOSNonExistentWorkflowError(`Workflow ${origID} does not exist`);
+        }
         const placeholders = insertCols.map(() => `$${paramIdx++}`).join(', ');
         valuesPlaceholders.push(`(${placeholders})`);
         params.push(
@@ -1380,7 +1422,7 @@ export class SystemDatabase {
           options.queuePartitionKey ?? null,
           origID,
           ws.serialization,
-          ws.attributes ? JSON.stringify(ws.attributes) : null,
+          serializeWorkflowAttributes(ws.attributes),
         );
         if (options.timeoutMS !== undefined) {
           params.push(options.timeoutMS);
@@ -1522,11 +1564,16 @@ export class SystemDatabase {
           [wfID],
         );
 
-        if (statusResult.rows.length === 0) {
+        const statusRow = statusResult.rows[0];
+        if (statusRow === undefined) {
           throw new DBOSNonExistentWorkflowError(`Workflow ${wfID} does not exist`);
         }
-
-        const workflowStatus = statusResult.rows[0];
+        const workflowStatus = {
+          ...statusRow,
+          attributes: deserializeWorkflowAttributes(statusRow.attributes),
+          was_forked_from: Boolean(statusRow.was_forked_from),
+          rate_limited: Boolean(statusRow.rate_limited),
+        };
 
         // Export operation_outputs
         const outputsResult = await client.query<operation_outputs>(
@@ -1633,7 +1680,7 @@ export class SystemDatabase {
             status.was_forked_from ?? false,
             status.rate_limited ?? false,
             status.completed_at ?? null,
-            status.attributes ? JSON.stringify(status.attributes) : null,
+            serializeWorkflowAttributes(status.attributes),
             status.schedule_name ?? null,
           ],
         );

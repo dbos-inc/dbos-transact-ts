@@ -482,6 +482,12 @@ export class DBOSClient {
     return record === null ? null : WorkflowQueue._fromRecord(record, this.systemDatabase);
   }
 
+  /** List all database-backed queues registered in the system database. */
+  async listQueues(): Promise<WorkflowQueue[]> {
+    const records = await this.systemDatabase.listQueues();
+    return records.map((record) => WorkflowQueue._fromRecord(record, this.systemDatabase));
+  }
+
   /** Delete a database-backed queue. Pending workflows on it are unrecoverable. */
   async deleteQueue(name: string): Promise<void> {
     await this.systemDatabase.deleteQueue(name);
