@@ -7,7 +7,7 @@ import {
 } from './debugpoint';
 import type { QueueRecord, SystemDatabase } from './system_database';
 import type { GlobalLogger } from './telemetry/logs';
-import { globalParams, interruptibleSleep, INTERNAL_QUEUE_NAME, waitForAbort } from './utils';
+import { globalParams, interruptibleSleep, INTERNAL_QUEUE_NAME } from './utils';
 
 /**
  * Log a single queue's name and its set parameters. Unset parameters are
@@ -337,6 +337,16 @@ export class WorkflowQueue {
   }
 }
 
+/** Per-queue runtime scheduling state tracked by the shared dispatcher. */
+interface QueueRuntimeState {
+  /** Latest config snapshot; replaced in place when a DB-backed row is refreshed. */
+  queue: WorkflowQueue;
+  /** Current polling interval in ms after contention backoff / scaleback. */
+  currentPollingMs: number;
+  /** Epoch ms at which this queue should next be polled. */
+  nextPollAt: number;
+}
+
 class WFQueueRunner {
   readonly wfQueuesByName: Map<string, WorkflowQueue> = new Map();
 
@@ -344,8 +354,10 @@ class WFQueueRunner {
   private abortController?: AbortController;
   private exec?: DBOSExecutor;
   private listenQueueNames: Set<string> | null = null;
-  private readonly activeLoops: Set<Promise<void>> = new Set();
-  private readonly runningQueueNames: Set<string> = new Set();
+  /** Per-queue scheduling state, keyed by queue name. */
+  private readonly states: Map<string, QueueRuntimeState> = new Map();
+  /** Names already warned about colliding with an in-memory queue (warn-once). */
+  private readonly conflictWarned: Set<string> = new Set();
 
   private static readonly defaultMinPollingIntervalMs: number = 1000;
   private static readonly defaultMaxPollingIntervalMs: number = 120000;
@@ -365,111 +377,63 @@ class WFQueueRunner {
     this.wfQueuesByName.clear();
   }
 
-  private launchQueueLoop(queue: WorkflowQueue) {
-    if (this.runningQueueNames.has(queue.name)) return;
-    this.runningQueueNames.add(queue.name);
-    const loop = this.runQueue(this.exec!, queue);
-    this.activeLoops.add(loop);
-    void loop.finally(() => {
-      this.activeLoops.delete(loop);
-      this.runningQueueNames.delete(queue.name);
-    });
-  }
-
   async dispatchLoop(exec: DBOSExecutor, listenQueuesArg: (WorkflowQueue | string)[] | null): Promise<void> {
     this.isRunning = true;
     this.exec = exec;
+    this.states.clear();
+    this.conflictWarned.clear();
     this.listenQueueNames = listenQueuesArg
       ? new Set(listenQueuesArg.map((entry) => (typeof entry === 'string' ? entry : entry.name)))
       : null;
     this.abortController = new AbortController();
 
-    // Always run the internal queue worker — it is process-private and not
-    // subject to the user's listenQueues filter.
+    const startNow = Date.now();
+
+    // The internal queue is process-private and bypasses the listenQueues filter.
     const internal = this.wfQueuesByName.get(INTERNAL_QUEUE_NAME);
-    if (internal) this.launchQueueLoop(internal);
+    if (internal) this.ensureState(internal, startNow);
 
-    // Resolve the user-supplied listen list against the in-memory registry.
-    // String entries that don't match an in-memory queue are deferred — a
-    // database-backed queue with that name will be picked up by the
-    // supervisor below.
-    let inMemoryToLaunch: WorkflowQueue[];
-    if (listenQueuesArg !== null) {
-      inMemoryToLaunch = [];
-      for (const entry of listenQueuesArg) {
-        if (typeof entry === 'string') {
-          const q = this.wfQueuesByName.get(entry);
-          if (q) inMemoryToLaunch.push(q);
-        } else {
-          inMemoryToLaunch.push(entry);
-        }
-      }
-    } else {
-      inMemoryToLaunch = Array.from(this.wfQueuesByName.values()).filter((q) => q.name !== INTERNAL_QUEUE_NAME);
+    // Unmatched string entries are deferred to refreshDbQueues as DB-backed queues.
+    for (const q of this.resolveInMemoryQueues(listenQueuesArg)) {
+      this.ensureState(q, startNow);
     }
 
-    for (const q of inMemoryToLaunch) {
-      this.launchQueueLoop(q);
-    }
+    // Add pre-launch DB-backed queues now so an immediate enqueue can't race the first reconcile.
+    await this.refreshDbQueues(exec, startNow);
 
-    // Discover any database-backed queues registered before launch and start
-    // their workers synchronously so an immediate enqueue on a DB-backed
-    // queue does not race the first supervisor cycle.
-    await this.discoverAndLaunchDbQueues(exec);
+    // Log everything we're now dispatching for, before the loop starts.
+    this.logRunningQueues(exec);
 
-    // Log everything we're now dispatching for, before the supervisor starts.
-    await this.logRunningQueues(exec);
-
-    // Periodic supervisor: picks up queues registered after launch.
-    const supervisor = this.superviseLoop(exec);
-    this.activeLoops.add(supervisor);
-    void supervisor.finally(() => this.activeLoops.delete(supervisor));
-
-    // Wait until stop() is called, then wait for all loops to drain
-    await waitForAbort(this.abortController.signal);
-    await Promise.all(this.activeLoops);
+    // One loop drives every queue, so idle cost is O(1) not O(#queues); returns when stop() aborts.
+    await this.schedulerLoop(exec, startNow);
   }
 
-  /**
-   * Emit a single log block describing every queue this process will dispatch
-   * for. Called once at dispatcher startup, after discovery has completed.
-   */
-  private async logRunningQueues(exec: DBOSExecutor): Promise<void> {
-    const logger = exec.logger;
-    const merged = new Map<string, WorkflowQueue>();
-    for (const [qn, q] of this.wfQueuesByName) {
-      merged.set(qn, q);
+  /** Resolve the listenQueues argument to the set of in-memory queues to dispatch for. */
+  private resolveInMemoryQueues(listenQueuesArg: (WorkflowQueue | string)[] | null): WorkflowQueue[] {
+    if (listenQueuesArg === null) {
+      return Array.from(this.wfQueuesByName.values()).filter((q) => q.name !== INTERNAL_QUEUE_NAME);
     }
-    try {
-      const records = await exec.systemDatabase.listQueues();
-      for (const record of records) {
-        if (!merged.has(record.name)) {
-          merged.set(record.name, WorkflowQueue._fromRecord(record));
-        }
-      }
-    } catch (e) {
-      logger.warn(`Exception listing database-backed queues: ${(e as Error).message}`);
-    }
-
-    if (this.listenQueueNames !== null) {
-      for (const name of Array.from(merged.keys())) {
-        if (!this.listenQueueNames.has(name)) merged.delete(name);
+    const result: WorkflowQueue[] = [];
+    for (const entry of listenQueuesArg) {
+      if (typeof entry === 'string') {
+        const q = this.wfQueuesByName.get(entry);
+        if (q) result.push(q);
+      } else {
+        result.push(entry);
       }
     }
-    merged.delete(INTERNAL_QUEUE_NAME);
-
-    logger.info(`Listening to ${merged.size} queues:`);
-    for (const q of merged.values()) {
-      logQueue(logger, q);
-    }
+    return result;
   }
 
-  /**
-   * List the queues table and launch a worker for any database-backed queue
-   * that isn't already running. Skips names that collide with an in-memory
-   * queue (with a warn-once log) and respects the `listenQueues` filter.
-   */
-  private async discoverAndLaunchDbQueues(exec: DBOSExecutor): Promise<void> {
+  /** Begin tracking a queue if it isn't already, scheduling its first poll one interval out. */
+  private ensureState(queue: WorkflowQueue, now: number): void {
+    if (this.states.has(queue.name)) return;
+    const interval = queue.minPollingIntervalMs ?? WFQueueRunner.defaultMinPollingIntervalMs;
+    this.states.set(queue.name, { queue, currentPollingMs: interval, nextPollAt: now + interval });
+  }
+
+  /** Reconcile DB-backed queues against the queues table in one query: refresh, add, or drop them. */
+  private async refreshDbQueues(exec: DBOSExecutor, now: number): Promise<void> {
     let records: QueueRecord[];
     try {
       records = await exec.systemDatabase.listQueues();
@@ -478,140 +442,172 @@ class WFQueueRunner {
       return;
     }
 
+    const present = new Set<string>();
     for (const record of records) {
       if (record.name === INTERNAL_QUEUE_NAME) continue;
       if (this.wfQueuesByName.has(record.name)) {
-        exec.logger.warn(
-          `Database-backed queue '${record.name}' has the same name as an in-memory queue. ` +
-            `The in-memory queue's configuration is being used; the database-backed queue is ignored. ` +
-            `Rename one of them to resolve the conflict.`,
-        );
+        if (!this.conflictWarned.has(record.name)) {
+          this.conflictWarned.add(record.name);
+          exec.logger.warn(
+            `Database-backed queue '${record.name}' has the same name as an in-memory queue. ` +
+              `The in-memory queue's configuration is being used; the database-backed queue is ignored. ` +
+              `Rename one of them to resolve the conflict.`,
+          );
+        }
         continue;
       }
-      if (this.runningQueueNames.has(record.name)) continue;
       if (this.listenQueueNames !== null && !this.listenQueueNames.has(record.name)) continue;
-      this.launchQueueLoop(WorkflowQueue._fromRecord(record));
+      present.add(record.name);
+      const existing = this.states.get(record.name);
+      if (existing) {
+        // Refresh config in place, preserving this queue's polling/backoff state.
+        existing.queue = WorkflowQueue._fromRecord(record);
+      } else {
+        this.ensureState(WorkflowQueue._fromRecord(record), now);
+      }
+    }
+
+    // A database-backed queue whose row is gone stops being dispatched.
+    for (const [name, state] of this.states) {
+      if (!state.queue.databaseBacked) continue;
+      if (!present.has(name)) {
+        exec.logger.info(`Queue '${name}' has been deleted from the database; stopping its worker.`);
+        this.states.delete(name);
+      }
     }
   }
 
-  private async superviseLoop(exec: DBOSExecutor): Promise<void> {
-    const signal = this.abortController!.signal;
-    while (this.isRunning) {
-      await interruptibleSleep(WFQueueRunner.supervisorIntervalMs, signal);
-      if (!this.isRunning) return;
-
-      await this.discoverAndLaunchDbQueues(exec);
+  /** Log every queue this process will dispatch for, once at startup after discovery. */
+  private logRunningQueues(exec: DBOSExecutor): void {
+    const names = Array.from(this.states.keys()).filter((n) => n !== INTERNAL_QUEUE_NAME);
+    exec.logger.info(`Listening to ${names.length} queues:`);
+    for (const name of names) {
+      logQueue(exec.logger, this.states.get(name)!.queue);
     }
   }
 
-  private async runQueue(exec: DBOSExecutor, initialQueue: WorkflowQueue): Promise<void> {
-    let queue = initialQueue;
-    const maxPollingMs = WFQueueRunner.defaultMaxPollingIntervalMs;
-    let currentPollingMs = queue.minPollingIntervalMs ?? WFQueueRunner.defaultMinPollingIntervalMs;
+  /** The single dispatcher loop: reconcile queues, transition delayed workflows once, poll due queues sequentially. */
+  private async schedulerLoop(exec: DBOSExecutor, startNow: number): Promise<void> {
     const signal = this.abortController!.signal;
+    // Discovery already ran during setup; defer the next reconcile a full interval.
+    let lastReconcileAt = startNow;
 
     while (this.isRunning) {
-      // For database-backed queues, refresh config from the row each
-      // iteration so changes to concurrency, polling interval, etc. take
-      // effect without a restart. If the row is gone, this worker exits.
-      if (queue.databaseBacked) {
-        try {
-          const record = await exec.systemDatabase.getQueue(queue.name);
-          if (record === null) {
-            exec.logger.info(`Queue '${queue.name}' has been deleted from the database; stopping its worker.`);
-            return;
-          }
-          queue = WorkflowQueue._fromRecord(record);
-        } catch (e) {
-          exec.logger.warn(`Error reloading queue '${queue.name}' from the database: ${(e as Error).message}`);
-        }
+      const now = Date.now();
+
+      // Reconcile DB-backed queues with a single query, independent of queue count.
+      if (now - lastReconcileAt >= WFQueueRunner.supervisorIntervalMs) {
+        await this.refreshDbQueues(exec, now);
+        lastReconcileAt = now;
       }
 
-      // Recompute min/max each iteration so a setMinPollingIntervalMs takes
-      // effect on the very next tick. Clamp the running value into the new
-      // range to avoid sleeping longer than the configured maximum after a
-      // shrink, or shorter than the minimum after a grow.
-      const minPollingMs = queue.minPollingIntervalMs ?? WFQueueRunner.defaultMinPollingIntervalMs;
-      currentPollingMs = Math.max(minPollingMs, Math.min(currentPollingMs, maxPollingMs));
+      // Collect the queues due to poll this tick.
+      const due: QueueRuntimeState[] = [];
+      for (const state of this.states.values()) {
+        if (now >= state.nextPollAt) due.push(state);
+      }
 
-      // Sleep with jitter, returning early on the stop signal
-      const jitter = this.jitterMin + Math.random() * (this.jitterMax - this.jitterMin);
-      const sleepMs = currentPollingMs * jitter;
-      await interruptibleSleep(sleepMs, signal);
-
-      if (!this.isRunning) break;
-
-      let contentionDetected = false;
-      try {
-        // Transition delayed workflows that are ready to execute
+      if (due.length > 0) {
+        // Transition delayed workflows once per tick — it is global, so one call covers every queue.
         try {
           await exec.systemDatabase.transitionDelayedWorkflows();
         } catch (e) {
           exec.logger.warn(`Error transitioning delayed workflows: ${(e as Error).message}`);
         }
 
-        // Helper function that starts dequeued workflows
-        const dispatch = async (wfids: string[]) => {
-          if (wfids.length > 0) {
-            await debugTriggerPoint(DEBUG_TRIGGER_WORKFLOW_QUEUE_START);
+        for (const state of due) {
+          if (!this.isRunning) break;
+          const contentionDetected = await this.pollQueue(exec, state.queue);
+          this.adjustInterval(exec, state, contentionDetected);
+        }
+      }
+
+      if (!this.isRunning) break;
+
+      // Sleep until the earliest of the next scheduled poll or reconcile tick.
+      let wake = lastReconcileAt + WFQueueRunner.supervisorIntervalMs;
+      for (const state of this.states.values()) {
+        if (state.nextPollAt < wake) wake = state.nextPollAt;
+      }
+      const sleepMs = Math.max(0, Math.min(wake - Date.now(), WFQueueRunner.defaultMaxPollingIntervalMs));
+      await interruptibleSleep(sleepMs, signal);
+    }
+  }
+
+  /** Poll one queue once, starting ready workflows; returns true if DB contention was detected. */
+  private async pollQueue(exec: DBOSExecutor, queue: WorkflowQueue): Promise<boolean> {
+    let contentionDetected = false;
+    try {
+      // Helper function that starts dequeued workflows
+      const dispatch = async (wfids: string[]) => {
+        if (wfids.length > 0) {
+          await debugTriggerPoint(DEBUG_TRIGGER_WORKFLOW_QUEUE_START);
+        }
+        for (const wfid of wfids) {
+          try {
+            await exec.executeWorkflowId(wfid, { isQueueDispatch: true });
+          } catch (e) {
+            exec.logger.warn(`Could not execute workflow with id ${wfid}: ${(e as Error).message}`);
           }
-          for (const wfid of wfids) {
-            try {
-              await exec.executeWorkflowId(wfid, { isQueueDispatch: true });
-            } catch (e) {
-              exec.logger.warn(`Could not execute workflow with id ${wfid}: ${(e as Error).message}`);
-            }
-          }
-        };
-        // Dequeue workflows for this queue. If the queue is partitioned, successively dequeue and start
-        // workflows from each active partition.
-        try {
-          if (queue.partitionQueue) {
-            const partitionKeys = await exec.systemDatabase.getQueuePartitions(queue.name);
-            for (const partitionKey of partitionKeys) {
-              const partitionWfids = await exec.systemDatabase.findAndMarkStartableWorkflows(
-                queue,
-                exec.executorID,
-                globalParams.appVersion,
-                partitionKey,
-              );
-              await dispatch(partitionWfids);
-              await debugTriggerPoint(DEBUG_TRIGGER_BETWEEN_PARTITION_DISPATCHES);
-            }
-          } else {
-            const wfids = await exec.systemDatabase.findAndMarkStartableWorkflows(
+        }
+      };
+      // Dequeue workflows for this queue. If the queue is partitioned, successively dequeue and start
+      // workflows from each active partition.
+      try {
+        if (queue.partitionQueue) {
+          const partitionKeys = await exec.systemDatabase.getQueuePartitions(queue.name);
+          for (const partitionKey of partitionKeys) {
+            const partitionWfids = await exec.systemDatabase.findAndMarkStartableWorkflows(
               queue,
               exec.executorID,
               globalParams.appVersion,
-              undefined,
+              partitionKey,
             );
-            await dispatch(wfids);
+            await dispatch(partitionWfids);
+            await debugTriggerPoint(DEBUG_TRIGGER_BETWEEN_PARTITION_DISPATCHES);
           }
-        } catch (e) {
-          const err = e as Error;
-          // Handle serialization errors and lock contention with backoff
-          if ('code' in err && (err.code === '40001' || err.code === '55P03')) {
-            // 40001: serialization_failure, 55P03: lock_not_available
-            contentionDetected = true;
-            exec.logger.warn(`Contention detected in queue ${queue.name}.`);
-          } else {
-            exec.logger.warn(`Error getting startable workflows for queue ${queue.name}: ${err.message}`);
-          }
+        } else {
+          const wfids = await exec.systemDatabase.findAndMarkStartableWorkflows(
+            queue,
+            exec.executorID,
+            globalParams.appVersion,
+            undefined,
+          );
+          await dispatch(wfids);
         }
       } catch (e) {
-        exec.logger.warn(`Error in queue ${queue.name} dispatch loop: ${(e as Error).message}`);
+        const err = e as Error;
+        // Handle serialization errors and lock contention with backoff
+        if ('code' in err && (err.code === '40001' || err.code === '55P03')) {
+          // 40001: serialization_failure, 55P03: lock_not_available
+          contentionDetected = true;
+          exec.logger.warn(`Contention detected in queue ${queue.name}.`);
+        } else {
+          exec.logger.warn(`Error getting startable workflows for queue ${queue.name}: ${err.message}`);
+        }
       }
-
-      // Adjust polling interval based on contention
-      if (contentionDetected) {
-        currentPollingMs = Math.min(maxPollingMs, currentPollingMs * this.backoffFactor);
-        exec.logger.warn(
-          `Increasing polling interval for queue ${queue.name} to ${(currentPollingMs / 1000).toFixed(2)}s due to contention.`,
-        );
-      } else {
-        currentPollingMs = Math.max(minPollingMs, currentPollingMs * this.scalebackFactor);
-      }
+    } catch (e) {
+      exec.logger.warn(`Error in queue ${queue.name} dispatch loop: ${(e as Error).message}`);
     }
+    return contentionDetected;
+  }
+
+  /** After a poll, grow the interval on contention or shrink it toward the minimum, then schedule the next poll with jitter. */
+  private adjustInterval(exec: DBOSExecutor, state: QueueRuntimeState, contentionDetected: boolean): void {
+    const minPollingMs = state.queue.minPollingIntervalMs ?? WFQueueRunner.defaultMinPollingIntervalMs;
+    const maxPollingMs = WFQueueRunner.defaultMaxPollingIntervalMs;
+    if (contentionDetected) {
+      state.currentPollingMs = Math.min(maxPollingMs, state.currentPollingMs * this.backoffFactor);
+      exec.logger.warn(
+        `Increasing polling interval for queue ${state.queue.name} to ${(state.currentPollingMs / 1000).toFixed(2)}s due to contention.`,
+      );
+    } else {
+      state.currentPollingMs = Math.max(minPollingMs, state.currentPollingMs * this.scalebackFactor);
+    }
+    // Clamp into the current [min, max] range in case config changed under us.
+    state.currentPollingMs = Math.max(minPollingMs, Math.min(state.currentPollingMs, maxPollingMs));
+    const jitter = this.jitterMin + Math.random() * (this.jitterMax - this.jitterMin);
+    state.nextPollAt = Date.now() + state.currentPollingMs * jitter;
   }
 }
 
