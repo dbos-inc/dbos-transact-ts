@@ -352,7 +352,6 @@ class WFQueueRunner {
 
   private isRunning: boolean = false;
   private abortController?: AbortController;
-  private exec?: DBOSExecutor;
   private listenQueueNames: Set<string> | null = null;
   /** Per-queue scheduling state, keyed by queue name. */
   private readonly states: Map<string, QueueRuntimeState> = new Map();
@@ -361,7 +360,7 @@ class WFQueueRunner {
 
   private static readonly defaultMinPollingIntervalMs: number = 1000;
   private static readonly defaultMaxPollingIntervalMs: number = 120000;
-  private static readonly supervisorIntervalMs: number = 1000;
+  private static readonly reconcileIntervalMs: number = 1000;
   private readonly backoffFactor: number = 2.0;
   private readonly scalebackFactor: number = 0.9;
   private readonly jitterMin: number = 0.95;
@@ -379,7 +378,6 @@ class WFQueueRunner {
 
   async dispatchLoop(exec: DBOSExecutor, listenQueuesArg: (WorkflowQueue | string)[] | null): Promise<void> {
     this.isRunning = true;
-    this.exec = exec;
     this.states.clear();
     this.conflictWarned.clear();
     this.listenQueueNames = listenQueuesArg
@@ -471,7 +469,7 @@ class WFQueueRunner {
     for (const [name, state] of this.states) {
       if (!state.queue.databaseBacked) continue;
       if (!present.has(name)) {
-        exec.logger.info(`Queue '${name}' has been deleted from the database; stopping its worker.`);
+        exec.logger.info(`Queue '${name}' has been deleted from the database; no longer dispatching it.`);
         this.states.delete(name);
       }
     }
@@ -496,7 +494,7 @@ class WFQueueRunner {
       const now = Date.now();
 
       // Reconcile DB-backed queues with a single query, independent of queue count.
-      if (now - lastReconcileAt >= WFQueueRunner.supervisorIntervalMs) {
+      if (now - lastReconcileAt >= WFQueueRunner.reconcileIntervalMs) {
         await this.refreshDbQueues(exec, now);
         lastReconcileAt = now;
       }
@@ -525,7 +523,7 @@ class WFQueueRunner {
       if (!this.isRunning) break;
 
       // Sleep until the earliest of the next scheduled poll or reconcile tick.
-      let wake = lastReconcileAt + WFQueueRunner.supervisorIntervalMs;
+      let wake = lastReconcileAt + WFQueueRunner.reconcileIntervalMs;
       for (const state of this.states.values()) {
         if (state.nextPollAt < wake) wake = state.nextPollAt;
       }
