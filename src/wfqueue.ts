@@ -533,7 +533,7 @@ class WFQueueRunner {
       for (const state of this.states.values()) {
         if (state.nextPollAt < wake) wake = state.nextPollAt;
       }
-      const sleepMs = Math.max(0, Math.min(wake - Date.now(), WFQueueRunner.defaultMaxPollingIntervalMs));
+      const sleepMs = Math.max(0, wake - Date.now());
       await interruptibleSleep(sleepMs, signal);
     }
   }
@@ -541,57 +541,53 @@ class WFQueueRunner {
   /** Poll one queue once, starting ready workflows; returns true if DB contention was detected. */
   private async pollQueue(exec: DBOSExecutor, queue: WorkflowQueue): Promise<boolean> {
     let contentionDetected = false;
+    // Helper function that starts dequeued workflows
+    const dispatch = async (wfids: string[]) => {
+      if (wfids.length > 0) {
+        await debugTriggerPoint(DEBUG_TRIGGER_WORKFLOW_QUEUE_START);
+      }
+      for (const wfid of wfids) {
+        try {
+          await exec.executeWorkflowId(wfid, { isQueueDispatch: true });
+        } catch (e) {
+          exec.logger.warn(`Could not execute workflow with id ${wfid}: ${(e as Error).message}`);
+        }
+      }
+    };
+    // Dequeue workflows for this queue. If the queue is partitioned, successively dequeue and start
+    // workflows from each active partition.
     try {
-      // Helper function that starts dequeued workflows
-      const dispatch = async (wfids: string[]) => {
-        if (wfids.length > 0) {
-          await debugTriggerPoint(DEBUG_TRIGGER_WORKFLOW_QUEUE_START);
-        }
-        for (const wfid of wfids) {
-          try {
-            await exec.executeWorkflowId(wfid, { isQueueDispatch: true });
-          } catch (e) {
-            exec.logger.warn(`Could not execute workflow with id ${wfid}: ${(e as Error).message}`);
-          }
-        }
-      };
-      // Dequeue workflows for this queue. If the queue is partitioned, successively dequeue and start
-      // workflows from each active partition.
-      try {
-        if (queue.partitionQueue) {
-          const partitionKeys = await exec.systemDatabase.getQueuePartitions(queue.name);
-          for (const partitionKey of partitionKeys) {
-            const partitionWfids = await exec.systemDatabase.findAndMarkStartableWorkflows(
-              queue,
-              exec.executorID,
-              globalParams.appVersion,
-              partitionKey,
-            );
-            await dispatch(partitionWfids);
-            await debugTriggerPoint(DEBUG_TRIGGER_BETWEEN_PARTITION_DISPATCHES);
-          }
-        } else {
-          const wfids = await exec.systemDatabase.findAndMarkStartableWorkflows(
+      if (queue.partitionQueue) {
+        const partitionKeys = await exec.systemDatabase.getQueuePartitions(queue.name);
+        for (const partitionKey of partitionKeys) {
+          const partitionWfids = await exec.systemDatabase.findAndMarkStartableWorkflows(
             queue,
             exec.executorID,
             globalParams.appVersion,
-            undefined,
+            partitionKey,
           );
-          await dispatch(wfids);
+          await dispatch(partitionWfids);
+          await debugTriggerPoint(DEBUG_TRIGGER_BETWEEN_PARTITION_DISPATCHES);
         }
-      } catch (e) {
-        const err = e as Error;
-        // Handle serialization errors and lock contention with backoff
-        if ('code' in err && (err.code === '40001' || err.code === '55P03')) {
-          // 40001: serialization_failure, 55P03: lock_not_available
-          contentionDetected = true;
-          exec.logger.warn(`Contention detected in queue ${queue.name}.`);
-        } else {
-          exec.logger.warn(`Error getting startable workflows for queue ${queue.name}: ${err.message}`);
-        }
+      } else {
+        const wfids = await exec.systemDatabase.findAndMarkStartableWorkflows(
+          queue,
+          exec.executorID,
+          globalParams.appVersion,
+          undefined,
+        );
+        await dispatch(wfids);
       }
     } catch (e) {
-      exec.logger.warn(`Error in queue ${queue.name} dispatch loop: ${(e as Error).message}`);
+      const err = e as Error;
+      // Handle serialization errors and lock contention with backoff
+      if ('code' in err && (err.code === '40001' || err.code === '55P03')) {
+        // 40001: serialization_failure, 55P03: lock_not_available
+        contentionDetected = true;
+        exec.logger.warn(`Contention detected in queue ${queue.name}.`);
+      } else {
+        exec.logger.warn(`Error getting startable workflows for queue ${queue.name}: ${err.message}`);
+      }
     }
     return contentionDetected;
   }
