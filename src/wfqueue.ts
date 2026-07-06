@@ -361,6 +361,7 @@ class WFQueueRunner {
   private static readonly defaultMinPollingIntervalMs: number = 1000;
   private static readonly defaultMaxPollingIntervalMs: number = 120000;
   private static readonly reconcileIntervalMs: number = 1000;
+  private static readonly transitionIntervalMs: number = 1000;
   private readonly backoffFactor: number = 2.0;
   private readonly scalebackFactor: number = 0.9;
   private readonly jitterMin: number = 0.95;
@@ -489,6 +490,8 @@ class WFQueueRunner {
     const signal = this.abortController!.signal;
     // Discovery already ran during setup; defer the next reconcile a full interval.
     let lastReconcileAt = startNow;
+    // Global op: run on a fixed cadence, not once per wake (destaggered wakeups would push it to ~N/sec).
+    let lastTransitionAt = 0;
 
     while (this.isRunning) {
       const now = Date.now();
@@ -499,31 +502,34 @@ class WFQueueRunner {
         lastReconcileAt = now;
       }
 
-      // Collect the queues due to poll this tick.
-      const due: QueueRuntimeState[] = [];
-      for (const state of this.states.values()) {
-        if (now >= state.nextPollAt) due.push(state);
-      }
-
-      if (due.length > 0) {
-        // Transition delayed workflows once per tick — it is global, so one call covers every queue.
+      // Transition delayed workflows at most once per interval — it is global, so one call covers every queue.
+      if (now - lastTransitionAt >= WFQueueRunner.transitionIntervalMs) {
         try {
           await exec.systemDatabase.transitionDelayedWorkflows();
         } catch (e) {
           exec.logger.warn(`Error transitioning delayed workflows: ${(e as Error).message}`);
         }
+        lastTransitionAt = now;
+      }
 
-        for (const state of due) {
-          if (!this.isRunning) break;
-          const contentionDetected = await this.pollQueue(exec, state.queue);
-          this.adjustInterval(exec, state, contentionDetected);
-        }
+      // Collect the queues due to poll this tick and dispatch them sequentially.
+      const due: QueueRuntimeState[] = [];
+      for (const state of this.states.values()) {
+        if (now >= state.nextPollAt) due.push(state);
+      }
+      for (const state of due) {
+        if (!this.isRunning) break;
+        const contentionDetected = await this.pollQueue(exec, state.queue);
+        this.adjustInterval(exec, state, contentionDetected);
       }
 
       if (!this.isRunning) break;
 
-      // Sleep until the earliest of the next scheduled poll or reconcile tick.
-      let wake = lastReconcileAt + WFQueueRunner.reconcileIntervalMs;
+      // Sleep until the earliest of the next scheduled poll, reconcile, or transition tick.
+      let wake = Math.min(
+        lastReconcileAt + WFQueueRunner.reconcileIntervalMs,
+        lastTransitionAt + WFQueueRunner.transitionIntervalMs,
+      );
       for (const state of this.states.values()) {
         if (state.nextPollAt < wake) wake = state.nextPollAt;
       }
