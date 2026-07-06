@@ -102,6 +102,7 @@ describe('queued-wf-tests-simple', () => {
       TestResumeQueues.queue,
       TestResumeQueuesPartitioned.queue,
       TestConcurrencyAcrossVersions.queue,
+      TestVersionlessDequeue.queue,
       waitFirstQueue,
     ]) {
       await DBOS.registerQueue(ref.name, { onConflict: 'always_update', ...ref.config });
@@ -768,6 +769,18 @@ describe('queued-wf-tests-simple', () => {
     }
   }
 
+  class TestVersionlessDequeue {
+    static queue: QueueRef = {
+      name: 'TestVersionlessDequeue',
+      config: { workerConcurrency: 1, ...testPolling },
+    };
+
+    @DBOS.workflow()
+    static async versionlessWorkflow() {
+      return Promise.resolve(DBOS.workflowID);
+    }
+  }
+
   test('test-concurrency-across-versions', async () => {
     expect(config.systemDatabaseUrl).toBeDefined();
     const client = await DBOSClient.create({ systemDatabaseUrl: config.systemDatabaseUrl! });
@@ -787,6 +800,43 @@ describe('queued-wf-tests-simple', () => {
 
     globalParams.appVersion = other_version;
     await expect(other_version_handle.getResult()).resolves.toBeTruthy();
+    await client.destroy();
+  });
+
+  test('test-versionless-dequeue-requires-latest-version', async () => {
+    expect(config.systemDatabaseUrl).toBeDefined();
+    const client = await DBOSClient.create({ systemDatabaseUrl: config.systemDatabaseUrl! });
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    const workerVersion = globalParams.appVersion;
+
+    // Register a newer application version so this worker is no longer the latest.
+    const newerVersion = `newer-${randomUUID()}`;
+    await sysdb.createApplicationVersion(newerVersion);
+    await sysdb.updateApplicationVersionTimestamp(newerVersion, Date.now() + 1_000_000);
+
+    // Enqueue a version-less workflow (application_version IS NULL): no appVersion field.
+    const versionlessHandle = await client.enqueue({
+      queueName: TestVersionlessDequeue.queue.name,
+      workflowName: 'versionlessWorkflow',
+      workflowClassName: 'TestVersionlessDequeue',
+    });
+
+    // Enqueue a workflow tagged with this worker's own (non-latest) version.
+    const taggedHandle = await DBOS.startWorkflow(TestVersionlessDequeue, {
+      queueName: TestVersionlessDequeue.queue.name,
+    }).versionlessWorkflow();
+
+    // A matching-version worker still dequeues its own version-tagged workflow.
+    await expect(taggedHandle.getResult()).resolves.toBeTruthy();
+
+    // But the version-less workflow stays ENQUEUED: this worker is not the latest version.
+    await sleepms(1000);
+    expect((await versionlessHandle.getStatus())?.status).toBe(StatusString.ENQUEUED);
+
+    // Make this worker the latest version again; the version-less workflow now completes.
+    await sysdb.updateApplicationVersionTimestamp(workerVersion, Date.now() + 2_000_000);
+    await expect(versionlessHandle.getResult()).resolves.toBeTruthy();
+
     await client.destroy();
   });
 
