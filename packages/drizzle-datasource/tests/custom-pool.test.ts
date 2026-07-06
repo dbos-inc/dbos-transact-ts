@@ -40,6 +40,13 @@ async function insertWorkflow(user: string) {
 
 const regInsertWorkflow = DBOS.registerWorkflow(insertWorkflow);
 
+async function currentDatabaseFunction() {
+  const result = await poolDataSource.client.execute<{ current_database: string }>(sql`SELECT current_database()`);
+  return result.rows[0].current_database;
+}
+
+const regCurrentDatabaseFunction = poolDataSource.registerTransaction(currentDatabaseFunction);
+
 interface transaction_completion {
   workflow_id: string;
   function_num: number;
@@ -102,6 +109,13 @@ describe('DrizzleDataSource with custom Pool', () => {
     expect(rows.length).toBe(1);
     expect(rows[0].output).not.toBeNull();
     expect(SuperJSON.parse(rows[0].output!)).toMatchObject({ user, greet_count: 1 });
+  });
+
+  test('transaction runs against the custom pool database', async () => {
+    // Guards against the datasource creating its own connection to the default database
+    // instead of using the caller's pool (drizzle-orm 1.0 positional-overload regression).
+    const dbName = await regCurrentDatabaseFunction();
+    expect(dbName).toBe(config.database);
   });
 
   test('custom pool is not closed after DBOS shutdown', async () => {
