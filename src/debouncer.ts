@@ -173,7 +173,7 @@ export class Debouncer<Args extends unknown[], Return> {
         return DBOS.retrieveWorkflow<Return>(result.bouncedWorkflowID!);
       }
       if (action === 'raise') {
-        throw new DBOSQueueDuplicatedError(result.holderWorkflowID!, queueName, deduplicationID);
+        throw new DBOSQueueDuplicatedError(pinnedWorkflowID ?? '', queueName, deduplicationID);
       }
       if (action === 'retry') {
         continue;
