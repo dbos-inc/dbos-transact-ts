@@ -2354,8 +2354,8 @@ describe('database-backed-queue-crud', () => {
 
   test('supervisor-launches-worker-for-queue-registered-after-launch', async () => {
     const queueName = `supervisor_${randomUUID()}`;
-    // Queue is registered AFTER DBOS launches; the supervisor's discovery
-    // cycle must pick it up and start a worker without a process restart.
+    // Queue is registered AFTER DBOS launches; the dispatcher's reconcile
+    // cycle must pick it up and dispatch it without a process restart.
     await DBOS.registerQueue(queueName, { minPollingIntervalMs: 100 });
 
     const wfid = randomUUID();
@@ -2369,16 +2369,16 @@ describe('database-backed-queue-crud', () => {
     const queueName = `recreate_${randomUUID()}`;
     await DBOS.registerQueue(queueName, { minPollingIntervalMs: 100 });
 
-    // The original worker processes one workflow.
+    // The dispatcher processes one workflow from this queue.
     const h1 = await DBOS.startWorkflow(TestWFs, { workflowID: randomUUID(), queueName }).testWorkflowSimple('a', '1');
     expect(await h1.getResult()).toBe('a1');
 
-    // Deleting the row makes the worker exit on its next iteration.
+    // Deleting the row makes the dispatcher stop dispatching it on its next reconcile.
     await DBOS.deleteQueue(queueName);
     expect(await DBOS.retrieveQueue(queueName)).toBeNull();
 
-    // Re-registering with new config; the supervisor must start a fresh
-    // worker for the new row.
+    // Re-registering with new config; the dispatcher must pick up the new
+    // row on its next reconcile.
     await sleepms(3000);
     await DBOS.registerQueue(queueName, { minPollingIntervalMs: 100, concurrency: 5 });
     expect((await DBOS.retrieveQueue(queueName))!.concurrency).toBe(5);
@@ -2405,8 +2405,8 @@ describe('database-backed-queue-crud', () => {
     DBOS.setConfig(cfg);
     await DBOS.launch();
 
-    // Register both DB-backed queues. The supervisor must launch a worker
-    // for the allowed name and skip the filtered one.
+    // Register both DB-backed queues. The dispatcher must dispatch the
+    // allowed name and skip the filtered one.
     await DBOS.registerQueue(allowedDbName, { minPollingIntervalMs: 100 });
     await DBOS.registerQueue(filteredOutDbName, { minPollingIntervalMs: 100 });
 
@@ -2418,8 +2418,8 @@ describe('database-backed-queue-crud', () => {
     const h2 = await DBOS.startWorkflow(TestWFs, { queueName: allowedDbName }).testWorkflowSimple('b', '2');
     expect(await h2.getResult()).toBe('b2');
 
-    // The filtered-out DB-backed queue gets no worker; its workflow stays
-    // ENQUEUED. Wait long enough for several supervisor cycles to confirm
+    // The filtered-out DB-backed queue is not dispatched; its workflow stays
+    // ENQUEUED. Wait long enough for several reconcile cycles to confirm
     // the filter holds.
     const h3 = await DBOS.startWorkflow(TestWFs, { queueName: filteredOutDbName }).testWorkflowSimple('c', '3');
     await sleepms(2500);
@@ -2489,7 +2489,7 @@ describe('database-backed-queue-crud', () => {
     DBOS.setConfig(cfg);
     await DBOS.launch();
 
-    // Register the database-backed queue post-launch; the supervisor picks it
+    // Register the database-backed queue post-launch; the dispatcher picks it
     // up since it matches the listen filter.
     await DBOS.registerQueue(dbBackedName, { minPollingIntervalMs: 100 });
 
@@ -2552,8 +2552,8 @@ describe('database-backed-queue-crud', () => {
       await sleepms(1000);
       expect(DynConcWFs.startedCount).toBe(1);
 
-      // Bump concurrency. The worker reloads its config from the database on
-      // its next poll iteration and starts the remaining two workflows.
+      // Bump concurrency. The dispatcher reloads config from the database on
+      // its next reconcile cycle and starts the remaining two workflows.
       await queue.setConcurrency(3);
 
       const deadline = Date.now() + 5000;
@@ -2576,7 +2576,7 @@ describe('database-backed-queue-crud', () => {
 
 // Regression test for the "orphan-PENDING" bug in partitioned queue dispatch.
 //
-// Pre-fix: runQueue iterated partition keys, collected wfids from every
+// Pre-fix: the dispatch loop iterated partition keys, collected wfids from every
 // findAndMarkStartableWorkflows call into a single array, and dispatched them
 // after the loop. Each call committed in its own transaction, so the chosen
 // workflow was already PENDING by the time the call returned. If a concurrent
