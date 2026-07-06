@@ -13,7 +13,7 @@ import { DBOSError, DBOSQueueDuplicatedError, getDBOSErrorCode, QueueDedupIDDupl
 import { serializeArgs, serializeFunctionInputOutput } from './serialization';
 import { DebounceResult } from './system_database';
 import { INTERNAL_QUEUE_NAME } from './utils';
-import { WorkflowHandle } from './workflow';
+import { WorkflowHandle, WorkflowSerializationFormat } from './workflow';
 import { PortableWorkflowError } from '../schemas/system_db_schema';
 
 // Parameters for the debouncer
@@ -35,6 +35,8 @@ interface DebouncerClientConfig {
   workflowClassName?: string;
   startWorkflowParams?: StartWorkflowParams;
   debounceTimeoutMs?: number;
+  // Serialization format for the workflow's inputs, e.g. 'portable' for a workflow registered with portable serialization.
+  serializationType?: WorkflowSerializationFormat;
 }
 
 /**
@@ -209,6 +211,7 @@ export class Debouncer<Args extends unknown[], Return> {
 
 export class DebouncerClient {
   private readonly cfg: DebouncerParams;
+  private readonly serializationType: WorkflowSerializationFormat;
   constructor(
     readonly client: DBOSClient,
     params: DebouncerClientConfig,
@@ -219,6 +222,7 @@ export class DebouncerClient {
       startWorkflowParams: params.startWorkflowParams,
       debounceTimeoutMs: params.debounceTimeoutMs,
     };
+    this.serializationType = params.serializationType;
   }
 
   async debounce(debounceKey: string, debouncePeriodMs: number, ...args: unknown[]): Promise<WorkflowHandle<unknown>> {
@@ -232,7 +236,7 @@ export class DebouncerClient {
 
     while (true) {
       // Try to extend an existing debounced workflow for this key first (the sole coalescing mechanism).
-      const serparam = await serializeArgs(args, undefined, this.client.serializer, undefined);
+      const serparam = await serializeArgs(args, undefined, this.client.serializer, this.serializationType);
       const result = await this.client.debounceDelayedWorkflow({
         workflowName: this.cfg.workflowName,
         workflowClassName: this.cfg.workflowClassName,
@@ -268,6 +272,7 @@ export class DebouncerClient {
             attributes: this.cfg.startWorkflowParams?.workflowAttributes,
             deduplicationID,
             delaySeconds: debouncePeriodMs / 1000,
+            serializationType: this.serializationType,
           },
           debounceDeadlineEpochMS,
           args,

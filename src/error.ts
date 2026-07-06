@@ -178,6 +178,8 @@ export class DBOSQueueDuplicatedError extends DBOSError {
       `Workflow ${workflowID} was deduplicated due to an existing workflow in queue ${queue} with deduplication ID ${deduplicationID}.`,
       QueueDedupIDDuplicated,
     );
+    // Portable error serialization records err.name, which is otherwise 'Error'; the debouncer matches on it after replay.
+    this.name = 'DBOSQueueDuplicatedError';
   }
 }
 

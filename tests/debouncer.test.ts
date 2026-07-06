@@ -5,6 +5,7 @@ import { DBOSQueueDuplicatedError } from '../src/error';
 import { INTERNAL_QUEUE_NAME } from '../src/utils';
 import { clearDebugTriggers, DebugAction, DEBUG_TRIGGER_STEP_COMMIT, setDebugTrigger } from '../src/debugpoint';
 import { PortableWorkflowError } from '../schemas/system_db_schema';
+import { DBOSJSON, DBOSPortableJSON, deserializeResError, serializeResError } from '../src/serialization';
 import { generateDBOSTestConfig, reexecuteWorkflowById, setUpDBOSTestSysDb, Event } from './helpers';
 import assert from 'node:assert';
 
@@ -39,6 +40,13 @@ describe('debouncer-tests', () => {
   // The dedup ID a debounce computes for `workflow` and a given key.
   const dedupIDForKey = (key: string) => `.debouncerWorkflow-${key}`;
   const getSysDB = () => DBOSExecutor.globalInstance!.systemDatabase;
+
+  const portableWorkflow = DBOS.registerWorkflow(
+    async (x: number) => {
+      return Promise.resolve(x);
+    },
+    { name: 'debouncerPortableWorkflow', serialization: 'portable' },
+  );
 
   // A workflow that signals when it starts and blocks until released, reset per test.
   let blockStarted: Event;
@@ -549,16 +557,33 @@ describe('debouncer-tests', () => {
     // portable serialization, replay revives the checkpointed error as a PortableWorkflowError
     // carrying only the original type name. The retry loop must still recognize that form and
     // bounce the existing workflow instead of erroring.
+
+    // Round-trip a real dedup error through portable serialization to produce the exact replay form.
+    const sererr = await serializeResError(
+      new DBOSQueueDuplicatedError('racer', 'queue', 'dedup'),
+      DBOSJSON,
+      'portable',
+    );
+    let replayForm: Error | undefined;
+    try {
+      replayForm = await deserializeResError(sererr.serializedValue, sererr.serialization, DBOSJSON);
+    } catch (e) {
+      replayForm = e as Error;
+    }
+    expect(replayForm).toBeInstanceOf(PortableWorkflowError);
+    // The portable format records the error's runtime name; it must be the class name, not 'Error'.
+    expect(replayForm.name).toBe('DBOSQueueDuplicatedError');
+
     const debouncer = new Debouncer({ workflow });
     const sysDB = getSysDB();
     const originalInit = sysDB.initWorkflowStatus.bind(sysDB);
     let dedupInitCalls = 0;
     const spy = jest.spyOn(sysDB, 'initWorkflowStatus').mockImplementation(async (initStatus, ownerXid, options) => {
-      // The first enqueue throws the exact object a replay produces from a checkpointed, portable-serialized dedup error; subsequent enqueues behave normally.
+      // The first enqueue throws the replay-form error; subsequent enqueues behave normally.
       if (initStatus.deduplicationID === dedupIDForKey('portable-key')) {
         dedupInitCalls++;
         if (dedupInitCalls === 1) {
-          throw new PortableWorkflowError('Workflow was deduplicated', DBOSQueueDuplicatedError.name);
+          throw replayForm;
         }
       }
       return originalInit(initStatus, ownerXid, options);
@@ -573,6 +598,46 @@ describe('debouncer-tests', () => {
       spy.mockRestore();
     }
   }, 30000);
+
+  test('test-debouncer-client-portable-serialization', async () => {
+    // A DebouncerClient given serializationType 'portable' must write portable-format inputs on
+    // both the fresh enqueue and the bounce, so a portable-registered workflow stays readable
+    // across languages.
+    const client = await DBOSClient.create({ systemDatabaseUrl: config.systemDatabaseUrl! });
+    try {
+      const debouncer = new DebouncerClient(client, {
+        workflowName: 'debouncerPortableWorkflow',
+        serializationType: 'portable',
+      });
+
+      // The fresh enqueue records portable inputs.
+      const firstHandle = await debouncer.debounce('pkey', 1000000000, 1);
+      let status = await getSysDB().getWorkflowStatus(firstHandle.workflowID);
+      expect(status?.status).toBe(StatusString.DELAYED);
+      expect(status?.serialization).toBe(DBOSPortableJSON.name());
+      expect(JSON.parse(status!.input!)).toEqual({ positionalArgs: [1] });
+
+      // A bounce replaces the inputs without changing the serialization format.
+      const secondHandle = await debouncer.debounce('pkey', 1000, 2);
+      expect(secondHandle.workflowID).toBe(firstHandle.workflowID);
+      status = await getSysDB().getWorkflowStatus(firstHandle.workflowID);
+      expect(status?.serialization).toBe(DBOSPortableJSON.name());
+      expect(JSON.parse(status!.input!)).toEqual({ positionalArgs: [2] });
+      expect(await secondHandle.getResult()).toBe(2);
+
+      // A client bounce of a workflow debounced server-side keeps the registration's portable format.
+      const localDebouncer = new Debouncer({ workflow: portableWorkflow });
+      const thirdHandle = await localDebouncer.debounce('pkey2', 1000000000, 3);
+      const fourthHandle = await debouncer.debounce('pkey2', 1000, 4);
+      expect(fourthHandle.workflowID).toBe(thirdHandle.workflowID);
+      status = await getSysDB().getWorkflowStatus(thirdHandle.workflowID);
+      expect(status?.serialization).toBe(DBOSPortableJSON.name());
+      expect(JSON.parse(status!.input!)).toEqual({ positionalArgs: [4] });
+      expect(await fourthHandle.getResult()).toBe(4);
+    } finally {
+      await client.destroy();
+    }
+  }, 60000);
 
   test('test-debounce-rejects-caller-dedup-and-delay', async () => {
     // A debounce owns the workflow's deduplication ID and delay, and priority/partition keys cannot apply to a debounced enqueue, so a caller that sets any of them must fail loudly rather than have it silently ignored or break later.
