@@ -1,7 +1,6 @@
 import { randomUUID } from 'crypto';
 import { DBOS, DBOSClient, Debouncer } from '../src';
 import { DBOSConfig } from '../src/dbos-executor';
-import { DEBOUNCER_WORKLOW_NAME } from '../src/utils';
 import * as protocol from '../src/conductor/protocol';
 import { generateDBOSTestConfig, setUpDBOSTestSysDb, Event } from './helpers';
 
@@ -236,7 +235,7 @@ describe('workflow-attributes', () => {
     expect(JSON.parse(serialized.output[0].Attributes)).toEqual({ customer: 'acme', tier: 1 });
   });
 
-  test('debounced user workflow gets attributes; internal debouncer does not', async () => {
+  test('debounced user workflow gets attributes', async () => {
     const debouncer = new Debouncer({
       workflow: echoWorkflow,
       startWorkflowParams: { workflowAttributes: { source: 'debouncer' } },
@@ -244,12 +243,5 @@ describe('workflow-attributes', () => {
     const handle = await debouncer.debounce('key', 1000, 5);
     expect(await handle.getResult()).toBe(5);
     expect((await handle.getStatus())?.attributes).toEqual({ source: 'debouncer' });
-
-    // The internal debouncer workflow itself does not get the user's attributes.
-    const internalStatuses = await DBOS.listWorkflows({ workflowName: DEBOUNCER_WORKLOW_NAME });
-    expect(internalStatuses.length).toBeGreaterThan(0);
-    for (const status of internalStatuses) {
-      expect(status.attributes).toBeUndefined();
-    }
   });
 });

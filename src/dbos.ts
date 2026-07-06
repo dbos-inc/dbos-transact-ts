@@ -352,7 +352,7 @@ export function runInternalStep<T>(
  * methods so they participate in the same transaction.
  * Outside a workflow, the callback is called directly with `undefined` as the client.
  */
-async function runTransactionalInternalStep<T>(
+export async function runTransactionalInternalStep<T>(
   callback: (client: PoolClient | undefined) => Promise<T>,
   funcName: string,
 ): Promise<T> {
@@ -457,7 +457,6 @@ export class DBOS {
       globalParams.executorID = randomUUID();
     }
 
-    DBOSExecutor.createDebouncerWorkflow();
     DBOSExecutor.createInternalQueue();
     DBOSExecutor.globalInstance = new DBOSExecutor(internalConfig);
 
@@ -619,7 +618,6 @@ export class DBOS {
     assert(!DBOS.isInitialized(), 'Cannot call DBOS.clearRegistry after DBOS.launch');
     clearAllRegistrations();
     wfQueueRunner.clearRegistrations();
-    DBOSExecutor.debouncerWorkflow = undefined;
     DBOSExecutor.internalQueue = undefined;
   }
 

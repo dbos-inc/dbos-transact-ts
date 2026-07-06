@@ -36,6 +36,8 @@ export interface workflow_status {
   completed_at?: number | null;
   attributes?: Record<string, unknown> | null; // Custom key-value attributes attached at creation, stored as JSONB.
   schedule_name?: string | null; // If enqueued by a named schedule, that schedule's name.
+  debounce_deadline_epoch_ms?: number | null; // Absolute cap (epoch ms) beyond which bounces may not extend the delay.
+  is_debounced?: boolean; // True if the deduplication ID is a debounce key cleared on the DELAYED->ENQUEUED transition.
 }
 
 export interface notifications {

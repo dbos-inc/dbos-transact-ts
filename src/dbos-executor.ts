@@ -56,7 +56,7 @@ import {
   runWithTopContext,
 } from './context';
 import { deserializeError, serializeError } from 'serialize-error';
-import { globalParams, sleepms, INTERNAL_QUEUE_NAME, DEBOUNCER_WORKLOW_NAME as DEBOUNCER_WORKLOW_NAME } from './utils';
+import { globalParams, sleepms, INTERNAL_QUEUE_NAME } from './utils';
 import {
   DBOSPortableJSON,
   DBOSSerializer,
@@ -69,7 +69,7 @@ import {
   serializeResErrorWithSerializer,
   serializeValue,
 } from './serialization';
-import { DBOS, GetWorkflowsInput } from '.';
+import { GetWorkflowsInput } from '.';
 
 import { wfQueueRunner, WorkflowQueue } from './wfqueue';
 import { debugTriggerPoint, DEBUG_TRIGGER_WORKFLOW_ENQUEUE } from './debugpoint';
@@ -84,7 +84,6 @@ import {
   toWorkflowStatus,
 } from './workflow_management';
 import { maskDatabaseUrl } from './database_utils';
-import { debouncerWorkflowFunction } from './debouncer';
 import { Pool } from 'pg';
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
@@ -485,10 +484,18 @@ export class DBOSExecutor {
         : (funcArgs.deserialized as T);
 
     const delaySeconds = params.enqueueOptions?.delaySeconds;
-    const delayUntilEpochMS =
+    let delayUntilEpochMS =
       params.queueName !== undefined && delaySeconds !== undefined && delaySeconds > 0
         ? Date.now() + delaySeconds * 1000
         : undefined;
+    const debounceDeadlineEpochMS = params.enqueueOptions?.debounceDeadlineEpochMS;
+    if (
+      delayUntilEpochMS !== undefined &&
+      debounceDeadlineEpochMS !== undefined &&
+      debounceDeadlineEpochMS < delayUntilEpochMS
+    ) {
+      delayUntilEpochMS = debounceDeadlineEpochMS;
+    }
     const internalStatus: WorkflowStatusInternal = {
       workflowUUID: workflowID,
       status:
@@ -521,6 +528,8 @@ export class DBOSExecutor {
       serialization: funcArgs.sername,
       delayUntilEpochMS,
       attributes: params.workflowAttributes,
+      debounceDeadlineEpochMS,
+      isDebounced: params.enqueueOptions?.isDebounced ?? false,
     };
 
     if (isTempWorkflow) {
@@ -1354,16 +1363,5 @@ export class DBOSExecutor {
       return;
     }
     DBOSExecutor.internalQueue = new WorkflowQueue(INTERNAL_QUEUE_NAME, {});
-  }
-
-  static debouncerWorkflow: UntypedAsyncFunction | undefined = undefined;
-
-  static createDebouncerWorkflow() {
-    if (DBOSExecutor.debouncerWorkflow !== undefined) {
-      return;
-    }
-    DBOSExecutor.debouncerWorkflow = DBOS.registerWorkflow(debouncerWorkflowFunction, {
-      name: DEBOUNCER_WORKLOW_NAME,
-    }) as UntypedAsyncFunction;
   }
 }
