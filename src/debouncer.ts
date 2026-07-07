@@ -252,7 +252,7 @@ export class DebouncerClient {
         return this.client.retrieveWorkflow(result.bouncedWorkflowID!);
       }
       if (action === 'raise') {
-        throw new DBOSQueueDuplicatedError(result.holderWorkflowID!, queueName, deduplicationID);
+        throw new DBOSQueueDuplicatedError(this.cfg.startWorkflowParams?.workflowID ?? '', queueName, deduplicationID);
       }
       if (action === 'retry') {
         continue;
