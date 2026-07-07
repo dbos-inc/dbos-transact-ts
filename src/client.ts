@@ -4,6 +4,8 @@ import {
   type WorkflowStatusInternal,
   type WorkflowScheduleInternal,
   type VersionInfo,
+  type DebounceParams,
+  type DebounceResult,
   DBOS_STREAM_CLOSED_SENTINEL,
   DEFAULT_POOL_SIZE,
 } from './system_database';
@@ -302,6 +304,20 @@ export class DBOSClient {
     options: ClientEnqueueOptions,
     ...args: Parameters<T>
   ): Promise<WorkflowHandle<Awaited<ReturnType<T>>>> {
+    const internalStatus = await this.#buildEnqueueStatus(options, args);
+
+    let finalID: string;
+    if (options.duplicationPolicy === 'return-existing') {
+      finalID = await this.#initSingletonWorkflow(internalStatus, options);
+    } else {
+      await this.systemDatabase.initWorkflowStatus(internalStatus, null);
+      finalID = internalStatus.workflowUUID;
+    }
+
+    return new ClientHandle<Awaited<ReturnType<T>>>(this.systemDatabase, finalID);
+  }
+
+  async #buildEnqueueStatus(options: ClientEnqueueOptions, args: unknown[]): Promise<WorkflowStatusInternal> {
     validateWorkflowAttributes(options.attributes);
     const { workflowName, workflowClassName, workflowConfigName, queueName, appVersion } = options;
     const workflowUUID = options.workflowID ?? randomUUID();
@@ -311,7 +327,7 @@ export class DBOSClient {
       options.delaySeconds !== undefined && options.delaySeconds > 0
         ? Date.now() + options.delaySeconds * 1000
         : undefined;
-    const internalStatus: WorkflowStatusInternal = {
+    return {
       workflowUUID: workflowUUID,
       status: delayUntilEpochMS !== undefined ? StatusString.DELAYED : StatusString.ENQUEUED,
       workflowName: workflowName,
@@ -338,16 +354,39 @@ export class DBOSClient {
       delayUntilEpochMS,
       attributes: options.attributes,
     };
+  }
 
-    let finalID: string;
-    if (options.duplicationPolicy === 'return-existing') {
-      finalID = await this.#initSingletonWorkflow(internalStatus, options);
-    } else {
-      await this.systemDatabase.initWorkflowStatus(internalStatus, null);
-      finalID = internalStatus.workflowUUID;
+  /**
+   * Enqueue a debounced workflow for `DebouncerClient`.
+   * The debounce fields are stamped onto the built status here because they are
+   * not part of the public enqueue API.
+   * @internal
+   */
+  async enqueueDebounced(
+    options: ClientEnqueueOptions,
+    debounceDeadlineEpochMS: number | undefined,
+    args: unknown[],
+  ): Promise<string> {
+    const internalStatus = await this.#buildEnqueueStatus(options, args);
+    internalStatus.debounceDeadlineEpochMS = debounceDeadlineEpochMS;
+    internalStatus.isDebounced = true;
+    if (
+      internalStatus.delayUntilEpochMS !== undefined &&
+      debounceDeadlineEpochMS !== undefined &&
+      debounceDeadlineEpochMS < internalStatus.delayUntilEpochMS
+    ) {
+      internalStatus.delayUntilEpochMS = debounceDeadlineEpochMS;
     }
+    await this.systemDatabase.initWorkflowStatus(internalStatus, null);
+    return internalStatus.workflowUUID;
+  }
 
-    return new ClientHandle<Awaited<ReturnType<T>>>(this.systemDatabase, finalID);
+  /**
+   * Extend an existing debounced DELAYED workflow, for `DebouncerClient`.
+   * @internal
+   */
+  async debounceDelayedWorkflow(params: DebounceParams): Promise<DebounceResult> {
+    return await this.systemDatabase.debounceDelayedWorkflow(params);
   }
 
   /**

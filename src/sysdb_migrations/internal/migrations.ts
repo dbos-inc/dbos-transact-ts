@@ -677,5 +677,14 @@ export function allMigrations(
         `CREATE INDEX IF NOT EXISTS "idx_workflow_status_schedule_name" ON "${schemaName}"."workflow_status" ("schedule_name") WHERE "schedule_name" IS NOT NULL`,
       ],
     },
+    // Debounce support: an absolute cap on how far bounces may extend a delayed
+    // workflow's delay, and a flag marking the deduplication ID as a debounce key
+    // to clear on the DELAYED->ENQUEUED transition.
+    {
+      pg: [
+        `ALTER TABLE "${schemaName}"."workflow_status" ADD COLUMN IF NOT EXISTS "debounce_deadline_epoch_ms" BIGINT DEFAULT NULL`,
+        `ALTER TABLE "${schemaName}"."workflow_status" ADD COLUMN IF NOT EXISTS "is_debounced" BOOLEAN NOT NULL DEFAULT FALSE`,
+      ],
+    },
   ];
 }
