@@ -72,7 +72,6 @@
     "@dbos-inc/otel": "packages/otel",
     "@eslint/js": "^9.22.0",
     "@testcontainers/postgresql": "^12.0.1",
-    "@types/better-sqlite3": "^7.6.13",
     "@types/jest": "^30.0.0",
     "@types/node": "^20.19.1",
     "@types/pg": "^8.11.2",
@@ -92,7 +91,6 @@
     "zod": "^4.3.6"
   },
   "dependencies": {
-    "better-sqlite3": "^12.11.1",
     "commander": "^12.0.0",
     "pg": "^8.11.3",
     "serialize-error": "^8.1.0",

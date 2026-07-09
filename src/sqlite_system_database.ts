@@ -1,12 +1,12 @@
-import Database from 'better-sqlite3';
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { createRequire } from 'node:module';
 
 import type { GlobalLogger } from './telemetry/logs';
 import { allMigrations } from './sysdb_migrations/internal/migrations';
 
-type SQLiteValue = string | number | bigint | boolean | null | Buffer;
+type SQLiteValue = string | number | bigint | null | Buffer;
 type SQLiteParams = SQLiteValue[];
 
 export type SQLiteQueryResult<T = unknown> = {
@@ -18,10 +18,78 @@ type SQLiteRunResult = {
   changes: number;
 };
 
+type NativeSQLiteStatement = {
+  all: (...params: SQLiteParams) => unknown[];
+  run: (...params: SQLiteParams) => SQLiteRunResult;
+};
+
+type NativeSQLiteDatabase = {
+  exec: (sql: string) => void;
+  prepare: (sql: string) => NativeSQLiteStatement;
+  close: () => void;
+};
+
+type NativeSQLiteModule = {
+  DatabaseSync: new (path: string) => NativeSQLiteDatabase;
+};
+
 type SQLitePoolWaiter = {
   resolve: (release: () => void) => void;
   reject: (error: Error) => void;
 };
+
+const MIN_NATIVE_SQLITE_NODE_VERSION = { major: 22, minor: 13, patch: 0 } as const;
+const requireNativeModule = createRequire(__filename);
+
+function nodeVersion(): { major: number; minor: number; patch: number } {
+  const [major = 0, minor = 0, patch = 0] = process.versions.node.split('.').map((part) => Number(part));
+  return {
+    major: Number.isInteger(major) ? major : 0,
+    minor: Number.isInteger(minor) ? minor : 0,
+    patch: Number.isInteger(patch) ? patch : 0,
+  };
+}
+
+export function isNativeSQLiteSupported(): boolean {
+  const version = nodeVersion();
+  if (version.major !== MIN_NATIVE_SQLITE_NODE_VERSION.major) {
+    return version.major > MIN_NATIVE_SQLITE_NODE_VERSION.major;
+  }
+  if (version.minor !== MIN_NATIVE_SQLITE_NODE_VERSION.minor) {
+    return version.minor > MIN_NATIVE_SQLITE_NODE_VERSION.minor;
+  }
+  return version.patch >= MIN_NATIVE_SQLITE_NODE_VERSION.patch;
+}
+
+function loadNativeSQLite(): NativeSQLiteModule {
+  if (!isNativeSQLiteSupported()) {
+    throw new Error(
+      `SQLite system databases require Node.js 22.13.0 or later because DBOS uses Node's built-in node:sqlite module without --experimental-sqlite. ` +
+        `The node:sqlite API is still experimental/release-candidate in Node's stability index. Current Node.js version is ${process.version}. ` +
+        `DBOS still supports Node.js >=20 when configured with a Postgres system database.`,
+    );
+  }
+
+  try {
+    const nativeModule = requireNativeModule('node:' + 'sqlite') as unknown;
+    if (!isNativeSQLiteModule(nativeModule)) {
+      throw new Error('node:sqlite did not expose DatabaseSync');
+    }
+    return nativeModule;
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    throw new Error(`Failed to load Node's built-in node:sqlite module: ${message}`);
+  }
+}
+
+function isNativeSQLiteModule(value: unknown): value is NativeSQLiteModule {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'DatabaseSync' in value &&
+    typeof (value as { DatabaseSync?: unknown }).DatabaseSync === 'function'
+  );
+}
 
 function sqliteNowMsExpr(): string {
   return "(CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER))";
@@ -69,7 +137,7 @@ export class SQLiteClient {
   #released = false;
 
   constructor(
-    private readonly db: Database.Database,
+    private readonly db: NativeSQLiteDatabase,
     private readonly schemaName: string,
     private readonly releaseLock?: () => void,
   ) {}
@@ -97,12 +165,12 @@ export class SQLiteClient {
       const { sql: sqliteSql, params: sqliteParams } = translateQuery(normalized, params, this.schemaName);
       const stmt = this.db.prepare(sqliteSql);
 
-      if (stmt.reader) {
-        const rows = stmt.all(...sqliteParams) as T[];
+      if (queryReturnsRows(sqliteSql)) {
+        const rows = stmt.all(...sqliteParams).map(rowToPlainObject) as T[];
         return Promise.resolve({ rows, rowCount: rows.length });
       }
 
-      const result = stmt.run(...sqliteParams) as SQLiteRunResult;
+      const result = stmt.run(...sqliteParams);
       return Promise.resolve({ rows: [], rowCount: result.changes });
     } catch (e) {
       return Promise.reject(mapSQLiteError(e));
@@ -124,7 +192,7 @@ export class SQLiteClient {
 
 export class SQLitePool {
   readonly options: { max: number };
-  private readonly db: Database.Database;
+  private readonly db: NativeSQLiteDatabase;
   private locked = false;
   private readonly waiters: SQLitePoolWaiter[] = [];
   private ended = false;
@@ -136,10 +204,11 @@ export class SQLitePool {
   ) {
     this.options = { max };
     const file = sqliteFileFromUrl(databaseUrl);
-    this.db = new Database(file === ':memory:' ? file : path.resolve(file));
-    this.db.pragma('busy_timeout = 30000');
-    this.db.pragma('foreign_keys = ON');
-    this.db.pragma('journal_mode = WAL');
+    const { DatabaseSync } = loadNativeSQLite();
+    this.db = new DatabaseSync(file === ':memory:' ? file : path.resolve(file));
+    this.db.exec('PRAGMA busy_timeout = 30000');
+    this.db.exec('PRAGMA foreign_keys = ON');
+    this.db.exec('PRAGMA journal_mode = WAL');
   }
 
   async query<T = unknown>(sql: string, params: unknown[] = []): Promise<SQLiteQueryResult<T>> {
@@ -203,6 +272,221 @@ export class SQLitePool {
       }
     };
   }
+}
+
+function rowToPlainObject(row: unknown): unknown {
+  if (typeof row !== 'object' || row === null || Buffer.isBuffer(row)) {
+    return row;
+  }
+  return { ...(row as Record<string, unknown>) };
+}
+
+function queryReturnsRows(sql: string): boolean {
+  if (hasTopLevelKeyword(sql, 'RETURNING')) {
+    return true;
+  }
+
+  const firstKeyword = readFirstKeyword(sql);
+  if (firstKeyword === undefined) {
+    return false;
+  }
+
+  if (['SELECT', 'VALUES', 'PRAGMA', 'EXPLAIN'].includes(firstKeyword.keyword)) {
+    return true;
+  }
+
+  if (firstKeyword.keyword !== 'WITH') {
+    return false;
+  }
+
+  const mainKeyword = readKeywordAfterWithCtes(sql, firstKeyword.end);
+  return mainKeyword === 'SELECT' || mainKeyword === 'VALUES';
+}
+
+function readFirstKeyword(sql: string, start = 0): { keyword: string; end: number } | undefined {
+  let index = skipWhitespaceAndComments(sql, start);
+  if (!isSqlIdentifierStart(sql[index])) {
+    return undefined;
+  }
+
+  const keywordStart = index;
+  index += 1;
+  while (isSqlIdentifierPart(sql[index])) {
+    index += 1;
+  }
+  return { keyword: sql.slice(keywordStart, index).toUpperCase(), end: index };
+}
+
+function readKeywordAfterWithCtes(sql: string, start: number): string | undefined {
+  let index = skipWhitespaceAndComments(sql, start);
+  const recursive = readFirstKeyword(sql, index);
+  if (recursive?.keyword === 'RECURSIVE') {
+    index = recursive.end;
+  }
+
+  while (index < sql.length) {
+    index = skipWhitespaceAndComments(sql, index);
+    index = skipSqlIdentifier(sql, index);
+    index = skipWhitespaceAndComments(sql, index);
+    if (sql[index] === '(') {
+      index = skipBalancedParentheses(sql, index);
+      index = skipWhitespaceAndComments(sql, index);
+    }
+
+    const asKeyword = readFirstKeyword(sql, index);
+    if (asKeyword?.keyword !== 'AS') {
+      return asKeyword?.keyword;
+    }
+
+    index = skipWhitespaceAndComments(sql, asKeyword.end);
+    if (sql[index] !== '(') {
+      return readFirstKeyword(sql, index)?.keyword;
+    }
+    index = skipBalancedParentheses(sql, index);
+    index = skipWhitespaceAndComments(sql, index);
+    if (sql[index] !== ',') {
+      return readFirstKeyword(sql, index)?.keyword;
+    }
+    index += 1;
+  }
+
+  return undefined;
+}
+
+function hasTopLevelKeyword(sql: string, keyword: string): boolean {
+  let index = 0;
+  let depth = 0;
+  const upperKeyword = keyword.toUpperCase();
+
+  while (index < sql.length) {
+    const char = sql[index];
+    if (char === "'" || char === '"') {
+      index = skipQuotedSql(sql, index, char);
+      continue;
+    }
+    if (char === '-' && sql[index + 1] === '-') {
+      index = skipLineComment(sql, index);
+      continue;
+    }
+    if (char === '/' && sql[index + 1] === '*') {
+      index = skipBlockComment(sql, index);
+      continue;
+    }
+    if (char === '(') {
+      depth += 1;
+      index += 1;
+      continue;
+    }
+    if (char === ')') {
+      depth = Math.max(0, depth - 1);
+      index += 1;
+      continue;
+    }
+    if (depth === 0 && isSqlIdentifierStart(char)) {
+      const wordStart = index;
+      index += 1;
+      while (isSqlIdentifierPart(sql[index])) {
+        index += 1;
+      }
+      if (sql.slice(wordStart, index).toUpperCase() === upperKeyword) {
+        return true;
+      }
+      continue;
+    }
+    index += 1;
+  }
+
+  return false;
+}
+
+function skipWhitespaceAndComments(sql: string, start: number): number {
+  let index = start;
+  while (index < sql.length) {
+    if (/\s/.test(sql[index])) {
+      index += 1;
+    } else if (sql[index] === '-' && sql[index + 1] === '-') {
+      index = skipLineComment(sql, index);
+    } else if (sql[index] === '/' && sql[index + 1] === '*') {
+      index = skipBlockComment(sql, index);
+    } else {
+      break;
+    }
+  }
+  return index;
+}
+
+function skipSqlIdentifier(sql: string, start: number): number {
+  if (sql[start] === '"') {
+    return skipQuotedSql(sql, start, '"');
+  }
+  let index = start;
+  while (isSqlIdentifierPart(sql[index])) {
+    index += 1;
+  }
+  return index;
+}
+
+function skipBalancedParentheses(sql: string, start: number): number {
+  let index = start;
+  let depth = 0;
+  while (index < sql.length) {
+    const char = sql[index];
+    if (char === "'" || char === '"') {
+      index = skipQuotedSql(sql, index, char);
+      continue;
+    }
+    if (char === '-' && sql[index + 1] === '-') {
+      index = skipLineComment(sql, index);
+      continue;
+    }
+    if (char === '/' && sql[index + 1] === '*') {
+      index = skipBlockComment(sql, index);
+      continue;
+    }
+    if (char === '(') {
+      depth += 1;
+    } else if (char === ')') {
+      depth -= 1;
+      if (depth === 0) {
+        return index + 1;
+      }
+    }
+    index += 1;
+  }
+  return index;
+}
+
+function skipQuotedSql(sql: string, start: number, quote: string): number {
+  let index = start + 1;
+  while (index < sql.length) {
+    if (sql[index] === quote) {
+      if (sql[index + 1] === quote) {
+        index += 2;
+        continue;
+      }
+      return index + 1;
+    }
+    index += 1;
+  }
+  return index;
+}
+
+function skipLineComment(sql: string, start: number): number {
+  const nextLine = sql.indexOf('\n', start + 2);
+  return nextLine === -1 ? sql.length : nextLine + 1;
+}
+
+function skipBlockComment(sql: string, start: number): number {
+  const commentEnd = sql.indexOf('*/', start + 2);
+  return commentEnd === -1 ? sql.length : commentEnd + 2;
+}
+
+function isSqlIdentifierStart(char: string | undefined): boolean {
+  return char !== undefined && /[A-Za-z_]/.test(char);
+}
+
+function isSqlIdentifierPart(char: string | undefined): boolean {
+  return char !== undefined && /[A-Za-z0-9_$]/.test(char);
 }
 
 function sqlitePoolEndedError(): Error {
@@ -302,7 +586,9 @@ function currentSQLiteSchemaStatements(): ReadonlyArray<string> {
       rate_limited BOOLEAN NOT NULL DEFAULT FALSE,
       completed_at INTEGER,
       attributes TEXT,
-      schedule_name TEXT
+      schedule_name TEXT,
+      debounce_deadline_epoch_ms INTEGER DEFAULT NULL,
+      is_debounced BOOLEAN NOT NULL DEFAULT FALSE
     )`,
     `CREATE TABLE IF NOT EXISTS operation_outputs (
       workflow_uuid TEXT NOT NULL,
@@ -521,9 +807,14 @@ function getExtraParam(extras: ReadonlyMap<string, SQLiteValue>, token: string):
 function mapSQLiteError(e: unknown): Error {
   if (!(e instanceof Error)) return new Error(String(e));
   const err = e as Error & { code?: string };
-  if (err.code === 'SQLITE_CONSTRAINT_UNIQUE' || err.code === 'SQLITE_CONSTRAINT_PRIMARYKEY') {
+  if (
+    err.code === 'SQLITE_CONSTRAINT_UNIQUE' ||
+    err.code === 'SQLITE_CONSTRAINT_PRIMARYKEY' ||
+    err.message.includes('UNIQUE constraint failed') ||
+    err.message.includes('PRIMARY KEY constraint failed')
+  ) {
     err.code = '23505';
-  } else if (err.code === 'SQLITE_CONSTRAINT_FOREIGNKEY') {
+  } else if (err.code === 'SQLITE_CONSTRAINT_FOREIGNKEY' || err.message.includes('FOREIGN KEY constraint failed')) {
     err.code = '23503';
   } else if (err.code === 'SQLITE_BUSY' || err.message.includes('database is locked')) {
     err.code = '55P03';
