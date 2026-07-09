@@ -81,6 +81,24 @@ jobs:
           NPM_AUTH_TOKEN: ${{secrets.GITHUB_TOKEN}}
           SILENCE_LOGS: true
 
+  sqlite:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4.1.1
+      - name: Use Node.js 22.13
+        uses: actions/setup-node@v4.0.2
+        with:
+          node-version: '22.13.0'
+      - name: Compile and Test SQLite
+        working-directory: ./
+        run: |
+          npm ci
+          npm run test:sqlite
+        env:
+          NPM_AUTH_TOKEN: ${{secrets.GITHUB_TOKEN}}
+          SILENCE_LOGS: true
+
   package-check:
     runs-on: ubuntu-latest
     timeout-minutes: 15
