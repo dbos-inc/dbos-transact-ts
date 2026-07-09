@@ -485,6 +485,12 @@ export function allMigrations(
     {
       online: true,
       pg: [
+        `CREATE INDEX ${c} IF NOT EXISTS "idx_workflow_status_recovery_pending" ON "${schemaName}"."workflow_status" ("executor_id", "application_version", "queue_name", "workflow_uuid") WHERE "status" = 'PENDING'`,
+      ],
+    },
+    {
+      online: true,
+      pg: [
         `CREATE INDEX ${c} IF NOT EXISTS "idx_workflow_status_failed" ON "${schemaName}"."workflow_status" ("status", "created_at") WHERE "status" IN ('ERROR', 'CANCELLED', 'MAX_RECOVERY_ATTEMPTS_EXCEEDED')`,
       ],
     },
