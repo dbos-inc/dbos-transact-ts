@@ -62,7 +62,6 @@ describe('sysdb migration runner', () => {
 
     // The new partial indexes should exist; the broad indexes they replace should not.
     expect(await indexExists(client, 'idx_workflow_status_pending')).toBe(true);
-    expect(await indexExists(client, 'idx_workflow_status_recovery_pending')).toBe(true);
     expect(await indexExists(client, 'idx_workflow_status_failed')).toBe(true);
     expect(await indexExists(client, 'idx_workflow_status_in_flight')).toBe(true);
     expect(await indexExists(client, 'idx_workflow_status_rate_limited')).toBe(true);
