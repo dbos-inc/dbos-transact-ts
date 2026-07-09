@@ -4,7 +4,7 @@ import path from 'node:path';
 
 import { DBOS, DBOSClient } from '../src';
 import { DBOSConfig } from '../src/dbos-executor';
-import { SQLitePool } from '../src/sqlite_system_database';
+import { isNativeSQLiteSupported, SQLitePool } from '../src/sqlite_system_database';
 import { sleepms } from '../src/utils';
 
 class SQLiteQueueWorkflows {
@@ -44,7 +44,9 @@ function getConfiguredSystemDatabaseUrl(config: DBOSConfig): string {
   return config.systemDatabaseUrl;
 }
 
-describe('SQLite system database', () => {
+const describeNativeSQLite = isNativeSQLiteSupported() ? describe : describe.skip;
+
+describeNativeSQLite('SQLite system database', () => {
   let tempDir: string;
   let dbPath: string;
   let config: DBOSConfig;
