@@ -19,7 +19,7 @@ jobs:
     services:
       # Postgres service container
       postgres:
-        image: postgres:16
+        image: postgres:18
         ports:
           - 5432:5432
         env:
@@ -58,7 +58,7 @@ jobs:
     steps:
       - name: 'Setup postgres config'
         run: |
-          docker exec ${{ job.services.postgres.id }} sh -c 'echo "wal_level=logical" >> /var/lib/postgresql/data/postgresql.conf'
+          docker exec ${{ job.services.postgres.id }} sh -c 'echo "wal_level=logical" >> "$PGDATA/postgresql.conf"'
           docker restart ${{ job.services.postgres.id }}
       - uses: actions/checkout@v4.1.1
       - name: Use Node.js ${{ matrix.node-version }}
