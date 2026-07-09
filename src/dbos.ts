@@ -352,7 +352,7 @@ export function runInternalStep<T>(
  * methods so they participate in the same transaction.
  * Outside a workflow, the callback is called directly with `undefined` as the client.
  */
-async function runTransactionalInternalStep<T>(
+export async function runTransactionalInternalStep<T>(
   callback: (client: PoolClient | undefined) => Promise<T>,
   funcName: string,
 ): Promise<T> {
@@ -457,13 +457,19 @@ export class DBOS {
       globalParams.executorID = randomUUID();
     }
 
-    DBOSExecutor.createDebouncerWorkflow();
     DBOSExecutor.createInternalQueue();
     DBOSExecutor.globalInstance = new DBOSExecutor(internalConfig);
 
     recordDBOSLaunch();
 
     const executor: DBOSExecutor = DBOSExecutor.globalInstance;
+
+    // Initialize data sources before executor.init() dispatches recovery, so recovered
+    // workflows can run their transactions immediately instead of racing initialization.
+    for (const [_n, ds] of transactionalDataSources) {
+      await ds.initialize();
+    }
+
     await executor.init();
 
     // Register the current application version
@@ -476,9 +482,6 @@ export class DBOS {
     }
 
     await DBOSExecutor.globalInstance.initEventReceivers(this.#dbosConfig?.listenQueues || null);
-    for (const [_n, ds] of transactionalDataSources) {
-      await ds.initialize();
-    }
 
     if (globalParams.dbosCloud) {
       const cloudAppName = process.env.DBOS__CONDUCTOR_APP_NAME;
@@ -615,7 +618,6 @@ export class DBOS {
     assert(!DBOS.isInitialized(), 'Cannot call DBOS.clearRegistry after DBOS.launch');
     clearAllRegistrations();
     wfQueueRunner.clearRegistrations();
-    DBOSExecutor.debouncerWorkflow = undefined;
     DBOSExecutor.internalQueue = undefined;
   }
 

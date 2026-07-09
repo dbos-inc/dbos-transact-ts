@@ -229,6 +229,10 @@ export interface WorkflowStatusInternal {
   attributes?: Record<string, unknown>;
   // If this workflow was enqueued by a named schedule, that schedule's name. Only set by the persistent scheduler.
   scheduleName?: string;
+  // Absolute cap (epoch ms) beyond which bounces may not extend the delay; unset if not debounced or no timeout.
+  debounceDeadlineEpochMS?: number;
+  // True if this workflow's deduplication ID is a debounce key to clear on the DELAYED->ENQUEUED transition.
+  isDebounced?: boolean;
 }
 
 export interface EnqueueOptions {
@@ -242,6 +246,34 @@ export interface EnqueueOptions {
   applicationVersion?: string;
   // Number of seconds to delay the workflow before it starts executing. The workflow will be in DELAYED status until the delay expires.
   delaySeconds?: number;
+  // Internal, set only by the debouncer: absolute cap (epoch ms) on how far the delay may extend.
+  debounceDeadlineEpochMS?: number;
+  // Internal, set only by the debouncer: marks the deduplication ID as a debounce key.
+  isDebounced?: boolean;
+}
+
+// Arguments to debounceDelayedWorkflow: identify the debounced workflow by
+// (name, class, queue, debounce key) and carry the new delay and inputs.
+export interface DebounceParams {
+  workflowName: string;
+  workflowClassName: string;
+  queueName: string;
+  deduplicationID: string;
+  delayUntilEpochMS: number;
+  input: string | null;
+  serialization: string | null;
+}
+
+export interface DebounceResult {
+  // The extended workflow's ID if an existing debounced DELAYED workflow was bounced; null if no bounce occurred.
+  bouncedWorkflowID: string | null;
+  // The current holder of (queue_name, deduplication_id) when no bounce occurred, or null if the key is unheld.
+  holderWorkflowID: string | null;
+  // Whether the holder is itself a debounced workflow.
+  holderIsDebounced: boolean;
+  // The holder's workflow name and class; a mismatch with the caller's means a debounce-key collision between workflows.
+  holderWorkflowName: string | null;
+  holderWorkflowClassName: string | null;
 }
 
 // How to handle a collision with another workflow that has the same `enqueueOptions.deduplicationID`
@@ -453,6 +485,8 @@ function mapWorkflowStatus(row: workflow_status): WorkflowStatusInternal {
     completedAt: row.completed_at ? Number(row.completed_at) : undefined,
     attributes: deserializeWorkflowAttributes(row.attributes),
     scheduleName: row.schedule_name ?? undefined,
+    debounceDeadlineEpochMS: row.debounce_deadline_epoch_ms ? Number(row.debounce_deadline_epoch_ms) : undefined,
+    isDebounced: row.is_debounced ?? false,
   };
 }
 
@@ -1059,6 +1093,7 @@ export class SystemDatabase {
         },
       );
       await client.query('COMMIT');
+      await debugTriggerPoint(DEBUG_TRIGGER_STEP_COMMIT);
       return undefined;
     } catch (e) {
       await client.query('ROLLBACK');
@@ -1186,6 +1221,98 @@ export class SystemDatabase {
          AND status = $4`,
       [delayUntilEpochMS, Date.now(), workflowID, StatusString.DELAYED],
     );
+  }
+
+  /**
+   * Extend an existing debounced DELAYED workflow's delay and update its inputs, atomically.
+   * The new delay is capped at the workflow's debounce_deadline_epoch_ms, if one is set.
+   * Matching on workflow name and class ensures a debounce-key collision between different
+   * workflows never overwrites another workflow's inputs. If nothing matched, returns the
+   * current holder (or that the key is unheld) so the caller can start fresh or surface a conflict.
+   * Runs on `client` if given, joining its transaction (e.g. a transactional step's);
+   * otherwise in its own retried transaction.
+   */
+  async debounceDelayedWorkflow(params: DebounceParams, client?: PoolClient): Promise<DebounceResult> {
+    if (client !== undefined) {
+      return await this.#debounceDelayedWorkflowInternal(client, params);
+    }
+    return await this.debounceDelayedWorkflowStandalone(params);
+  }
+
+  @dbRetry()
+  private async debounceDelayedWorkflowStandalone(params: DebounceParams): Promise<DebounceResult> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
+      const result = await this.#debounceDelayedWorkflowInternal(client, params);
+      await client.query('COMMIT');
+      return result;
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
+  }
+
+  async #debounceDelayedWorkflowInternal(client: PoolClient, params: DebounceParams): Promise<DebounceResult> {
+    const classNameOrNull = params.workflowClassName === '' ? null : params.workflowClassName;
+    const updated = await client.query<{ workflow_uuid: string }>(
+      `UPDATE "${this.schemaName}".workflow_status
+       SET delay_until_epoch_ms = CASE
+             WHEN debounce_deadline_epoch_ms IS NOT NULL AND debounce_deadline_epoch_ms < $1
+             THEN debounce_deadline_epoch_ms
+             ELSE $1
+           END,
+           inputs = $2, serialization = $3, updated_at = $4
+       WHERE name = $5 AND class_name IS NOT DISTINCT FROM $6
+         AND queue_name = $7 AND deduplication_id = $8
+         AND status = $9 AND is_debounced = TRUE
+       RETURNING workflow_uuid`,
+      [
+        params.delayUntilEpochMS,
+        params.input,
+        params.serialization,
+        Date.now(),
+        params.workflowName,
+        classNameOrNull,
+        params.queueName,
+        params.deduplicationID,
+        StatusString.DELAYED,
+      ],
+    );
+    if (updated.rows.length > 0) {
+      return {
+        bouncedWorkflowID: updated.rows[0].workflow_uuid,
+        holderWorkflowID: null,
+        holderIsDebounced: false,
+        holderWorkflowName: null,
+        holderWorkflowClassName: null,
+      };
+    }
+    // No match: the key is unheld, or held by a non-debounced or name-colliding workflow.
+    const holder = await client.query<workflow_status>(
+      `SELECT workflow_uuid, is_debounced, name, class_name
+       FROM "${this.schemaName}".workflow_status
+       WHERE queue_name = $1 AND deduplication_id = $2`,
+      [params.queueName, params.deduplicationID],
+    );
+    if (holder.rows.length === 0) {
+      return {
+        bouncedWorkflowID: null,
+        holderWorkflowID: null,
+        holderIsDebounced: false,
+        holderWorkflowName: null,
+        holderWorkflowClassName: null,
+      };
+    }
+    return {
+      bouncedWorkflowID: null,
+      holderWorkflowID: holder.rows[0].workflow_uuid,
+      holderIsDebounced: holder.rows[0].is_debounced ?? false,
+      holderWorkflowName: holder.rows[0].name,
+      holderWorkflowClassName: holder.rows[0].class_name ?? null,
+    };
   }
 
   // Get the immediate (one-level) child workflow IDs for a set of workflows.
@@ -1558,7 +1685,8 @@ export class SystemDatabase {
             workflow_timeout_ms, workflow_deadline_epoch_ms, started_at_epoch_ms,
             deduplication_id, inputs, priority, queue_partition_key, forked_from,
             parent_workflow_id, serialization, delay_until_epoch_ms,
-            was_forked_from, rate_limited, completed_at, attributes, schedule_name
+            was_forked_from, rate_limited, completed_at, attributes, schedule_name,
+            debounce_deadline_epoch_ms, is_debounced
           FROM "${this.schemaName}".workflow_status
           WHERE workflow_uuid = $1`,
           [wfID],
@@ -1643,8 +1771,9 @@ export class SystemDatabase {
             workflow_timeout_ms, workflow_deadline_epoch_ms, started_at_epoch_ms,
             deduplication_id, inputs, priority, queue_partition_key, forked_from,
             parent_workflow_id, serialization, delay_until_epoch_ms,
-            was_forked_from, rate_limited, completed_at, attributes, schedule_name
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34)`,
+            was_forked_from, rate_limited, completed_at, attributes, schedule_name,
+            debounce_deadline_epoch_ms, is_debounced
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36)`,
           [
             status.workflow_uuid,
             status.status,
@@ -1682,6 +1811,8 @@ export class SystemDatabase {
             status.completed_at ?? null,
             serializeWorkflowAttributes(status.attributes),
             status.schedule_name ?? null,
+            status.debounce_deadline_epoch_ms ?? null,
+            status.is_debounced ?? false,
           ],
         );
 
@@ -2555,10 +2686,13 @@ export class SystemDatabase {
 
   // ==================== Queues ====================
   async transitionDelayedWorkflows(): Promise<void> {
-    // Transition workflows from DELAYED to ENQUEUED when their delay has expired
+    // Transition workflows from DELAYED to ENQUEUED when their delay has expired.
+    // For debounced workflows, clear the deduplication ID in the same atomic update: it is a
+    // debounce key held only while DELAYED, so a later same-key debounce starts a fresh workflow.
     await this.pool.query(
       `UPDATE "${this.schemaName}".workflow_status
-       SET status = $1, updated_at = $2
+       SET status = $1, updated_at = $2,
+           deduplication_id = CASE WHEN is_debounced THEN NULL ELSE deduplication_id END
        WHERE status = $3 AND delay_until_epoch_ms <= $2`,
       [StatusString.ENQUEUED, Date.now(), StatusString.DELAYED],
     );
@@ -2696,7 +2830,17 @@ export class SystemDatabase {
       }
 
       // Retrieve the first max_tasks workflows in the queue.
-      // Only retrieve workflows of the local version (or without version set)
+      const latestVersionResult = await client.query<{ version_name: string }>(
+        `SELECT version_name
+         FROM "${this.schemaName}".application_versions
+         ORDER BY version_timestamp DESC LIMIT 1`,
+      );
+      const latestVersion = latestVersionResult.rows[0]?.version_name;
+      const isLatestVersion = latestVersion === undefined || latestVersion === appVersion;
+      const versionClause = isLatestVersion
+        ? '(application_version = $3 OR application_version IS NULL)'
+        : 'application_version = $3';
+
       const lockMode = queue.concurrency ? 'FOR UPDATE NOWAIT' : 'FOR UPDATE SKIP LOCKED';
       const limitClause = maxTasks !== Infinity ? `LIMIT ${maxTasks}` : '';
 
@@ -2706,7 +2850,7 @@ export class SystemDatabase {
         FROM "${this.schemaName}".workflow_status
         WHERE status = $1
           AND queue_name = $2
-          AND (application_version IS NULL OR application_version = $3)
+          AND ${versionClause}
           ${partitionFilter.replace('$PARTITION', '$4')}
         ORDER BY priority ASC, created_at ASC
         ${limitClause}
@@ -2802,6 +2946,8 @@ export class SystemDatabase {
       'completed_at',
       'attributes',
       'schedule_name',
+      'debounce_deadline_epoch_ms',
+      'is_debounced',
     ];
 
     input.loadInput = input.loadInput ?? true;
@@ -3700,8 +3846,10 @@ export class SystemDatabase {
           owner_xid,
           delay_until_epoch_ms,
           attributes,
-          schedule_name
-        ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $26, $27, $28, $29, $30)
+          schedule_name,
+          debounce_deadline_epoch_ms,
+          is_debounced
+        ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $26, $27, $28, $29, $30, $31, $32)
         ON CONFLICT (workflow_uuid)
           DO UPDATE SET
             recovery_attempts = CASE
@@ -3748,6 +3896,8 @@ export class SystemDatabase {
           initStatus.delayUntilEpochMS ?? null,
           initStatus.attributes ? JSON.stringify(initStatus.attributes) : null,
           initStatus.scheduleName ?? null,
+          initStatus.debounceDeadlineEpochMS ?? null,
+          initStatus.isDebounced ?? false,
         ],
       );
       if (rows.length === 0) {
