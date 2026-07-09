@@ -2352,6 +2352,67 @@ describe('database-backed-queue-crud', () => {
     await DBOS.deleteQueue(queueName);
   });
 
+  test('queue claim respects a per-poll dispatch budget', async () => {
+    await DBOS.shutdown();
+    const cfg = generateDBOSTestConfig();
+    cfg.listenQueues = [];
+    DBOS.setConfig(cfg);
+    await DBOS.launch();
+
+    const queueName = `budget_${randomUUID()}`;
+    const queue = await DBOS.registerQueue(queueName, { minPollingIntervalMs: 60000 });
+    const handles = await Promise.all(
+      Array.from({ length: 5 }, (_, index) =>
+        DBOS.startWorkflow(TestWFs, { workflowID: randomUUID(), queueName }).testWorkflowSimple('budget-', `${index}`),
+      ),
+    );
+
+    const exec = DBOSExecutor.globalInstance!;
+    const firstClaim = await exec.systemDatabase.findAndMarkStartableWorkflows(
+      queue,
+      exec.executorID,
+      globalParams.appVersion,
+      undefined,
+      2,
+    );
+    expect(firstClaim).toHaveLength(2);
+
+    const statusesAfterFirstClaim = await Promise.all(handles.map((handle) => handle.getStatus()));
+    expect(statusesAfterFirstClaim.filter((status) => status?.status === StatusString.PENDING)).toHaveLength(2);
+    expect(statusesAfterFirstClaim.filter((status) => status?.status === StatusString.ENQUEUED)).toHaveLength(3);
+
+    const secondClaim = await exec.systemDatabase.findAndMarkStartableWorkflows(
+      queue,
+      exec.executorID,
+      globalParams.appVersion,
+      undefined,
+      2,
+    );
+    expect(secondClaim).toHaveLength(2);
+
+    const finalClaim = await exec.systemDatabase.findAndMarkStartableWorkflows(
+      queue,
+      exec.executorID,
+      globalParams.appVersion,
+      undefined,
+      2,
+    );
+    expect(finalClaim).toHaveLength(1);
+
+    for (const workflowID of [...firstClaim, ...secondClaim, ...finalClaim]) {
+      await exec.executeWorkflowId(workflowID, { isQueueDispatch: true });
+    }
+
+    await expect(Promise.all(handles.map((handle) => handle.getResult()))).resolves.toEqual([
+      'budget-0',
+      'budget-1',
+      'budget-2',
+      'budget-3',
+      'budget-4',
+    ]);
+    await DBOS.deleteQueue(queueName);
+  });
+
   test('supervisor-launches-worker-for-queue-registered-after-launch', async () => {
     const queueName = `supervisor_${randomUUID()}`;
     // Queue is registered AFTER DBOS launches; the dispatcher's reconcile

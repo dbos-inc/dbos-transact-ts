@@ -200,9 +200,10 @@ export class SQLitePool {
   constructor(
     databaseUrl: string,
     readonly schemaName: string = 'dbos',
-    max: number = 1,
+    _max: number = 1,
   ) {
-    this.options = { max };
+    // DatabaseSync exposes one synchronous handle; logical clients are serialized by acquire().
+    this.options = { max: 1 };
     const file = sqliteFileFromUrl(databaseUrl);
     const { DatabaseSync } = loadNativeSQLite();
     this.db = new DatabaseSync(file === ':memory:' ? file : path.resolve(file));
@@ -500,7 +501,7 @@ export async function ensureSQLiteSystemDatabase(
 ): Promise<void> {
   const pool = new SQLitePool(sysDbUrl, schemaName);
   try {
-    await createCurrentSQLiteSchema(pool, logger);
+    await runSQLiteSystemMigrations(pool, logger);
   } finally {
     await pool.end();
   }
@@ -514,34 +515,129 @@ export function resetSQLiteSystemDatabase(sysDbUrl: string, logger?: GlobalLogge
   }
 
   const dbPath = path.resolve(file);
-  if (fs.existsSync(dbPath)) {
-    fs.unlinkSync(dbPath);
-    logger?.info(`Deleted SQLite database file: ${dbPath}`);
-  } else {
+  const dbPaths = [dbPath, `${dbPath}-wal`, `${dbPath}-shm`];
+  let deleted = false;
+  for (const targetPath of dbPaths) {
+    if (!fs.existsSync(targetPath)) {
+      continue;
+    }
+    fs.unlinkSync(targetPath);
+    deleted = true;
+    logger?.info(`Deleted SQLite database file: ${targetPath}`);
+  }
+
+  if (!deleted) {
     logger?.info(`SQLite database file does not exist: ${dbPath}`);
   }
 }
 
-async function createCurrentSQLiteSchema(pool: SQLitePool, logger: GlobalLogger): Promise<void> {
+type SQLiteMigration = {
+  version: number;
+  statements: ReadonlyArray<string>;
+};
+
+type SQLiteMigrationResult = {
+  fromVersion: number;
+  toVersion: number;
+  appliedCount: number;
+  skippedCount: number;
+  notice?: string;
+};
+
+function sqliteMigrations(): ReadonlyArray<SQLiteMigration> {
+  return [
+    {
+      version: latestSQLiteMigrationVersion(),
+      statements: currentSQLiteSchemaStatements(),
+    },
+  ];
+}
+
+function latestSQLiteMigrationVersion(): number {
+  return allMigrations().length;
+}
+
+async function getCurrentSQLiteMigrationVersion(client: SQLiteClient): Promise<number> {
+  const table = await client.query<{ name: string }>(
+    `SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'dbos_migrations'`,
+  );
+  if (table.rows.length === 0) {
+    return 0;
+  }
+
+  const result = await client.query<{ version: number | string }>(`SELECT version FROM dbos_migrations LIMIT 1`);
+  if (result.rows.length === 0) {
+    return 0;
+  }
+
+  const version = Number(result.rows[0].version);
+  return Number.isFinite(version) ? version : 0;
+}
+
+async function setSQLiteMigrationVersion(client: SQLiteClient, version: number): Promise<void> {
+  const update = await client.query(`UPDATE dbos_migrations SET version = $1`, [version]);
+  if (update.rowCount === 0) {
+    await client.query(`INSERT INTO dbos_migrations (version) VALUES ($1)`, [version]);
+  }
+}
+
+async function runSQLiteSystemMigrations(pool: SQLitePool, logger: GlobalLogger): Promise<SQLiteMigrationResult> {
   logger.info('Ensuring DBOS SQLite system database schema...');
 
+  const migrations = sqliteMigrations();
+  const latestVersion = latestSQLiteMigrationVersion();
+
   const client = await pool.connect();
-  let inTransaction = false;
   try {
-    await client.query('BEGIN');
-    inTransaction = true;
-    for (const statement of currentSQLiteSchemaStatements()) {
-      await client.query(statement);
+    const currentVersion = await getCurrentSQLiteMigrationVersion(client);
+    if (currentVersion > latestVersion) {
+      return {
+        fromVersion: currentVersion,
+        toVersion: currentVersion,
+        appliedCount: 0,
+        skippedCount: migrations.length,
+        notice:
+          `SQLite system database version (${currentVersion}) is ahead of this build's max (${latestVersion}). ` +
+          `A newer software version may be running concurrently.`,
+      };
     }
-    await client.query(`DELETE FROM dbos_migrations`);
-    await client.query(`INSERT INTO dbos_migrations (version) VALUES ($1)`, [allMigrations().length]);
-    await client.query('COMMIT');
-    inTransaction = false;
-  } catch (e) {
-    if (inTransaction) {
-      await client.query('ROLLBACK').catch(() => undefined);
+
+    let appliedCount = 0;
+    let skippedCount = 0;
+    let lastAppliedVersion = currentVersion;
+
+    for (const migration of migrations) {
+      if (migration.version <= currentVersion) {
+        skippedCount++;
+        continue;
+      }
+
+      let inTransaction = false;
+      try {
+        await client.query('BEGIN');
+        inTransaction = true;
+        for (const statement of migration.statements) {
+          await client.query(statement);
+        }
+        await setSQLiteMigrationVersion(client, migration.version);
+        await client.query('COMMIT');
+        inTransaction = false;
+      } catch (e) {
+        if (inTransaction) {
+          await client.query('ROLLBACK').catch(() => undefined);
+        }
+        throw e;
+      }
+      appliedCount++;
+      lastAppliedVersion = migration.version;
     }
-    throw e;
+
+    return {
+      fromVersion: currentVersion,
+      toVersion: lastAppliedVersion,
+      appliedCount,
+      skippedCount,
+    };
   } finally {
     client.release();
   }
@@ -709,28 +805,75 @@ function currentSQLiteSchemaStatements(): ReadonlyArray<string> {
 }
 
 function translateQuery(sql: string, params: unknown[], schemaName: string): { sql: string; params: SQLiteParams } {
-  const extras = new Map<string, SQLiteValue>();
-  let extraCounter = 0;
-  let translated = sql
+  assertSupportedSQLiteQuery(sql);
+
+  const extras: SQLiteExtraParams = { values: new Map(), counter: 0 };
+  let translated = stripSchemaQualifiers(sql, schemaName);
+  translated = translateTransactionAndLockSyntax(translated);
+  translated = translatePostgresTypesAndCasts(translated);
+  translated = translatePostgresFunctions(translated);
+  translated = translateReturningQualifiers(translated);
+  translated = translateEventDispatchUpsertExpressions(translated);
+  translated = translateBooleanLiterals(translated);
+  translated = translateAnyArrayExpressions(translated, params, extras);
+
+  return bindSQLiteParameters(translated, params, extras.values);
+}
+
+type SQLiteExtraParams = {
+  values: Map<string, SQLiteValue>;
+  counter: number;
+};
+
+function assertSupportedSQLiteQuery(sql: string): void {
+  if (/\battributes\s*@>\s*\$\d+(?:::jsonb)?/i.test(sql)) {
+    throw new Error(
+      'Filtering workflows by attributes is not supported on SQLite. Use a Postgres system database to filter by attributes.',
+    );
+  }
+}
+
+function stripSchemaQualifiers(sql: string, schemaName: string): string {
+  return sql
     .replace(new RegExp(`"${schemaName}"\\."([^"]+)"`, 'g'), '"$1"')
     .replace(new RegExp(`"${schemaName}"\\.`, 'g'), '')
-    .replace(new RegExp(`\\b${schemaName}\\.`, 'g'), '')
+    .replace(new RegExp(`\\b${schemaName}\\.`, 'g'), '');
+}
+
+function translateTransactionAndLockSyntax(sql: string): string {
+  return sql
     .replace(/BEGIN ISOLATION LEVEL (?:READ COMMITTED|REPEATABLE READ)/gi, 'BEGIN IMMEDIATE')
-    .replace(/FOR UPDATE(?: SKIP LOCKED| NOWAIT)?/gi, '')
+    .replace(/FOR UPDATE(?: SKIP LOCKED| NOWAIT)?/gi, '');
+}
+
+function translatePostgresTypesAndCasts(sql: string): string {
+  return sql
     .replace(/::(?:text\[\]|jsonb|bigint|int4|integer|int|text|json)/gi, '')
     .replace(/\bINT4\b/gi, 'INTEGER')
     .replace(/\bBIGINT\b/gi, 'INTEGER')
     .replace(/\bDOUBLE PRECISION\b/gi, 'REAL')
-    .replace(/\bJSONB\b/gi, 'TEXT')
+    .replace(/\bJSONB\b/gi, 'TEXT');
+}
+
+function translatePostgresFunctions(sql: string): string {
+  return sql
     .replace(/\bgen_random_uuid\(\)::TEXT\b/gi, () => `'${randomUUID()}'`)
     .replace(/\buuid_generate_v4\(\)\b/gi, () => `'${randomUUID()}'`)
     .replace(/\(EXTRACT\(EPOCH FROM now\(\)\)\s*\*\s*1000(?:\.0)?\)::bigint/gi, sqliteNowMsExpr())
     .replace(/\(EXTRACT\(epoch FROM now\(\)\s*\)\s*\*\s*1000(?:\.0)?\)::bigint/gi, sqliteNowMsExpr())
-    .replace(/EXTRACT\(epoch FROM now\(\)\)\s*\*\s*1000/gi, sqliteNowMsExpr())
+    .replace(/EXTRACT\(epoch FROM now\(\)\)\s*\*\s*1000/gi, sqliteNowMsExpr());
+}
+
+function translateReturningQualifiers(sql: string): string {
+  return sql
     .replace(/RETURNING\s+notifications\./gi, 'RETURNING ')
     .replace(/RETURNING\s+workflow_events\./gi, 'RETURNING ')
     .replace(/\bnotifications\./g, '')
-    .replace(/\bworkflow_events\./g, '')
+    .replace(/\bworkflow_events\./g, '');
+}
+
+function translateEventDispatchUpsertExpressions(sql: string): string {
+  return sql
     .replace(
       /\bGREATEST\(EXCLUDED\.update_time,\s*event_dispatch_kv\.update_time\)/gi,
       `CASE
@@ -748,33 +891,34 @@ function translateQuery(sql: string, params: unknown[], schemaName: string): { s
         WHEN EXCLUDED.update_seq > event_dispatch_kv.update_seq THEN EXCLUDED.update_seq
         ELSE event_dispatch_kv.update_seq
       END`,
-    )
-    .replace(/\bTRUE\b/g, '1')
-    .replace(/\bFALSE\b/g, '0');
-
-  if (translated.includes(' @> ')) {
-    throw new Error(
-      'Filtering workflows by attributes is not supported on SQLite. Use a Postgres system database to filter by attributes.',
     );
-  }
+}
 
-  translated = translated.replace(
-    /([A-Za-z0-9_".]+)\s*=\s*ANY\(\$(\d+)\)/g,
-    (_match, column: string, index: string) => {
-      const value = getPositionalParam(params, index);
-      const values = Array.isArray(value) ? value : [value];
-      if (values.length === 0) return '1 = 0';
-      const tokens = values.map((v) => {
-        const token = `__sqlite_extra_${extraCounter++}__`;
-        extras.set(token, normalizeValue(v));
-        return token;
-      });
-      return `${column} IN (${tokens.join(', ')})`;
-    },
-  );
+function translateBooleanLiterals(sql: string): string {
+  return sql.replace(/\bTRUE\b/g, '1').replace(/\bFALSE\b/g, '0');
+}
 
+function translateAnyArrayExpressions(sql: string, params: unknown[], extras: SQLiteExtraParams): string {
+  return sql.replace(/([A-Za-z0-9_".]+)\s*=\s*ANY\(\$(\d+)\)/g, (_match, column: string, index: string) => {
+    const value = getPositionalParam(params, index);
+    const values = Array.isArray(value) ? value : [value];
+    if (values.length === 0) return '1 = 0';
+    const tokens = values.map((v) => {
+      const token = `__sqlite_extra_${extras.counter++}__`;
+      extras.values.set(token, normalizeValue(v));
+      return token;
+    });
+    return `${column} IN (${tokens.join(', ')})`;
+  });
+}
+
+function bindSQLiteParameters(
+  sql: string,
+  params: unknown[],
+  extras: ReadonlyMap<string, SQLiteValue>,
+): { sql: string; params: SQLiteParams } {
   const sqliteParams: SQLiteParams = [];
-  translated = translated.replace(/\$(\d+)|__sqlite_extra_\d+__/g, (token, index: string | undefined) => {
+  const translated = sql.replace(/\$(\d+)|__sqlite_extra_\d+__/g, (token, index: string | undefined) => {
     if (token.startsWith('__sqlite_extra_')) {
       sqliteParams.push(getExtraParam(extras, token));
       return '?';

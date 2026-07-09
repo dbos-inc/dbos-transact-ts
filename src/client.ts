@@ -246,12 +246,12 @@ export class DBOSClient {
 
   /**
    * Creates a new instance of the DBOSClient.
-   * @param systemDatabaseUrl - The connection string for the system database. This should include the hostname, port, username, password, and database name.
-   * @param systemDatabasePool - An optional pre-configured connection pool to use for the system database. If provided, `systemDatabasePoolSize` is ignored.
+   * @param systemDatabaseUrl - The connection string for the system database. This may be a Postgres URL with hostname, port, username, password, and database name, or a SQLite URL.
+   * @param systemDatabasePool - An optional pre-configured Postgres connection pool to use for the system database. If provided, `systemDatabasePoolSize` is ignored.
    * @param serializer - An optional serializer for workflow inputs and outputs. Defaults to JSON serialization.
    * @param systemDatabaseSchemaName - An optional schema name for the system database. Defaults to `dbos`.
-   * @param systemDatabasePoolSize - An optional maximum size for the system database connection pool. Defaults to {@link DEFAULT_POOL_SIZE}.
-   * @param systemDatabasePollingConcurrency - An optional maximum number of concurrent polling operations. Defaults to half the pool size (minimum 1).
+   * @param systemDatabasePoolSize - An optional maximum size for the system database connection pool. Defaults to {@link DEFAULT_POOL_SIZE}. SQLite system databases use one serialized native connection.
+   * @param systemDatabasePollingConcurrency - An optional maximum number of concurrent polling operations. Defaults to half the pool size (minimum 1). SQLite system databases clamp polling concurrency to 1.
    * @param logger - An optional custom logger to which the client directs all its logging, replacing the built-in console logger.
    * @returns A Promise that resolves with the DBOSClient instance.
    */

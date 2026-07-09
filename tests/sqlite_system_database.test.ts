@@ -2,10 +2,17 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { DBOS, DBOSClient } from '../src';
-import { DBOSConfig } from '../src/dbos-executor';
-import { isNativeSQLiteSupported, SQLitePool } from '../src/sqlite_system_database';
-import { sleepms } from '../src/utils';
+import { DBOS, DBOSClient, StatusString } from '../src';
+import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
+import {
+  ensureSQLiteSystemDatabase,
+  isNativeSQLiteSupported,
+  resetSQLiteSystemDatabase,
+  SQLitePool,
+} from '../src/sqlite_system_database';
+import { allMigrations } from '../src/sysdb_migrations/internal/migrations';
+import { GlobalLogger } from '../src/telemetry/logs';
+import { globalParams, sleepms } from '../src/utils';
 
 class SQLiteQueueWorkflows {
   @DBOS.workflow()
@@ -42,6 +49,16 @@ function getConfiguredSystemDatabaseUrl(config: DBOSConfig): string {
     throw new Error('SQLite tests require a configured system database URL');
   }
   return config.systemDatabaseUrl;
+}
+
+async function readSQLiteMigrationVersion(databaseUrl: string): Promise<number> {
+  const pool = new SQLitePool(databaseUrl);
+  try {
+    const result = await pool.query<{ version: number }>('SELECT version FROM dbos_migrations');
+    return Number(result.rows[0].version);
+  } finally {
+    await pool.end();
+  }
 }
 
 const describeNativeSQLite = isNativeSQLiteSupported() ? describe : describe.skip;
@@ -111,6 +128,286 @@ describeNativeSQLite('SQLite system database', () => {
       await pendingAssertion;
     } finally {
       firstClient.release();
+    }
+  });
+
+  test('reports one effective native connection even when configured larger', async () => {
+    const pool = new SQLitePool('sqlite:///:memory:', 'dbos', 8);
+    try {
+      expect(pool.options.max).toBe(1);
+    } finally {
+      await pool.end();
+    }
+  });
+
+  test('uses serialized SQLite pool size for polling limits', async () => {
+    const client = await DBOSClient.create({
+      systemDatabaseUrl: getConfiguredSystemDatabaseUrl(config),
+      systemDatabasePoolSize: 8,
+      systemDatabasePollingConcurrency: 4,
+    });
+
+    try {
+      const sysdb = client['systemDatabase'];
+      expect(sysdb.pool.options.max).toBe(1);
+      expect(sysdb.pollLimiter['available']).toBe(1);
+    } finally {
+      await client.destroy();
+    }
+  });
+
+  test('reset removes SQLite database files and WAL sidecars', () => {
+    const resetDbPath = path.join(tempDir, 'reset.sqlite');
+    for (const filePath of [resetDbPath, `${resetDbPath}-wal`, `${resetDbPath}-shm`]) {
+      fs.writeFileSync(filePath, 'sqlite-test');
+    }
+
+    resetSQLiteSystemDatabase(sqliteUrlFor(resetDbPath));
+
+    expect(fs.existsSync(resetDbPath)).toBe(false);
+    expect(fs.existsSync(`${resetDbPath}-wal`)).toBe(false);
+    expect(fs.existsSync(`${resetDbPath}-shm`)).toBe(false);
+  });
+
+  test('reset removes SQLite WAL sidecars when the main database is absent', () => {
+    const resetDbPath = path.join(tempDir, 'sidecar-only.sqlite');
+    fs.writeFileSync(`${resetDbPath}-wal`, 'sqlite-test');
+    fs.writeFileSync(`${resetDbPath}-shm`, 'sqlite-test');
+
+    resetSQLiteSystemDatabase(sqliteUrlFor(resetDbPath));
+
+    expect(fs.existsSync(`${resetDbPath}-wal`)).toBe(false);
+    expect(fs.existsSync(`${resetDbPath}-shm`)).toBe(false);
+  });
+
+  test('reset treats in-memory SQLite databases as a no-op', () => {
+    expect(() => resetSQLiteSystemDatabase('sqlite:///:memory:')).not.toThrow();
+  });
+
+  test('initializes fresh SQLite databases with the current migration version', async () => {
+    const migrationDbUrl = sqliteUrlFor(path.join(tempDir, 'fresh-migrations.sqlite'));
+    await ensureSQLiteSystemDatabase(migrationDbUrl, new GlobalLogger());
+
+    const pool = new SQLitePool(migrationDbUrl);
+    try {
+      const tables = await pool.query<{ name: string }>(
+        `SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ($1, $2, $3) ORDER BY name`,
+        ['dbos_migrations', 'queues', 'workflow_status'],
+      );
+      expect(tables.rows.map((row) => row.name)).toEqual(['dbos_migrations', 'queues', 'workflow_status']);
+      expect(await readSQLiteMigrationVersion(migrationDbUrl)).toBe(allMigrations().length);
+    } finally {
+      await pool.end();
+    }
+  });
+
+  test('rerunning SQLite migrations preserves existing data and version', async () => {
+    const migrationDbUrl = sqliteUrlFor(path.join(tempDir, 'idempotent-migrations.sqlite'));
+    await ensureSQLiteSystemDatabase(migrationDbUrl, new GlobalLogger());
+
+    const pool = new SQLitePool(migrationDbUrl);
+    try {
+      await pool.query(`INSERT INTO queues(name, polling_interval_sec) VALUES ($1, $2)`, ['preserved-queue', 1]);
+    } finally {
+      await pool.end();
+    }
+
+    await ensureSQLiteSystemDatabase(migrationDbUrl, new GlobalLogger());
+
+    const verifyPool = new SQLitePool(migrationDbUrl);
+    try {
+      const rows = await verifyPool.query<{ name: string }>('SELECT name FROM queues WHERE name = $1', [
+        'preserved-queue',
+      ]);
+      expect(rows.rows).toEqual([{ name: 'preserved-queue' }]);
+      expect(await readSQLiteMigrationVersion(migrationDbUrl)).toBe(allMigrations().length);
+    } finally {
+      await verifyPool.end();
+    }
+  });
+
+  test('reapplies the SQLite baseline when the recorded version is behind', async () => {
+    const migrationDbUrl = sqliteUrlFor(path.join(tempDir, 'behind-migrations.sqlite'));
+    await ensureSQLiteSystemDatabase(migrationDbUrl, new GlobalLogger());
+
+    const pool = new SQLitePool(migrationDbUrl);
+    try {
+      await pool.query(`INSERT INTO queues(name, polling_interval_sec) VALUES ($1, $2)`, ['behind-queue', 1]);
+      await pool.query(`UPDATE dbos_migrations SET version = $1`, [0]);
+    } finally {
+      await pool.end();
+    }
+
+    await ensureSQLiteSystemDatabase(migrationDbUrl, new GlobalLogger());
+
+    const verifyPool = new SQLitePool(migrationDbUrl);
+    try {
+      const rows = await verifyPool.query<{ name: string }>('SELECT name FROM queues WHERE name = $1', [
+        'behind-queue',
+      ]);
+      expect(rows.rows).toEqual([{ name: 'behind-queue' }]);
+      expect(await readSQLiteMigrationVersion(migrationDbUrl)).toBe(allMigrations().length);
+    } finally {
+      await verifyPool.end();
+    }
+  });
+
+  test('queue claim respects a per-poll dispatch budget on SQLite', async () => {
+    DBOS.setConfig({ ...config, listenQueues: [] });
+    await DBOS.launch();
+    const queue = await DBOS.registerQueue('sqlite-budget-queue', { minPollingIntervalMs: 60000 });
+    const handles = await Promise.all(
+      Array.from({ length: 5 }, (_, index) =>
+        DBOS.startWorkflow(SQLiteQueueWorkflows, {
+          workflowID: `sqlite-budget-${index}`,
+          queueName: queue.name,
+        }).echo(`budget-${index}`),
+      ),
+    );
+
+    const exec = DBOSExecutor.globalInstance!;
+    const firstClaim = await exec.systemDatabase.findAndMarkStartableWorkflows(
+      queue,
+      exec.executorID,
+      globalParams.appVersion,
+      undefined,
+      2,
+    );
+    expect(firstClaim).toHaveLength(2);
+
+    const statusesAfterFirstClaim = await Promise.all(handles.map((handle) => handle.getStatus()));
+    expect(statusesAfterFirstClaim.filter((status) => status?.status === StatusString.PENDING)).toHaveLength(2);
+    expect(statusesAfterFirstClaim.filter((status) => status?.status === StatusString.ENQUEUED)).toHaveLength(3);
+
+    const secondClaim = await exec.systemDatabase.findAndMarkStartableWorkflows(
+      queue,
+      exec.executorID,
+      globalParams.appVersion,
+      undefined,
+      2,
+    );
+    expect(secondClaim).toHaveLength(2);
+
+    const finalClaim = await exec.systemDatabase.findAndMarkStartableWorkflows(
+      queue,
+      exec.executorID,
+      globalParams.appVersion,
+      undefined,
+      2,
+    );
+    expect(finalClaim).toHaveLength(1);
+
+    for (const workflowID of [...firstClaim, ...secondClaim, ...finalClaim]) {
+      await exec.executeWorkflowId(workflowID, { isQueueDispatch: true });
+    }
+
+    await expect(Promise.all(handles.map((handle) => handle.getResult({ pollingIntervalMs: 25 })))).resolves.toEqual([
+      'sqlite:budget-0',
+      'sqlite:budget-1',
+      'sqlite:budget-2',
+      'sqlite:budget-3',
+      'sqlite:budget-4',
+    ]);
+  }, 10000);
+
+  test('translates schema qualifiers, casts, locks, ANY arrays, and booleans', async () => {
+    const pool = new SQLitePool('sqlite:///:memory:');
+    try {
+      await pool.query('CREATE TABLE "dbos"."translation_items" (id INT4 PRIMARY KEY, value TEXT, flag INTEGER)');
+      await pool.query('INSERT INTO dbos.translation_items (id, value, flag) VALUES ($1::int, $2::text, TRUE)', [
+        1,
+        'alpha',
+      ]);
+      await pool.query('INSERT INTO dbos.translation_items (id, value, flag) VALUES ($1::int, $2::text, FALSE)', [
+        2,
+        'beta',
+      ]);
+
+      const rows = await pool.query<{ id: number; value: string; flag: number }>(
+        'SELECT id, value, flag FROM "dbos"."translation_items" WHERE value = ANY($1::text[]) ORDER BY id FOR UPDATE SKIP LOCKED',
+        [['alpha', 'gamma']],
+      );
+      expect(rows.rows).toEqual([{ id: 1, value: 'alpha', flag: 1 }]);
+
+      const emptyRows = await pool.query<{ id: number }>(
+        'SELECT id FROM "dbos"."translation_items" WHERE value = ANY($1::text[]) FOR UPDATE NOWAIT',
+        [[]],
+      );
+      expect(emptyRows.rows).toEqual([]);
+    } finally {
+      await pool.end();
+    }
+  });
+
+  test('runs isolation-level BEGIN statements through SQLite transactions', async () => {
+    const pool = new SQLitePool('sqlite:///:memory:');
+    const client = await pool.connect();
+    try {
+      await client.query('CREATE TABLE t (id INTEGER PRIMARY KEY, value TEXT)');
+      await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ');
+      await client.query('INSERT INTO t(value) VALUES ($1::text)', ['rolled-back']);
+      await client.query('ROLLBACK');
+      const rows = await client.query<{ value: string }>('SELECT value FROM t');
+      expect(rows.rows).toEqual([]);
+    } finally {
+      client.release();
+      await pool.end();
+    }
+  });
+
+  test('translates RETURNING table qualifiers', async () => {
+    const pool = new SQLitePool('sqlite:///:memory:');
+    try {
+      await pool.query('CREATE TABLE notifications (message_uuid TEXT PRIMARY KEY, message TEXT)');
+      const result = await pool.query<{ message_uuid: string }>(
+        'INSERT INTO notifications(message_uuid, message) VALUES ($1, $2) RETURNING notifications.message_uuid',
+        ['message-id', 'payload'],
+      );
+      expect(result.rows).toEqual([{ message_uuid: 'message-id' }]);
+    } finally {
+      await pool.end();
+    }
+  });
+
+  test('translates event dispatch GREATEST upsert expressions', async () => {
+    const pool = new SQLitePool('sqlite:///:memory:');
+    try {
+      await pool.query(
+        'CREATE TABLE event_dispatch_kv (key TEXT PRIMARY KEY, update_time INTEGER, update_seq INTEGER)',
+      );
+      await pool.query('INSERT INTO event_dispatch_kv(key, update_time, update_seq) VALUES ($1, $2, $3)', [
+        'event',
+        10,
+        2,
+      ]);
+      await pool.query(
+        `INSERT INTO event_dispatch_kv(key, update_time, update_seq) VALUES ($1, $2, $3)
+         ON CONFLICT(key) DO UPDATE SET
+           update_time = GREATEST(EXCLUDED.update_time, event_dispatch_kv.update_time),
+           update_seq = GREATEST(EXCLUDED.update_seq, event_dispatch_kv.update_seq)`,
+        ['event', 7, 5],
+      );
+
+      const rows = await pool.query<{ update_time: number; update_seq: number }>(
+        'SELECT update_time, update_seq FROM event_dispatch_kv WHERE key = $1',
+        ['event'],
+      );
+      expect(rows.rows).toEqual([{ update_time: 10, update_seq: 5 }]);
+    } finally {
+      await pool.end();
+    }
+  });
+
+  test('rejects SQLite attribute containment filters explicitly', async () => {
+    const pool = new SQLitePool('sqlite:///:memory:');
+    try {
+      await expect(
+        pool.query('SELECT workflow_uuid FROM workflow_status WHERE attributes @> $1::jsonb', [
+          JSON.stringify({ plan: 'sqlite' }),
+        ]),
+      ).rejects.toThrow('Filtering workflows by attributes is not supported on SQLite');
+    } finally {
+      await pool.end();
     }
   });
 

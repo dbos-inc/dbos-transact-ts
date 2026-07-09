@@ -724,14 +724,15 @@ export class SystemDatabase {
   ) {
     this.schemaName = schemaName;
     this.shouldUseDBNotifications = useListenNotify;
+    const isSQLiteSystemDatabase = isSQLiteSystemDatabaseUrl(systemDatabaseUrl);
 
     if (systemDatabasePool) {
-      if (isSQLiteSystemDatabaseUrl(systemDatabaseUrl)) {
+      if (isSQLiteSystemDatabase) {
         throw new DBOSInitializationError('Custom systemDatabasePool is not supported for SQLite system databases');
       }
       this.pool = systemDatabasePool;
       this.customPool = true;
-    } else if (isSQLiteSystemDatabaseUrl(systemDatabaseUrl)) {
+    } else if (isSQLiteSystemDatabase) {
       this.shouldUseDBNotifications = false;
       this.pool = new SQLitePool(systemDatabaseUrl, schemaName, sysDbPoolSize) as unknown as Pool;
     } else {
@@ -746,8 +747,9 @@ export class SystemDatabase {
 
     // Default the polling limit to half the pool (minimum 1), reserving the rest
     // of the pool for control-plane operations.
-    const effectivePoolSize = this.pool.options.max ?? sysDbPoolSize;
-    const pollingLimit = pollingConcurrency ?? Math.max(1, Math.floor(effectivePoolSize / 2));
+    const effectivePoolSize = isSQLiteSystemDatabase ? 1 : (this.pool.options.max ?? sysDbPoolSize);
+    const requestedPollingLimit = pollingConcurrency ?? Math.max(1, Math.floor(effectivePoolSize / 2));
+    const pollingLimit = isSQLiteSystemDatabase ? 1 : requestedPollingLimit;
     this.pollLimiter = new Semaphore(pollingLimit);
 
     this.pool.on('error', (err: Error) => {
@@ -2743,6 +2745,7 @@ export class SystemDatabase {
     executorID: string,
     appVersion: string,
     queuePartitionKey?: string,
+    maxWorkflows?: number,
   ): Promise<string[]> {
     const startTimeMs = Date.now();
     const limiterPeriodMS = queue.rateLimit ? queue.rateLimit.periodSec * 1000 : 0;
@@ -2796,11 +2799,11 @@ export class SystemDatabase {
       // If there is a global or local concurrency limit N, select only the N oldest enqueued
       // functions, else select all of them.
 
-      let maxTasks = Infinity;
+      let maxTasks = maxWorkflows === undefined ? Infinity : Math.max(0, Math.floor(maxWorkflows));
 
       if (queue.workerConcurrency !== undefined) {
         // Use the in-memory registry for this worker's running count — avoids a DB round trip.
-        maxTasks = Math.max(0, queue.workerConcurrency - localRunningForQueue);
+        maxTasks = Math.min(maxTasks, Math.max(0, queue.workerConcurrency - localRunningForQueue));
       }
 
       if (queue.concurrency !== undefined) {

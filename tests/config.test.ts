@@ -11,6 +11,7 @@ import { AssertionError } from 'assert';
 import { DBOSConfigInternal, DBOSRuntimeConfig } from '../src/dbos-executor';
 import { DBOSJSON } from '../src/serialization';
 import { isNativeSQLiteSupported } from '../src/sqlite_system_database';
+import type { Pool } from 'pg';
 
 function expectedDefaultSystemDatabaseUrl(appName: string): string {
   const dbName = appName.toLowerCase().replaceAll('-', '_').replaceAll(' ', '_').replace(/^\d/, '_$&');
@@ -73,6 +74,7 @@ describe('dbos-config', () => {
         name: 'test-app',
         system_database_url: '',
       });
+      expect(() => getDbosConfig(cfg)).toThrow('system_database_url must not be empty');
     });
 
     test('handles single string endpoints', async () => {
@@ -327,6 +329,15 @@ describe('dbos-config', () => {
       expect(databaseUrl).toBe('sqlite:///dbos-test.sqlite');
     });
 
+    test.each(['', '   '])('throws when system_database_url is empty %p', (system_database_url) => {
+      expect(() =>
+        getSystemDatabaseUrl({
+          name: 'Test App',
+          system_database_url,
+        }),
+      ).toThrow('system_database_url must not be empty');
+    });
+
     test('uses default values when config is empty', () => {
       const databaseUrl = getSystemDatabaseUrl({
         name: 'Test App',
@@ -432,6 +443,31 @@ describe('dbos-config', () => {
       });
       expect(internalConfig.sysDbPoolSize).toBe(50);
       expect(internalConfig.systemDatabasePollingConcurrency).toBeUndefined();
+    });
+
+    test('translate preserves custom Postgres pools with a Postgres default URL', () => {
+      const fakePool = { options: { max: 7 } } as unknown as Pool;
+      const internalConfig = translateDbosConfig({
+        name: 'dbostest',
+        systemDatabasePool: fakePool,
+      });
+
+      expect(internalConfig.systemDatabasePool).toBe(fakePool);
+      expect(internalConfig.systemDatabaseUrl).toBe(
+        'postgresql://postgres:dbos@localhost:5432/dbostest_dbos_sys?connect_timeout=10&sslmode=disable',
+      );
+    });
+
+    test('translate rejects custom pools with SQLite system database URLs', () => {
+      const fakePool = { options: { max: 7 } } as unknown as Pool;
+
+      expect(() =>
+        translateDbosConfig({
+          name: 'dbostest',
+          systemDatabaseUrl: 'sqlite:///dbostest.sqlite',
+          systemDatabasePool: fakePool,
+        }),
+      ).toThrow('Custom systemDatabasePool is not supported for SQLite system databases');
     });
 
     test('translate passes through a custom logger', () => {
