@@ -127,6 +127,7 @@ export interface queues {
   priority_enabled: boolean;
   partition_queue: boolean;
   polling_interval_sec: number;
+  max_dequeues_per_poll: number | null;
   created_at: number;
   updated_at: number;
 }

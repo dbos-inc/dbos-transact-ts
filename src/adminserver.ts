@@ -256,6 +256,7 @@ export class DBOSAdminServer {
               concurrency: q.concurrency,
               workerConcurrency: q.workerConcurrency,
               rateLimit: q.rateLimit,
+              maxDequeuesPerPoll: q.maxDequeuesPerPoll,
             });
           }
         } catch (e) {
@@ -267,6 +268,7 @@ export class DBOSAdminServer {
             concurrency: q.concurrency,
             workerConcurrency: q.workerConcurrency,
             rateLimit: q.rateLimit,
+            maxDequeuesPerPoll: q.maxDequeuesPerPoll,
           });
         });
         sendJson(res, 200, [...merged.values()]);

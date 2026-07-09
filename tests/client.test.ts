@@ -911,6 +911,7 @@ describe('DBOSClient', () => {
         workerConcurrency: 2,
         priorityEnabled: true,
         minPollingIntervalMs: 2500,
+        maxDequeuesPerPoll: 13,
       });
       expect(registered.name).toBe(queueName);
       expect(registered.databaseBacked).toBe(true);
@@ -924,6 +925,7 @@ describe('DBOSClient', () => {
       expect(retrieved!.rateLimit).toEqual({ limitPerPeriod: 5, periodSec: 1.5 });
       expect(retrieved!.priorityEnabled).toBe(true);
       expect(retrieved!.minPollingIntervalMs).toBe(2500);
+      expect(retrieved!.maxDequeuesPerPoll).toBe(13);
 
       // Setters write through the client's database; the launched DBOS
       // executor sees the same row.

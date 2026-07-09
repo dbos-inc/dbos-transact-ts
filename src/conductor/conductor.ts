@@ -845,6 +845,7 @@ export class Conductor {
                 priority_enabled: q.priorityEnabled,
                 partition_queue: q.partitionQueue,
                 polling_interval_sec: q.pollingIntervalSec,
+                max_dequeues_per_poll: q.maxDequeuesPerPoll,
               }));
             } catch (e) {
               errorMsg = `Exception encountered when listing queues: ${(e as Error).message}`;
@@ -868,6 +869,7 @@ export class Conductor {
                   priority_enabled: queue.priorityEnabled,
                   partition_queue: queue.partitionQueue,
                   polling_interval_sec: queue.pollingIntervalSec,
+                  max_dequeues_per_poll: queue.maxDequeuesPerPoll,
                 };
               }
             } catch (e) {

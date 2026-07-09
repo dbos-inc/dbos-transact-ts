@@ -428,10 +428,14 @@ export function allMigrations(
           "priority_enabled" BOOLEAN NOT NULL DEFAULT FALSE,
           "partition_queue" BOOLEAN NOT NULL DEFAULT FALSE,
           "polling_interval_sec" DOUBLE PRECISION NOT NULL DEFAULT 1.0,
+          "max_dequeues_per_poll" INT4,
           "created_at" BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM now()) * 1000.0)::bigint,
           "updated_at" BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM now()) * 1000.0)::bigint
         )`,
       ],
+    },
+    {
+      pg: [`ALTER TABLE "${schemaName}"."queues" ADD COLUMN IF NOT EXISTS "max_dequeues_per_poll" INT4`],
     },
     // Migrations below replace broad indexes on workflow_status with partial
     // indexes targeted at individual query patterns (recovery, troubleshooting,

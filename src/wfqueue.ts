@@ -9,6 +9,8 @@ import type { QueueRecord, SystemDatabase } from './system_database';
 import type { GlobalLogger } from './telemetry/logs';
 import { globalParams, interruptibleSleep, INTERNAL_QUEUE_NAME } from './utils';
 
+export const DEFAULT_MAX_DEQUEUES_PER_POLL = 100;
+
 /**
  * Log a single queue's name and its set parameters. Unset parameters are
  * omitted, matching `Queue: <name> (concurrency=…, worker_concurrency=…,
@@ -21,6 +23,7 @@ export function logQueue(logger: GlobalLogger, q: WorkflowQueue): void {
   if (q.rateLimit !== undefined) opts.push(`limit=${q.rateLimit.limitPerPeriod}/${q.rateLimit.periodSec}s`);
   if (q.priorityEnabled) opts.push('priority');
   if (q.partitionQueue) opts.push('partitioned');
+  if (q.maxDequeuesPerPoll !== undefined) opts.push(`max_dequeues_per_poll=${q.maxDequeuesPerPoll}`);
   const optsStr = opts.length > 0 ? ` (${opts.join(', ')})` : '';
   logger.info(`Queue: ${q.name}${optsStr}`);
 }
@@ -55,6 +58,8 @@ export interface QueueParameters {
   partitionQueue?: boolean;
   /** Base (minimum) polling interval in ms for this queue's dispatch loop (default 1000) */
   minPollingIntervalMs?: number;
+  /** Maximum workflows this worker claims from this queue in one polling pass (default 100) */
+  maxDequeuesPerPoll?: number;
 }
 
 /**
@@ -122,6 +127,7 @@ async function refreshFromDb(q: WorkflowQueue): Promise<void> {
   q.priorityEnabled = record.priorityEnabled;
   q.partitionQueue = record.partitionQueue;
   q.minPollingIntervalMs = record.pollingIntervalSec * 1000;
+  q.maxDequeuesPerPoll = record.maxDequeuesPerPoll ?? undefined;
 }
 
 /**
@@ -142,6 +148,7 @@ export class WorkflowQueue {
   priorityEnabled: boolean = false;
   partitionQueue: boolean = false;
   minPollingIntervalMs?: number;
+  maxDequeuesPerPoll?: number;
 
   /**
    * When true, this queue's configuration is persisted in the `queues` system
@@ -192,6 +199,7 @@ export class WorkflowQueue {
     this.priorityEnabled = params.priorityEnabled ?? false;
     this.partitionQueue = params.partitionQueue ?? false;
     this.minPollingIntervalMs = params.minPollingIntervalMs;
+    this.maxDequeuesPerPoll = params.maxDequeuesPerPoll;
 
     if (wfQueueRunner.wfQueuesByName.has(name)) {
       throw Error(`Workflow Queue '${name}' defined multiple times`);
@@ -201,12 +209,15 @@ export class WorkflowQueue {
 
   /** Throws if any combination of queue parameters is invalid. */
   static validateQueueParams(params: QueueParameters): void {
-    const { concurrency, workerConcurrency, rateLimit, minPollingIntervalMs } = params;
+    const { concurrency, workerConcurrency, rateLimit, minPollingIntervalMs, maxDequeuesPerPoll } = params;
     if (workerConcurrency !== undefined && concurrency !== undefined && workerConcurrency > concurrency) {
       throw new Error('concurrency must be greater than or equal to workerConcurrency');
     }
     if (minPollingIntervalMs !== undefined && minPollingIntervalMs <= 0) {
       throw new Error('minPollingIntervalMs must be positive');
+    }
+    if (maxDequeuesPerPoll !== undefined && (!Number.isInteger(maxDequeuesPerPoll) || maxDequeuesPerPoll <= 0)) {
+      throw new Error('maxDequeuesPerPoll must be a positive integer');
     }
     if (rateLimit !== undefined && (rateLimit.limitPerPeriod === undefined || rateLimit.periodSec === undefined)) {
       throw new Error('rateLimit must specify both limitPerPeriod and periodSec');
@@ -224,6 +235,7 @@ export class WorkflowQueue {
       priorityEnabled: params.priorityEnabled ?? false,
       partitionQueue: params.partitionQueue ?? false,
       pollingIntervalSec: (params.minPollingIntervalMs ?? 1000) / 1000,
+      maxDequeuesPerPoll: params.maxDequeuesPerPoll ?? null,
     };
   }
 
@@ -247,6 +259,7 @@ export class WorkflowQueue {
     q.priorityEnabled = record.priorityEnabled;
     q.partitionQueue = record.partitionQueue;
     q.minPollingIntervalMs = record.pollingIntervalSec * 1000;
+    q.maxDequeuesPerPoll = record.maxDequeuesPerPoll ?? undefined;
     q.databaseBacked = true;
     q.clientBound = clientSystemDatabase !== undefined;
     if (clientSystemDatabase !== undefined) {
@@ -306,6 +319,15 @@ export class WorkflowQueue {
     this.minPollingIntervalMs = value;
   }
 
+  async setMaxDequeuesPerPoll(value: number | undefined): Promise<void> {
+    requireDatabaseBacked(this);
+    if (value !== undefined && (!Number.isInteger(value) || value <= 0)) {
+      throw new Error('maxDequeuesPerPoll must be a positive integer');
+    }
+    await sysDBFor(this).updateQueue(this.name, { maxDequeuesPerPoll: value ?? null });
+    this.maxDequeuesPerPoll = value;
+  }
+
   async getConcurrency(): Promise<number | undefined> {
     await refreshFromDb(this);
     return this.concurrency;
@@ -335,6 +357,11 @@ export class WorkflowQueue {
     await refreshFromDb(this);
     return this.minPollingIntervalMs;
   }
+
+  async getMaxDequeuesPerPoll(): Promise<number | undefined> {
+    await refreshFromDb(this);
+    return this.maxDequeuesPerPoll;
+  }
 }
 
 /** Per-queue runtime scheduling state tracked by the shared dispatcher. */
@@ -345,6 +372,13 @@ interface QueueRuntimeState {
   currentPollingMs: number;
   /** Epoch ms at which this queue should next be polled. */
   nextPollAt: number;
+  /** Round-robin cursor for partitioned queue polling. */
+  nextPartitionIndex: number;
+}
+
+interface QueuePollResult {
+  contentionDetected: boolean;
+  claimedFullBatch: boolean;
 }
 
 class WFQueueRunner {
@@ -428,7 +462,12 @@ class WFQueueRunner {
   private ensureState(queue: WorkflowQueue, now: number): void {
     if (this.states.has(queue.name)) return;
     const interval = queue.minPollingIntervalMs ?? WFQueueRunner.defaultMinPollingIntervalMs;
-    this.states.set(queue.name, { queue, currentPollingMs: interval, nextPollAt: now + interval });
+    this.states.set(queue.name, {
+      queue,
+      currentPollingMs: interval,
+      nextPollAt: now + interval,
+      nextPartitionIndex: 0,
+    });
   }
 
   /** Reconcile DB-backed queues against the queues table in one query: refresh, add, or drop them. */
@@ -519,8 +558,8 @@ class WFQueueRunner {
       }
       for (const state of due) {
         if (!this.isRunning) break;
-        const contentionDetected = await this.pollQueue(exec, state.queue);
-        this.adjustInterval(exec, state, contentionDetected);
+        const result = await this.pollQueue(exec, state);
+        this.adjustInterval(exec, state, result);
       }
 
       if (!this.isRunning) break;
@@ -538,9 +577,12 @@ class WFQueueRunner {
     }
   }
 
-  /** Poll one queue once, starting ready workflows; returns true if DB contention was detected. */
-  private async pollQueue(exec: DBOSExecutor, queue: WorkflowQueue): Promise<boolean> {
+  /** Poll one queue once, starting ready workflows. */
+  private async pollQueue(exec: DBOSExecutor, state: QueueRuntimeState): Promise<QueuePollResult> {
+    const queue = state.queue;
     let contentionDetected = false;
+    let claimedCount = 0;
+    const batchLimit = queue.maxDequeuesPerPoll ?? DEFAULT_MAX_DEQUEUES_PER_POLL;
     // Helper function that starts dequeued workflows
     const dispatch = async (wfids: string[]) => {
       if (wfids.length > 0) {
@@ -559,23 +601,35 @@ class WFQueueRunner {
     try {
       if (queue.partitionQueue) {
         const partitionKeys = await exec.systemDatabase.getQueuePartitions(queue.name);
-        for (const partitionKey of partitionKeys) {
+        const numPartitions = partitionKeys.length;
+        const start = numPartitions === 0 ? 0 : state.nextPartitionIndex % numPartitions;
+        let nextStart = numPartitions === 0 ? 0 : (start + 1) % numPartitions;
+        for (let offset = 0; offset < numPartitions; offset++) {
+          if (claimedCount >= batchLimit) break;
+          const index = (start + offset) % numPartitions;
+          const partitionKey = partitionKeys[index];
           const partitionWfids = await exec.systemDatabase.findAndMarkStartableWorkflows(
             queue,
             exec.executorID,
             globalParams.appVersion,
             partitionKey,
+            batchLimit - claimedCount,
           );
+          claimedCount += partitionWfids.length;
           await dispatch(partitionWfids);
           await debugTriggerPoint(DEBUG_TRIGGER_BETWEEN_PARTITION_DISPATCHES);
+          nextStart = (index + 1) % numPartitions;
         }
+        state.nextPartitionIndex = nextStart;
       } else {
         const wfids = await exec.systemDatabase.findAndMarkStartableWorkflows(
           queue,
           exec.executorID,
           globalParams.appVersion,
           undefined,
+          batchLimit,
         );
+        claimedCount += wfids.length;
         await dispatch(wfids);
       }
     } catch (e) {
@@ -589,18 +643,22 @@ class WFQueueRunner {
         exec.logger.warn(`Error getting startable workflows for queue ${queue.name}: ${err.message}`);
       }
     }
-    return contentionDetected;
+    return { contentionDetected, claimedFullBatch: claimedCount >= batchLimit };
   }
 
   /** After a poll, grow the interval on contention or shrink it toward the minimum, then schedule the next poll with jitter. */
-  private adjustInterval(exec: DBOSExecutor, state: QueueRuntimeState, contentionDetected: boolean): void {
+  private adjustInterval(exec: DBOSExecutor, state: QueueRuntimeState, result: QueuePollResult): void {
     const minPollingMs = state.queue.minPollingIntervalMs ?? WFQueueRunner.defaultMinPollingIntervalMs;
     const maxPollingMs = WFQueueRunner.defaultMaxPollingIntervalMs;
-    if (contentionDetected) {
+    if (result.contentionDetected) {
       state.currentPollingMs = Math.min(maxPollingMs, state.currentPollingMs * this.backoffFactor);
       exec.logger.warn(
         `Increasing polling interval for queue ${state.queue.name} to ${(state.currentPollingMs / 1000).toFixed(2)}s due to contention.`,
       );
+    } else if (result.claimedFullBatch) {
+      state.currentPollingMs = minPollingMs;
+      state.nextPollAt = Date.now();
+      return;
     } else {
       state.currentPollingMs = Math.max(minPollingMs, state.currentPollingMs * this.scalebackFactor);
     }

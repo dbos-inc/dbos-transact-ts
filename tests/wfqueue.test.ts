@@ -1,6 +1,6 @@
 import { StatusString, WorkflowHandle, DBOS, ConfiguredInstance, DBOSClient } from '../src';
 import { DBOSConfig, DBOSExecutor, DBOS_QUEUE_MAX_PRIORITY, DBOS_QUEUE_MIN_PRIORITY } from '../src/dbos-executor';
-import { QueueParameters, wfQueueRunner } from '../src/wfqueue';
+import { DEFAULT_MAX_DEQUEUES_PER_POLL, QueueParameters, wfQueueRunner } from '../src/wfqueue';
 import {
   generateDBOSTestConfig,
   setUpDBOSTestSysDb,
@@ -2248,6 +2248,7 @@ describe('database-backed-queue-crud', () => {
       workerConcurrency: 2,
       priorityEnabled: true,
       minPollingIntervalMs: 2500,
+      maxDequeuesPerPoll: 17,
     });
     expect(registered.name).toBe(queueName);
     expect(registered.databaseBacked).toBe(true);
@@ -2263,6 +2264,7 @@ describe('database-backed-queue-crud', () => {
     expect(retrieved!.priorityEnabled).toBe(true);
     expect(retrieved!.partitionQueue).toBe(false);
     expect(retrieved!.minPollingIntervalMs).toBe(2500);
+    expect(retrieved!.maxDequeuesPerPoll).toBe(17);
     expect(retrieved!.databaseBacked).toBe(true);
 
     // never_update leaves the existing row alone.
@@ -2270,6 +2272,7 @@ describe('database-backed-queue-crud', () => {
     retrieved = await DBOS.retrieveQueue(queueName);
     expect(retrieved!.concurrency).toBe(10);
     expect(retrieved!.rateLimit).toEqual({ limitPerPeriod: 5, periodSec: 1.5 });
+    expect(retrieved!.maxDequeuesPerPoll).toBe(17);
 
     // always_update overwrites every column, including clearing those that
     // were previously set but are now omitted.
@@ -2280,6 +2283,7 @@ describe('database-backed-queue-crud', () => {
     expect(retrieved!.rateLimit).toBeUndefined();
     expect(retrieved!.priorityEnabled).toBe(false);
     expect(retrieved!.minPollingIntervalMs).toBe(1000);
+    expect(retrieved!.maxDequeuesPerPoll).toBeUndefined();
 
     // update_if_latest_version updates when the running version is the latest.
     await DBOS.registerQueue(queueName, { concurrency: 30, onConflict: 'update_if_latest_version' });
@@ -2310,6 +2314,7 @@ describe('database-backed-queue-crud', () => {
       workerConcurrency: 2,
       priorityEnabled: false,
       minPollingIntervalMs: 1000,
+      maxDequeuesPerPoll: 10,
     });
 
     await queue.setConcurrency(8);
@@ -2318,6 +2323,7 @@ describe('database-backed-queue-crud', () => {
     await queue.setPriorityEnabled(true);
     await queue.setPartitionQueue(true);
     await queue.setMinPollingIntervalMs(500);
+    await queue.setMaxDequeuesPerPoll(12);
 
     const fresh = await DBOS.retrieveQueue(queueName);
     for (const q of [queue, fresh]) {
@@ -2328,6 +2334,7 @@ describe('database-backed-queue-crud', () => {
       expect(q!.priorityEnabled).toBe(true);
       expect(q!.partitionQueue).toBe(true);
       expect(q!.minPollingIntervalMs).toBe(500);
+      expect(q!.maxDequeuesPerPoll).toBe(12);
     }
 
     // Cross-validation: workerConcurrency cannot exceed concurrency.
@@ -2336,11 +2343,14 @@ describe('database-backed-queue-crud', () => {
     );
     // Polling interval must be positive.
     await expect(queue.setMinPollingIntervalMs(0)).rejects.toThrow('minPollingIntervalMs must be positive');
+    await expect(queue.setMaxDequeuesPerPoll(0)).rejects.toThrow('maxDequeuesPerPoll must be a positive integer');
 
     // Rate limit can be cleared.
     await queue.setRateLimit(undefined);
     const cleared = await DBOS.retrieveQueue(queueName);
     expect(cleared!.rateLimit).toBeUndefined();
+    await queue.setMaxDequeuesPerPoll(undefined);
+    expect((await DBOS.retrieveQueue(queueName))!.maxDequeuesPerPoll).toBeUndefined();
 
     // In-memory queues do not support setters.
     const legacyName = `legacy_dyn_queue_${randomUUID()}`;
@@ -2569,6 +2579,137 @@ describe('database-backed-queue-crud', () => {
       }
     } finally {
       DynConcWFs.releaseEvent.set();
+      await DBOS.deleteQueue(queueName);
+    }
+  });
+});
+
+describe('bounded-queue-dequeue-claims', () => {
+  let config: DBOSConfig;
+  let client: Client;
+
+  beforeAll(async () => {
+    config = generateDBOSTestConfig();
+    await setUpDBOSTestSysDb(config);
+  });
+
+  beforeEach(async () => {
+    DBOS.setConfig({ ...config, listenQueues: [] });
+    await DBOS.launch();
+    client = new Client({ connectionString: config.systemDatabaseUrl });
+    await client.connect();
+  });
+
+  afterEach(async () => {
+    await client?.end();
+    await DBOS.shutdown();
+  });
+
+  async function enqueueSimple(queueName: string, count: number, partitionKey?: string): Promise<string[]> {
+    const handles = await Promise.all(
+      Array.from({ length: count }, (_, i) =>
+        DBOS.startWorkflow(TestWFs, {
+          workflowID: `${queueName}-${partitionKey ?? 'none'}-${i}-${randomUUID()}`,
+          queueName,
+          enqueueOptions: partitionKey ? { queuePartitionKey: partitionKey } : undefined,
+        }).testWorkflowSimple('a', String(i)),
+      ),
+    );
+    return handles.map((h) => h.workflowID);
+  }
+
+  async function countStatuses(queueName: string): Promise<Record<string, number>> {
+    const result = await client.query<{ status: string; count: string }>(
+      `SELECT status, COUNT(*) AS count
+       FROM dbos.workflow_status
+       WHERE queue_name = $1
+       GROUP BY status`,
+      [queueName],
+    );
+    return Object.fromEntries(result.rows.map((row) => [row.status, Number(row.count)]));
+  }
+
+  test('unbounded queue claims at most the default batch in one dequeue transaction', async () => {
+    const queueName = `bounded_default_${randomUUID()}`;
+    const workflowIDs = await enqueueSimple(queueName, DEFAULT_MAX_DEQUEUES_PER_POLL + 5);
+    const queue = await DBOS.registerQueue(queueName, { onConflict: 'always_update' });
+
+    try {
+      const claimed = await DBOSExecutor.globalInstance!.systemDatabase.findAndMarkStartableWorkflows(
+        queue,
+        DBOS.executorID,
+        globalParams.appVersion,
+      );
+      expect(claimed).toHaveLength(DEFAULT_MAX_DEQUEUES_PER_POLL);
+      const counts = await countStatuses(queueName);
+      expect(counts[StatusString.PENDING]).toBe(DEFAULT_MAX_DEQUEUES_PER_POLL);
+      expect(counts[StatusString.ENQUEUED]).toBe(5);
+    } finally {
+      await DBOS.cancelWorkflows(workflowIDs);
+      await DBOS.deleteQueue(queueName);
+    }
+  });
+
+  test('rate-limited queue claims no more than remaining rate-limit capacity', async () => {
+    const queueName = `bounded_rate_${randomUUID()}`;
+    const workflowIDs = await enqueueSimple(queueName, 8);
+    const queue = await DBOS.registerQueue(queueName, {
+      onConflict: 'always_update',
+      rateLimit: { limitPerPeriod: 3, periodSec: 60 },
+    });
+
+    try {
+      const claimed = await DBOSExecutor.globalInstance!.systemDatabase.findAndMarkStartableWorkflows(
+        queue,
+        DBOS.executorID,
+        globalParams.appVersion,
+      );
+      expect(claimed).toHaveLength(3);
+      const counts = await countStatuses(queueName);
+      expect(counts[StatusString.PENDING]).toBe(3);
+      expect(counts[StatusString.ENQUEUED]).toBe(5);
+    } finally {
+      await DBOS.cancelWorkflows(workflowIDs);
+      await DBOS.deleteQueue(queueName);
+    }
+  });
+
+  test('partitioned queue respects one queue-level batch budget across partitions', async () => {
+    const queueName = `bounded_partition_${randomUUID()}`;
+    const workflowIDs = [
+      ...(await enqueueSimple(queueName, 3, 'a')),
+      ...(await enqueueSimple(queueName, 3, 'b')),
+      ...(await enqueueSimple(queueName, 3, 'c')),
+    ];
+    const queue = await DBOS.registerQueue(queueName, {
+      onConflict: 'always_update',
+      partitionQueue: true,
+      maxDequeuesPerPoll: 4,
+    });
+
+    try {
+      const partitions = await DBOSExecutor.globalInstance!.systemDatabase.getQueuePartitions(queueName);
+      let remaining = queue.maxDequeuesPerPoll!;
+      const claimed: string[] = [];
+      for (const partition of partitions) {
+        if (remaining <= 0) break;
+        const partitionClaimed = await DBOSExecutor.globalInstance!.systemDatabase.findAndMarkStartableWorkflows(
+          queue,
+          DBOS.executorID,
+          globalParams.appVersion,
+          partition,
+          remaining,
+        );
+        claimed.push(...partitionClaimed);
+        remaining -= partitionClaimed.length;
+      }
+
+      expect(claimed).toHaveLength(4);
+      const counts = await countStatuses(queueName);
+      expect(counts[StatusString.PENDING]).toBe(4);
+      expect(counts[StatusString.ENQUEUED]).toBe(5);
+    } finally {
+      await DBOS.cancelWorkflows(workflowIDs);
       await DBOS.deleteQueue(queueName);
     }
   });

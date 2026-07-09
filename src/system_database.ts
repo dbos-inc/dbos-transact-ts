@@ -26,7 +26,7 @@ import {
 } from '../schemas/system_db_schema';
 import { globalParams, cancellableSleep, INTERNAL_QUEUE_NAME, Semaphore, sleepConfig, sleepms } from './utils';
 import { GlobalLogger } from './telemetry/logs';
-import { WorkflowQueue } from './wfqueue';
+import { DEFAULT_MAX_DEQUEUES_PER_POLL, WorkflowQueue } from './wfqueue';
 import { randomUUID } from 'crypto';
 import { getClientConfig } from './utils';
 import { connectToPGAndReportOutcome, ensurePGDatabase, maskDatabaseUrl } from './database_utils';
@@ -102,6 +102,7 @@ export interface QueueRecord {
   priorityEnabled: boolean;
   partitionQueue: boolean;
   pollingIntervalSec: number;
+  maxDequeuesPerPoll: number | null;
 }
 
 /** The subset of a queue record that may be changed after creation. */
@@ -115,6 +116,7 @@ const QUEUE_COLUMN_BY_FIELD: Record<keyof QueueRecordUpdate, string> = {
   priorityEnabled: 'priority_enabled',
   partitionQueue: 'partition_queue',
   pollingIntervalSec: 'polling_interval_sec',
+  maxDequeuesPerPoll: 'max_dequeues_per_poll',
 };
 
 function queueRecordFromRow(row: queues): QueueRecord {
@@ -127,6 +129,7 @@ function queueRecordFromRow(row: queues): QueueRecord {
     priorityEnabled: row.priority_enabled,
     partitionQueue: row.partition_queue,
     pollingIntervalSec: row.polling_interval_sec,
+    maxDequeuesPerPoll: row.max_dequeues_per_poll,
   };
 }
 
@@ -2684,7 +2687,8 @@ export class SystemDatabase {
       `SELECT DISTINCT queue_partition_key FROM "${this.schemaName}".workflow_status
        WHERE queue_name = $1
          AND status = $2
-         AND queue_partition_key IS NOT NULL`,
+         AND queue_partition_key IS NOT NULL
+       ORDER BY queue_partition_key ASC`,
       [queueName, StatusString.ENQUEUED],
     );
 
@@ -2696,6 +2700,7 @@ export class SystemDatabase {
     executorID: string,
     appVersion: string,
     queuePartitionKey?: string,
+    maxDequeuesThisPoll: number = queue.maxDequeuesPerPoll ?? DEFAULT_MAX_DEQUEUES_PER_POLL,
   ): Promise<string[]> {
     const startTimeMs = Date.now();
     const limiterPeriodMS = queue.rateLimit ? queue.rateLimit.periodSec * 1000 : 0;
@@ -2782,6 +2787,17 @@ export class SystemDatabase {
         return claimedIDs;
       }
 
+      if (queue.rateLimit) {
+        maxTasks = Math.min(maxTasks, queue.rateLimit.limitPerPeriod - numRecentQueries);
+      }
+      maxTasks = Math.min(maxTasks, maxDequeuesThisPoll);
+
+      // Return immediately if there are no available tasks due to batch or rate limits.
+      if (maxTasks <= 0) {
+        await client.query('COMMIT');
+        return claimedIDs;
+      }
+
       // Retrieve the first max_tasks workflows in the queue.
       const latestVersionResult = await client.query<{ version_name: string }>(
         `SELECT version_name
@@ -2795,65 +2811,51 @@ export class SystemDatabase {
         : 'application_version = $3';
 
       const lockMode = queue.concurrency ? 'FOR UPDATE NOWAIT' : 'FOR UPDATE SKIP LOCKED';
-      const limitClause = maxTasks !== Infinity ? `LIMIT ${maxTasks}` : '';
+      const limitClause = `LIMIT ${maxTasks}`;
 
-      const selectParams = [StatusString.ENQUEUED, queue.name, appVersion, ...partitionParams];
-      const selectQuery = `
+      const selectParams = [StatusString.ENQUEUED, queue.name, appVersion, queuePartitionKey ?? null];
+      const claimQuery = `
+        WITH candidates AS (
         SELECT workflow_uuid
         FROM "${this.schemaName}".workflow_status
         WHERE status = $1
           AND queue_name = $2
           AND ${versionClause}
-          ${partitionFilter.replace('$PARTITION', '$4')}
+          AND ($4::text IS NULL OR queue_partition_key = $4)
         ORDER BY priority ASC, created_at ASC
         ${limitClause}
         ${lockMode}
+        )
+        UPDATE "${this.schemaName}".workflow_status wf
+        SET status = $5,
+            executor_id = $6,
+            application_version = $7,
+            started_at_epoch_ms = $8,
+            rate_limited = $9,
+            workflow_deadline_epoch_ms = CASE
+              WHEN wf.workflow_timeout_ms IS NOT NULL AND wf.workflow_deadline_epoch_ms IS NULL
+              THEN (EXTRACT(epoch FROM now()) * 1000)::bigint + wf.workflow_timeout_ms
+              ELSE wf.workflow_deadline_epoch_ms
+            END
+        FROM candidates
+        WHERE wf.workflow_uuid = candidates.workflow_uuid
+          AND wf.status = $1
+        RETURNING wf.workflow_uuid
       `;
 
-      const { rows } = await client.query<{ workflow_uuid: string }>(selectQuery, selectParams);
-      // Fires while the SELECT FOR UPDATE lock is held — tests can throw a
+      const { rows } = await client.query<{ workflow_uuid: string }>(claimQuery, [
+        ...selectParams,
+        StatusString.PENDING,
+        executorID,
+        appVersion,
+        startTimeMs,
+        queue.rateLimit !== undefined,
+      ]);
+      // Fires while the claim transaction is still open — tests can throw a
       // synthetic 55P03 here to simulate a concurrent executor winning the race.
       await debugTriggerPoint(DEBUG_TRIGGER_FIND_AND_MARK_AFTER_SELECT);
 
-      // Start the workflows
-      const workflowIDs = rows.map((row) => row.workflow_uuid);
-      for (const id of workflowIDs) {
-        // If we have a rate limit, stop starting functions when the number
-        //   of functions started this period exceeds the limit.
-        if (queue.rateLimit && claimedIDs.length + numRecentQueries >= queue.rateLimit.limitPerPeriod) {
-          break;
-        }
-
-        // Start the functions by marking them as pending and updating their executor IDs.
-        // Only claim the workflow if the UPDATE actually transitioned an ENQUEUED row —
-        // otherwise another worker won the race and we must not re-dispatch it.
-        const updateRes = await client.query(
-          `UPDATE "${this.schemaName}".workflow_status
-           SET status = $1,
-               executor_id = $2,
-               application_version = $3,
-               started_at_epoch_ms = $4,
-               rate_limited = $5,
-               workflow_deadline_epoch_ms = CASE
-                 WHEN workflow_timeout_ms IS NOT NULL AND workflow_deadline_epoch_ms IS NULL
-                 THEN (EXTRACT(epoch FROM now()) * 1000)::bigint + workflow_timeout_ms
-                 ELSE workflow_deadline_epoch_ms
-               END
-           WHERE workflow_uuid = $6 AND status = $7`,
-          [
-            StatusString.PENDING,
-            executorID,
-            appVersion,
-            startTimeMs,
-            queue.rateLimit !== undefined,
-            id,
-            StatusString.ENQUEUED,
-          ],
-        );
-        if ((updateRes.rowCount ?? 0) > 0) {
-          claimedIDs.push(id);
-        }
-      }
+      claimedIDs.push(...rows.map((row) => row.workflow_uuid));
 
       await client.query('COMMIT');
     } catch (error) {
@@ -3670,7 +3672,7 @@ export class SystemDatabase {
   async getQueue(name: string): Promise<QueueRecord | null> {
     const { rows } = await this.pool.query<queues>(
       `SELECT name, concurrency, worker_concurrency, rate_limit_max, rate_limit_period_sec,
-              priority_enabled, partition_queue, polling_interval_sec
+              priority_enabled, partition_queue, polling_interval_sec, max_dequeues_per_poll
          FROM "${this.schemaName}".queues
         WHERE name = $1`,
       [name],
@@ -3681,7 +3683,7 @@ export class SystemDatabase {
   async listQueues(): Promise<QueueRecord[]> {
     const { rows } = await this.pool.query<queues>(
       `SELECT name, concurrency, worker_concurrency, rate_limit_max, rate_limit_period_sec,
-              priority_enabled, partition_queue, polling_interval_sec
+              priority_enabled, partition_queue, polling_interval_sec, max_dequeues_per_poll
          FROM "${this.schemaName}".queues`,
     );
     return rows.map(queueRecordFromRow);
@@ -3724,6 +3726,7 @@ export class SystemDatabase {
           priority_enabled = EXCLUDED.priority_enabled,
           partition_queue = EXCLUDED.partition_queue,
           polling_interval_sec = EXCLUDED.polling_interval_sec,
+          max_dequeues_per_poll = EXCLUDED.max_dequeues_per_poll,
           updated_at = EXCLUDED.updated_at`
       : `ON CONFLICT (name) DO NOTHING`;
     const client = await this.pool.connect();
@@ -3736,8 +3739,8 @@ export class SystemDatabase {
       await client.query(
         `INSERT INTO "${this.schemaName}".queues
           (name, concurrency, worker_concurrency, rate_limit_max, rate_limit_period_sec,
-           priority_enabled, partition_queue, polling_interval_sec, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+           priority_enabled, partition_queue, polling_interval_sec, max_dequeues_per_poll, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
          ${onConflict}`,
         [
           record.name,
@@ -3748,6 +3751,7 @@ export class SystemDatabase {
           record.priorityEnabled,
           record.partitionQueue,
           record.pollingIntervalSec,
+          record.maxDequeuesPerPoll,
           now,
         ],
       );
