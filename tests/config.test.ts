@@ -10,6 +10,15 @@ import {
 import { AssertionError } from 'assert';
 import { DBOSConfigInternal, DBOSRuntimeConfig } from '../src/dbos-executor';
 import { DBOSJSON } from '../src/serialization';
+import { isNativeSQLiteSupported } from '../src/sqlite_system_database';
+
+function expectedDefaultSystemDatabaseUrl(appName: string): string {
+  const dbName = appName.toLowerCase().replaceAll('-', '_').replaceAll(' ', '_').replace(/^\d/, '_$&');
+  if (isNativeSQLiteSupported()) {
+    return `sqlite:///${dbName}.sqlite`;
+  }
+  return `postgresql://postgres:dbos@localhost:5432/${dbName}_dbos_sys?connect_timeout=10&sslmode=disable`;
+}
 
 describe('dbos-config', () => {
   beforeEach(() => {
@@ -322,14 +331,14 @@ describe('dbos-config', () => {
       const databaseUrl = getSystemDatabaseUrl({
         name: 'Test App',
       });
-      expect(databaseUrl).toBe('sqlite:///test_app.sqlite');
+      expect(databaseUrl).toBe(expectedDefaultSystemDatabaseUrl('Test App'));
     });
 
     test('throws when db url not set and app name is missing', () => {
       expect(() => getSystemDatabaseUrl({})).toThrow(AssertionError);
     });
 
-    test('defaults to SQLite even when PG env values are present', () => {
+    test('uses PG env values when config is empty', () => {
       process.env.PGHOST = 'envhost';
       process.env.PGPORT = '7777';
       process.env.PGUSER = 'envuser';
@@ -338,14 +347,16 @@ describe('dbos-config', () => {
       const databaseUrl = getSystemDatabaseUrl({
         name: 'Test App',
       });
-      expect(databaseUrl).toBe('sqlite:///test_app.sqlite');
+      expect(databaseUrl).toBe(
+        'postgresql://envuser:envpass@envhost:7777/test_app_dbos_sys?connect_timeout=10&sslmode=allow',
+      );
     });
 
     test('correctly handles app names with spaces', () => {
       const url = getSystemDatabaseUrl({
         name: 'app name with spaces',
       });
-      expect(url).toBe('sqlite:///app_name_with_spaces.sqlite');
+      expect(url).toBe(expectedDefaultSystemDatabaseUrl('app name with spaces'));
     });
 
     test('correctly handles db url w/o password', () => {
@@ -381,8 +392,9 @@ describe('dbos-config', () => {
       });
       expect(internalConfig).toEqual({
         name: 'dbostest',
-        systemDatabaseUrl: 'sqlite:///dbostest.sqlite',
+        systemDatabaseUrl: expectedDefaultSystemDatabaseUrl('dbostest'),
         sysDbPoolSize: undefined,
+        systemDatabasePollingConcurrency: undefined,
         systemDatabasePool: undefined,
         systemDatabaseSchemaName: 'dbos',
         schedulerPollingIntervalMs: undefined,
@@ -393,6 +405,7 @@ describe('dbos-config', () => {
             logLevel: 'info',
             addContextMetadata: undefined,
             forceConsole: false,
+            logger: undefined,
           },
           OTLPExporter: {
             tracesEndpoint: undefined,
@@ -438,8 +451,9 @@ describe('dbos-config', () => {
       );
       expect(internalConfig).toEqual({
         name: 'dbostest',
-        systemDatabaseUrl: 'sqlite:///dbostest.sqlite',
+        systemDatabaseUrl: expectedDefaultSystemDatabaseUrl('dbostest'),
         sysDbPoolSize: undefined,
+        systemDatabasePollingConcurrency: undefined,
         systemDatabasePool: undefined,
         systemDatabaseSchemaName: 'dbos',
         schedulerPollingIntervalMs: undefined,
@@ -450,6 +464,7 @@ describe('dbos-config', () => {
             logLevel: 'info',
             addContextMetadata: undefined,
             forceConsole: true,
+            logger: undefined,
           },
           OTLPExporter: {
             tracesEndpoint: undefined,
