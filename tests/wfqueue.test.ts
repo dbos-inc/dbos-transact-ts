@@ -2707,3 +2707,88 @@ describe('partitioned-queue-orphan-pending', () => {
     expect(await queueEntriesAreCleanedUp()).toBe(true);
   }, 20000);
 });
+
+describe('concurrent-queue-dispatches', () => {
+  class ConcurrentDispatchWFs {
+    @DBOS.workflow()
+    static async run(value: string): Promise<string> {
+      return value;
+    }
+  }
+
+  let config: DBOSConfig;
+  const slowQueueName = 'concurrent-slow-dispatch-queue';
+  const fastQueueName = 'concurrent-fast-dispatch-queue';
+
+  beforeAll(async () => {
+    config = generateDBOSTestConfig();
+    await setUpDBOSTestSysDb(config);
+  });
+
+  beforeEach(async () => {
+    DBOS.setConfig({
+      ...config,
+      maxConcurrentQueueDispatches: 2,
+      listenQueues: [slowQueueName, fastQueueName],
+    });
+    await DBOS.launch();
+  });
+
+  afterEach(async () => {
+    clearDebugTriggers();
+    await DBOS.shutdown();
+  });
+
+  test('a slow partitioned poll does not block another queue dispatch', async () => {
+    const partitionKey = `partition_${randomUUID()}`;
+    const releaseSlowPoll = new Event();
+    let slowPollPaused = false;
+
+    try {
+      await DBOS.registerQueue(slowQueueName, {
+        partitionQueue: true,
+        minPollingIntervalMs: 50,
+        onConflict: 'always_update',
+      });
+      await DBOS.registerQueue(fastQueueName, {
+        minPollingIntervalMs: 50,
+        onConflict: 'always_update',
+      });
+
+      setDebugTrigger(DEBUG_TRIGGER_BETWEEN_PARTITION_DISPATCHES, {
+        asyncCallback: async () => {
+          slowPollPaused = true;
+          await releaseSlowPoll.wait();
+        },
+      });
+
+      const slow = await DBOS.startWorkflow(ConcurrentDispatchWFs, {
+        queueName: slowQueueName,
+        enqueueOptions: { queuePartitionKey: partitionKey },
+      }).run('slow');
+
+      const pauseDeadline = Date.now() + 5000;
+      while (!slowPollPaused && Date.now() < pauseDeadline) {
+        await sleepms(25);
+      }
+      expect(slowPollPaused).toBe(true);
+
+      const fast = await DBOS.startWorkflow(ConcurrentDispatchWFs, { queueName: fastQueueName }).run('fast');
+      await expect(
+        Promise.race([
+          fast.getResult(),
+          sleepms(3000).then(() => {
+            throw new Error('fast queue did not dispatch while the slow queue poll was in flight');
+          }),
+        ]),
+      ).resolves.toBe('fast');
+
+      releaseSlowPoll.set();
+      await expect(slow.getResult()).resolves.toBe('slow');
+    } finally {
+      releaseSlowPoll.set();
+      await DBOS.deleteQueue(slowQueueName);
+      await DBOS.deleteQueue(fastQueueName);
+    }
+  }, 10000);
+});

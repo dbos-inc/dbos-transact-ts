@@ -7,7 +7,7 @@ import {
 } from './debugpoint';
 import type { QueueRecord, SystemDatabase } from './system_database';
 import type { GlobalLogger } from './telemetry/logs';
-import { globalParams, interruptibleSleep, INTERNAL_QUEUE_NAME } from './utils';
+import { globalParams, INTERNAL_QUEUE_NAME } from './utils';
 
 /**
  * Log a single queue's name and its set parameters. Unset parameters are
@@ -357,6 +357,8 @@ class WFQueueRunner {
   private readonly states: Map<string, QueueRuntimeState> = new Map();
   /** Names already warned about colliding with an in-memory queue (warn-once). */
   private readonly conflictWarned: Set<string> = new Set();
+  /** Rotating cursor used to choose the next due queue fairly. */
+  private nextQueueIndex: number = 0;
 
   private static readonly defaultMinPollingIntervalMs: number = 1000;
   private static readonly defaultMaxPollingIntervalMs: number = 120000;
@@ -377,10 +379,15 @@ class WFQueueRunner {
     this.wfQueuesByName.clear();
   }
 
-  async dispatchLoop(exec: DBOSExecutor, listenQueuesArg: (WorkflowQueue | string)[] | null): Promise<void> {
+  async dispatchLoop(
+    exec: DBOSExecutor,
+    listenQueuesArg: (WorkflowQueue | string)[] | null,
+    maxConcurrentQueueDispatches: number = 1,
+  ): Promise<void> {
     this.isRunning = true;
     this.states.clear();
     this.conflictWarned.clear();
+    this.nextQueueIndex = 0;
     this.listenQueueNames = listenQueuesArg
       ? new Set(listenQueuesArg.map((entry) => (typeof entry === 'string' ? entry : entry.name)))
       : null;
@@ -403,8 +410,8 @@ class WFQueueRunner {
     // Log everything we're now dispatching for, before the loop starts.
     this.logRunningQueues(exec);
 
-    // One loop drives every queue, so idle cost is O(1) not O(#queues); returns when stop() aborts.
-    await this.schedulerLoop(exec, startNow);
+    // One loop drives global maintenance; queue polls run in a bounded set of independent lanes.
+    await this.schedulerLoop(exec, startNow, maxConcurrentQueueDispatches);
   }
 
   /** Resolve the listenQueues argument to the set of in-memory queues to dispatch for. */
@@ -485,9 +492,45 @@ class WFQueueRunner {
     }
   }
 
-  /** The single dispatcher loop: reconcile queues, transition delayed workflows once, poll due queues sequentially. */
-  private async schedulerLoop(exec: DBOSExecutor, startNow: number): Promise<void> {
+  /** Reconcile queues and schedule due polls across a bounded number of independent lanes. */
+  private async schedulerLoop(
+    exec: DBOSExecutor,
+    startNow: number,
+    maxConcurrentQueueDispatches: number,
+  ): Promise<void> {
     const signal = this.abortController!.signal;
+    const inFlightPolls = new Map<string, Promise<void>>();
+    let wakePending = false;
+    let wakeScheduler: (() => void) | undefined;
+    const wake = () => {
+      if (wakeScheduler) {
+        wakeScheduler();
+      } else {
+        wakePending = true;
+      }
+    };
+
+    const waitForWakeOrTimeout = async (ms: number): Promise<void> => {
+      if (signal.aborted) return;
+      if (wakePending) {
+        wakePending = false;
+        return;
+      }
+      await new Promise<void>((resolve) => {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const finish = () => {
+          if (timer) clearTimeout(timer);
+          signal.removeEventListener('abort', onAbort);
+          if (wakeScheduler === finish) wakeScheduler = undefined;
+          resolve();
+        };
+        const onAbort = () => finish();
+        wakeScheduler = finish;
+        signal.addEventListener('abort', onAbort, { once: true });
+        timer = setTimeout(finish, ms);
+      });
+    };
+
     // Discovery already ran during setup; defer the next reconcile a full interval.
     let lastReconcileAt = startNow;
     // Global op: run on a fixed cadence, not once per wake (destaggered wakeups would push it to ~N/sec).
@@ -512,29 +555,65 @@ class WFQueueRunner {
         lastTransitionAt = now;
       }
 
-      // Collect the queues due to poll this tick and dispatch them sequentially.
-      const due: QueueRuntimeState[] = [];
-      for (const state of this.states.values()) {
-        if (now >= state.nextPollAt) due.push(state);
-      }
-      for (const state of due) {
-        if (!this.isRunning) break;
-        const contentionDetected = await this.pollQueue(exec, state.queue);
-        this.adjustInterval(exec, state, contentionDetected);
-      }
+      this.scheduleDueQueues(exec, now, maxConcurrentQueueDispatches, inFlightPolls, wake);
 
       if (!this.isRunning) break;
 
-      // Sleep until the earliest of the next scheduled poll, reconcile, or transition tick.
-      let wake = Math.min(
+      // Sleep until global maintenance, an idle queue's next poll, or an in-flight poll frees a lane.
+      let nextWakeAt = Math.min(
         lastReconcileAt + WFQueueRunner.reconcileIntervalMs,
         lastTransitionAt + WFQueueRunner.transitionIntervalMs,
       );
       for (const state of this.states.values()) {
-        if (state.nextPollAt < wake) wake = state.nextPollAt;
+        if (!inFlightPolls.has(state.queue.name) && state.nextPollAt < nextWakeAt) nextWakeAt = state.nextPollAt;
       }
-      const sleepMs = Math.max(0, wake - Date.now());
-      await interruptibleSleep(sleepMs, signal);
+      const sleepMs = Math.max(0, nextWakeAt - Date.now());
+      await waitForWakeOrTimeout(sleepMs);
+    }
+
+    await Promise.allSettled(Array.from(inFlightPolls.values()));
+  }
+
+  /** Start due queue polls up to the configured lane limit, rotating the first queue between passes. */
+  private scheduleDueQueues(
+    exec: DBOSExecutor,
+    now: number,
+    maxConcurrentQueueDispatches: number,
+    inFlightPolls: Map<string, Promise<void>>,
+    wake: () => void,
+  ): void {
+    const states = Array.from(this.states.values());
+    if (states.length === 0) return;
+
+    const start = this.nextQueueIndex % states.length;
+    for (let offset = 0; offset < states.length && inFlightPolls.size < maxConcurrentQueueDispatches; offset++) {
+      const index = (start + offset) % states.length;
+      const state = states[index];
+      const queueName = state.queue.name;
+      if (inFlightPolls.has(queueName) || now < state.nextPollAt) continue;
+
+      this.nextQueueIndex = (index + 1) % states.length;
+      const poll = this.runQueuePoll(exec, state, inFlightPolls, wake);
+      inFlightPolls.set(queueName, poll);
+    }
+  }
+
+  /** Run one queue's poll while reserving that queue's lane until its backoff state is updated. */
+  private async runQueuePoll(
+    exec: DBOSExecutor,
+    state: QueueRuntimeState,
+    inFlightPolls: Map<string, Promise<void>>,
+    wake: () => void,
+  ): Promise<void> {
+    const queueName = state.queue.name;
+    try {
+      const contentionDetected = await this.pollQueue(exec, state.queue);
+      this.adjustInterval(exec, state, contentionDetected);
+    } catch (e) {
+      exec.logger.warn(`Unexpected error polling queue ${queueName}: ${(e as Error).message}`);
+    } finally {
+      inFlightPolls.delete(queueName);
+      wake();
     }
   }
 

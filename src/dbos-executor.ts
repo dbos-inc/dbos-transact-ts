@@ -152,6 +152,12 @@ export interface DBOSConfig {
    * up by the supervisor.
    */
   listenQueues?: (WorkflowQueue | string)[];
+  /**
+   * Maximum number of independent queue dispatch cycles that may run concurrently
+   * in this executor. Defaults to 1, preserving serialized queue dispatch.
+   * This does not limit workflow concurrency or system-database polling reads.
+   */
+  maxConcurrentQueueDispatches?: number;
   schedulerPollingIntervalMs?: number;
   useListenNotify?: boolean;
 }
@@ -207,6 +213,7 @@ export type DBOSConfigInternal = {
   telemetry: TelemetryConfig;
 
   schedulerPollingIntervalMs?: number;
+  maxConcurrentQueueDispatches?: number;
   useListenNotify: boolean;
 
   http?: {
@@ -1139,7 +1146,7 @@ export class DBOSExecutor {
   }
 
   async initEventReceivers(listenQueues: (WorkflowQueue | string)[] | null) {
-    this.#wfqEnded = wfQueueRunner.dispatchLoop(this, listenQueues);
+    this.#wfqEnded = wfQueueRunner.dispatchLoop(this, listenQueues, this.config.maxConcurrentQueueDispatches);
 
     for (const lcl of getLifecycleListeners()) {
       await lcl.initialize?.();
