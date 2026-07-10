@@ -2674,13 +2674,9 @@ describe('bounded-queue-dequeue-claims', () => {
     }
   });
 
-  test('partitioned queue respects one queue-level batch budget across partitions', async () => {
+  test('partitioned queue caps each partition dequeue transaction', async () => {
     const queueName = `bounded_partition_${randomUUID()}`;
-    const workflowIDs = [
-      ...(await enqueueSimple(queueName, 3, 'a')),
-      ...(await enqueueSimple(queueName, 3, 'b')),
-      ...(await enqueueSimple(queueName, 3, 'c')),
-    ];
+    const workflowIDs = [...(await enqueueSimple(queueName, 5, 'a')), ...(await enqueueSimple(queueName, 5, 'b'))];
     const queue = await DBOS.registerQueue(queueName, {
       onConflict: 'always_update',
       partitionQueue: true,
@@ -2689,25 +2685,21 @@ describe('bounded-queue-dequeue-claims', () => {
 
     try {
       const partitions = await DBOSExecutor.globalInstance!.systemDatabase.getQueuePartitions(queueName);
-      let remaining = queue.maxDequeuesPerPoll!;
       const claimed: string[] = [];
       for (const partition of partitions) {
-        if (remaining <= 0) break;
         const partitionClaimed = await DBOSExecutor.globalInstance!.systemDatabase.findAndMarkStartableWorkflows(
           queue,
           DBOS.executorID,
           globalParams.appVersion,
           partition,
-          remaining,
         );
         claimed.push(...partitionClaimed);
-        remaining -= partitionClaimed.length;
       }
 
-      expect(claimed).toHaveLength(4);
+      expect(claimed).toHaveLength(8);
       const counts = await countStatuses(queueName);
-      expect(counts[StatusString.PENDING]).toBe(4);
-      expect(counts[StatusString.ENQUEUED]).toBe(5);
+      expect(counts[StatusString.PENDING]).toBe(8);
+      expect(counts[StatusString.ENQUEUED]).toBe(2);
     } finally {
       await DBOS.cancelWorkflows(workflowIDs);
       await DBOS.deleteQueue(queueName);

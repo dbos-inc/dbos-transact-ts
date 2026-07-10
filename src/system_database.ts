@@ -2687,8 +2687,7 @@ export class SystemDatabase {
       `SELECT DISTINCT queue_partition_key FROM "${this.schemaName}".workflow_status
        WHERE queue_name = $1
          AND status = $2
-         AND queue_partition_key IS NOT NULL
-       ORDER BY queue_partition_key ASC`,
+         AND queue_partition_key IS NOT NULL`,
       [queueName, StatusString.ENQUEUED],
     );
 

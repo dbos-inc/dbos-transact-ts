@@ -58,7 +58,7 @@ export interface QueueParameters {
   partitionQueue?: boolean;
   /** Base (minimum) polling interval in ms for this queue's dispatch loop (default 1000) */
   minPollingIntervalMs?: number;
-  /** Maximum workflows this worker claims from this queue in one polling pass (default 100) */
+  /** Maximum workflows this worker claims in one dequeue transaction (default 100) */
   maxDequeuesPerPoll?: number;
 }
 
@@ -372,13 +372,6 @@ interface QueueRuntimeState {
   currentPollingMs: number;
   /** Epoch ms at which this queue should next be polled. */
   nextPollAt: number;
-  /** Round-robin cursor for partitioned queue polling. */
-  nextPartitionIndex: number;
-}
-
-interface QueuePollResult {
-  contentionDetected: boolean;
-  claimedFullBatch: boolean;
 }
 
 class WFQueueRunner {
@@ -466,7 +459,6 @@ class WFQueueRunner {
       queue,
       currentPollingMs: interval,
       nextPollAt: now + interval,
-      nextPartitionIndex: 0,
     });
   }
 
@@ -558,8 +550,8 @@ class WFQueueRunner {
       }
       for (const state of due) {
         if (!this.isRunning) break;
-        const result = await this.pollQueue(exec, state);
-        this.adjustInterval(exec, state, result);
+        const contentionDetected = await this.pollQueue(exec, state.queue);
+        this.adjustInterval(exec, state, contentionDetected);
       }
 
       if (!this.isRunning) break;
@@ -578,11 +570,8 @@ class WFQueueRunner {
   }
 
   /** Poll one queue once, starting ready workflows. */
-  private async pollQueue(exec: DBOSExecutor, state: QueueRuntimeState): Promise<QueuePollResult> {
-    const queue = state.queue;
+  private async pollQueue(exec: DBOSExecutor, queue: WorkflowQueue): Promise<boolean> {
     let contentionDetected = false;
-    let claimedCount = 0;
-    const batchLimit = queue.maxDequeuesPerPoll ?? DEFAULT_MAX_DEQUEUES_PER_POLL;
     // Helper function that starts dequeued workflows
     const dispatch = async (wfids: string[]) => {
       if (wfids.length > 0) {
@@ -601,35 +590,23 @@ class WFQueueRunner {
     try {
       if (queue.partitionQueue) {
         const partitionKeys = await exec.systemDatabase.getQueuePartitions(queue.name);
-        const numPartitions = partitionKeys.length;
-        const start = numPartitions === 0 ? 0 : state.nextPartitionIndex % numPartitions;
-        let nextStart = numPartitions === 0 ? 0 : (start + 1) % numPartitions;
-        for (let offset = 0; offset < numPartitions; offset++) {
-          if (claimedCount >= batchLimit) break;
-          const index = (start + offset) % numPartitions;
-          const partitionKey = partitionKeys[index];
+        for (const partitionKey of partitionKeys) {
           const partitionWfids = await exec.systemDatabase.findAndMarkStartableWorkflows(
             queue,
             exec.executorID,
             globalParams.appVersion,
             partitionKey,
-            batchLimit - claimedCount,
           );
-          claimedCount += partitionWfids.length;
           await dispatch(partitionWfids);
           await debugTriggerPoint(DEBUG_TRIGGER_BETWEEN_PARTITION_DISPATCHES);
-          nextStart = (index + 1) % numPartitions;
         }
-        state.nextPartitionIndex = nextStart;
       } else {
         const wfids = await exec.systemDatabase.findAndMarkStartableWorkflows(
           queue,
           exec.executorID,
           globalParams.appVersion,
           undefined,
-          batchLimit,
         );
-        claimedCount += wfids.length;
         await dispatch(wfids);
       }
     } catch (e) {
@@ -643,22 +620,18 @@ class WFQueueRunner {
         exec.logger.warn(`Error getting startable workflows for queue ${queue.name}: ${err.message}`);
       }
     }
-    return { contentionDetected, claimedFullBatch: claimedCount >= batchLimit };
+    return contentionDetected;
   }
 
   /** After a poll, grow the interval on contention or shrink it toward the minimum, then schedule the next poll with jitter. */
-  private adjustInterval(exec: DBOSExecutor, state: QueueRuntimeState, result: QueuePollResult): void {
+  private adjustInterval(exec: DBOSExecutor, state: QueueRuntimeState, contentionDetected: boolean): void {
     const minPollingMs = state.queue.minPollingIntervalMs ?? WFQueueRunner.defaultMinPollingIntervalMs;
     const maxPollingMs = WFQueueRunner.defaultMaxPollingIntervalMs;
-    if (result.contentionDetected) {
+    if (contentionDetected) {
       state.currentPollingMs = Math.min(maxPollingMs, state.currentPollingMs * this.backoffFactor);
       exec.logger.warn(
         `Increasing polling interval for queue ${state.queue.name} to ${(state.currentPollingMs / 1000).toFixed(2)}s due to contention.`,
       );
-    } else if (result.claimedFullBatch) {
-      state.currentPollingMs = minPollingMs;
-      state.nextPollAt = Date.now();
-      return;
     } else {
       state.currentPollingMs = Math.max(minPollingMs, state.currentPollingMs * this.scalebackFactor);
     }
