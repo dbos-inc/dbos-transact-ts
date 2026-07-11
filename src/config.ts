@@ -129,9 +129,6 @@ export function getSystemDatabaseUrl(
 
   function defaultSysDatabaseUrl(appName?: string, preferPostgresDefault: boolean = false): string {
     assert(appName, 'Application name must be defined to construct a valid database URL.');
-    const hasPostgresEnv = ['PGHOST', 'PGPORT', 'PGUSER', 'PGPASSWORD', 'PGCONNECT_TIMEOUT', 'PGSSLMODE'].some(
-      (name) => process.env[name] !== undefined,
-    );
 
     const host = process.env.PGHOST || 'localhost';
     const port = process.env.PGPORT || '5432';
@@ -141,7 +138,7 @@ export function getSystemDatabaseUrl(
     const timeout = process.env.PGCONNECT_TIMEOUT || '10';
     const sslmode = process.env.PGSSLMODE || (host === 'localhost' ? 'disable' : 'allow');
 
-    if (isNativeSQLiteSupported() && !preferPostgresDefault && !hasPostgresEnv) {
+    if (isNativeSQLiteSupported() && !preferPostgresDefault) {
       return `sqlite:///${toDbName(appName)}.sqlite`;
     }
 

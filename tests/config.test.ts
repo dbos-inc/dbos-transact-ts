@@ -349,7 +349,7 @@ describe('dbos-config', () => {
       expect(() => getSystemDatabaseUrl({})).toThrow(AssertionError);
     });
 
-    test('uses PG env values when config is empty', () => {
+    test('prefers SQLite when supported even when PG env values are set', () => {
       process.env.PGHOST = 'envhost';
       process.env.PGPORT = '7777';
       process.env.PGUSER = 'envuser';
@@ -359,7 +359,9 @@ describe('dbos-config', () => {
         name: 'Test App',
       });
       expect(databaseUrl).toBe(
-        'postgresql://envuser:envpass@envhost:7777/test_app_dbos_sys?connect_timeout=10&sslmode=allow',
+        isNativeSQLiteSupported()
+          ? 'sqlite:///test_app.sqlite'
+          : 'postgresql://envuser:envpass@envhost:7777/test_app_dbos_sys?connect_timeout=10&sslmode=allow',
       );
     });
 
