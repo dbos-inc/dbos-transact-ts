@@ -1116,12 +1116,25 @@ export class DBOSExecutor {
     const handlerArray: WorkflowHandle<unknown>[] = [];
     for (const execID of executorIDs) {
       this.logger.debug(`Recovering workflows assigned to executor: ${execID}`);
+      const requeuedWorkflowIDs = await this.systemDatabase.reenqueuePendingQueuedWorkflows(
+        execID,
+        globalParams.appVersion,
+      );
+      if (requeuedWorkflowIDs.length > 0) {
+        this.logger.info(
+          `Re-enqueued ${requeuedWorkflowIDs.length} queued workflows from application version ${globalParams.appVersion}`,
+        );
+        for (const workflowID of requeuedWorkflowIDs) {
+          handlerArray.push(this.retrieveWorkflow(workflowID));
+        }
+      }
+
       const pendingWorkflows = await this.systemDatabase.getPendingWorkflows(execID, globalParams.appVersion);
       if (pendingWorkflows.length > 0) {
         this.logger.info(
           `Recovering ${pendingWorkflows.length} workflows from application version ${globalParams.appVersion}`,
         );
-      } else {
+      } else if (requeuedWorkflowIDs.length === 0) {
         this.logger.info(`No workflows to recover from application version ${globalParams.appVersion}`);
       }
       for (const pendingWorkflow of pendingWorkflows) {
