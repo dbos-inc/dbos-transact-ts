@@ -558,13 +558,16 @@ class WFQueueRunner {
 
       if (!this.isRunning) break;
 
-      // Sleep until global maintenance, an idle queue's next poll, or an in-flight poll frees a lane.
+      // Sleep until global maintenance or an idle queue's next poll.
       let nextWakeAt = Math.min(
         lastReconcileAt + WFQueueRunner.reconcileIntervalMs,
         lastTransitionAt + WFQueueRunner.transitionIntervalMs,
       );
-      for (const state of this.states.values()) {
-        if (!inFlightPolls.has(state.queue.name) && state.nextPollAt < nextWakeAt) nextWakeAt = state.nextPollAt;
+      // Skip queue times while all lanes are busy: a completing poll wakes us, so folding a due-but-unlaned queue in would spin at 0ms.
+      if (inFlightPolls.size < maxConcurrentQueueDispatches) {
+        for (const state of this.states.values()) {
+          if (!inFlightPolls.has(state.queue.name) && state.nextPollAt < nextWakeAt) nextWakeAt = state.nextPollAt;
+        }
       }
       const sleepMs = Math.max(0, nextWakeAt - Date.now());
       await waitForWakeOrTimeout(sleepMs);

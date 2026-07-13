@@ -2774,14 +2774,19 @@ describe('concurrent-queue-dispatches', () => {
       expect(slowPollPaused).toBe(true);
 
       const fast = await DBOS.startWorkflow(ConcurrentDispatchWFs, { queueName: fastQueueName }).run('fast');
-      await expect(
-        Promise.race([
-          fast.getResult(),
-          sleepms(3000).then(() => {
-            throw new Error('fast queue did not dispatch while the slow queue poll was in flight');
-          }),
-        ]),
-      ).resolves.toBe('fast');
+      // Cancellable timeout so the timer is cleared once the race settles, leaving no dangling handle.
+      let dispatchTimer: ReturnType<typeof setTimeout> | undefined;
+      const dispatchTimeout = new Promise<never>((_resolve, reject) => {
+        dispatchTimer = setTimeout(
+          () => reject(new Error('fast queue did not dispatch while the slow queue poll was in flight')),
+          3000,
+        );
+      });
+      try {
+        await expect(Promise.race([fast.getResult(), dispatchTimeout])).resolves.toBe('fast');
+      } finally {
+        clearTimeout(dispatchTimer);
+      }
 
       releaseSlowPoll.set();
       await expect(slow.getResult()).resolves.toBe('slow');
