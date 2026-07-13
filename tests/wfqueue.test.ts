@@ -2711,8 +2711,8 @@ describe('partitioned-queue-orphan-pending', () => {
 describe('concurrent-queue-dispatches', () => {
   class ConcurrentDispatchWFs {
     @DBOS.workflow()
-    static async run(value: string): Promise<string> {
-      return value;
+    static run(value: string): Promise<string> {
+      return Promise.resolve(value);
     }
   }
 

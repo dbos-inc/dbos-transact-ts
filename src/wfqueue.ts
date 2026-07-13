@@ -517,9 +517,8 @@ class WFQueueRunner {
         return;
       }
       await new Promise<void>((resolve) => {
-        let timer: ReturnType<typeof setTimeout> | undefined;
         const finish = () => {
-          if (timer) clearTimeout(timer);
+          clearTimeout(timer);
           signal.removeEventListener('abort', onAbort);
           if (wakeScheduler === finish) wakeScheduler = undefined;
           resolve();
@@ -527,7 +526,7 @@ class WFQueueRunner {
         const onAbort = () => finish();
         wakeScheduler = finish;
         signal.addEventListener('abort', onAbort, { once: true });
-        timer = setTimeout(finish, ms);
+        const timer = setTimeout(finish, ms);
       });
     };
 
