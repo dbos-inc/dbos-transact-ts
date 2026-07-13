@@ -923,6 +923,21 @@ export class SystemDatabase {
     );
   }
 
+  async reenqueuePendingQueuedWorkflows(executorID: string, appVersion: string): Promise<string[]> {
+    const result = await this.pool.query<{ workflow_uuid: string }>(
+      `UPDATE "${this.schemaName}".workflow_status
+       SET started_at_epoch_ms = NULL,
+           status = $1
+       WHERE status = $2
+         AND executor_id = $3
+         AND application_version = $4
+         AND queue_name IS NOT NULL
+       RETURNING workflow_uuid`,
+      [StatusString.ENQUEUED, StatusString.PENDING, executorID, appVersion],
+    );
+    return result.rows.map((row) => row.workflow_uuid);
+  }
+
   @dbRetry()
   async getWorkflowStatus(
     workflowID: string,
