@@ -2294,6 +2294,106 @@ describe('wf-cancel-tests', () => {
     await expect(wfh.getResult()).rejects.toThrow(DBOSWorkflowCancelledError);
   });
 
+  // A workflow cancelled while blocked awaiting other workflows must not durably
+  // record its own DBOSWorkflowCancelledError as the awaiting step's checkpoint:
+  // CANCELLED is resumable, so on resume the parent must re-execute the await and
+  // pick up the child's result instead of replaying the recorded cancellation.
+  // Affected internal steps: DBOS.getResult, DBOS.waitFirst, DBOS.waitAll — the ones
+  // built on runInternalStep whose callbacks poll the caller's own status.
+  describe('cancel-during-await', () => {
+    class CancelDuringAwait {
+      static childEvent = new Event();
+      static parentPolling = new Event();
+
+      @DBOS.workflow()
+      static async blockedChild(value: number) {
+        await CancelDuringAwait.childEvent.wait();
+        return value;
+      }
+
+      @DBOS.workflow()
+      static async getResultParent(childID: string) {
+        CancelDuringAwait.parentPolling.set();
+        return await DBOS.getResult<number>(childID, { pollingIntervalMs: 50 });
+      }
+
+      @DBOS.workflow()
+      static async waitFirstParent(childID: string) {
+        const handle = DBOS.retrieveWorkflow<number>(childID);
+        CancelDuringAwait.parentPolling.set();
+        await DBOS.waitFirst([handle], { pollingIntervalMs: 50 });
+        return await DBOS.getResult<number>(childID, { pollingIntervalMs: 50 });
+      }
+
+      @DBOS.workflow()
+      static async waitAllParent(childID: string) {
+        const handle = DBOS.retrieveWorkflow<number>(childID);
+        CancelDuringAwait.parentPolling.set();
+        await DBOS.waitAll([handle], { pollingIntervalMs: 50 });
+        return await DBOS.getResult<number>(childID, { pollingIntervalMs: 50 });
+      }
+    }
+
+    beforeEach(() => {
+      CancelDuringAwait.childEvent = new Event();
+      CancelDuringAwait.parentPolling = new Event();
+    });
+
+    afterEach(() => {
+      CancelDuringAwait.childEvent.set(); // unblock any still-pending child
+    });
+
+    const variants: { step: string; start: (childID: string) => Promise<WorkflowHandle<number | null>> }[] = [
+      { step: 'DBOS.getResult', start: (childID) => DBOS.startWorkflow(CancelDuringAwait).getResultParent(childID) },
+      { step: 'DBOS.waitFirst', start: (childID) => DBOS.startWorkflow(CancelDuringAwait).waitFirstParent(childID) },
+      { step: 'DBOS.waitAll', start: (childID) => DBOS.startWorkflow(CancelDuringAwait).waitAllParent(childID) },
+    ];
+
+    async function cancelParentDuringAwait(start: (childID: string) => Promise<WorkflowHandle<number | null>>) {
+      const childID = randomUUID();
+
+      const childHandle = await DBOS.startWorkflow(CancelDuringAwait, { workflowID: childID }).blockedChild(42);
+      const parentHandle = await start(childID);
+      const parentID = parentHandle.workflowID;
+
+      // Let the parent get past runInternalStep's entry checks and into
+      // the sysdb poll loop before cancelling it.
+      await CancelDuringAwait.parentPolling.wait();
+      await sleepms(300);
+      await DBOS.cancelWorkflow(parentID);
+
+      // The parent observes its own cancellation inside the poll loop.
+      await expect(parentHandle.getResult()).rejects.toThrow(DBOSWorkflowCancelledError);
+      await expect(DBOS.getWorkflowStatus(parentID)).resolves.toMatchObject({ status: StatusString.CANCELLED });
+
+      return { parentID, childHandle };
+    }
+
+    describe.each(variants)('cancelled during $step', ({ step, start }) => {
+      test('parent cancellation is not checkpointed as the step outcome', async () => {
+        const { parentID } = await cancelParentDuringAwait(start);
+
+        // The interrupted step must not be checkpointed, so it re-executes on resume.
+        const steps = await DBOS.listWorkflowSteps(parentID);
+        const awaitStep = steps?.find((s) => s.name === step);
+        expect(awaitStep?.error).toBeFalsy();
+      });
+
+      test('parent picks up child result after resume', async () => {
+        const { parentID, childHandle } = await cancelParentDuringAwait(start);
+
+        // The child completes successfully.
+        CancelDuringAwait.childEvent.set();
+        await expect(childHandle.getResult()).resolves.toBe(42);
+
+        // Resuming the parent should re-execute the await and return the child's result.
+        const resumed = await DBOS.resumeWorkflow<number>(parentID);
+        await expect(resumed.getResult()).resolves.toBe(42);
+        await expect(DBOS.getWorkflowStatus(parentID)).resolves.toMatchObject({ status: StatusString.SUCCESS });
+      });
+    });
+  });
+
   class WFwith2Steps {
     static stepsExecuted = 0;
     static step1Started = new Event();
