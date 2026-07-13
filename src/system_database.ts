@@ -877,32 +877,34 @@ export class SystemDatabase {
     }
   }
 
-  // Record a workflow's terminal outcome (SUCCESS or ERROR), but never overwrite
-  // the terminal CANCELLED status: a workflow can be cancelled during its final
-  // step, and if so it must not be able to subsequently complete. If the
-  // workflow is cancelled, abort the function so it does not complete. This
-  // mirrors the cancellation check done before each step.
+  // Record a workflow's terminal outcome (SUCCESS or ERROR). Only a PENDING row
+  // may receive an outcome: any other status means this run was superseded
+  // (cancelled during its final step, re-enqueued by a concurrent resume, ...).
+  // A refused write on an already-completed (SUCCESS/ERROR or deleted) row is an
+  // idempotent no-op; any other refusal is reported as a cancellation.
   async #recordWorkflowOutcome(
     client: PoolClient,
     workflowID: string,
     status: (typeof StatusString)[keyof typeof StatusString],
     outcome: { output?: string | null; error?: string | null },
   ): Promise<void> {
-    let cancelled = false;
+    let superseded = false;
     try {
       await client.query('BEGIN');
       await this.updateWorkflowStatus(client, workflowID, status, {
         update: { ...outcome, resetDeduplicationID: true, setCompletedAt: true },
-        where: { notStatus: StatusString.CANCELLED },
+        where: { status: StatusString.PENDING },
         throwOnFailure: false,
       });
-      cancelled = (await this.getWorkflowStatusValue(client, workflowID)) === StatusString.CANCELLED;
+      const currentStatus = await this.getWorkflowStatusValue(client, workflowID);
+      superseded =
+        currentStatus !== undefined && currentStatus !== StatusString.SUCCESS && currentStatus !== StatusString.ERROR;
       await client.query('COMMIT');
     } catch (e) {
       await client.query('ROLLBACK');
       throw e;
     }
-    if (cancelled) {
+    if (superseded) {
       throw new DBOSWorkflowCancelledError(workflowID);
     }
   }
@@ -1850,6 +1852,7 @@ export class SystemDatabase {
   registerRunningWorkflow(
     workflowID: string,
     workflowPromise: Promise<unknown>,
+    onSettled: () => void,
     queueName?: string,
     queuePartitionKey?: string,
   ) {
@@ -1859,8 +1862,7 @@ export class SystemDatabase {
         this.logger.debug('Captured error in awaitWorkflowPromise: ' + error);
       })
       .finally(() => {
-        // Remove itself from pending workflow map.
-        this.runningWorkflowMap.delete(workflowID);
+        onSettled();
       });
     this.runningWorkflowMap.set(workflowID, {
       promise: awaitWorkflowPromise,
@@ -1871,6 +1873,10 @@ export class SystemDatabase {
 
   checkForRunningWorkflow(workflowID: string): boolean {
     return this.runningWorkflowMap.has(workflowID);
+  }
+
+  clearRunningWorkflow(workflowID: string): void {
+    this.runningWorkflowMap.delete(workflowID);
   }
 
   countRunningWorkflowsForQueue(queueName: string, queuePartitionKey?: string): number {

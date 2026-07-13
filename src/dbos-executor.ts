@@ -625,6 +625,18 @@ export class DBOSExecutor {
       }
     }
 
+    // Release the running-workflow map entry before the terminal outcome
+    // becomes durable: once it is visible, a resume can re-dispatch this
+    // workflow ID to this executor, and a stale entry would block that
+    // dispatch. Guarded so the backstop in registerRunningWorkflow's finally
+    // never deletes an entry a resumed run has re-acquired.
+    let runningWorkflowReleased = false;
+    const releaseRunningWorkflow = () => {
+      if (runningWorkflowReleased) return;
+      runningWorkflowReleased = true;
+      this.systemDatabase.clearRunningWorkflow(workflowID);
+    };
+
     const eserializer = this.serializer;
     async function handleWorkflowError(err: Error, exec: DBOSExecutor) {
       // Record the error.
@@ -634,6 +646,7 @@ export class DBOSExecutor {
       const sererr = await serializeResErrorWithSerializer(e, eserializer, ires.serialization ?? null);
       internalStatus.error = sererr.serializedValue;
       internalStatus.status = StatusString.ERROR;
+      releaseRunningWorkflow();
       await exec.systemDatabase.recordWorkflowError(workflowID, internalStatus);
       span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
       return await deserializeResError(sererr.serializedValue, sererr.serialization, eserializer);
@@ -679,6 +692,7 @@ export class DBOSExecutor {
         result = funcResult.deserialized;
         internalStatus.output = funcResult.stringified;
         internalStatus.status = StatusString.SUCCESS;
+        releaseRunningWorkflow();
         await this.systemDatabase.recordWorkflowOutput(workflowID, internalStatus);
         span.setStatus({ code: SpanStatusCode.OK });
       } catch (err) {
@@ -692,6 +706,9 @@ export class DBOSExecutor {
           span.setStatus({ code: SpanStatusCode.ERROR, message: err.message });
           internalStatus.error = err.message;
           if (err.workflowID === workflowID) {
+            // The row is already durably CANCELLED (resumable): release now so
+            // a resume re-dispatched here is not blocked during async unwind.
+            releaseRunningWorkflow();
             internalStatus.status = StatusString.CANCELLED;
             throw err;
           } else {
@@ -725,6 +742,7 @@ export class DBOSExecutor {
       this.systemDatabase.registerRunningWorkflow(
         workflowID,
         workflowPromise,
+        releaseRunningWorkflow,
         params.queueName,
         params.enqueueOptions?.queuePartitionKey,
       );

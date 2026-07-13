@@ -435,6 +435,139 @@ describe('workflow-management-tests', () => {
     expect(TestEndpoints.stepsCompleted).toBe(1); // cancelStep was already recorded, not re-run
   });
 
+  test('test-stale-outcome-write-after-resume', async () => {
+    // Deterministic repro of the stale-outcome-write race:
+    // 1. Run 1 executes; cancelWorkflow durably writes CANCELLED.
+    // 2. Run 1 returns; its terminal outcome write is parked.
+    // 3. The workflow is resumed (row -> ENQUEUED).
+    // 4. The parked stale write lands: a weak guard would clobber the resumed
+    //    row and silently lose the resume.
+    TestEndpoints.staleWriteRuns = 0;
+    TestEndpoints.staleWriteEntered.clear();
+    TestEndpoints.staleWriteReleaseRun1.clear();
+    TestEndpoints.staleWriteSecondRunDone.clear();
+
+    const wfid = randomUUID();
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+
+    const parked = new Event();
+    const releaseStaleWrite = new Event();
+    const staleWriteDone = new Event();
+    let parkedOnce = false;
+
+    const originalRecordOutput = sysdb.recordWorkflowOutput.bind(sysdb);
+    sysdb.recordWorkflowOutput = async (...fnargs: Parameters<SystemDatabase['recordWorkflowOutput']>) => {
+      if (fnargs[0] === wfid && !parkedOnce) {
+        parkedOnce = true;
+        parked.set();
+        await releaseStaleWrite.wait();
+        try {
+          // A correct guard refuses this write (throwing) because the row is
+          // no longer PENDING; signal completion either way.
+          await originalRecordOutput(...fnargs);
+        } finally {
+          staleWriteDone.set();
+        }
+        return;
+      }
+      return originalRecordOutput(...fnargs);
+    };
+
+    try {
+      await DBOS.startWorkflow(TestEndpoints, { workflowID: wfid }).staleWriteBlockingWorkflow();
+      await TestEndpoints.staleWriteEntered.wait();
+
+      await DBOS.cancelWorkflow(wfid);
+
+      // Let run 1 return; its terminal outcome write parks before executing.
+      TestEndpoints.staleWriteReleaseRun1.set();
+      await parked.wait();
+
+      // CANCELLED was durably written by the cancel, not by the parked write.
+      await expect(DBOS.getWorkflowStatus(wfid)).resolves.toMatchObject({ status: StatusString.CANCELLED });
+
+      const resumedHandle = await DBOS.resumeWorkflow<string>(wfid);
+
+      // Now the stale terminal write lands on the resumed row.
+      releaseStaleWrite.set();
+      await staleWriteDone.wait();
+
+      // The write was refused while the row was still ENQUEUED
+      await expect(DBOS.getWorkflowStatus(wfid)).resolves.toMatchObject({ status: StatusString.ENQUEUED });
+
+      // The resume must survive the stale write: the workflow re-executes and
+      // its second run's outcome is what gets recorded.
+      await expect(resumedHandle.getResult()).resolves.toBe('completed');
+      await expect(DBOS.getWorkflowStatus(wfid)).resolves.toMatchObject({ status: StatusString.SUCCESS });
+      expect(TestEndpoints.staleWriteRuns).toBe(2);
+    } finally {
+      releaseStaleWrite.set();
+      sysdb.recordWorkflowOutput = originalRecordOutput;
+    }
+  });
+
+  test('test-active-id-released-before-outcome-write', async () => {
+    // The executor's running-workflow entry must be released BEFORE the
+    // terminal outcome write becomes durable. Otherwise: run 1's stale write
+    // is in flight, the workflow is cancelled and resumed, this same executor
+    // dequeues the resumed workflow, but the dispatch finds the stale entry,
+    // skips execution, and the workflow is stranded.
+    TestEndpoints.staleWriteRuns = 0;
+    TestEndpoints.staleWriteEntered.clear();
+    TestEndpoints.staleWriteReleaseRun1.clear();
+    TestEndpoints.staleWriteSecondRunDone.clear();
+
+    const wfid = randomUUID();
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+
+    const parked = new Event();
+    const releaseStaleWrite = new Event();
+    let parkedOnce = false;
+
+    const originalRecordOutput = sysdb.recordWorkflowOutput.bind(sysdb);
+    sysdb.recordWorkflowOutput = async (...fnargs: Parameters<SystemDatabase['recordWorkflowOutput']>) => {
+      if (fnargs[0] === wfid && !parkedOnce) {
+        parkedOnce = true;
+        parked.set();
+        await releaseStaleWrite.wait();
+      }
+      return originalRecordOutput(...fnargs);
+    };
+
+    try {
+      await DBOS.startWorkflow(TestEndpoints, { workflowID: wfid }).staleWriteBlockingWorkflow();
+      await TestEndpoints.staleWriteEntered.wait();
+
+      await DBOS.cancelWorkflow(wfid);
+
+      // Run 1 returns; its stale outcome write parks. The running-workflow
+      // entry must already be released at this point.
+      TestEndpoints.staleWriteReleaseRun1.set();
+      await parked.wait();
+      await expect(DBOS.getWorkflowStatus(wfid)).resolves.toMatchObject({ status: StatusString.CANCELLED });
+
+      const resumedHandle = await DBOS.resumeWorkflow<string>(wfid);
+
+      // While the stale write is still parked, the resumed workflow must be
+      // dequeued and executed by this same executor.
+      let timer: NodeJS.Timeout | undefined;
+      const blocked = await Promise.race([
+        TestEndpoints.staleWriteSecondRunDone.wait().then(() => false),
+        new Promise<boolean>((resolve) => {
+          timer = setTimeout(() => resolve(true), 15000);
+        }),
+      ]);
+      clearTimeout(timer);
+      expect(blocked).toBe(false); // resumed dispatch was blocked by a stale running-workflow entry
+
+      await expect(resumedHandle.getResult()).resolves.toBe('completed');
+      expect(TestEndpoints.staleWriteRuns).toBe(2);
+    } finally {
+      releaseStaleWrite.set();
+      sysdb.recordWorkflowOutput = originalRecordOutput;
+    }
+  });
+
   test('getworkflows-with-completed-at', async () => {
     // Successful workflow gets completedAt set.
     const beforeSuccess = new Date().toISOString();
@@ -573,6 +706,23 @@ describe('workflow-management-tests', () => {
       TestEndpoints.mainThreadEvent.set();
       await TestEndpoints.workflowEvent.wait();
       return x;
+    }
+
+    static staleWriteRuns = 0;
+    static staleWriteEntered = new Event();
+    static staleWriteReleaseRun1 = new Event();
+    static staleWriteSecondRunDone = new Event();
+
+    @DBOS.workflow()
+    static async staleWriteBlockingWorkflow() {
+      TestEndpoints.staleWriteRuns += 1;
+      if (TestEndpoints.staleWriteRuns === 1) {
+        TestEndpoints.staleWriteEntered.set();
+        await TestEndpoints.staleWriteReleaseRun1.wait();
+        return '';
+      }
+      TestEndpoints.staleWriteSecondRunDone.set();
+      return 'completed';
     }
   }
 });
