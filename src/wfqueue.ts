@@ -357,8 +357,6 @@ class WFQueueRunner {
   private readonly states: Map<string, QueueRuntimeState> = new Map();
   /** Names already warned about colliding with an in-memory queue (warn-once). */
   private readonly conflictWarned: Set<string> = new Set();
-  /** Rotating cursor used to choose the next due queue fairly. */
-  private nextQueueIndex: number = 0;
 
   private static readonly defaultMinPollingIntervalMs: number = 1000;
   private static readonly defaultMaxPollingIntervalMs: number = 120000;
@@ -387,7 +385,6 @@ class WFQueueRunner {
     this.isRunning = true;
     this.states.clear();
     this.conflictWarned.clear();
-    this.nextQueueIndex = 0;
     this.listenQueueNames = listenQueuesArg
       ? new Set(listenQueuesArg.map((entry) => (typeof entry === 'string' ? entry : entry.name)))
       : null;
@@ -576,7 +573,7 @@ class WFQueueRunner {
     await Promise.allSettled(Array.from(inFlightPolls.values()));
   }
 
-  /** Start due queue polls up to the configured lane limit, rotating the first queue between passes. */
+  /** Start due queue polls up to the lane limit, picking at random so no queue is systematically favored. */
   private scheduleDueQueues(
     exec: DBOSExecutor,
     now: number,
@@ -584,19 +581,12 @@ class WFQueueRunner {
     inFlightPolls: Map<string, Promise<void>>,
     wake: () => void,
   ): void {
-    const states = Array.from(this.states.values());
-    if (states.length === 0) return;
-
-    const start = this.nextQueueIndex % states.length;
-    for (let offset = 0; offset < states.length && inFlightPolls.size < maxConcurrentQueueDispatches; offset++) {
-      const index = (start + offset) % states.length;
-      const state = states[index];
-      const queueName = state.queue.name;
-      if (inFlightPolls.has(queueName) || now < state.nextPollAt) continue;
-
-      this.nextQueueIndex = (index + 1) % states.length;
-      const poll = this.runQueuePoll(exec, state, inFlightPolls, wake);
-      inFlightPolls.set(queueName, poll);
+    const due = Array.from(this.states.values()).filter(
+      (state) => now >= state.nextPollAt && !inFlightPolls.has(state.queue.name),
+    );
+    while (due.length > 0 && inFlightPolls.size < maxConcurrentQueueDispatches) {
+      const [state] = due.splice(Math.floor(Math.random() * due.length), 1);
+      inFlightPolls.set(state.queue.name, this.runQueuePoll(exec, state, inFlightPolls, wake));
     }
   }
 
