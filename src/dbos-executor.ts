@@ -1056,6 +1056,11 @@ export class DBOSExecutor {
       );
       return funcOutput.deserialized;
     } catch (e) {
+      if (e instanceof DBOSWorkflowCancelledError && e.workflowID === workflowID) {
+        // The calling workflow's own cancellation interrupted the step; it did not
+        // complete. Don't checkpoint it, so a resumed workflow re-executes it.
+        throw e;
+      }
       await this.systemDatabase.recordOperationResult(
         workflowID,
         functionID,
