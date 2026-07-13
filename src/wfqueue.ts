@@ -598,12 +598,15 @@ class WFQueueRunner {
     wake: () => void,
   ): Promise<void> {
     const queueName = state.queue.name;
+    // Treat an unexpected throw as contention: pollQueue normally swallows DB errors, so a rejection here
+    // is abnormal — back off rather than leaving nextPollAt in the past, which would spin this lane at 0ms.
+    let contentionDetected = true;
     try {
-      const contentionDetected = await this.pollQueue(exec, state.queue);
-      this.adjustInterval(exec, state, contentionDetected);
+      contentionDetected = await this.pollQueue(exec, state.queue);
     } catch (e) {
       exec.logger.warn(`Unexpected error polling queue ${queueName}: ${(e as Error).message}`);
     } finally {
+      this.adjustInterval(exec, state, contentionDetected);
       inFlightPolls.delete(queueName);
       wake();
     }

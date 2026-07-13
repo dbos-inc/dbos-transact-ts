@@ -2725,54 +2725,61 @@ describe('concurrent-queue-dispatches', () => {
     await setUpDBOSTestSysDb(config);
   });
 
-  beforeEach(async () => {
-    DBOS.setConfig({
-      ...config,
-      maxConcurrentQueueDispatches: 2,
-      listenQueues: [slowQueueName, fastQueueName],
-    });
-    await DBOS.launch();
-  });
-
   afterEach(async () => {
     clearDebugTriggers();
     await DBOS.shutdown();
   });
 
-  test('a slow partitioned poll does not block another queue dispatch', async () => {
-    const partitionKey = `partition_${randomUUID()}`;
+  async function launchWith(maxConcurrentQueueDispatches: number): Promise<void> {
+    DBOS.setConfig({
+      ...config,
+      maxConcurrentQueueDispatches,
+      listenQueues: [slowQueueName, fastQueueName],
+    });
+    await DBOS.launch();
+  }
+
+  // Register a partitioned "slow" queue plus a normal "fast" queue, enqueue one slow workflow, and
+  // pause its poll mid-partition-dispatch so it holds the slow queue's dispatch lane. Returns the
+  // paused slow handle and a release function that lets the slow poll finish.
+  async function pauseSlowPoll(): Promise<{ slow: WorkflowHandle<string>; releaseSlowPoll: Event }> {
+    await DBOS.registerQueue(slowQueueName, {
+      partitionQueue: true,
+      minPollingIntervalMs: 50,
+      onConflict: 'always_update',
+    });
+    await DBOS.registerQueue(fastQueueName, {
+      minPollingIntervalMs: 50,
+      onConflict: 'always_update',
+    });
+
     const releaseSlowPoll = new Event();
     let slowPollPaused = false;
+    setDebugTrigger(DEBUG_TRIGGER_BETWEEN_PARTITION_DISPATCHES, {
+      asyncCallback: async () => {
+        slowPollPaused = true;
+        await releaseSlowPoll.wait();
+      },
+    });
 
+    const slow = await DBOS.startWorkflow(ConcurrentDispatchWFs, {
+      queueName: slowQueueName,
+      enqueueOptions: { queuePartitionKey: `partition_${randomUUID()}` },
+    }).run('slow');
+
+    const pauseDeadline = Date.now() + 5000;
+    while (!slowPollPaused && Date.now() < pauseDeadline) {
+      await sleepms(25);
+    }
+    expect(slowPollPaused).toBe(true);
+
+    return { slow, releaseSlowPoll };
+  }
+
+  test('a slow partitioned poll does not block another queue dispatch when a lane is free', async () => {
+    await launchWith(2);
+    const { slow, releaseSlowPoll } = await pauseSlowPoll();
     try {
-      await DBOS.registerQueue(slowQueueName, {
-        partitionQueue: true,
-        minPollingIntervalMs: 50,
-        onConflict: 'always_update',
-      });
-      await DBOS.registerQueue(fastQueueName, {
-        minPollingIntervalMs: 50,
-        onConflict: 'always_update',
-      });
-
-      setDebugTrigger(DEBUG_TRIGGER_BETWEEN_PARTITION_DISPATCHES, {
-        asyncCallback: async () => {
-          slowPollPaused = true;
-          await releaseSlowPoll.wait();
-        },
-      });
-
-      const slow = await DBOS.startWorkflow(ConcurrentDispatchWFs, {
-        queueName: slowQueueName,
-        enqueueOptions: { queuePartitionKey: partitionKey },
-      }).run('slow');
-
-      const pauseDeadline = Date.now() + 5000;
-      while (!slowPollPaused && Date.now() < pauseDeadline) {
-        await sleepms(25);
-      }
-      expect(slowPollPaused).toBe(true);
-
       const fast = await DBOS.startWorkflow(ConcurrentDispatchWFs, { queueName: fastQueueName }).run('fast');
       // Cancellable timeout so the timer is cleared once the race settles, leaving no dangling handle.
       let dispatchTimer: ReturnType<typeof setTimeout> | undefined;
@@ -2790,6 +2797,35 @@ describe('concurrent-queue-dispatches', () => {
 
       releaseSlowPoll.set();
       await expect(slow.getResult()).resolves.toBe('slow');
+    } finally {
+      releaseSlowPoll.set();
+      await DBOS.deleteQueue(slowQueueName);
+      await DBOS.deleteQueue(fastQueueName);
+    }
+  }, 10000);
+
+  test('a slow partitioned poll blocks another queue dispatch at the default (serialized) concurrency', async () => {
+    await launchWith(1);
+    const { slow, releaseSlowPoll } = await pauseSlowPoll();
+    try {
+      const fast = await DBOS.startWorkflow(ConcurrentDispatchWFs, { queueName: fastQueueName }).run('fast');
+      const fastResult = fast.getResult();
+      // The single dispatch lane is held by the paused slow poll, so the fast queue cannot be polled:
+      // the timeout must win the race, proving dispatch is serialized at the default concurrency of 1.
+      let probeTimer: ReturnType<typeof setTimeout> | undefined;
+      const probe = new Promise<'blocked'>((resolve) => {
+        probeTimer = setTimeout(() => resolve('blocked'), 2000);
+      });
+      try {
+        await expect(Promise.race([fastResult.then(() => 'dispatched' as const), probe])).resolves.toBe('blocked');
+      } finally {
+        clearTimeout(probeTimer);
+      }
+
+      // Releasing the slow poll frees the lane; both queues then dispatch to completion.
+      releaseSlowPoll.set();
+      await expect(slow.getResult()).resolves.toBe('slow');
+      await expect(fastResult).resolves.toBe('fast');
     } finally {
       releaseSlowPoll.set();
       await DBOS.deleteQueue(slowQueueName);
