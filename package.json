@@ -43,12 +43,20 @@
       "types": "./dist/src/datasource.d.ts",
       "import": "./dist/src/datasource.js",
       "require": "./dist/src/datasource.js"
+    },
+    "./eventreceiver": {
+      "types": "./dist/src/eventreceiver.d.ts",
+      "import": "./dist/src/eventreceiver.js",
+      "require": "./dist/src/eventreceiver.js"
     }
   },
   "typesVersions": {
     "*": {
       "datasource": [
         "./dist/src/datasource.d.ts"
+      ],
+      "eventreceiver": [
+        "./dist/src/eventreceiver.d.ts"
       ]
     }
   },

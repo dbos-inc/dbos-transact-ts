@@ -1,4 +1,11 @@
-import { DBOS, DBOSLifecycleCallback, FunctionName, PreparedWorkflow, WorkflowQueue } from '@dbos-inc/dbos-sdk';
+import { DBOS, DBOSLifecycleCallback, FunctionName, WorkflowQueue } from '@dbos-inc/dbos-sdk';
+import {
+  getQueue,
+  initWorkflows,
+  prepareEnqueuedWorkflow,
+  PreparedWorkflow,
+  registerPollerQueue,
+} from '@dbos-inc/dbos-sdk/eventreceiver';
 
 import { KafkaJS, LibrdKafkaError as KafkaError } from '@confluentinc/kafka-javascript';
 
@@ -189,7 +196,7 @@ export class ConfluentKafkaReceiver implements DBOSLifecycleCallback {
   async #validateConsumerQueue(funcName: string, queueName: string) {
     let queue: WorkflowQueue | null;
     try {
-      queue = await DBOS.getQueue(queueName);
+      queue = await getQueue(queueName);
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       DBOS.logger.warn(
@@ -310,7 +317,7 @@ export class ConfluentKafkaReceiver implements DBOSLifecycleCallback {
       for (const message of chunk) {
         try {
           prepared.push(
-            await DBOS.prepareEnqueuedWorkflow(func, [topic, partition, message], {
+            await prepareEnqueuedWorkflow(func, [topic, partition, message], {
               queueName,
               // This ID format is the dedup key for redelivered messages; never change it.
               workflowID: `confluent-kafka-${topic}-${partition}-${groupId}-${message.offset}`,
@@ -330,7 +337,7 @@ export class ConfluentKafkaReceiver implements DBOSLifecycleCallback {
         // Retry this same chunk until durable, rather than dropping it: nothing has been committed,
         // so giving up here would lose these messages until the next rebalance.
         const result = await retryUntilSuccess(
-          () => DBOS.initWorkflows(prepared),
+          () => initWorkflows(prepared),
           'durably enqueue consumed messages',
           signal,
         );
@@ -403,7 +410,7 @@ export class ConfluentKafkaReceiver implements DBOSLifecycleCallback {
     }
     // This process runs the consumer and enqueues onto that queue, so it must poll it even under
     // a listenQueues filter.
-    DBOS.registerPollerQueue(kafkaRegInfo.consumerQueueName);
+    registerPollerQueue(kafkaRegInfo.consumerQueueName);
   }
 
   consumer(topics: ConsumerTopics, options: KafkaConsumerOptions = {}) {
