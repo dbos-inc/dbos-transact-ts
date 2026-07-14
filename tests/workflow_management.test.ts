@@ -462,7 +462,7 @@ describe('workflow-management-tests', () => {
         parked.set();
         await releaseStaleWrite.wait();
         try {
-          // A correct guard refuses this write (throwing) because the row is
+          // A correct guard silently refuses this write because the row is
           // no longer PENDING; signal completion either way.
           await originalRecordOutput(...fnargs);
         } finally {

@@ -880,15 +880,16 @@ export class SystemDatabase {
   // Record a workflow's terminal outcome (SUCCESS or ERROR). Only a PENDING row
   // may receive an outcome: any other status means this run was superseded
   // (cancelled during its final step, re-enqueued by a concurrent resume, ...).
-  // A refused write on an already-completed (SUCCESS/ERROR or deleted) row is an
-  // idempotent no-op; any other refusal is reported as a cancellation.
+  // If the workflow is cancelled, abort the function so it does not complete;
+  // any other refused write is a silent no-op. This mirrors the cancellation
+  // check done before each step.
   async #recordWorkflowOutcome(
     client: PoolClient,
     workflowID: string,
     status: (typeof StatusString)[keyof typeof StatusString],
     outcome: { output?: string | null; error?: string | null },
   ): Promise<void> {
-    let superseded = false;
+    let cancelled = false;
     try {
       await client.query('BEGIN');
       await this.updateWorkflowStatus(client, workflowID, status, {
@@ -896,15 +897,13 @@ export class SystemDatabase {
         where: { status: StatusString.PENDING },
         throwOnFailure: false,
       });
-      const currentStatus = await this.getWorkflowStatusValue(client, workflowID);
-      superseded =
-        currentStatus !== undefined && currentStatus !== StatusString.SUCCESS && currentStatus !== StatusString.ERROR;
+      cancelled = (await this.getWorkflowStatusValue(client, workflowID)) === StatusString.CANCELLED;
       await client.query('COMMIT');
     } catch (e) {
       await client.query('ROLLBACK');
       throw e;
     }
-    if (superseded) {
+    if (cancelled) {
       throw new DBOSWorkflowCancelledError(workflowID);
     }
   }
