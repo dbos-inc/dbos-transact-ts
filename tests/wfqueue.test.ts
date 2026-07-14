@@ -2741,7 +2741,11 @@ describe('concurrent-queue-dispatches', () => {
 
   // Register a partitioned "slow" queue plus a normal "fast" queue, enqueue one slow workflow, and
   // pause its poll mid-partition-dispatch so it holds the slow queue's dispatch lane. Returns the
-  // paused slow handle and a release function that lets the slow poll finish.
+  // slow handle and a release function that lets the slow *poll* finish.
+  //
+  // Note the pause point is after the partition's workflows are dispatched, so the slow workflow has
+  // already run by the time the poll parks: only the lane is held, and `slow.getResult()` resolves
+  // whether or not the release happens. Assert on the fast queue to observe lane behavior.
   async function pauseSlowPoll(): Promise<{ slow: WorkflowHandle<string>; releaseSlowPoll: Event }> {
     await DBOS.registerQueue(slowQueueName, {
       partitionQueue: true,
@@ -2822,7 +2826,9 @@ describe('concurrent-queue-dispatches', () => {
         clearTimeout(probeTimer);
       }
 
-      // Releasing the slow poll frees the lane; both queues then dispatch to completion.
+      // Releasing the slow poll frees the single lane, which is what finally lets the fast queue be
+      // polled — so `fastResult` is the assertion that proves the lane was the blocker. (`slow` had
+      // already completed before its poll parked; see pauseSlowPoll.)
       releaseSlowPoll.set();
       await expect(slow.getResult()).resolves.toBe('slow');
       await expect(fastResult).resolves.toBe('fast');
@@ -2832,4 +2838,214 @@ describe('concurrent-queue-dispatches', () => {
       await DBOS.deleteQueue(fastQueueName);
     }
   }, 10000);
+});
+
+/**
+ * Scheduler-level invariants of the bounded-lane dispatcher, driven against a mock executor:
+ * the lane ceiling, lane release, wake latency, and the shutdown drain. These are properties of
+ * the dispatch loop itself, and the states that expose them (a poll throwing, `stop()` landing
+ * mid-maintenance, N queues contending for fewer lanes) are hard to stage against a real system
+ * database without long sleeps. The `concurrent-queue-dispatches` block above covers the
+ * end-to-end path. Keep this block last: its queues stay in the runner's registry, and an earlier
+ * position would expose them to a later `DBOS.launch()` that listens to every in-memory queue.
+ */
+describe('bounded-lane dispatcher', () => {
+  interface MockHooks {
+    /** Runs inside findAndMarkStartableWorkflows, i.e. while the queue's lane is held. */
+    onPoll?: (queueName: string) => Promise<void>;
+    /** Runs inside transitionDelayedWorkflows, i.e. while the scheduler loop is mid-body. */
+    onTransition?: () => Promise<void>;
+  }
+
+  function mockExecutor(hooks: MockHooks): DBOSExecutor {
+    return {
+      executorID: 'lane-test',
+      logger: { info: () => {}, warn: () => {}, debug: () => {}, error: () => {} },
+      executeWorkflowId: () => Promise.resolve({}),
+      systemDatabase: {
+        listQueues: () => Promise.resolve([]),
+        getQueuePartitions: () => Promise.resolve([]),
+        transitionDelayedWorkflows: async () => {
+          await hooks.onTransition?.();
+        },
+        findAndMarkStartableWorkflows: async (queue: WorkflowQueue) => {
+          await hooks.onPoll?.(queue.name);
+          return [];
+        },
+      },
+    } as unknown as DBOSExecutor;
+  }
+
+  let seq = 0;
+  /** Register N continuously-due in-memory queues under names unique to this test. */
+  function makeQueues(count: number): WorkflowQueue[] {
+    const tag = `lane-${seq++}`;
+    return Array.from({ length: count }, (_, i) => new WorkflowQueue(`${tag}-q${i}`, { minPollingIntervalMs: 1 }));
+  }
+
+  afterEach(() => {
+    wfQueueRunner.stop();
+  });
+
+  test('never runs more concurrent polls than maxConcurrentQueueDispatches', async () => {
+    const LIMIT = 2;
+    let inFlight = 0;
+    let peak = 0;
+
+    const queues = makeQueues(5);
+    const exec = mockExecutor({
+      onPoll: async () => {
+        inFlight++;
+        peak = Math.max(peak, inFlight);
+        await sleepms(30);
+        inFlight--;
+      },
+    });
+
+    const loop = wfQueueRunner.dispatchLoop(exec, queues, LIMIT);
+    await sleepms(800);
+    wfQueueRunner.stop();
+    await loop;
+
+    // > 1 proves lanes are actually concurrent; <= LIMIT proves they are bounded.
+    // Without the ceiling, all 5 due queues would poll at once.
+    expect(peak).toBeGreaterThan(1);
+    expect(peak).toBeLessThanOrEqual(LIMIT);
+  }, 15000);
+
+  test('never polls the same queue in two lanes at once', async () => {
+    const polling = new Set<string>();
+    let overlapped = false;
+
+    const queues = makeQueues(3);
+    const exec = mockExecutor({
+      onPoll: async (name) => {
+        if (polling.has(name)) overlapped = true;
+        polling.add(name);
+        await sleepms(20);
+        polling.delete(name);
+      },
+    });
+
+    const loop = wfQueueRunner.dispatchLoop(exec, queues, 3);
+    await sleepms(500);
+    wfQueueRunner.stop();
+    await loop;
+
+    expect(overlapped).toBe(false);
+  }, 15000);
+
+  test('frees a lane as soon as a poll completes, without waiting for the reconcile tick', async () => {
+    // One queue, one lane: every poll after the first requires the completing poll to
+    // wake the scheduler. If the wake handshake is broken the loop instead sleeps until
+    // the next 1s maintenance tick, so throughput collapses to ~1/sec.
+    let polls = 0;
+
+    const queues = makeQueues(1);
+    const exec = mockExecutor({
+      onPoll: async () => {
+        polls++;
+        await sleepms(20);
+      },
+    });
+
+    const loop = wfQueueRunner.dispatchLoop(exec, queues, 1);
+    await sleepms(800);
+    wfQueueRunner.stop();
+    await loop;
+
+    // ~40 polls when wake works; ~1 if it does not. 8 is far outside both distributions.
+    expect(polls).toBeGreaterThan(8);
+  }, 15000);
+
+  test('releases the lane when a poll throws, and keeps dispatching', async () => {
+    // A non-object rejection makes pollQueue's own `'code' in err` check throw a
+    // TypeError, which escapes it and reaches runQueuePoll's catch.
+    let polls = 0;
+
+    const queues = makeQueues(1);
+    const exec = mockExecutor({
+      onPoll: () => {
+        polls++;
+        // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
+        return Promise.reject('not an Error');
+      },
+    });
+
+    const loop = wfQueueRunner.dispatchLoop(exec, queues, 1);
+    await sleepms(600);
+    wfQueueRunner.stop();
+    await loop;
+
+    // If the throw leaked the lane, dispatch would stop dead after the first poll.
+    expect(polls).toBeGreaterThan(1);
+  }, 15000);
+
+  test('does not start new polls after stop()', async () => {
+    // stop() lands while the loop is awaiting a global maintenance op, so it resumes
+    // mid-body with isRunning already false.
+    let stopped = false;
+    let transitions = 0;
+    let pollsAfterStop = 0;
+    let releaseTransition: (() => void) | undefined;
+
+    const queues = makeQueues(1);
+    const exec = mockExecutor({
+      onTransition: async () => {
+        transitions++;
+        if (transitions < 2) return; // let the loop reach steady state first
+        await new Promise<void>((resolve) => {
+          releaseTransition = resolve;
+        });
+      },
+      onPoll: () => {
+        if (stopped) pollsAfterStop++;
+        return Promise.resolve();
+      },
+    });
+
+    const loop = wfQueueRunner.dispatchLoop(exec, queues, 2);
+
+    const deadline = Date.now() + 5000;
+    while (!releaseTransition && Date.now() < deadline) {
+      await sleepms(10);
+    }
+    expect(releaseTransition).toBeDefined();
+
+    stopped = true;
+    wfQueueRunner.stop();
+    releaseTransition!();
+    await loop;
+
+    expect(pollsAfterStop).toBe(0);
+  }, 15000);
+
+  test('waits for in-flight polls to finish before dispatchLoop resolves', async () => {
+    const order: string[] = [];
+    let pollStarted = false;
+
+    const queues = makeQueues(1);
+    const exec = mockExecutor({
+      onPoll: async () => {
+        pollStarted = true;
+        await sleepms(200);
+        order.push('poll-finished');
+      },
+    });
+
+    const loop = wfQueueRunner.dispatchLoop(exec, queues, 1);
+
+    const deadline = Date.now() + 5000;
+    while (!pollStarted && Date.now() < deadline) {
+      await sleepms(5);
+    }
+    expect(pollStarted).toBe(true);
+
+    // stop() while the poll is still in flight; the drain must not abandon it.
+    wfQueueRunner.stop();
+    await loop;
+    order.push('loop-resolved');
+
+    expect(order).toEqual(['poll-finished', 'loop-resolved']);
+  }, 15000);
 });

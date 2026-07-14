@@ -581,6 +581,7 @@ class WFQueueRunner {
     inFlightPolls: Map<string, Promise<void>>,
     wake: () => void,
   ): void {
+    if (!this.isRunning) return;
     const due = Array.from(this.states.values()).filter(
       (state) => now >= state.nextPollAt && !inFlightPolls.has(state.queue.name),
     );
