@@ -877,12 +877,11 @@ export class SystemDatabase {
     }
   }
 
-  // Record a workflow's terminal outcome (SUCCESS or ERROR). Only a PENDING row
-  // may receive an outcome: any other status means this run was superseded
-  // (cancelled during its final step, re-enqueued by a concurrent resume, ...).
-  // If the workflow is cancelled, abort the function so it does not complete;
-  // any other refused write is a silent no-op. This mirrors the cancellation
-  // check done before each step.
+  // Record a workflow's terminal outcome (SUCCESS or ERROR), but never overwrite
+  // the terminal CANCELLED status: a workflow can be cancelled during its final
+  // step, and if so it must not be able to subsequently complete. If the
+  // workflow is cancelled, abort the function so it does not complete. This
+  // mirrors the cancellation check done before each step.
   async #recordWorkflowOutcome(
     client: PoolClient,
     workflowID: string,
@@ -894,7 +893,7 @@ export class SystemDatabase {
       await client.query('BEGIN');
       await this.updateWorkflowStatus(client, workflowID, status, {
         update: { ...outcome, resetDeduplicationID: true, setCompletedAt: true },
-        where: { status: StatusString.PENDING },
+        where: { notStatus: StatusString.CANCELLED },
         throwOnFailure: false,
       });
       cancelled = (await this.getWorkflowStatusValue(client, workflowID)) === StatusString.CANCELLED;
