@@ -362,6 +362,7 @@ class WFQueueRunner {
   private static readonly defaultMaxPollingIntervalMs: number = 120000;
   private static readonly reconcileIntervalMs: number = 1000;
   private static readonly transitionIntervalMs: number = 1000;
+  private static readonly maxWorkflowsPerPoll: number = 100;
   private readonly backoffFactor: number = 2.0;
   private readonly scalebackFactor: number = 0.9;
   private readonly jitterMin: number = 0.95;
@@ -558,14 +559,18 @@ class WFQueueRunner {
     // workflows from each active partition.
     try {
       if (queue.partitionQueue) {
+        let remainingDispatchBudget = WFQueueRunner.maxWorkflowsPerPoll;
         const partitionKeys = await exec.systemDatabase.getQueuePartitions(queue.name);
         for (const partitionKey of partitionKeys) {
+          if (remainingDispatchBudget <= 0) break;
           const partitionWfids = await exec.systemDatabase.findAndMarkStartableWorkflows(
             queue,
             exec.executorID,
             globalParams.appVersion,
             partitionKey,
+            remainingDispatchBudget,
           );
+          remainingDispatchBudget -= partitionWfids.length;
           await dispatch(partitionWfids);
           await debugTriggerPoint(DEBUG_TRIGGER_BETWEEN_PARTITION_DISPATCHES);
         }
@@ -575,6 +580,7 @@ class WFQueueRunner {
           exec.executorID,
           globalParams.appVersion,
           undefined,
+          WFQueueRunner.maxWorkflowsPerPoll,
         );
         await dispatch(wfids);
       }

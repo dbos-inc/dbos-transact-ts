@@ -2610,6 +2610,13 @@ export class DBOS {
     return record === null ? null : WorkflowQueue._fromRecord(record);
   }
 
+  /** List all database-backed queues registered in the system database. */
+  static async listQueues(): Promise<WorkflowQueue[]> {
+    ensureDBOSIsLaunched('listQueues');
+    const records = await DBOSExecutor.globalInstance!.systemDatabase.listQueues();
+    return records.map((record) => WorkflowQueue._fromRecord(record));
+  }
+
   /** Delete a database-backed queue. Pending workflows on it are unrecoverable. */
   static async deleteQueue(name: string): Promise<void> {
     ensureDBOSIsLaunched('deleteQueue');

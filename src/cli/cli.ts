@@ -24,6 +24,7 @@ import { startDockerPg, stopDockerPg } from './docker_pg_helper';
 import { dropPGDatabase, getDatabaseNameFromUrl } from '../database_utils';
 import { existsSync } from 'node:fs';
 import { globalParams } from '../utils';
+import { isSQLiteSystemDatabaseUrl, resetSQLiteSystemDatabase } from '../sqlite_system_database';
 
 const program = new Command();
 
@@ -104,7 +105,7 @@ program
     if (!options.schema) {
       try {
         if (existsSync(dbosConfigFilePath)) {
-          const configFile = await readConfigFile(dbosConfigFilePath);
+          const configFile = await readConfigFile();
           schemaName = configFile.system_database_schema_name ?? 'dbos';
         }
       } catch (e) {
@@ -119,7 +120,11 @@ program
 
       // Grant permissions to application role if specified
       if (options.appRole) {
-        await grantDbosSchemaPermissions(systemDatabaseUrl, options.appRole, logger, schemaName);
+        if (isSQLiteSystemDatabaseUrl(systemDatabaseUrl)) {
+          logger.info('Skipping application role grants for SQLite system database.');
+        } else {
+          await grantDbosSchemaPermissions(systemDatabaseUrl, options.appRole, logger, schemaName);
+        }
       }
     } catch (e) {
       logger.error(e);
@@ -165,6 +170,13 @@ program
       }
     }
     const urls = await getDatabaseURLs(options.sysDbUrl);
+
+    if (isSQLiteSystemDatabaseUrl(urls.systemDatabaseURL)) {
+      const logger = new GlobalLogger();
+      resetSQLiteSystemDatabase(urls.systemDatabaseURL, logger);
+      console.log('SQLite system database reset complete. To use DBOS in the future, launch or run schema again.');
+      return;
+    }
 
     const res = await dropPGDatabase({
       urlToDrop: urls.systemDatabaseURL,
@@ -432,14 +444,10 @@ async function getDatabaseURLs(systemDatabaseURL: string | undefined): Promise<{
   if (systemDatabaseURL) {
     return { systemDatabaseURL: systemDatabaseURL };
   }
-  if (existsSync(dbosConfigFilePath)) {
-    const config = await readConfigFile();
-    return {
-      systemDatabaseURL: getSystemDatabaseUrl(config),
-    };
-  } else {
-    throw new Error('Error: Missing database URL: please set it using CLI flags or your dbos-config.yaml file.');
-  }
+  const config = await readConfigFile();
+  return {
+    systemDatabaseURL: getSystemDatabaseUrl(config),
+  };
 }
 
 //Takes an action function(configFile, logger) that returns a numeric exit code.

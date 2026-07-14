@@ -6,6 +6,7 @@ import path from 'path';
 import assert from 'assert';
 import { maskDatabaseUrl } from './database_utils';
 import { DBOSJSON } from './serialization';
+import { isNativeSQLiteSupported, isSQLiteSystemDatabaseUrl } from './sqlite_system_database';
 
 export const dbosConfigFilePath = 'dbos-config.yaml';
 
@@ -92,8 +93,22 @@ export function isValidDatabaseName(dbName: string): boolean {
   return true;
 }
 
-export function getSystemDatabaseUrl(configFile: Pick<ConfigFile, 'name' | 'system_database_url'>): string {
-  const databaseUrl = configFile.system_database_url || defaultSysDatabaseUrl(configFile.name);
+export function getSystemDatabaseUrl(
+  configFile: Pick<ConfigFile, 'name' | 'system_database_url'>,
+  options: { preferPostgresDefault?: boolean } = {},
+): string {
+  const databaseUrl =
+    configFile.system_database_url === undefined
+      ? defaultSysDatabaseUrl(configFile.name, options.preferPostgresDefault ?? false)
+      : configFile.system_database_url;
+
+  if (databaseUrl.trim() === '') {
+    throw new Error('Invalid system database URL: system_database_url must not be empty.');
+  }
+
+  if (isSQLiteSystemDatabaseUrl(databaseUrl)) {
+    return databaseUrl;
+  }
 
   const url = new URL(databaseUrl);
   const dbName = url.pathname.slice(1);
@@ -112,7 +127,7 @@ export function getSystemDatabaseUrl(configFile: Pick<ConfigFile, 'name' | 'syst
 
   return databaseUrl;
 
-  function defaultSysDatabaseUrl(appName?: string): string {
+  function defaultSysDatabaseUrl(appName?: string, preferPostgresDefault: boolean = false): string {
     assert(appName, 'Application name must be defined to construct a valid database URL.');
 
     const host = process.env.PGHOST || 'localhost';
@@ -122,6 +137,10 @@ export function getSystemDatabaseUrl(configFile: Pick<ConfigFile, 'name' | 'syst
     const database = toDbName(appName) + '_dbos_sys';
     const timeout = process.env.PGCONNECT_TIMEOUT || '10';
     const sslmode = process.env.PGSSLMODE || (host === 'localhost' ? 'disable' : 'allow');
+
+    if (isNativeSQLiteSupported() && !preferPostgresDefault) {
+      return `sqlite:///${toDbName(appName)}.sqlite`;
+    }
 
     const dbUrl = new URL(`postgresql://host/database`);
     dbUrl.username = username;
@@ -175,10 +194,19 @@ function toArray(endpoint: string | string[] | undefined): Array<string> {
 }
 
 export function translateDbosConfig(options: DBOSConfig, forceConsole: boolean = false): DBOSConfigInternal {
-  const systemDatabaseUrl = getSystemDatabaseUrl({
-    system_database_url: options.systemDatabaseUrl,
-    name: options.name,
-  });
+  if (options.systemDatabasePool && options.systemDatabaseUrl && isSQLiteSystemDatabaseUrl(options.systemDatabaseUrl)) {
+    throw new Error('Custom systemDatabasePool is not supported for SQLite system databases');
+  }
+
+  const systemDatabaseUrl = getSystemDatabaseUrl(
+    {
+      system_database_url: options.systemDatabaseUrl,
+      name: options.name,
+    },
+    {
+      preferPostgresDefault: options.systemDatabasePool !== undefined,
+    },
+  );
 
   return {
     name: options.name,

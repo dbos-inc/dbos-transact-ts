@@ -60,6 +60,7 @@
     "lint": "eslint --ignore-pattern **/coverage/ .",
     "setversion": "npm run --workspaces setversion && grunt setversion",
     "test": "npm run build && npm run --workspaces test  && jest ./tests --coverage --collectCoverageFrom='src/**/*' --detectOpenHandles",
+    "test:sqlite": "node -e \"const [major, minor] = process.versions.node.split('.').map(Number); if (major < 22 || (major === 22 && minor < 13)) { console.error('SQLite tests require Node.js 22.13.0 or later because node:sqlite is unflagged there and remains experimental/release-candidate.'); process.exit(1); }\" && npm run build && jest ./tests/config.test.ts ./tests/sqlite_system_database.test.ts --runInBand --detectOpenHandles",
     "check:package": "npm run build && publint && attw --pack .",
     "prepare": "husky"
   },

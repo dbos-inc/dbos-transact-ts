@@ -10,6 +10,16 @@ import {
 import { AssertionError } from 'assert';
 import { DBOSConfigInternal, DBOSRuntimeConfig } from '../src/dbos-executor';
 import { DBOSJSON } from '../src/serialization';
+import { isNativeSQLiteSupported } from '../src/sqlite_system_database';
+import type { Pool } from 'pg';
+
+function expectedDefaultSystemDatabaseUrl(appName: string): string {
+  const dbName = appName.toLowerCase().replaceAll('-', '_').replaceAll(' ', '_').replace(/^\d/, '_$&');
+  if (isNativeSQLiteSupported()) {
+    return `sqlite:///${dbName}.sqlite`;
+  }
+  return `postgresql://postgres:dbos@localhost:5432/${dbName}_dbos_sys?connect_timeout=10&sslmode=disable`;
+}
 
 describe('dbos-config', () => {
   beforeEach(() => {
@@ -64,6 +74,7 @@ describe('dbos-config', () => {
         name: 'test-app',
         system_database_url: '',
       });
+      expect(() => getDbosConfig(cfg)).toThrow('system_database_url must not be empty');
     });
 
     test('handles single string endpoints', async () => {
@@ -310,20 +321,35 @@ describe('dbos-config', () => {
       expect(databaseUrl).toBe('postgresql://a:b@c:1234/appdb?connect_timeout=22&sslmode=disable');
     });
 
+    test('accepts sqlite system database URLs', () => {
+      const databaseUrl = getSystemDatabaseUrl({
+        name: 'Test App',
+        system_database_url: 'sqlite:///dbos-test.sqlite',
+      });
+      expect(databaseUrl).toBe('sqlite:///dbos-test.sqlite');
+    });
+
+    test.each(['', '   '])('throws when system_database_url is empty %p', (system_database_url) => {
+      expect(() =>
+        getSystemDatabaseUrl({
+          name: 'Test App',
+          system_database_url,
+        }),
+      ).toThrow('system_database_url must not be empty');
+    });
+
     test('uses default values when config is empty', () => {
       const databaseUrl = getSystemDatabaseUrl({
         name: 'Test App',
       });
-      expect(databaseUrl).toBe(
-        'postgresql://postgres:dbos@localhost:5432/test_app_dbos_sys?connect_timeout=10&sslmode=disable',
-      );
+      expect(databaseUrl).toBe(expectedDefaultSystemDatabaseUrl('Test App'));
     });
 
     test('throws when db url not set and app name is missing', () => {
       expect(() => getSystemDatabaseUrl({})).toThrow(AssertionError);
     });
 
-    test('uses PG env values when config is empty', () => {
+    test('prefers SQLite when supported even when PG env values are set', () => {
       process.env.PGHOST = 'envhost';
       process.env.PGPORT = '7777';
       process.env.PGUSER = 'envuser';
@@ -333,7 +359,9 @@ describe('dbos-config', () => {
         name: 'Test App',
       });
       expect(databaseUrl).toBe(
-        'postgresql://envuser:envpass@envhost:7777/test_app_dbos_sys?connect_timeout=10&sslmode=allow',
+        isNativeSQLiteSupported()
+          ? 'sqlite:///test_app.sqlite'
+          : 'postgresql://envuser:envpass@envhost:7777/test_app_dbos_sys?connect_timeout=10&sslmode=allow',
       );
     });
 
@@ -341,9 +369,7 @@ describe('dbos-config', () => {
       const url = getSystemDatabaseUrl({
         name: 'app name with spaces',
       });
-      expect(url).toBe(
-        'postgresql://postgres:dbos@localhost:5432/app_name_with_spaces_dbos_sys?connect_timeout=10&sslmode=disable',
-      );
+      expect(url).toBe(expectedDefaultSystemDatabaseUrl('app name with spaces'));
     });
 
     test('correctly handles db url w/o password', () => {
@@ -379,9 +405,9 @@ describe('dbos-config', () => {
       });
       expect(internalConfig).toEqual({
         name: 'dbostest',
-        systemDatabaseUrl:
-          'postgresql://postgres:dbos@localhost:5432/dbostest_dbos_sys?connect_timeout=10&sslmode=disable',
+        systemDatabaseUrl: expectedDefaultSystemDatabaseUrl('dbostest'),
         sysDbPoolSize: undefined,
+        systemDatabasePollingConcurrency: undefined,
         systemDatabasePool: undefined,
         systemDatabaseSchemaName: 'dbos',
         schedulerPollingIntervalMs: undefined,
@@ -392,6 +418,7 @@ describe('dbos-config', () => {
             logLevel: 'info',
             addContextMetadata: undefined,
             forceConsole: false,
+            logger: undefined,
           },
           OTLPExporter: {
             tracesEndpoint: undefined,
@@ -420,6 +447,31 @@ describe('dbos-config', () => {
       expect(internalConfig.systemDatabasePollingConcurrency).toBeUndefined();
     });
 
+    test('translate preserves custom Postgres pools with a Postgres default URL', () => {
+      const fakePool = { options: { max: 7 } } as unknown as Pool;
+      const internalConfig = translateDbosConfig({
+        name: 'dbostest',
+        systemDatabasePool: fakePool,
+      });
+
+      expect(internalConfig.systemDatabasePool).toBe(fakePool);
+      expect(internalConfig.systemDatabaseUrl).toBe(
+        'postgresql://postgres:dbos@localhost:5432/dbostest_dbos_sys?connect_timeout=10&sslmode=disable',
+      );
+    });
+
+    test('translate rejects custom pools with SQLite system database URLs', () => {
+      const fakePool = { options: { max: 7 } } as unknown as Pool;
+
+      expect(() =>
+        translateDbosConfig({
+          name: 'dbostest',
+          systemDatabaseUrl: 'sqlite:///dbostest.sqlite',
+          systemDatabasePool: fakePool,
+        }),
+      ).toThrow('Custom systemDatabasePool is not supported for SQLite system databases');
+    });
+
     test('translate passes through a custom logger', () => {
       const myLogger = { info: () => {}, debug: () => {}, warn: () => {}, error: () => {} };
       let internalConfig = translateDbosConfig({ name: 'dbostest', logger: myLogger });
@@ -437,9 +489,9 @@ describe('dbos-config', () => {
       );
       expect(internalConfig).toEqual({
         name: 'dbostest',
-        systemDatabaseUrl:
-          'postgresql://postgres:dbos@localhost:5432/dbostest_dbos_sys?connect_timeout=10&sslmode=disable',
+        systemDatabaseUrl: expectedDefaultSystemDatabaseUrl('dbostest'),
         sysDbPoolSize: undefined,
+        systemDatabasePollingConcurrency: undefined,
         systemDatabasePool: undefined,
         systemDatabaseSchemaName: 'dbos',
         schedulerPollingIntervalMs: undefined,
@@ -450,6 +502,7 @@ describe('dbos-config', () => {
             logLevel: 'info',
             addContextMetadata: undefined,
             forceConsole: true,
+            logger: undefined,
           },
           OTLPExporter: {
             tracesEndpoint: undefined,
@@ -488,6 +541,14 @@ describe('dbos-config', () => {
           otelAttributeFormat: 'legacy',
         },
       });
+    });
+
+    test('preserves explicit Postgres systemDatabaseUrl when a name is present', () => {
+      const internalConfig = translateDbosConfig({
+        name: 'dbostest',
+        systemDatabaseUrl: 'postgres://foo:bar@father:1234/blahblahblah',
+      });
+      expect(internalConfig.systemDatabaseUrl).toBe('postgres://foo:bar@father:1234/blahblahblah');
     });
 
     test('translate with db & sysdb urls', () => {
