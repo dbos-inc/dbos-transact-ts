@@ -7,7 +7,10 @@ export {
   WaitFirstOptions,
   WaitAllOptions,
   SetWorkflowDelayOptions,
+  PreparedWorkflow,
 } from './dbos';
+
+export { PrepareEnqueuedWorkflowOptions } from './dbos-executor';
 
 export { DBOSClient } from './client';
 

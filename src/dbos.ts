@@ -13,6 +13,7 @@ import {
   DBOSExecutor,
   DBOSExternalState,
   InternalWorkflowParams,
+  PrepareEnqueuedWorkflowOptions,
   DBOS_QUEUE_MIN_PRIORITY,
   DBOS_QUEUE_MAX_PRIORITY,
 } from './dbos-executor';
@@ -114,6 +115,7 @@ import {
   DBOS_FUNCNAME_WRITESTREAM,
   WorkflowScheduleInternal,
   VersionInfo,
+  WorkflowStatusInternal,
 } from './system_database';
 import { PoolClient } from 'pg';
 import {
@@ -159,6 +161,12 @@ type InvokeFunctionsAsyncInst<T> = T extends ConfiguredInstance
         : never;
     }
   : never;
+
+/**
+ * An assembled, not-yet-persisted ENQUEUED workflow row. Produced by
+ * {@link DBOS.prepareEnqueuedWorkflow} and durably enqueued by {@link DBOS.initWorkflows}.
+ */
+export type PreparedWorkflow = WorkflowStatusInternal;
 
 export interface StartWorkflowParams {
   workflowID?: string;
@@ -2610,9 +2618,62 @@ export class DBOS {
     return record === null ? null : WorkflowQueue._fromRecord(record);
   }
 
+  /**
+   * Look up a queue by name: an in-memory queue registered in this process if there is one,
+   * otherwise a database-backed queue. Returns `null` if neither exists.
+   */
+  static async getQueue(name: string): Promise<WorkflowQueue | null> {
+    const inMemory = wfQueueRunner.wfQueuesByName.get(name);
+    if (inMemory) return inMemory;
+    return await DBOS.retrieveQueue(name);
+  }
+
   /** Delete a database-backed queue. Pending workflows on it are unrecoverable. */
   static async deleteQueue(name: string): Promise<void> {
     ensureDBOSIsLaunched('deleteQueue');
     await DBOSExecutor.globalInstance!.systemDatabase.deleteQueue(name);
+  }
+
+  /**
+   * Build, without persisting, an ENQUEUED row for `workflow`, to be durably enqueued in bulk by
+   * {@link DBOS.initWorkflows}. Together they let an event receiver enqueue a batch of workflows in
+   * one transaction instead of one transaction per workflow.
+   *
+   * Any ambient DBOS context is ignored: the row inherits no parent, auth, or attributes.
+   *
+   * @param workflow - A registered workflow function.
+   * @param args - Arguments to invoke the workflow with.
+   * @param options - Queue name, workflow ID, and optional partition key.
+   */
+  static async prepareEnqueuedWorkflow<T extends unknown[], R>(
+    workflow: TypedAsyncFunction<T, R>,
+    args: T,
+    options: PrepareEnqueuedWorkflowOptions,
+  ): Promise<PreparedWorkflow> {
+    ensureDBOSIsLaunched('prepareEnqueuedWorkflow');
+    return await DBOSExecutor.globalInstance!.prepareEnqueuedWorkflow(workflow, args, options);
+  }
+
+  /**
+   * Durably enqueue a batch of workflows built by {@link DBOS.prepareEnqueuedWorkflow}, in a single
+   * transaction. Workflows whose ID already exists are skipped rather than updated, so redelivering
+   * the same batch is a no-op and each workflow runs exactly once.
+   *
+   * @returns The IDs of the workflows actually enqueued by this call.
+   */
+  static async initWorkflows(workflows: PreparedWorkflow[]): Promise<Set<string>> {
+    ensureDBOSIsLaunched('initWorkflows');
+    return await DBOSExecutor.globalInstance!.systemDatabase.initWorkflows(workflows);
+  }
+
+  /**
+   * Mark a queue as fed by this process's own poller (e.g. a Kafka consumer), so it is always
+   * dispatched even when a `listenQueues` filter names only other queues. Without this, workflows
+   * the poller enqueues would sit ENQUEUED forever.
+   *
+   * Must be called before {@link DBOS.launch}, when the queue dispatcher takes its snapshot.
+   */
+  static registerPollerQueue(name: string): void {
+    wfQueueRunner.pollerQueueNames.add(name);
   }
 }

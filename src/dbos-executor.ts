@@ -224,6 +224,16 @@ export interface InternalWorkflowParams extends WorkflowParams {
   readonly isQueueDispatch?: boolean;
 }
 
+/** Options for assembling an ENQUEUED workflow row without persisting it. */
+export interface PrepareEnqueuedWorkflowOptions {
+  /** Queue the workflow is enqueued on. */
+  readonly queueName: string;
+  /** Workflow ID. Doubles as the idempotency key for a batch insert, so it must be deterministic. */
+  readonly workflowID: string;
+  /** Partition key, required when the queue is partitioned and forbidden otherwise. */
+  readonly queuePartitionKey?: string;
+}
+
 export const OperationType = {
   HANDLER: 'handler',
   WORKFLOW: 'workflow',
@@ -413,6 +423,54 @@ export class DBOSExecutor {
     ...args: T
   ): Promise<WorkflowHandle<R>> {
     return this.internalWorkflow(wf, params, undefined, undefined, ...args);
+  }
+
+  /**
+   * Build, without persisting, an ENQUEUED status row for `wf` on `options.queueName`.
+   *
+   * For batch enqueuers (e.g. a Kafka consumer) that persist many rows in one transaction via
+   * {@link SystemDatabase.initWorkflows}. Any ambient DBOS context is ignored: the workflow ID and
+   * enqueue options are passed explicitly, and the row inherits no parent, auth, or attributes.
+   */
+  async prepareEnqueuedWorkflow<T extends unknown[], R>(
+    wf: TypedAsyncFunction<T, R>,
+    args: T,
+    options: PrepareEnqueuedWorkflowOptions,
+  ): Promise<WorkflowStatusInternal> {
+    const wInfo = getFunctionRegistration(wf);
+    if (!wInfo || !wInfo.workflowConfig) {
+      throw new DBOSNotRegisteredError(wf.name, `${wf.name} is not a registered workflow function`);
+    }
+    const { name: workflowName, className: workflowClassName } = getRegisteredFunctionFullName(wf);
+    const serializationType = wInfo.workflowConfig.serialization;
+    const funcArgs = await serializeFunctionInputOutput(
+      serializationType === 'portable' ? ({ positionalArgs: args } as JsonWorkflowArgs) : args,
+      [workflowName, '<arguments>'],
+      this.serializer,
+      serializationType,
+    );
+    return {
+      workflowUUID: options.workflowID,
+      status: StatusString.ENQUEUED,
+      workflowName,
+      workflowClassName,
+      workflowConfigName: '',
+      queueName: options.queueName,
+      output: null,
+      error: null,
+      authenticatedUser: '',
+      assumedRole: '',
+      authenticatedRoles: [],
+      request: {},
+      executorId: globalParams.executorID,
+      applicationVersion: globalParams.appVersion,
+      applicationID: globalParams.appID,
+      createdAt: Date.now(),
+      input: funcArgs.stringified,
+      priority: 0,
+      queuePartitionKey: options.queuePartitionKey,
+      serialization: funcArgs.sername,
+    };
   }
 
   // If callerWFID and functionID are set, it means the workflow is invoked from within a workflow.

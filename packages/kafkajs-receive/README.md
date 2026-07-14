@@ -81,10 +81,40 @@ kafkaReceiver.registerConsumer(KafkaExample.registeredConsumerWorkflow, 'another
 });
 ```
 
+### Message Ordering
+
+By default, consumer workflows run in parallel, in no particular order.
+Set `ordering` to serialize them:
+
+- `none` (default): messages are processed in parallel.
+- `partition`: messages are processed serially per topic partition — Kafka's own delivery-order guarantee — and in parallel across partitions.
+- `topic`: messages are processed serially per topic.
+
+```ts
+class KafkaExample {
+  @kafkaReceiver.consumer('example-topic', { ordering: 'partition' })
+  @DBOS.workflow()
+  static async consumerWorkflow(topic: string, partition: number, message: KafkaMessage) {
+    DBOS.logger.info(`Message received: ${message.value}`);
+  }
+}
+```
+
+Ordered consumers share an internal partitioned queue, so they cannot also specify a `queueName`.
+
+### Batching
+
+Messages are consumed and durably enqueued in batches, which is much faster than one transaction per message.
+`batchSize` (default 250) caps how many messages are enqueued per batch.
+
+Offsets are only committed once a batch is durably enqueued, so a crash mid-batch redelivers those messages rather than losing them.
+Because each workflow's ID is derived from its topic, partition, consumer group, and offset, redelivery is idempotent: every message runs exactly once.
+
 ### Concurrency and Rate Limiting
 
-By default, Kafka `eventConsumer` workflows are started immediately after message receipt.
-If `queueName` is specified in `eventConsumer` options, then the workflow will be enqueued in a [workflow queue](https://docs.dbos.dev/typescript/reference/transactapi/workflow-queues).
+Consumer workflows are enqueued in a [workflow queue](https://docs.dbos.dev/typescript/reference/transactapi/workflow-queues).
+By default they use an internal queue; specify `queueName` to run them on your own queue, for example to apply a concurrency limit.
+A custom queue must not be a partitioned queue, and is only supported with `ordering: 'none'`.
 
 ```ts
 class KafkaExample {
