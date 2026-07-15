@@ -105,12 +105,16 @@ function isFalsey(value: unknown): boolean {
 export function applyDBOSConsumerConfig(
   config: KafkaJS.ConsumerConstructorConfig,
   batchSize: number,
+  groupId: string,
 ): KafkaJS.ConsumerConstructorConfig {
   const resolved: KafkaJS.ConsumerConstructorConfig = {
     // Defaults to 32, which would cap every batch well below batchSize.
     'js.consumer.max.batch.size': batchSize,
     ...config,
     'auto.offset.reset': config['auto.offset.reset'] ?? 'earliest',
+    // group.id is optional to this client but not to DBOS: the workflow IDs are namespaced by it,
+    // so the consumer must join the very group those IDs claim.
+    'group.id': groupIdOf(config) ?? groupId,
   };
 
   if ('enable.auto.offset.store' in resolved) {
@@ -313,11 +317,10 @@ export class ConfluentKafkaReceiver implements DBOSLifecycleCallback {
       }
 
       const { name, className } = regOp.methodReg;
-      const config: KafkaJS.ConsumerConstructorConfig = methodConfig.config ?? {
-        'group.id': safeGroupName(className, name, topics),
-      };
+      const config: KafkaJS.ConsumerConstructorConfig = methodConfig.config ?? {};
       const batchSize = methodConfig.batchSize ?? DEFAULT_BATCH_SIZE;
-      const consumer = kafka.consumer(applyDBOSConsumerConfig(config, batchSize));
+      const groupId = groupIdOf(config) ?? safeGroupName(className, name, topics);
+      const consumer = kafka.consumer(applyDBOSConsumerConfig(config, batchSize, groupId));
       await consumer.connect();
 
       // A temporary workaround for https://github.com/tulios/kafkajs/pull/1558 until it gets fixed
@@ -340,7 +343,6 @@ export class ConfluentKafkaReceiver implements DBOSLifecycleCallback {
 
       const ordering = methodConfig.ordering ?? 'none';
       const queueName = methodConfig.consumerQueueName ?? KAFKA_QUEUE_NAME;
-      const groupId = groupIdOf(config) ?? safeGroupName(className, name, topics);
 
       // Unlike the kafkajs receiver, this one needs no crash-recovery handler: this client always
       // retries internally and cannot stop for good (it rejects `retry.restartOnFailure` outright,
@@ -414,7 +416,10 @@ export class ConfluentKafkaReceiver implements DBOSLifecycleCallback {
       // Every message in the chunk is now handled (enqueued or dropped), so advance past all of
       // them: a poison message must not be redelivered forever.
       for (const message of chunk) {
-        payload.resolveOffset(message.offset);
+        // Pass the leader epoch through. The client accepts it and asks callers to supply it, but
+        // only types the one-argument form, so a cast is needed. Without it the offset commits with
+        // epoch -1, which defeats the broker's log-truncation detection (KIP-320).
+        (payload.resolveOffset as (offset: string, leaderEpoch?: number) => void)(message.offset, message.leaderEpoch);
       }
       await payload.heartbeat();
     }

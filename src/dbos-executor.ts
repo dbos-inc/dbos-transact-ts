@@ -230,7 +230,11 @@ export interface PrepareEnqueuedWorkflowOptions {
   readonly queueName: string;
   /** Workflow ID. Doubles as the idempotency key for a batch insert, so it must be deterministic. */
   readonly workflowID: string;
-  /** Partition key, required when the queue is partitioned and forbidden otherwise. */
+  /**
+   * Partition key for a partitioned queue. Not validated here: a partitioned queue only ever
+   * dequeues rows that carry a key, so a row enqueued onto one without a key sits ENQUEUED
+   * forever rather than failing.
+   */
   readonly queuePartitionKey?: string;
 }
 
@@ -440,6 +444,13 @@ export class DBOSExecutor {
     const wInfo = getFunctionRegistration(wf);
     if (!wInfo || !wInfo.workflowConfig) {
       throw new DBOSNotRegisteredError(wf.name, `${wf.name} is not a registered workflow function`);
+    }
+    if (wInfo.isInstance) {
+      // The row would carry no config name, so the dequeuer could not find the instance to bind and
+      // would run the workflow with a null `this`.
+      throw new DBOSError(
+        `Cannot enqueue instance method "${wInfo.name}" in a batch. Only static methods and free functions can be used.`,
+      );
     }
     const { name: workflowName, className: workflowClassName } = getRegisteredFunctionFullName(wf);
     const serializationType = wInfo.workflowConfig.serialization;

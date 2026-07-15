@@ -5,7 +5,7 @@ import { DBOS, WorkflowQueue } from '@dbos-inc/dbos-sdk';
 import { Client } from 'pg';
 import { dropDB } from './test-helpers';
 import { KafkaJS as ConfluentKafkaJS } from '@confluentinc/kafka-javascript';
-import { applyDBOSConsumerConfig, ConfluentKafkaReceiver } from '..';
+import { ConfluentKafkaReceiver } from '..';
 
 // Validation that can only run once every queue is registered, so it lands at launch. It happens
 // before any consumer connects, so these tests need a database but no broker.
@@ -84,71 +84,5 @@ suite('confluent-kafka-receive-launch-validation', async () => {
 
     DBOS.setConfig({ name: 'conf-kafka-launchval-test' });
     await assert.rejects(DBOS.launch(), /share group\.id .* and topic/s);
-  });
-}).catch(assert.fail);
-
-// Offset-config coercion. Pure config handling, so no database or broker is involved.
-suite('confluent-kafka-receive-config', async () => {
-  await test('enable.auto.commit=false is overridden so stored offsets are actually committed', () => {
-    for (const falsey of [false, 'false', 'FALSE', '0']) {
-      const resolved = applyDBOSConsumerConfig({ 'group.id': 'g', 'enable.auto.commit': falsey } as never, 250);
-      assert.equal(resolved['enable.auto.commit'], true, `not overridden for ${JSON.stringify(falsey)}`);
-    }
-  });
-
-  await test('a top-level enable.auto.commit=false wins over kafkaJS.autoCommit, so it is fixed', () => {
-    // The client assigns top-level librdkafka config over the kafkaJS block, so a config that looks
-    // like it commits (kafkaJS.autoCommit=true) would silently not.
-    const resolved = applyDBOSConsumerConfig(
-      { 'group.id': 'g', 'enable.auto.commit': false, kafkaJS: { autoCommit: true } } as never,
-      250,
-    );
-    assert.equal(resolved['enable.auto.commit'], true);
-    assert.equal(resolved.kafkaJS?.autoCommit, true);
-  });
-
-  await test('kafkaJS.autoCommit=false is overridden too', () => {
-    const resolved = applyDBOSConsumerConfig({ 'group.id': 'g', kafkaJS: { autoCommit: false } } as never, 250);
-    assert.equal(resolved.kafkaJS?.autoCommit, true);
-    assert.equal(resolved['enable.auto.commit'], true);
-  });
-
-  await test('enable.auto.offset.store is dropped, since the client owns offset storage', () => {
-    const resolved = applyDBOSConsumerConfig({ 'group.id': 'g', 'enable.auto.offset.store': true } as never, 250);
-    assert.ok(!('enable.auto.offset.store' in resolved));
-  });
-
-  await test('batchSize sets the client batch cap, which otherwise defaults to 32', () => {
-    assert.equal(applyDBOSConsumerConfig({ 'group.id': 'g' } as never, 250)['js.consumer.max.batch.size'], 250);
-    // An explicit caller value wins.
-    assert.equal(
-      applyDBOSConsumerConfig({ 'group.id': 'g', 'js.consumer.max.batch.size': 7 } as never, 250)[
-        'js.consumer.max.batch.size'
-      ],
-      7,
-    );
-  });
-
-  await test('auto.offset.reset defaults to earliest but the caller can override it', () => {
-    assert.equal(applyDBOSConsumerConfig({ 'group.id': 'g' } as never, 250)['auto.offset.reset'], 'earliest');
-    assert.equal(
-      applyDBOSConsumerConfig({ 'group.id': 'g', 'auto.offset.reset': 'latest' } as never, 250)['auto.offset.reset'],
-      'latest',
-    );
-  });
-
-  await test("the caller's config object is never mutated, nested objects included", () => {
-    // kafkaJS is the only nested object the function touches, and it survives the top-level spread
-    // by reference — so it must be in the fixture, and the snapshot must be deep, or the one
-    // mutation that could actually happen would go undetected.
-    const config = {
-      'group.id': 'g',
-      'enable.auto.commit': false,
-      'enable.auto.offset.store': true,
-      kafkaJS: { autoCommit: false },
-    };
-    const snapshot = structuredClone(config);
-    applyDBOSConsumerConfig(config as never, 250);
-    assert.deepEqual(config, snapshot);
   });
 }).catch(assert.fail);

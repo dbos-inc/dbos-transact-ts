@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { DBOS, StatusString } from '../src';
+import { ConfiguredInstance, DBOS, StatusString } from '../src';
 import { runWithTopContext } from '../src/context';
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import { getOrCreateQueue, initWorkflows, prepareEnqueuedWorkflow, PreparedWorkflow } from '../src/eventreceiver';
@@ -18,6 +18,22 @@ const batchWf = DBOS.registerWorkflow(batchWorkflow, { name: 'batchWorkflow' });
 async function unregisteredWorkflow(_value: string) {
   await Promise.resolve();
 }
+
+class InstanceHolder extends ConfiguredInstance {
+  constructor(name: string) {
+    super(name);
+  }
+
+  @DBOS.workflow()
+  async instanceWorkflow(_value: string) {
+    await Promise.resolve();
+  }
+}
+new InstanceHolder('batch-enqueue-instance');
+// The registered function, not a bound one: the registry is keyed by the prototype's method, and
+// binding it would produce a different object that the registry has never seen.
+// eslint-disable-next-line @typescript-eslint/unbound-method
+const instanceWf = InstanceHolder.prototype.instanceWorkflow as (value: string) => Promise<void>;
 
 /** An undeclared queue: rows stay ENQUEUED, so nothing executes them out from under the test. */
 function unpolledQueue() {
@@ -91,6 +107,14 @@ describe('batch-enqueue', () => {
     expect(status.attributes).toBeUndefined();
   });
 
+  test('prepareEnqueuedWorkflow rejects an instance method', async () => {
+    // A batch row carries no config name, so the dequeuer could not bind the instance and would run
+    // the workflow with a null `this`. Reject it rather than fail confusingly at dispatch.
+    await expect(
+      prepareEnqueuedWorkflow(instanceWf, ['v'], { queueName: 'some-queue', workflowID: `inst-${randomUUID()}` }),
+    ).rejects.toThrow(/Cannot enqueue instance method/);
+  });
+
   test('prepareEnqueuedWorkflow rejects an unregistered function', async () => {
     await expect(
       prepareEnqueuedWorkflow(unregisteredWorkflow, ['a'], { queueName: 'q', workflowID: 'w-unreg' }),
@@ -135,7 +159,7 @@ describe('batch-enqueue', () => {
     await expect(initWorkflows([deduped])).rejects.toThrow(/does not support deduplication IDs/);
   });
 
-  test('unordered rows get wall-clock created_at and never touch the per-key cursors', async () => {
+  test('unordered rows get wall-clock created_at and a null partition key', async () => {
     const queueName = unpolledQueue();
     const prefix = `none-${randomUUID()}`;
     const before = Date.now();

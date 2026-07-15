@@ -4,11 +4,12 @@ import assert from 'node:assert/strict';
 import { DBOS, WorkflowQueue } from '@dbos-inc/dbos-sdk';
 import { Client } from 'pg';
 import { dropDB } from './test-helpers';
-import { KafkaConfig, KafkaMessage, logLevel } from 'kafkajs';
+import { Kafka, KafkaConfig, KafkaMessage, logLevel } from 'kafkajs';
 import { KafkaReceiver } from '..';
 
-// Validation that can only run once every queue is registered, so it lands at launch. It happens
-// before any consumer connects, so these tests need a database but no broker.
+// Validation that can only run once every queue is registered, so it lands at launch. The rejection
+// cases need only a database: they throw before any consumer connects. The acceptance case does
+// launch successfully, so it connects and needs a broker too.
 const kafkaConfig: KafkaConfig = {
   clientId: 'dbos-kafka-launchval-test',
   brokers: [process.env['KAFKA_BROKER'] ?? 'localhost:9092'],
@@ -26,7 +27,22 @@ function makeWorkflow(name: string) {
   return DBOS.registerWorkflow(noop, { name });
 }
 
+async function validateKafka(config: KafkaConfig) {
+  const kafka = new Kafka(config);
+  const admin = kafka.admin();
+  try {
+    await admin.connect();
+    await admin.listTopics();
+    return true;
+  } catch {
+    return false;
+  } finally {
+    await admin.disconnect();
+  }
+}
+
 suite('kafkajs-receive-launch-validation', async () => {
+  const kafkaAvailable = await validateKafka(kafkaConfig);
   const client = new Client({ user: 'postgres', database: 'postgres' });
   await client.connect();
   try {
@@ -86,16 +102,21 @@ suite('kafkajs-receive-launch-validation', async () => {
     },
   );
 
-  await test('a consumer may name a queue that does not exist yet', { timeout: 30000 }, async () => {
-    // The queue can be registered after launch, so naming an unknown one must not fail launch.
-    const receiver = new KafkaReceiver(kafkaConfig);
-    receiver.registerConsumer(makeWorkflow('unknownQWf'), `t-${rand()}`, {
-      name: 'unknownQWf',
-      queueName: `never-registered-${rand()}`,
-      config: { groupId: `unknownq-grp-${rand()}` },
-    });
+  // Unlike its siblings, this one launches successfully, so the consumer really connects.
+  await test(
+    'a consumer may name a queue that does not exist yet',
+    { skip: !kafkaAvailable, timeout: 30000 },
+    async () => {
+      // The queue can be registered after launch, so naming an unknown one must not fail launch.
+      const receiver = new KafkaReceiver(kafkaConfig);
+      receiver.registerConsumer(makeWorkflow('unknownQWf'), `t-${rand()}`, {
+        name: 'unknownQWf',
+        queueName: `never-registered-${rand()}`,
+        config: { groupId: `unknownq-grp-${rand()}` },
+      });
 
-    DBOS.setConfig({ name: 'kafka-launchval-test' });
-    await DBOS.launch();
-  });
+      DBOS.setConfig({ name: 'kafka-launchval-test' });
+      await DBOS.launch();
+    },
+  );
 }).catch(assert.fail);

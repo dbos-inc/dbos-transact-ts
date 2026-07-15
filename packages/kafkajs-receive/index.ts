@@ -362,8 +362,10 @@ export class KafkaReceiver implements DBOSLifecycleCallback {
     const queuePartitionKey = partitionKeyFor(ordering, groupId, topic, partition);
 
     for (let start = 0; start < batch.messages.length; start += batchSize) {
-      // A rebalance revoked this partition, or we're shutting down: stop without resolving offsets,
-      // so the remaining messages are redelivered.
+      // KafkaJS stopped this runner, or we're shutting down: stop without resolving offsets, so the
+      // rest of the batch is redelivered. Note isStale() cannot fire here, unlike in the Confluent
+      // receiver: KafkaJS only sets it after an explicit seek(), which this receiver never calls, so
+      // a mid-batch rebalance instead surfaces as heartbeat() throwing below.
       if (!payload.isRunning() || payload.isStale() || signal.aborted) return;
       const chunk = batch.messages.slice(start, start + batchSize);
 

@@ -35,10 +35,14 @@ suite('confluent-kafka-receive-validation', async () => {
     );
   });
 
-  await test('a non-positive batchSize is rejected', () => {
+  await test('a non-positive or non-integer batchSize is rejected', () => {
     const wf = makeWorkflow('confValidationBatchSize');
     assert.throws(
       () => kafkaReceiver.registerConsumer(wf, 'some-topic', { name: 'confValidationBatchSize', batchSize: 0 }),
+      /batchSize must be a positive integer/,
+    );
+    assert.throws(
+      () => kafkaReceiver.registerConsumer(wf, 'some-topic', { name: 'confValidationBatchSize', batchSize: 1.5 }),
       /batchSize must be a positive integer/,
     );
   });
