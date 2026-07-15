@@ -2848,8 +2848,7 @@ describe('concurrent-queue-dispatches', () => {
  * the dispatch loop itself, and the states that expose them (a poll throwing, `stop()` landing
  * mid-maintenance, N queues contending for fewer lanes) are hard to stage against a real system
  * database without long sleeps. The `concurrent-queue-dispatches` block above covers the
- * end-to-end path. `afterEach` unregisters each test's queues, so a later `DBOS.launch()` that
- * listens to every in-memory queue will not pick them up.
+ * end-to-end path. `afterEach` unregisters each test's queues so a later `DBOS.launch()` skips them.
  */
 describe('bounded-lane dispatcher', () => {
   interface MockHooks {
@@ -2871,8 +2870,7 @@ describe('bounded-lane dispatcher', () => {
           await hooks.onTransition?.();
         },
         findAndMarkStartableWorkflows: async (queue: WorkflowQueue) => {
-          // The runner always dispatches the internal queue, which an earlier DBOS.launch() in this
-          // file registered globally; skip it so counters and windows do not depend on its interval.
+          // An earlier DBOS.launch() registered the internal queue globally; skip it to keep counters clean.
           if (queue.name === INTERNAL_QUEUE_NAME) return [];
           await hooks.onPoll?.(queue.name);
           return [];
@@ -2898,8 +2896,7 @@ describe('bounded-lane dispatcher', () => {
     wfQueueRunner.stop();
     // Restores any global patched via jest.spyOn below; runs even when a test times out.
     jest.restoreAllMocks();
-    // The WorkflowQueue constructor registers into a process-global map, so unregister: a later
-    // DBOS.launch() with no listenQueues would dispatch these against the real system database.
+    // The constructor registers globally, so unregister: a later DBOS.launch() would dispatch these.
     for (const q of registered) wfQueueRunner.wfQueuesByName.delete(q.name);
     registered.length = 0;
   });
@@ -2931,8 +2928,7 @@ describe('bounded-lane dispatcher', () => {
   }, 15000);
 
   test('defaults to three lanes when no limit is configured', async () => {
-    // The default is what every user who does not set maxConcurrentQueueDispatches gets, and it is
-    // the one value no other test here exercises: they all pass an explicit limit.
+    // The value users get when they set nothing, and the one limit no other test here exercises.
     let inFlight = 0;
     let peak = 0;
 
@@ -2956,9 +2952,7 @@ describe('bounded-lane dispatcher', () => {
   }, 15000);
 
   test('does not spin when more queues are due than there are lanes', async () => {
-    // Lanes stay saturated here, so the scheduler must park on the maintenance cadence and let a
-    // completing poll wake it. Folding a due-but-unlaned queue's (past) nextPollAt into the wake
-    // time instead leaves every sleep non-positive, which is the busy spin.
+    // Lanes stay saturated, so the scheduler must park on the maintenance cadence rather than spin.
     let polls = 0;
     let shortParks = 0;
     const queues = makeQueues(5);
@@ -2969,9 +2963,7 @@ describe('bounded-lane dispatcher', () => {
       },
     });
 
-    // Count every near-instant park, not just delay === 0: dropping the `Math.max(0, ...)` clamp
-    // spins on negative delays, which Node floors to 1ms. Healthy parks are the ~1s maintenance
-    // cadence, and the mock's own sleeps are 30ms, so neither is counted.
+    // Count every near-instant park, not just 0: without the `Math.max(0, ...)` clamp a spin goes negative.
     const realSetTimeout = global.setTimeout;
     jest.spyOn(global, 'setTimeout').mockImplementation(((
       fn: (...a: unknown[]) => void,
@@ -3066,8 +3058,7 @@ describe('bounded-lane dispatcher', () => {
   }, 15000);
 
   test('releases the lane when a poll throws, and keeps dispatching', async () => {
-    // Escapes pollQueue's own catch — the `'code' in err` guard passes, then reading `.code` throws —
-    // and reaches runQueuePoll's catch however that guard is written.
+    // The `'code' in err` guard passes, then reading `.code` throws, escaping pollQueue's catch however it is written.
     class UnreadableCodeError extends Error {
       get code(): string {
         throw new TypeError('unreadable error code');
@@ -3104,9 +3095,7 @@ describe('bounded-lane dispatcher', () => {
     let pollsAfterStop = 0;
     let releaseTransition: (() => void) | undefined;
 
-    // Five queues against two lanes: three are always un-laned with a nextPollAt well in the past,
-    // so the queue set is unambiguously due at the stale `now` scheduleDueQueues is handed. With a
-    // single queue, dueness lands on a millisecond boundary and the regression escapes ~1 run in 3.
+    // Five queues, two lanes: three stay un-laned and overdue, so the stale `now` cannot make dueness a coin flip.
     const queues = makeQueues(5);
     const exec = mockExecutor({
       onTransition: async () => {
