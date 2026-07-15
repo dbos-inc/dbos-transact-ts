@@ -1,4 +1,4 @@
-import { DBOS, DBOSLifecycleCallback, FunctionName, WorkflowQueue } from '@dbos-inc/dbos-sdk';
+import { DBOS, DBOSLifecycleCallback, Error as DBOSErrors, FunctionName, WorkflowQueue } from '@dbos-inc/dbos-sdk';
 import {
   getOrCreateQueue,
   getQueue,
@@ -124,6 +124,23 @@ function partitionKeyFor(
 }
 
 /**
+ * Rethrow an error that cannot be blamed on one message.
+ *
+ * Building a workflow row fails per message only when that message's own content won't serialize.
+ * Every other cause — the consumer's function not being a registered workflow, DBOS being torn
+ * down — fails identically for every message, so dropping is never right: it would discard the
+ * entire stream and commit the offsets, losing the data with nothing but a log line.
+ */
+function rethrowIfNotPerMessage(e: unknown): void {
+  if (e instanceof DBOSErrors.DBOSNotRegisteredError || !(e instanceof Error)) throw e;
+}
+
+/** A consumer's display name; bare functions registered outside a class have no class name. */
+function qualifiedName(className: string, name: string): string {
+  return className ? `${className}.${name}` : name;
+}
+
+/**
  * Run `operation` until it succeeds, backing off between attempts. Gives up only once `signal`
  * is aborted, in which case it returns `undefined`.
  */
@@ -224,10 +241,18 @@ export class KafkaReceiver implements DBOSLifecycleCallback {
       const topics = methodConfig.topics ?? [];
       if (regOp.methodReg.registeredFunction === undefined || topics.length === 0) continue;
       const { name, className } = regOp.methodReg;
+      // Fail here rather than per message: an unregistered function fails identically for every
+      // message, which the batch loop would mistake for a stream of poison messages and drop.
+      if (regOp.methodReg.workflowConfig === undefined) {
+        throw new Error(
+          `Kafka consumer ${qualifiedName(className, name)} is not a registered DBOS workflow. Register it ` +
+            `with DBOS.registerWorkflow, or apply the @DBOS.workflow() decorator beneath @consumer().`,
+        );
+      }
       const groupId = methodConfig.config?.groupId ?? safeGroupName(className, name, topics);
-      registrations.push({ funcName: `${className}.${name}`, groupId, topics });
+      registrations.push({ funcName: qualifiedName(className, name), groupId, topics });
       if (methodConfig.queueName !== undefined) {
-        await this.#validateConsumerQueue(`${className}.${name}`, methodConfig.queueName);
+        await this.#validateConsumerQueue(qualifiedName(className, name), methodConfig.queueName);
       }
     }
     this.#validateConsumerGroups(registrations);
@@ -354,7 +379,10 @@ export class KafkaReceiver implements DBOSLifecycleCallback {
             }),
           );
         } catch (e) {
-          // A build failure is deterministic, so drop that message rather than wedge the consumer.
+          // Only this message is unprocessable, so drop it rather than wedge the partition behind
+          // it. Never drop for a reason that applies to every message (see rethrowIfNotPerMessage):
+          // that would silently discard the whole stream, offsets and all.
+          rethrowIfNotPerMessage(e);
           const message_ = e instanceof Error ? e.message : String(e);
           DBOS.logger.error(
             `Dropping unprocessable Kafka message ${topic}[${partition}]@${message.offset}: ${message_}`,
@@ -397,7 +425,7 @@ export class KafkaReceiver implements DBOSLifecycleCallback {
       const methodConfig = regOp.methodConfig as KafkaMethodConfig;
       const { name, className } = regOp.methodReg;
       for (const topic of methodConfig.topics ?? []) {
-        DBOS.logger.info(`    ${topic} -> ${className}.${name}`);
+        DBOS.logger.info(`    ${topic} -> ${qualifiedName(className, name)}`);
       }
     }
   }

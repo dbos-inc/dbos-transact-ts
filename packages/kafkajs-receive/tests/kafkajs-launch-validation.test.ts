@@ -65,6 +65,27 @@ suite('kafkajs-receive-launch-validation', async () => {
     await assert.rejects(DBOS.launch(), /share group\.id .* and topic/s);
   });
 
+  await test(
+    'a consumer function that is not a registered workflow is rejected at launch',
+    { timeout: 30000 },
+    async () => {
+      // Regression: this fails identically for every message. Left to the batch loop, it would look
+      // like an endless stream of poison messages, so every message would be dropped and its offset
+      // committed — the whole topic silently discarded while the app reported healthy.
+      const receiver = new KafkaReceiver(kafkaConfig);
+      const notAWorkflow = async (_topic: string, _partition: number, _message: KafkaMessage) => {
+        await Promise.resolve();
+      };
+      receiver.registerConsumer(notAWorkflow, `t-${rand()}`, {
+        name: 'notAWorkflow',
+        config: { groupId: `unreg-grp-${rand()}` },
+      });
+
+      DBOS.setConfig({ name: 'kafka-launchval-test' });
+      await assert.rejects(DBOS.launch(), /is not a registered DBOS workflow/);
+    },
+  );
+
   await test('a consumer may name a queue that does not exist yet', { timeout: 30000 }, async () => {
     // The queue can be registered after launch, so naming an unknown one must not fail launch.
     const receiver = new KafkaReceiver(kafkaConfig);

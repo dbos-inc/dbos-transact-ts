@@ -54,6 +54,27 @@ suite('confluent-kafka-receive-launch-validation', async () => {
     await assert.rejects(DBOS.launch(), /is a partitioned queue/);
   });
 
+  await test(
+    'a consumer function that is not a registered workflow is rejected at launch',
+    { timeout: 30000 },
+    async () => {
+      // Regression: this fails identically for every message. Left to the batch loop, it would look
+      // like an endless stream of poison messages, so every message would be dropped and its offset
+      // committed — the whole topic silently discarded while the app reported healthy.
+      const receiver = new ConfluentKafkaReceiver(kafkaConfig);
+      const notAWorkflow = async (_topic: string, _partition: number, _message: ConfluentKafkaJS.Message) => {
+        await Promise.resolve();
+      };
+      receiver.registerConsumer(notAWorkflow, `t-${rand()}`, {
+        name: 'confNotAWorkflow',
+        config: { 'group.id': `conf-unreg-grp-${rand()}` },
+      });
+
+      DBOS.setConfig({ name: 'conf-kafka-launchval-test' });
+      await assert.rejects(DBOS.launch(), /is not a registered DBOS workflow/);
+    },
+  );
+
   await test('two consumers sharing a group and topic are rejected at launch', { timeout: 30000 }, async () => {
     const receiver = new ConfluentKafkaReceiver(kafkaConfig);
     const topic = `conf-dup-${rand()}`;
