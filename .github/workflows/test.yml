@@ -43,23 +43,8 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 10
-      # Kafka service container
-      kafka:
-        image: apache/kafka
-        ports:
-          - 9092:9092
-        # Set health checks to wait until kafka has started
-        options: >-
-          --health-cmd "/opt/kafka/bin/kafka-broker-api-versions.sh --version"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
 
     steps:
-      - name: 'Setup postgres config'
-        run: |
-          docker exec ${{ job.services.postgres.id }} sh -c 'echo "wal_level=logical" >> /var/lib/postgresql/data/postgresql.conf'
-          docker restart ${{ job.services.postgres.id }}
       - uses: actions/checkout@v4.1.1
       - name: Use Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v4.0.2
@@ -71,13 +56,64 @@ jobs:
           npm ci
           npm run build
           npm run lint
-          npm test
+          npm run test:unit
+        env:
+          PGPASSWORD: dbos
+          DB_PASSWORD: dbos
+          DB_USER: postgres
+          DBOS_COCKROACHDB_URL: postgresql://root@localhost:26257/postgres
+          NPM_AUTH_TOKEN: ${{secrets.GITHUB_TOKEN}}
+          SILENCE_LOGS: true
+
+  # The workspace packages test independently of the SDK's own suite, so they run as their own job
+  package-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ['20', '22', '24']
+
+    services:
+      postgres:
+        image: postgres:16
+        ports:
+          - 5432:5432
+        env:
+          POSTGRES_PASSWORD: dbos
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      # Needed by the Kafka receiver packages. No CockroachDB: no package test uses it.
+      kafka:
+        image: apache/kafka
+        ports:
+          - 9092:9092
+        options: >-
+          --health-cmd "/opt/kafka/bin/kafka-broker-api-versions.sh --version"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4.1.1
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4.0.2
+        with:
+          node-version: ${{ matrix.node-version }}
+      - name: Test packages
+        working-directory: ./
+        run: |
+          npm ci
+          npm run build
+          npm run test:packages
         env:
           PGPASSWORD: dbos
           DB_PASSWORD: dbos
           DB_USER: postgres
           KAFKA_BROKER: localhost:9092
-          DBOS_COCKROACHDB_URL: postgresql://root@localhost:26257/postgres
           NPM_AUTH_TOKEN: ${{secrets.GITHUB_TOKEN}}
           SILENCE_LOGS: true
 

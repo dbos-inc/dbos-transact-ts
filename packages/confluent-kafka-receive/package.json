@@ -14,7 +14,7 @@
   "scripts": {
     "build": "tsc --project tsconfig.build.json",
     "pretest": "npm run build",
-    "test": "tsx --test tests/*.test.ts"
+    "test": "tsx --test --test-concurrency=1 tests/*.test.ts"
   },
   "dependencies": {
     "@confluentinc/kafka-javascript": "^1.8.2"
