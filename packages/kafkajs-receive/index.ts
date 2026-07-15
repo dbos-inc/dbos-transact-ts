@@ -169,6 +169,8 @@ export type ConsumerTopics = string | RegExp | Array<string | RegExp>;
 
 export class KafkaReceiver implements DBOSLifecycleCallback {
   readonly #consumers = new Array<Consumer>();
+  /** Rebuilds still in flight, so destroy() can wait for them instead of racing them. */
+  readonly #rebuilds = new Set<Promise<void>>();
   #abortController = new AbortController();
 
   constructor(
@@ -285,6 +287,10 @@ export class KafkaReceiver implements DBOSLifecycleCallback {
   async #startConsumer(kafka: KafkaJS, spec: ConsumerSpec) {
     const { maxRetries, multiplier } = this.retryConfig;
     const consumer = kafka.consumer(spec.config);
+    // Track it before anything below can throw. Setup is not atomic — connect, subscribe and run
+    // all take time — and destroy() can only disconnect the consumers it can see, so registering
+    // late would strand a connected consumer whenever setup failed partway.
+    this.#consumers.push(consumer);
     await consumer.connect();
 
     // A temporary workaround for https://github.com/tulios/kafkajs/pull/1558 until it gets fixed
@@ -312,10 +318,15 @@ export class KafkaReceiver implements DBOSLifecycleCallback {
       DBOS.logger.error(
         `Kafka consumer for group ${spec.config.groupId} stopped on a non-retriable error: ${payload.error.message}. Recreating it.`,
       );
+      // KafkaJS disconnects a consumer before reporting that it crashed, so stop tracking this one
+      // and track its replacement instead.
       const idx = this.#consumers.indexOf(consumer);
       if (idx >= 0) this.#consumers.splice(idx, 1);
-      void this.#recreateConsumer(kafka, spec);
+      this.#recreateConsumer(kafka, spec);
     });
+
+    // Shutting down: leave it connected for destroy() to clean up rather than start consuming.
+    if (this.#abortController.signal.aborted) return;
 
     await consumer.run({
       // DBOS resolves offsets itself, only after a batch is durably enqueued, so commits never
@@ -324,28 +335,36 @@ export class KafkaReceiver implements DBOSLifecycleCallback {
       eachBatch: (payload) =>
         this.#eachBatch(payload, spec.func, spec.config.groupId, spec.ordering, spec.batchSize, spec.queueName),
     });
-
-    this.#consumers.push(consumer);
   }
 
-  /** Rebuild a consumer KafkaJS stopped for good, backing off between attempts. */
-  async #recreateConsumer(kafka: KafkaJS, spec: ConsumerSpec) {
+  /**
+   * Rebuild a consumer KafkaJS stopped for good, backing off between attempts.
+   *
+   * The rebuild outlives the crash callback that starts it, so it is tracked rather than left to
+   * run detached: destroy() awaits it, otherwise a rebuild still in flight would connect its
+   * replacement after the sweep and leave it running past shutdown.
+   */
+  #recreateConsumer(kafka: KafkaJS, spec: ConsumerSpec): void {
     const signal = this.#abortController.signal;
-    let waitMS = MIN_RETRY_WAIT_MS;
-    while (!signal.aborted) {
-      await sleepms(waitMS, signal);
-      if (signal.aborted) return;
-      try {
-        await this.#startConsumer(kafka, spec);
-        return;
-      } catch (e) {
-        const message = e instanceof Error ? e.message : String(e);
-        DBOS.logger.error(
-          `Failed to recreate Kafka consumer for group ${spec.config.groupId}: ${message}. Retrying in ${Math.round(waitMS / 1000)}s.`,
-        );
-        waitMS = Math.min(waitMS * 2, MAX_RETRY_WAIT_MS);
+    const rebuild = (async () => {
+      let waitMS = MIN_RETRY_WAIT_MS;
+      while (!signal.aborted) {
+        await sleepms(waitMS, signal);
+        if (signal.aborted) return;
+        try {
+          await this.#startConsumer(kafka, spec);
+          return;
+        } catch (e) {
+          const message = e instanceof Error ? e.message : String(e);
+          DBOS.logger.error(
+            `Failed to recreate Kafka consumer for group ${spec.config.groupId}: ${message}. Retrying in ${Math.round(waitMS / 1000)}s.`,
+          );
+          waitMS = Math.min(waitMS * 2, MAX_RETRY_WAIT_MS);
+        }
       }
-    }
+    })();
+    this.#rebuilds.add(rebuild);
+    void rebuild.finally(() => this.#rebuilds.delete(rebuild));
   }
 
   async #eachBatch(
@@ -415,6 +434,9 @@ export class KafkaReceiver implements DBOSLifecycleCallback {
 
   async destroy() {
     this.#abortController.abort();
+    // Settle any rebuild first: aborted, each one returns promptly, but one already building a
+    // replacement will finish and register it, and that consumer must be swept too.
+    await Promise.allSettled([...this.#rebuilds]);
     const disconnectPromises = this.#consumers.splice(0, this.#consumers.length).map((c) => c.disconnect());
     await Promise.allSettled(disconnectPromises);
   }
