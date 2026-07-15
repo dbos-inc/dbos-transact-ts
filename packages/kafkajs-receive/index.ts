@@ -1,5 +1,6 @@
 import { DBOS, DBOSLifecycleCallback, FunctionName, WorkflowQueue } from '@dbos-inc/dbos-sdk';
 import {
+  getOrCreateQueue,
   getQueue,
   initWorkflows,
   prepareEnqueuedWorkflow,
@@ -68,6 +69,16 @@ interface KafkaRetryConfig {
   multiplier: number;
 }
 
+/** Everything needed to (re)build one consumer. */
+interface ConsumerSpec {
+  func: KafkaMessageHandler<unknown>;
+  topics: Array<string | RegExp>;
+  config: ConsumerConfig;
+  ordering: KafkaOrdering;
+  batchSize: number;
+  queueName: string;
+}
+
 export interface KafkaConsumerOptions {
   queueName?: string;
   config?: ConsumerConfig;
@@ -85,23 +96,15 @@ function safeGroupName(className: string, methodName: string, topics: Array<stri
   return `dbos-kafka-group-${safeGroupIdPart}`.slice(0, 255);
 }
 
-/**
- * The internal queues are module-level singletons: several receivers in one process share them,
- * and a queue may only be constructed once per name.
- */
-let kafkaQueue: WorkflowQueue | undefined;
-let kafkaOrderedQueue: WorkflowQueue | undefined;
-
+/** Several receivers in one process share the internal queues, so resolve rather than construct. */
 function getKafkaQueue(): WorkflowQueue {
-  kafkaQueue ??= new WorkflowQueue(KAFKA_QUEUE_NAME);
-  return kafkaQueue;
+  return getOrCreateQueue(KAFKA_QUEUE_NAME);
 }
 
 function getKafkaOrderedQueue(): WorkflowQueue {
   // One shared partitioned queue: concurrency=1 is enforced per partition key, so execution is
   // serial per key and parallel across keys.
-  kafkaOrderedQueue ??= new WorkflowQueue(KAFKA_ORDERED_QUEUE_NAME, { partitionQueue: true, concurrency: 1 });
-  return kafkaOrderedQueue;
+  return getOrCreateQueue(KAFKA_ORDERED_QUEUE_NAME, { partitionQueue: true, concurrency: 1 });
 }
 
 function partitionKeyFor(
@@ -212,7 +215,6 @@ export class KafkaReceiver implements DBOSLifecycleCallback {
 
   async initialize() {
     this.#abortController = new AbortController();
-    const { maxRetries, multiplier } = this.retryConfig;
     const kafka = new KafkaJS(this.config);
 
     const regOps = DBOS.getAssociatedInfo(this);
@@ -243,40 +245,81 @@ export class KafkaReceiver implements DBOSLifecycleCallback {
       }
 
       const { name, className } = regOp.methodReg;
-      const config = methodConfig.config ?? { groupId: safeGroupName(className, name, topics) };
-      const consumer = kafka.consumer(config);
-      await consumer.connect();
+      await this.#startConsumer(kafka, {
+        func,
+        topics,
+        config: methodConfig.config ?? { groupId: safeGroupName(className, name, topics) },
+        ordering: methodConfig.ordering ?? 'none',
+        batchSize: methodConfig.batchSize ?? DEFAULT_BATCH_SIZE,
+        queueName: methodConfig.consumerQueueName ?? KAFKA_QUEUE_NAME,
+      });
+    }
+  }
 
-      // A temporary workaround for https://github.com/tulios/kafkajs/pull/1558 until it gets fixed
-      // If topic auto-creation is on and you try to subscribe to a nonexistent topic, KafkaJS should retry until the topic is created.
-      // However, it has a bug where it won't. Thus, we retry instead.
-      let { retryTime } = this.retryConfig;
-      for (let i = 1; i <= maxRetries; i++) {
-        try {
-          await consumer.subscribe({ topics: topics, fromBeginning: true });
-          break;
-        } catch (e) {
-          if (e instanceof KafkaJSProtocolError && e.code === 3 && i < maxRetries) {
-            await sleepms(retryTime);
-            retryTime *= multiplier;
-          } else {
-            throw e;
-          }
+  /** Connect, subscribe, and start consuming for one registration. */
+  async #startConsumer(kafka: KafkaJS, spec: ConsumerSpec) {
+    const { maxRetries, multiplier } = this.retryConfig;
+    const consumer = kafka.consumer(spec.config);
+    await consumer.connect();
+
+    // A temporary workaround for https://github.com/tulios/kafkajs/pull/1558 until it gets fixed
+    // If topic auto-creation is on and you try to subscribe to a nonexistent topic, KafkaJS should retry until the topic is created.
+    // However, it has a bug where it won't. Thus, we retry instead.
+    let { retryTime } = this.retryConfig;
+    for (let i = 1; i <= maxRetries; i++) {
+      try {
+        await consumer.subscribe({ topics: spec.topics, fromBeginning: true });
+        break;
+      } catch (e) {
+        if (e instanceof KafkaJSProtocolError && e.code === 3 && i < maxRetries) {
+          await sleepms(retryTime);
+          retryTime *= multiplier;
+        } else {
+          throw e;
         }
       }
+    }
 
-      const ordering = methodConfig.ordering ?? 'none';
-      const batchSize = methodConfig.batchSize ?? DEFAULT_BATCH_SIZE;
-      const queueName = methodConfig.consumerQueueName ?? KAFKA_QUEUE_NAME;
+    // KafkaJS restarts itself only for retriable crashes. A non-retriable one (a TypeError and
+    // friends) leaves the consumer stopped and disconnected for good, so rebuild it ourselves.
+    consumer.on(consumer.events.CRASH, ({ payload }) => {
+      if (payload.restart || this.#abortController.signal.aborted) return;
+      DBOS.logger.error(
+        `Kafka consumer for group ${spec.config.groupId} stopped on a non-retriable error: ${payload.error.message}. Recreating it.`,
+      );
+      const idx = this.#consumers.indexOf(consumer);
+      if (idx >= 0) this.#consumers.splice(idx, 1);
+      void this.#recreateConsumer(kafka, spec);
+    });
 
-      await consumer.run({
-        // DBOS resolves offsets itself, only after a batch is durably enqueued, so commits never
-        // outrun durable state.
-        eachBatchAutoResolve: false,
-        eachBatch: (payload) => this.#eachBatch(payload, func, config.groupId, ordering, batchSize, queueName),
-      });
+    await consumer.run({
+      // DBOS resolves offsets itself, only after a batch is durably enqueued, so commits never
+      // outrun durable state.
+      eachBatchAutoResolve: false,
+      eachBatch: (payload) =>
+        this.#eachBatch(payload, spec.func, spec.config.groupId, spec.ordering, spec.batchSize, spec.queueName),
+    });
 
-      this.#consumers.push(consumer);
+    this.#consumers.push(consumer);
+  }
+
+  /** Rebuild a consumer KafkaJS stopped for good, backing off between attempts. */
+  async #recreateConsumer(kafka: KafkaJS, spec: ConsumerSpec) {
+    const signal = this.#abortController.signal;
+    let waitMS = MIN_RETRY_WAIT_MS;
+    while (!signal.aborted) {
+      await sleepms(waitMS, signal);
+      if (signal.aborted) return;
+      try {
+        await this.#startConsumer(kafka, spec);
+        return;
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        DBOS.logger.error(
+          `Failed to recreate Kafka consumer for group ${spec.config.groupId}: ${message}. Retrying in ${Math.round(waitMS / 1000)}s.`,
+        );
+        waitMS = Math.min(waitMS * 2, MAX_RETRY_WAIT_MS);
+      }
     }
   }
 

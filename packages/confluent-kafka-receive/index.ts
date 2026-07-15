@@ -1,5 +1,6 @@
 import { DBOS, DBOSLifecycleCallback, FunctionName, WorkflowQueue } from '@dbos-inc/dbos-sdk';
 import {
+  getOrCreateQueue,
   getQueue,
   initWorkflows,
   prepareEnqueuedWorkflow,
@@ -89,23 +90,61 @@ function groupIdOf(config: KafkaJS.ConsumerConstructorConfig): string | undefine
   return config['group.id'] ?? config.kafkaJS?.groupId;
 }
 
-/**
- * The internal queues are module-level singletons: several receivers in one process share them,
- * and a queue may only be constructed once per name.
- */
-let kafkaQueue: WorkflowQueue | undefined;
-let kafkaOrderedQueue: WorkflowQueue | undefined;
+function isFalsey(value: unknown): boolean {
+  return value === false || (typeof value === 'string' && ['false', '0'].includes(value.trim().toLowerCase()));
+}
 
+/**
+ * Return a copy of `config` with the offset settings DBOS depends on, never mutating the caller's.
+ *
+ * DBOS stores offsets itself after a batch is durably enqueued and relies on auto-commit to flush
+ * them, so a consumer that never auto-commits would reprocess its whole backlog on every restart.
+ * The client rejects `enable.auto.offset.store` outright (it owns offset storage), so drop it
+ * rather than fail on a config that is merely redundant.
+ */
+export function applyDBOSConsumerConfig(
+  config: KafkaJS.ConsumerConstructorConfig,
+  batchSize: number,
+): KafkaJS.ConsumerConstructorConfig {
+  const resolved: KafkaJS.ConsumerConstructorConfig = {
+    // Defaults to 32, which would cap every batch well below batchSize.
+    'js.consumer.max.batch.size': batchSize,
+    ...config,
+    'auto.offset.reset': config['auto.offset.reset'] ?? 'earliest',
+  };
+
+  if ('enable.auto.offset.store' in resolved) {
+    if (!isFalsey(resolved['enable.auto.offset.store'])) {
+      DBOS.logger.warn(
+        'Ignoring enable.auto.offset.store: DBOS manages Kafka offset storage to avoid committing past durable workflow state.',
+      );
+    }
+    delete resolved['enable.auto.offset.store'];
+  }
+
+  // Note this must be checked after the spread: a top-level enable.auto.commit silently overrides
+  // kafkaJS.autoCommit, and a false value stores offsets that are never committed.
+  if (isFalsey(resolved['enable.auto.commit']) || resolved.kafkaJS?.autoCommit === false) {
+    DBOS.logger.warn(
+      'Overriding enable.auto.commit=false: DBOS relies on Kafka auto-commit to flush the offsets it stores after durable enqueue.',
+    );
+    resolved['enable.auto.commit'] = true;
+    if (resolved.kafkaJS?.autoCommit === false) {
+      resolved.kafkaJS = { ...resolved.kafkaJS, autoCommit: true };
+    }
+  }
+  return resolved;
+}
+
+/** Several receivers in one process share the internal queues, so resolve rather than construct. */
 function getKafkaQueue(): WorkflowQueue {
-  kafkaQueue ??= new WorkflowQueue(KAFKA_QUEUE_NAME);
-  return kafkaQueue;
+  return getOrCreateQueue(KAFKA_QUEUE_NAME);
 }
 
 function getKafkaOrderedQueue(): WorkflowQueue {
   // One shared partitioned queue: concurrency=1 is enforced per partition key, so execution is
   // serial per key and parallel across keys.
-  kafkaOrderedQueue ??= new WorkflowQueue(KAFKA_ORDERED_QUEUE_NAME, { partitionQueue: true, concurrency: 1 });
-  return kafkaOrderedQueue;
+  return getOrCreateQueue(KAFKA_ORDERED_QUEUE_NAME, { partitionQueue: true, concurrency: 1 });
 }
 
 function partitionKeyFor(
@@ -253,12 +292,7 @@ export class ConfluentKafkaReceiver implements DBOSLifecycleCallback {
         'group.id': safeGroupName(className, name, topics),
       };
       const batchSize = methodConfig.batchSize ?? DEFAULT_BATCH_SIZE;
-      const consumer = kafka.consumer({
-        // Defaults to 32, which would cap every batch well below batchSize.
-        'js.consumer.max.batch.size': batchSize,
-        ...config,
-        'auto.offset.reset': 'earliest',
-      });
+      const consumer = kafka.consumer(applyDBOSConsumerConfig(config, batchSize));
       await consumer.connect();
 
       // A temporary workaround for https://github.com/tulios/kafkajs/pull/1558 until it gets fixed

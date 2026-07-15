@@ -7,7 +7,7 @@
 import { DBOSExecutor, PrepareEnqueuedWorkflowOptions } from './dbos-executor';
 import { ensureDBOSIsLaunched, TypedAsyncFunction } from './decorators';
 import { WorkflowStatusInternal } from './system_database';
-import { wfQueueRunner, WorkflowQueue } from './wfqueue';
+import { QueueParameters, wfQueueRunner, WorkflowQueue } from './wfqueue';
 
 export type { PrepareEnqueuedWorkflowOptions };
 
@@ -54,6 +54,17 @@ export async function initWorkflows(workflows: PreparedWorkflow[]): Promise<Set<
  */
 export function registerPollerQueue(name: string): void {
   wfQueueRunner.pollerQueueNames.add(name);
+}
+
+/**
+ * Get the in-memory queue registered under `name` in this process, creating it if there is none.
+ *
+ * A receiver must resolve its internal queues through this rather than caching them: a registry
+ * clear (`DBOS.shutdown({ deregister: true })`) drops the registration, and a cached queue would
+ * silently stop being dispatched, leaving its workflows ENQUEUED forever.
+ */
+export function getOrCreateQueue(name: string, params: QueueParameters = {}): WorkflowQueue {
+  return wfQueueRunner.wfQueuesByName.get(name) ?? new WorkflowQueue(name, params);
 }
 
 /**
