@@ -9,6 +9,7 @@ import {
   DBOSAwaitedWorkflowCancelledError,
   DBOSQueueDuplicatedError,
   DBOSStepTimeoutError,
+  DBOSInvalidWorkflowInputError,
 } from './error';
 import {
   InvokedHandle,
@@ -466,12 +467,19 @@ export class DBOSExecutor {
     }
     const { name: workflowName, className: workflowClassName } = getRegisteredFunctionFullName(wf);
     const serializationType = wInfo.workflowConfig.serialization;
-    const funcArgs = await serializeFunctionInputOutput(
-      serializationType === 'portable' ? ({ positionalArgs: args } as JsonWorkflowArgs) : args,
-      [workflowName, '<arguments>'],
-      this.serializer,
-      serializationType,
-    );
+    let funcArgs: Awaited<ReturnType<typeof serializeFunctionInputOutput>>;
+    try {
+      funcArgs = await serializeFunctionInputOutput(
+        serializationType === 'portable' ? ({ positionalArgs: args } as JsonWorkflowArgs) : args,
+        [workflowName, '<arguments>'],
+        this.serializer,
+        serializationType,
+      );
+    } catch (e) {
+      // Tagged so a batch enqueuer can tell "these arguments are bad" apart from the failures above,
+      // which condemn every workflow it would enqueue rather than just this one.
+      throw new DBOSInvalidWorkflowInputError(workflowName, e);
+    }
     return {
       workflowUUID: options.workflowID,
       status: StatusString.ENQUEUED,

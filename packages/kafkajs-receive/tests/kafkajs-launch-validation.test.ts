@@ -1,7 +1,7 @@
 import { afterEach, suite, test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { DBOS, WorkflowQueue } from '@dbos-inc/dbos-sdk';
+import { ConfiguredInstance, DBOS, WorkflowQueue } from '@dbos-inc/dbos-sdk';
 import { Client } from 'pg';
 import { dropDB } from './test-helpers';
 import { Kafka, KafkaConfig, KafkaMessage, logLevel } from 'kafkajs';
@@ -79,6 +79,47 @@ suite('kafkajs-receive-launch-validation', async () => {
 
     DBOS.setConfig({ name: 'kafka-launchval-test' });
     await assert.rejects(DBOS.launch(), /share group\.id .* and topic/s);
+  });
+
+  await test('two consumers sharing a group across topics are rejected at launch', { timeout: 30000 }, async () => {
+    // KafkaJS's leader assigns only its own subscribed topics and round-robins them across every
+    // member, so the follower discards partitions it never subscribed to and its own topic goes
+    // unread. Rejecting beats warning: the failure is silent non-consumption, not mere churn.
+    const receiver = new KafkaReceiver(kafkaConfig);
+    const groupId = `xtopic-grp-${rand()}`;
+    receiver.registerConsumer(makeWorkflow('xtopicA'), `xtopic-a-${rand()}`, { name: 'xtopicA', config: { groupId } });
+    receiver.registerConsumer(makeWorkflow('xtopicB'), `xtopic-b-${rand()}`, { name: 'xtopicB', config: { groupId } });
+
+    DBOS.setConfig({ name: 'kafka-launchval-test' });
+    await assert.rejects(DBOS.launch(), /share group\.id .* with different topics/s);
+  });
+
+  await test('an instance-method consumer is rejected at launch', { timeout: 30000 }, async () => {
+    // Batch enqueue cannot bind an instance, so every message would fail identically. Caught here,
+    // it is a startup error; missed, the batch loop reads it as a stream of poison messages and
+    // drops the whole topic while committing its offsets.
+    class InstanceConsumer extends ConfiguredInstance {
+      constructor() {
+        super(`inst-consumer-${rand()}`);
+      }
+      @DBOS.workflow()
+      async consume(_topic: string, _partition: number, _message: KafkaMessage) {
+        await Promise.resolve();
+      }
+    }
+    new InstanceConsumer();
+    const receiver = new KafkaReceiver(kafkaConfig);
+    // The prototype's method, not a bound one: the registry is keyed by the object it registered.
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    const instanceConsumer = InstanceConsumer.prototype.consume;
+    receiver.registerConsumer(instanceConsumer, `inst-${rand()}`, {
+      ctorOrProto: InstanceConsumer.prototype,
+      name: 'consume',
+      config: { groupId: `inst-grp-${rand()}` },
+    });
+
+    DBOS.setConfig({ name: 'kafka-launchval-test' });
+    await assert.rejects(DBOS.launch(), /is an instance method/);
   });
 
   await test(

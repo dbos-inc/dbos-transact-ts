@@ -1,7 +1,7 @@
 import { afterEach, suite, test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { DBOS, WorkflowQueue } from '@dbos-inc/dbos-sdk';
+import { ConfiguredInstance, DBOS, WorkflowQueue } from '@dbos-inc/dbos-sdk';
 import { Client } from 'pg';
 import { dropDB } from './test-helpers';
 import { KafkaJS as ConfluentKafkaJS } from '@confluentinc/kafka-javascript';
@@ -84,5 +84,33 @@ suite('confluent-kafka-receive-launch-validation', async () => {
 
     DBOS.setConfig({ name: 'conf-kafka-launchval-test' });
     await assert.rejects(DBOS.launch(), /share group\.id .* and topic/s);
+  });
+
+  await test('an instance-method consumer is rejected at launch', { timeout: 30000 }, async () => {
+    // Batch enqueue cannot bind an instance, so every message would fail identically. Caught here,
+    // it is a startup error; missed, the batch loop reads it as a stream of poison messages and
+    // drops the whole topic while committing its offsets.
+    class InstanceConsumer extends ConfiguredInstance {
+      constructor() {
+        super(`conf-inst-consumer-${rand()}`);
+      }
+      @DBOS.workflow()
+      async consume(_topic: string, _partition: number, _message: ConfluentKafkaJS.Message) {
+        await Promise.resolve();
+      }
+    }
+    new InstanceConsumer();
+    const receiver = new ConfluentKafkaReceiver(kafkaConfig);
+    // The prototype's method, not a bound one: the registry is keyed by the object it registered.
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    const instanceConsumer = InstanceConsumer.prototype.consume;
+    receiver.registerConsumer(instanceConsumer, `conf-inst-${rand()}`, {
+      ctorOrProto: InstanceConsumer.prototype,
+      name: 'consume',
+      config: { 'group.id': `conf-inst-grp-${rand()}` },
+    });
+
+    DBOS.setConfig({ name: 'conf-kafka-launchval-test' });
+    await assert.rejects(DBOS.launch(), /is an instance method/);
   });
 }).catch(assert.fail);

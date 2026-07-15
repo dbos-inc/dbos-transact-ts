@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { createRequire } from 'node:module';
 
-import { DBOS } from '@dbos-inc/dbos-sdk';
+import { DBOS, Error as DBOSErrors } from '@dbos-inc/dbos-sdk';
 import { Client } from 'pg';
 import { dropDB, withTimeout } from './test-helpers';
 import { Kafka, KafkaConfig, KafkaMessage, logLevel, Producer } from 'kafkajs';
@@ -45,6 +45,7 @@ let resolvePoison: () => void;
 const poisonDone = new Promise<void>((r) => (resolvePoison = r));
 
 let failuresInjected = 0;
+let poisonInjected = 0;
 let insertedTotal = 0;
 
 async function outageWorkflow(_topic: string, _partition: number, message: KafkaMessage) {
@@ -132,8 +133,8 @@ suite('kafkajs-receive-failure-paths', async () => {
       };
 
       // Make exactly one message unbuildable, the way a message whose own content won't serialize
-      // would be. A plain Error is per-message: an error that applies to every message must not be
-      // dropped, and is covered by the launch-validation suite.
+      // would be. Only DBOSInvalidWorkflowInputError is per-message; any other error applies to
+      // every message, must not be dropped, and is covered by the launch-validation suite.
       (eventreceiver as { prepareEnqueuedWorkflow: typeof originalPrepare }).prepareEnqueuedWorkflow = async (
         wf,
         args,
@@ -142,7 +143,13 @@ suite('kafkajs-receive-failure-paths', async () => {
         const message = (args as unknown as [string, number, KafkaMessage])[2];
         if (options.queueName.includes('kafkajs') && Number(message.value!.toString()) === POISON_VALUE) {
           const topic = (args as unknown as [string, number, KafkaMessage])[0];
-          if (topic === poisonTopic) throw new Error('Simulated unserializable message');
+          if (topic === poisonTopic) {
+            poisonInjected++;
+            throw new DBOSErrors.DBOSInvalidWorkflowInputError(
+              'poisonWorkflow',
+              new TypeError('Simulated unserializable message'),
+            );
+          }
         }
         return await originalPrepare(wf, args, options);
       };
@@ -202,6 +209,9 @@ suite('kafkajs-receive-failure-paths', async () => {
     },
     async () => {
       await withTimeout(poisonDone, 50000, 'Timeout: a poison message wedged the partition behind it');
+      // Pin the injection: without this, a patch that stopped matching would leave the assertions
+      // below passing on a run where nothing was ever poisoned.
+      assert.ok(poisonInjected > 0, 'the injected poison message was never hit');
       // The poisoned message never ran, and every other message did — including the ones after it,
       // which a wedged partition would have blocked forever.
       assert.ok(!poisonRuns.includes(POISON_VALUE), 'the unprocessable message should not have run');

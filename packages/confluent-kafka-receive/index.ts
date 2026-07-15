@@ -176,7 +176,7 @@ function partitionKeyFor(
  * entire stream and commit the offsets, losing the data with nothing but a log line.
  */
 function rethrowIfNotPerMessage(e: unknown): void {
-  if (e instanceof DBOSErrors.DBOSNotRegisteredError || !(e instanceof Error)) throw e;
+  if (!(e instanceof DBOSErrors.DBOSInvalidWorkflowInputError)) throw e;
 }
 
 /** A consumer's display name; bare functions registered outside a class have no class name. */
@@ -293,6 +293,13 @@ export class ConfluentKafkaReceiver implements DBOSLifecycleCallback {
         throw new Error(
           `Kafka consumer ${qualifiedName(className, name)} is not a registered DBOS workflow. Register it ` +
             `with DBOS.registerWorkflow, or apply the @DBOS.workflow() decorator beneath @consumer().`,
+        );
+      }
+      // Likewise identical for every message: batch enqueue cannot bind an instance to the workflow.
+      if (regOp.methodReg.isInstance) {
+        throw new Error(
+          `Kafka consumer ${qualifiedName(className, name)} is an instance method, which cannot be enqueued in a ` +
+            `batch. Make it static, or register a free function with registerConsumer.`,
         );
       }
       const groupId =

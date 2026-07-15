@@ -132,7 +132,7 @@ function partitionKeyFor(
  * entire stream and commit the offsets, losing the data with nothing but a log line.
  */
 function rethrowIfNotPerMessage(e: unknown): void {
-  if (e instanceof DBOSErrors.DBOSNotRegisteredError || !(e instanceof Error)) throw e;
+  if (!(e instanceof DBOSErrors.DBOSInvalidWorkflowInputError)) throw e;
 }
 
 /** A consumer's display name; bare functions registered outside a class have no class name. */
@@ -199,9 +199,13 @@ export class KafkaReceiver implements DBOSLifecycleCallback {
               `Use distinct group IDs.`,
           );
         }
-        DBOS.logger.warn(
-          `Kafka consumers ${a.funcName} and ${b.funcName} share group.id ${a.groupId} with different topics. ` +
-            `This can cause rebalance churn; consider using distinct group IDs.`,
+        // Distinct topics are no safer: KafkaJS's leader assigns only the topics it subscribed to
+        // itself, then round-robins those partitions across every member regardless of what each
+        // subscribed to. Members silently discard partitions for topics they don't consume, so
+        // whichever consumer does not lead leaves part of its topic unread indefinitely.
+        throw new Error(
+          `Kafka consumers ${a.funcName} and ${b.funcName} share group.id ${a.groupId} with different topics, so ` +
+            `KafkaJS would leave some of their partitions unconsumed. Use distinct group IDs.`,
         );
       }
     }
@@ -249,6 +253,13 @@ export class KafkaReceiver implements DBOSLifecycleCallback {
         throw new Error(
           `Kafka consumer ${qualifiedName(className, name)} is not a registered DBOS workflow. Register it ` +
             `with DBOS.registerWorkflow, or apply the @DBOS.workflow() decorator beneath @consumer().`,
+        );
+      }
+      // Likewise identical for every message: batch enqueue cannot bind an instance to the workflow.
+      if (regOp.methodReg.isInstance) {
+        throw new Error(
+          `Kafka consumer ${qualifiedName(className, name)} is an instance method, which cannot be enqueued in a ` +
+            `batch. Make it static, or register a free function with registerConsumer.`,
         );
       }
       const groupId = methodConfig.config?.groupId ?? safeGroupName(className, name, topics);
