@@ -86,6 +86,22 @@ suite('confluent-kafka-receive-launch-validation', async () => {
     await assert.rejects(DBOS.launch(), /share group\.id .* and topic/s);
   });
 
+  await test('a RegExp topic overlapping a named one is rejected at launch', { timeout: 30000 }, async () => {
+    // Both consumers subscribe to the same topic, so Kafka gives it to only one of them and their
+    // workflow IDs collide. Comparing how the topics are spelled would miss it; matching catches it.
+    const receiver = new ConfluentKafkaReceiver(kafkaConfig);
+    const topic = `conf-re-${rand()}`;
+    const groupId = `conf-re-grp-${rand()}`;
+    receiver.registerConsumer(makeWorkflow('confReA'), topic, { name: 'confReA', config: { 'group.id': groupId } });
+    receiver.registerConsumer(makeWorkflow('confReB'), new RegExp(`^${topic}$`), {
+      name: 'confReB',
+      config: { 'group.id': groupId },
+    });
+
+    DBOS.setConfig({ name: 'conf-kafka-launchval-test' });
+    await assert.rejects(DBOS.launch(), /share group\.id .* and topic/s);
+  });
+
   await test('an instance-method consumer is rejected at launch', { timeout: 30000 }, async () => {
     // Batch enqueue cannot bind an instance, so every message would fail identically. Caught here,
     // it is a startup error; missed, the batch loop reads it as a stream of poison messages and

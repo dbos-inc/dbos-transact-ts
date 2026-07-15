@@ -314,7 +314,9 @@ export class KafkaReceiver implements DBOSLifecycleCallback {
         break;
       } catch (e) {
         if (e instanceof KafkaJSProtocolError && e.code === 3 && i < maxRetries) {
-          await sleepms(retryTime);
+          // Signal-aware: shutting down mid-backoff should not hold destroy() for the full wait.
+          await sleepms(retryTime, this.#abortController.signal);
+          if (this.#abortController.signal.aborted) return;
           retryTime *= multiplier;
         } else {
           throw e;

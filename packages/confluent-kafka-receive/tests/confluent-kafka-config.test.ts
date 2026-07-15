@@ -76,6 +76,14 @@ suite('confluent-kafka-receive-config', async () => {
       ],
       'latest',
     );
+    // The kafkaJS spelling counts as the caller having chosen, since the client resolves it into
+    // this very key: defaulting over it would silently replay the backlog it asked to skip.
+    assert.equal(
+      applyDBOSConsumerConfig({ kafkaJS: { groupId: 'g', fromBeginning: false } } as never, 250, GENERATED_GROUP)[
+        'auto.offset.reset'
+      ],
+      undefined,
+    );
   });
 
   await test('a config without group.id gets the generated one the workflow IDs use', () => {

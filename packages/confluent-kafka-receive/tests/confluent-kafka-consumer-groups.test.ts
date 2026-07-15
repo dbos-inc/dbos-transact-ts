@@ -4,24 +4,29 @@ import assert from 'node:assert/strict';
 import { DBOS } from '@dbos-inc/dbos-sdk';
 import { Client } from 'pg';
 import { dropDB, withTimeout } from './test-helpers';
-import { Kafka, KafkaConfig, KafkaMessage, logLevel, Producer } from 'kafkajs';
-import { KafkaReceiver } from '..';
+import { Kafka, KafkaConfig, logLevel, Producer } from 'kafkajs';
+import { KafkaJS as ConfluentKafkaJS } from '@confluentinc/kafka-javascript';
+import { ConfluentKafkaReceiver } from '..';
 
 // Several consumer groups may share a topic: each group gets its own copy of every message. The
 // group ID is baked into both the workflow ID and the ordering partition key to keep the groups
 // from colliding, and nothing else pins that.
 const kafkaConfig: KafkaConfig = {
-  clientId: 'dbos-kafka-groups-test',
+  clientId: 'dbos-conf-kafka-groups-test',
   brokers: [process.env['KAFKA_BROKER'] ?? 'localhost:9092'],
   retry: { retries: 5 },
   logLevel: logLevel.NOTHING,
 };
 
-const kafkaReceiver = new KafkaReceiver(kafkaConfig);
+const kafkaReceiver = new ConfluentKafkaReceiver({
+  clientId: 'dbos-conf-kafka-groups-test',
+  brokers: [process.env['KAFKA_BROKER'] ?? 'localhost:9092'],
+  logLevel: 0,
+});
 
 const suffix = Math.floor(Math.random() * 1_000_000_000);
-const sharedTopic = `dbos-groups-${suffix}`;
-const orderedTopic = `dbos-groups-ordered-${suffix}`;
+const sharedTopic = `dbos-conf-groups-${suffix}`;
+const orderedTopic = `dbos-conf-groups-ordered-${suffix}`;
 const NUM_MESSAGES = 4;
 const ORDERED_PER_PARTITION = 4;
 
@@ -44,11 +49,11 @@ const groupB = new GroupView(NUM_MESSAGES);
 const orderedA = new GroupView(ORDERED_PER_PARTITION);
 const orderedB = new GroupView(ORDERED_PER_PARTITION);
 
-async function groupAWorkflow(_topic: string, _partition: number, message: KafkaMessage) {
+async function groupAWorkflow(_topic: string, _partition: number, message: ConfluentKafkaJS.Message) {
   await Promise.resolve();
   groupA.record(Number(message.value!.toString()));
 }
-async function groupBWorkflow(_topic: string, _partition: number, message: KafkaMessage) {
+async function groupBWorkflow(_topic: string, _partition: number, message: ConfluentKafkaJS.Message) {
   await Promise.resolve();
   groupB.record(Number(message.value!.toString()));
 }
@@ -82,33 +87,41 @@ class Rendezvous {
 const orderedRendezvous = new Rendezvous(2);
 
 // Two *ordered* consumers on one topic, which must not serialize against each other.
-async function orderedAWorkflow(_topic: string, _partition: number, message: KafkaMessage) {
+async function orderedAWorkflow(_topic: string, _partition: number, message: ConfluentKafkaJS.Message) {
   await orderedRendezvous.meet('A', 2000);
   orderedA.record(Number(message.value!.toString()));
 }
-async function orderedBWorkflow(_topic: string, _partition: number, message: KafkaMessage) {
+async function orderedBWorkflow(_topic: string, _partition: number, message: ConfluentKafkaJS.Message) {
   await orderedRendezvous.meet('B', 2000);
   orderedB.record(Number(message.value!.toString()));
 }
 
-kafkaReceiver.registerConsumer(DBOS.registerWorkflow(groupAWorkflow, { name: 'groupAWorkflow' }), sharedTopic, {
-  name: 'groupAWorkflow',
-  config: { groupId: `dbos-groups-a-${suffix}` },
+kafkaReceiver.registerConsumer(DBOS.registerWorkflow(groupAWorkflow, { name: 'confGroupAWorkflow' }), sharedTopic, {
+  name: 'confGroupAWorkflow',
+  config: { 'group.id': `dbos-conf-groups-a-${suffix}` },
 });
-kafkaReceiver.registerConsumer(DBOS.registerWorkflow(groupBWorkflow, { name: 'groupBWorkflow' }), sharedTopic, {
-  name: 'groupBWorkflow',
-  config: { groupId: `dbos-groups-b-${suffix}` },
+kafkaReceiver.registerConsumer(DBOS.registerWorkflow(groupBWorkflow, { name: 'confGroupBWorkflow' }), sharedTopic, {
+  name: 'confGroupBWorkflow',
+  config: { 'group.id': `dbos-conf-groups-b-${suffix}` },
 });
-kafkaReceiver.registerConsumer(DBOS.registerWorkflow(orderedAWorkflow, { name: 'orderedAWorkflow' }), orderedTopic, {
-  name: 'orderedAWorkflow',
-  ordering: 'partition',
-  config: { groupId: `dbos-groups-ord-a-${suffix}` },
-});
-kafkaReceiver.registerConsumer(DBOS.registerWorkflow(orderedBWorkflow, { name: 'orderedBWorkflow' }), orderedTopic, {
-  name: 'orderedBWorkflow',
-  ordering: 'partition',
-  config: { groupId: `dbos-groups-ord-b-${suffix}` },
-});
+kafkaReceiver.registerConsumer(
+  DBOS.registerWorkflow(orderedAWorkflow, { name: 'confOrderedAWorkflow' }),
+  orderedTopic,
+  {
+    name: 'confOrderedAWorkflow',
+    ordering: 'partition',
+    config: { 'group.id': `dbos-conf-groups-ord-a-${suffix}` },
+  },
+);
+kafkaReceiver.registerConsumer(
+  DBOS.registerWorkflow(orderedBWorkflow, { name: 'confOrderedBWorkflow' }),
+  orderedTopic,
+  {
+    name: 'confOrderedBWorkflow',
+    ordering: 'partition',
+    config: { 'group.id': `dbos-conf-groups-ord-b-${suffix}` },
+  },
+);
 
 async function validateKafka(config: KafkaConfig) {
   const kafka = new Kafka(config);
@@ -124,7 +137,7 @@ async function validateKafka(config: KafkaConfig) {
   }
 }
 
-suite('kafkajs-receive-consumer-groups', async () => {
+suite('confluent-kafka-receive-consumer-groups', async () => {
   const kafkaAvailable = await validateKafka(kafkaConfig);
   let producer: Producer | undefined = undefined;
 
@@ -156,12 +169,12 @@ suite('kafkajs-receive-consumer-groups', async () => {
       const client = new Client({ user: 'postgres', database: 'postgres' });
       try {
         await client.connect();
-        await dropDB(client, 'kafka_groups_test_dbos_sys', true);
+        await dropDB(client, 'conf_kafka_groups_test_dbos_sys', true);
       } finally {
         await client.end();
       }
 
-      DBOS.setConfig({ name: 'kafka-groups-test' });
+      DBOS.setConfig({ name: 'conf-kafka-groups-test' });
       await DBOS.launch();
     },
     { timeout: 60000 },

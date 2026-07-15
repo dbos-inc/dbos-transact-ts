@@ -95,6 +95,30 @@ function isFalsey(value: unknown): boolean {
 }
 
 /**
+ * Describe every topic two consumers would both subscribe to, comparing by what each pattern
+ * matches rather than by how it is spelled: a RegExp and a string naming the same topic are the
+ * same subscription to Kafka. Two different RegExps are left to the caller — deciding whether
+ * arbitrary patterns intersect is not worth rejecting a legitimate config over.
+ */
+function overlappingTopics(a: Array<string | RegExp>, b: Array<string | RegExp>): string[] {
+  const shared = new Set<string>();
+  for (const x of a) {
+    for (const y of b) {
+      if (typeof x === 'string' && typeof y === 'string') {
+        if (x === y) shared.add(x);
+      } else if (typeof x === 'string' && y instanceof RegExp) {
+        if (y.test(x)) shared.add(x);
+      } else if (x instanceof RegExp && typeof y === 'string') {
+        if (x.test(y)) shared.add(y);
+      } else if (x instanceof RegExp && y instanceof RegExp) {
+        if (x.toString() === y.toString()) shared.add(x.toString());
+      }
+    }
+  }
+  return Array.from(shared);
+}
+
+/**
  * Return a copy of `config` with the offset settings DBOS depends on, never mutating the caller's.
  *
  * DBOS stores offsets itself after a batch is durably enqueued and relies on auto-commit to flush
@@ -111,11 +135,17 @@ export function applyDBOSConsumerConfig(
     // Defaults to 32, which would cap every batch well below batchSize.
     'js.consumer.max.batch.size': batchSize,
     ...config,
-    'auto.offset.reset': config['auto.offset.reset'] ?? 'earliest',
     // group.id is optional to this client but not to DBOS: the workflow IDs are namespaced by it,
     // so the consumer must join the very group those IDs claim.
     'group.id': groupIdOf(config) ?? groupId,
   };
+
+  // Only default the reset policy when the caller asked for nothing in either spelling. Setting it
+  // unconditionally would outrank kafkaJS.fromBeginning, which the client resolves into this very
+  // key, silently replaying the whole retained backlog for a consumer that asked to start at the end.
+  if (resolved['auto.offset.reset'] === undefined && config.kafkaJS?.fromBeginning === undefined) {
+    resolved['auto.offset.reset'] = 'earliest';
+  }
 
   if ('enable.auto.offset.store' in resolved) {
     if (!isFalsey(resolved['enable.auto.offset.store'])) {
@@ -232,8 +262,7 @@ export class ConfluentKafkaReceiver implements DBOSLifecycleCallback {
         const a = registrations[i];
         const b = registrations[j];
         if (a.groupId !== b.groupId) continue;
-        const aTopics = new Set(a.topics.map((t) => t.toString()));
-        const shared = b.topics.map((t) => t.toString()).filter((t) => aTopics.has(t));
+        const shared = overlappingTopics(a.topics, b.topics);
         if (shared.length > 0) {
           throw new Error(
             `Kafka consumers ${a.funcName} and ${b.funcName} share group.id ${a.groupId} and topic(s) ` +
