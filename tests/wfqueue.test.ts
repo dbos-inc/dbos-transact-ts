@@ -2848,8 +2848,8 @@ describe('concurrent-queue-dispatches', () => {
  * the dispatch loop itself, and the states that expose them (a poll throwing, `stop()` landing
  * mid-maintenance, N queues contending for fewer lanes) are hard to stage against a real system
  * database without long sleeps. The `concurrent-queue-dispatches` block above covers the
- * end-to-end path. Keep this block last: its queues stay in the runner's registry, and an earlier
- * position would expose them to a later `DBOS.launch()` that listens to every in-memory queue.
+ * end-to-end path. `afterEach` unregisters each test's queues, so a later `DBOS.launch()` that
+ * listens to every in-memory queue will not pick them up.
  */
 describe('bounded-lane dispatcher', () => {
   interface MockHooks {
@@ -2882,14 +2882,26 @@ describe('bounded-lane dispatcher', () => {
   }
 
   let seq = 0;
+  const registered: WorkflowQueue[] = [];
   /** Register N continuously-due in-memory queues under names unique to this test. */
   function makeQueues(count: number): WorkflowQueue[] {
     const tag = `lane-${seq++}`;
-    return Array.from({ length: count }, (_, i) => new WorkflowQueue(`${tag}-q${i}`, { minPollingIntervalMs: 1 }));
+    const queues = Array.from(
+      { length: count },
+      (_, i) => new WorkflowQueue(`${tag}-q${i}`, { minPollingIntervalMs: 1 }),
+    );
+    registered.push(...queues);
+    return queues;
   }
 
   afterEach(() => {
     wfQueueRunner.stop();
+    // Restores any global patched via jest.spyOn below; runs even when a test times out.
+    jest.restoreAllMocks();
+    // The WorkflowQueue constructor registers into a process-global map, so unregister: a later
+    // DBOS.launch() with no listenQueues would dispatch these against the real system database.
+    for (const q of registered) wfQueueRunner.wfQueuesByName.delete(q.name);
+    registered.length = 0;
   });
 
   test('never runs more concurrent polls than maxConcurrentQueueDispatches', async () => {
@@ -2918,35 +2930,67 @@ describe('bounded-lane dispatcher', () => {
     expect(peak).toBeLessThanOrEqual(LIMIT);
   }, 15000);
 
-  test('does not spin when more queues are due than there are lanes', async () => {
-    // Lanes stay saturated here, so the scheduler must park on the maintenance cadence and let a
-    // completing poll wake it. Folding a due-but-unlaned queue's (past) nextPollAt into the wake
-    // time instead makes every sleep zero-length, which is the busy spin: count those parks.
-    let zeroLengthParks = 0;
-    const realSetTimeout = global.setTimeout;
-    global.setTimeout = ((fn: (...a: unknown[]) => void, delay?: number, ...rest: unknown[]) => {
-      if (delay === 0) zeroLengthParks++;
-      return realSetTimeout(fn, delay, ...rest);
-    }) as unknown as typeof global.setTimeout;
+  test('defaults to three lanes when no limit is configured', async () => {
+    // The default is what every user who does not set maxConcurrentQueueDispatches gets, and it is
+    // the one value no other test here exercises: they all pass an explicit limit.
+    let inFlight = 0;
+    let peak = 0;
 
     const queues = makeQueues(5);
     const exec = mockExecutor({
       onPoll: async () => {
+        inFlight++;
+        peak = Math.max(peak, inFlight);
+        await sleepms(30);
+        inFlight--;
+      },
+    });
+
+    const loop = wfQueueRunner.dispatchLoop(exec, queues);
+    await sleepms(800);
+    wfQueueRunner.stop();
+    await loop;
+
+    // Exact: a default of 1 (or 0, which would stall dispatch entirely) must not pass.
+    expect(peak).toBe(3);
+  }, 15000);
+
+  test('does not spin when more queues are due than there are lanes', async () => {
+    // Lanes stay saturated here, so the scheduler must park on the maintenance cadence and let a
+    // completing poll wake it. Folding a due-but-unlaned queue's (past) nextPollAt into the wake
+    // time instead leaves every sleep non-positive, which is the busy spin.
+    let polls = 0;
+    let shortParks = 0;
+    const queues = makeQueues(5);
+    const exec = mockExecutor({
+      onPoll: async () => {
+        polls++;
         await sleepms(30);
       },
     });
 
-    try {
-      const loop = wfQueueRunner.dispatchLoop(exec, queues, 2);
-      await sleepms(800);
-      wfQueueRunner.stop();
-      await loop;
-    } finally {
-      global.setTimeout = realSetTimeout;
-    }
+    // Count every near-instant park, not just delay === 0: dropping the `Math.max(0, ...)` clamp
+    // spins on negative delays, which Node floors to 1ms. Healthy parks are the ~1s maintenance
+    // cadence, and the mock's own sleeps are 30ms, so neither is counted.
+    const realSetTimeout = global.setTimeout;
+    jest.spyOn(global, 'setTimeout').mockImplementation(((
+      fn: (...a: unknown[]) => void,
+      delay?: number,
+      ...rest: unknown[]
+    ) => {
+      if (typeof delay === 'number' && delay < 5) shortParks++;
+      return realSetTimeout(fn, delay, ...rest);
+    }) as unknown as typeof global.setTimeout);
 
-    // ~0 while the lanes-busy guard holds; ~800 without it, since setTimeout(fn, 0) clamps to 1ms.
-    expect(zeroLengthParks).toBeLessThan(20);
+    const loop = wfQueueRunner.dispatchLoop(exec, queues, 2);
+    await sleepms(800);
+    wfQueueRunner.stop();
+    await loop;
+
+    // Liveness first: without it a dispatcher that polls nothing would satisfy the bound below.
+    expect(polls).toBeGreaterThan(8);
+    // ~0 while the lanes-busy guard holds; ~800 without it.
+    expect(shortParks).toBeLessThan(20);
   }, 15000);
 
   test('never polls the same queue in two lanes at once', async () => {
@@ -3060,7 +3104,10 @@ describe('bounded-lane dispatcher', () => {
     let pollsAfterStop = 0;
     let releaseTransition: (() => void) | undefined;
 
-    const queues = makeQueues(1);
+    // Five queues against two lanes: three are always un-laned with a nextPollAt well in the past,
+    // so the queue set is unambiguously due at the stale `now` scheduleDueQueues is handed. With a
+    // single queue, dueness lands on a millisecond boundary and the regression escapes ~1 run in 3.
+    const queues = makeQueues(5);
     const exec = mockExecutor({
       onTransition: async () => {
         transitions++;
