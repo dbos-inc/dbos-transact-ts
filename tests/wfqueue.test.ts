@@ -3006,6 +3006,10 @@ describe('bounded-lane dispatcher', () => {
 
     // If the throw leaked the lane, dispatch would stop dead after the first poll.
     expect(polls).toBeGreaterThan(1);
+    // A throw must count as contention, so the lane backs off (2,4,8..256ms => ~9 polls here)
+    // instead of spinning at the 1ms floor (~350+). Without the backoff both spins and
+    // backoffs satisfy the assertion above.
+    expect(polls).toBeLessThan(30);
   }, 15000);
 
   test('does not start new polls after stop()', async () => {
