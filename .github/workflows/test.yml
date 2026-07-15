@@ -92,10 +92,10 @@ jobs:
         ports:
           - 9092:9092
         options: >-
-          --health-cmd "/opt/kafka/bin/kafka-broker-api-versions.sh --version"
+          --health-cmd "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092"
           --health-interval 10s
           --health-timeout 5s
-          --health-retries 5
+          --health-retries 10
 
     steps:
       - uses: actions/checkout@v4.1.1

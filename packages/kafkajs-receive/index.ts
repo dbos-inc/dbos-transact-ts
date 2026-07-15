@@ -294,6 +294,12 @@ export class KafkaReceiver implements DBOSLifecycleCallback {
     }
   }
 
+  /** Stop tracking a consumer, so destroy() no longer tries to sweep it. */
+  #untrackConsumer(consumer: Consumer) {
+    const idx = this.#consumers.indexOf(consumer);
+    if (idx >= 0) this.#consumers.splice(idx, 1);
+  }
+
   /** Connect, subscribe, and start consuming for one registration. */
   async #startConsumer(kafka: KafkaJS, spec: ConsumerSpec) {
     const { maxRetries, multiplier } = this.retryConfig;
@@ -302,52 +308,59 @@ export class KafkaReceiver implements DBOSLifecycleCallback {
     // all take time — and destroy() can only disconnect the consumers it can see, so registering
     // late would strand a connected consumer whenever setup failed partway.
     this.#consumers.push(consumer);
-    await consumer.connect();
+    try {
+      await consumer.connect();
 
-    // A temporary workaround for https://github.com/tulios/kafkajs/pull/1558 until it gets fixed
-    // If topic auto-creation is on and you try to subscribe to a nonexistent topic, KafkaJS should retry until the topic is created.
-    // However, it has a bug where it won't. Thus, we retry instead.
-    let { retryTime } = this.retryConfig;
-    for (let i = 1; i <= maxRetries; i++) {
-      try {
-        await consumer.subscribe({ topics: spec.topics, fromBeginning: true });
-        break;
-      } catch (e) {
-        if (e instanceof KafkaJSProtocolError && e.code === 3 && i < maxRetries) {
-          // Signal-aware: shutting down mid-backoff should not hold destroy() for the full wait.
-          await sleepms(retryTime, this.#abortController.signal);
-          if (this.#abortController.signal.aborted) return;
-          retryTime *= multiplier;
-        } else {
-          throw e;
+      // A temporary workaround for https://github.com/tulios/kafkajs/pull/1558 until it gets fixed
+      // If topic auto-creation is on and you try to subscribe to a nonexistent topic, KafkaJS should retry until the topic is created.
+      // However, it has a bug where it won't. Thus, we retry instead.
+      let { retryTime } = this.retryConfig;
+      for (let i = 1; i <= maxRetries; i++) {
+        try {
+          await consumer.subscribe({ topics: spec.topics, fromBeginning: true });
+          break;
+        } catch (e) {
+          if (e instanceof KafkaJSProtocolError && e.code === 3 && i < maxRetries) {
+            // Signal-aware: shutting down mid-backoff should not hold destroy() for the full wait.
+            await sleepms(retryTime, this.#abortController.signal);
+            if (this.#abortController.signal.aborted) return;
+            retryTime *= multiplier;
+          } else {
+            throw e;
+          }
         }
       }
+
+      // KafkaJS restarts itself only for retriable crashes. A non-retriable one (a TypeError and
+      // friends) leaves the consumer stopped and disconnected for good, so rebuild it ourselves.
+      consumer.on(consumer.events.CRASH, ({ payload }) => {
+        if (payload.restart || this.#abortController.signal.aborted) return;
+        DBOS.logger.error(
+          `Kafka consumer for group ${spec.config.groupId} stopped on a non-retriable error: ${payload.error.message}. Recreating it.`,
+        );
+        // KafkaJS disconnects a consumer before reporting that it crashed, so stop tracking this one
+        // and track its replacement instead.
+        this.#untrackConsumer(consumer);
+        this.#recreateConsumer(kafka, spec);
+      });
+
+      // Shutting down: leave it connected for destroy() to clean up rather than start consuming.
+      if (this.#abortController.signal.aborted) return;
+
+      await consumer.run({
+        // DBOS resolves offsets itself, only after a batch is durably enqueued, so commits never
+        // outrun durable state.
+        eachBatchAutoResolve: false,
+        eachBatch: (payload) =>
+          this.#eachBatch(payload, spec.func, spec.config.groupId, spec.ordering, spec.batchSize, spec.queueName),
+      });
+    } catch (e) {
+      // #recreateConsumer retries with a fresh one, so release this consumer rather than let every
+      // failed attempt hold a broker connection until destroy().
+      this.#untrackConsumer(consumer);
+      await consumer.disconnect().catch(() => {}); // Already failing; a disconnect error would mask it.
+      throw e;
     }
-
-    // KafkaJS restarts itself only for retriable crashes. A non-retriable one (a TypeError and
-    // friends) leaves the consumer stopped and disconnected for good, so rebuild it ourselves.
-    consumer.on(consumer.events.CRASH, ({ payload }) => {
-      if (payload.restart || this.#abortController.signal.aborted) return;
-      DBOS.logger.error(
-        `Kafka consumer for group ${spec.config.groupId} stopped on a non-retriable error: ${payload.error.message}. Recreating it.`,
-      );
-      // KafkaJS disconnects a consumer before reporting that it crashed, so stop tracking this one
-      // and track its replacement instead.
-      const idx = this.#consumers.indexOf(consumer);
-      if (idx >= 0) this.#consumers.splice(idx, 1);
-      this.#recreateConsumer(kafka, spec);
-    });
-
-    // Shutting down: leave it connected for destroy() to clean up rather than start consuming.
-    if (this.#abortController.signal.aborted) return;
-
-    await consumer.run({
-      // DBOS resolves offsets itself, only after a batch is durably enqueued, so commits never
-      // outrun durable state.
-      eachBatchAutoResolve: false,
-      eachBatch: (payload) =>
-        this.#eachBatch(payload, spec.func, spec.config.groupId, spec.ordering, spec.batchSize, spec.queueName),
-    });
   }
 
   /**

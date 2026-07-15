@@ -303,6 +303,12 @@ export class ConfluentKafkaReceiver implements DBOSLifecycleCallback {
     }
   }
 
+  /** Stop tracking a consumer, so destroy() no longer tries to sweep it. */
+  #untrackConsumer(consumer: KafkaJS.Consumer) {
+    const idx = this.#consumers.indexOf(consumer);
+    if (idx >= 0) this.#consumers.splice(idx, 1);
+  }
+
   async initialize() {
     this.#abortController = new AbortController();
     const { maxRetries, multiplier } = this.retryConfig;
@@ -357,41 +363,51 @@ export class ConfluentKafkaReceiver implements DBOSLifecycleCallback {
       const batchSize = methodConfig.batchSize ?? DEFAULT_BATCH_SIZE;
       const groupId = groupIdOf(config) ?? safeGroupName(className, name, topics);
       const consumer = kafka.consumer(applyDBOSConsumerConfig(config, batchSize, groupId));
-      await consumer.connect();
+      // Track it before anything below can throw. Setup is not atomic — connect, subscribe and run
+      // all take time — and destroy() can only disconnect the consumers it can see, so registering
+      // late would strand a connected consumer whenever setup failed partway.
+      this.#consumers.push(consumer);
+      try {
+        await consumer.connect();
 
-      // A temporary workaround for https://github.com/tulios/kafkajs/pull/1558 until it gets fixed
-      // If topic auto-creation is on and you try to subscribe to a nonexistent topic, KafkaJS should retry until the topic is created.
-      // However, it has a bug where it won't. Thus, we retry instead.
-      let { retryTime } = this.retryConfig;
-      for (let i = 1; i <= maxRetries; i++) {
-        try {
-          await consumer.subscribe({ topics });
-          break;
-        } catch (e) {
-          if (isKafkaError(e) && e.code === 3 && i < maxRetries) {
-            await sleepms(retryTime);
-            retryTime *= multiplier;
-          } else {
-            throw e;
+        // A temporary workaround for https://github.com/tulios/kafkajs/pull/1558 until it gets fixed
+        // If topic auto-creation is on and you try to subscribe to a nonexistent topic, KafkaJS should retry until the topic is created.
+        // However, it has a bug where it won't. Thus, we retry instead.
+        let { retryTime } = this.retryConfig;
+        for (let i = 1; i <= maxRetries; i++) {
+          try {
+            await consumer.subscribe({ topics });
+            break;
+          } catch (e) {
+            if (isKafkaError(e) && e.code === 3 && i < maxRetries) {
+              await sleepms(retryTime);
+              retryTime *= multiplier;
+            } else {
+              throw e;
+            }
           }
         }
+
+        const ordering = methodConfig.ordering ?? 'none';
+        const queueName = methodConfig.consumerQueueName ?? KAFKA_QUEUE_NAME;
+
+        // Unlike the kafkajs receiver, this one needs no crash-recovery handler: this client always
+        // retries internally and cannot stop for good (it rejects `retry.restartOnFailure` outright,
+        // and its worker loop logs and retries every error), so there is nothing to recreate. It also
+        // exposes no CRASH event to hook.
+        await consumer.run({
+          // DBOS resolves offsets itself, only after a batch is durably enqueued, so commits never
+          // outrun durable state.
+          eachBatchAutoResolve: false,
+          eachBatch: (payload) => this.#eachBatch(payload, func, groupId, ordering, batchSize, queueName),
+        });
+      } catch (e) {
+        // Nothing will retry this consumer, so release it here rather than leave a connected client
+        // holding native handles until an exit that a stranded consumer would itself prevent.
+        this.#untrackConsumer(consumer);
+        await consumer.disconnect().catch(() => {}); // Already failing; a disconnect error would mask it.
+        throw e;
       }
-
-      const ordering = methodConfig.ordering ?? 'none';
-      const queueName = methodConfig.consumerQueueName ?? KAFKA_QUEUE_NAME;
-
-      // Unlike the kafkajs receiver, this one needs no crash-recovery handler: this client always
-      // retries internally and cannot stop for good (it rejects `retry.restartOnFailure` outright,
-      // and its worker loop logs and retries every error), so there is nothing to recreate. It also
-      // exposes no CRASH event to hook.
-      await consumer.run({
-        // DBOS resolves offsets itself, only after a batch is durably enqueued, so commits never
-        // outrun durable state.
-        eachBatchAutoResolve: false,
-        eachBatch: (payload) => this.#eachBatch(payload, func, groupId, ordering, batchSize, queueName),
-      });
-
-      this.#consumers.push(consumer);
     }
   }
 
