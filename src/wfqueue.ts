@@ -601,8 +601,7 @@ class WFQueueRunner {
     wake: () => void,
   ): Promise<void> {
     const queueName = state.queue.name;
-    // Treat an unexpected throw as contention: pollQueue normally swallows DB errors, so a rejection here
-    // is abnormal — back off rather than leaving nextPollAt in the past, which would spin this lane at 0ms.
+    // pollQueue swallows DB errors, so a rejection here is abnormal: back off instead of scaling back toward the minimum interval.
     let contentionDetected = true;
     try {
       contentionDetected = await this.pollQueue(exec, state.queue);

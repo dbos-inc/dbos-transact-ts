@@ -426,7 +426,7 @@ describe('dbos-config', () => {
         maxConcurrentQueueDispatches: 4,
       });
       expect(internalConfig.maxConcurrentQueueDispatches).toBe(4);
-      // Unset is allowed (dispatcher defaults it to 1).
+      // Unset is allowed (dispatcher defaults it to 3).
       expect(translateDbosConfig({ name: 'dbostest' }).maxConcurrentQueueDispatches).toBeUndefined();
       // Every non-positive-integer value is rejected.
       for (const bad of [0, -1, 2.5, NaN, Infinity]) {

@@ -12,7 +12,7 @@ import {
 } from './helpers';
 import { WorkflowQueue } from '../src';
 import { randomUUID } from 'node:crypto';
-import { globalParams, sleepms } from '../src/utils';
+import { globalParams, sleepms, INTERNAL_QUEUE_NAME } from '../src/utils';
 
 import { WF } from './wfqtestprocess';
 
@@ -2806,7 +2806,8 @@ describe('concurrent-queue-dispatches', () => {
       await DBOS.deleteQueue(slowQueueName);
       await DBOS.deleteQueue(fastQueueName);
     }
-  }, 10000);
+    // Launch plus the 1s discovery tick already cost seconds before the 3s race below starts.
+  }, 30000);
 
   test('a slow partitioned poll blocks another queue dispatch at serialized (1) concurrency', async () => {
     await launchWith(1);
@@ -2837,7 +2838,8 @@ describe('concurrent-queue-dispatches', () => {
       await DBOS.deleteQueue(slowQueueName);
       await DBOS.deleteQueue(fastQueueName);
     }
-  }, 10000);
+    // Launch plus the 1s discovery tick already cost seconds before the fixed 2s probe starts.
+  }, 30000);
 });
 
 /**
@@ -2869,6 +2871,9 @@ describe('bounded-lane dispatcher', () => {
           await hooks.onTransition?.();
         },
         findAndMarkStartableWorkflows: async (queue: WorkflowQueue) => {
+          // The runner always dispatches the internal queue, which an earlier DBOS.launch() in this
+          // file registered globally; skip it so counters and windows do not depend on its interval.
+          if (queue.name === INTERNAL_QUEUE_NAME) return [];
           await hooks.onPoll?.(queue.name);
           return [];
         },
@@ -2911,6 +2916,37 @@ describe('bounded-lane dispatcher', () => {
     // Without the ceiling, all 5 due queues would poll at once.
     expect(peak).toBeGreaterThan(1);
     expect(peak).toBeLessThanOrEqual(LIMIT);
+  }, 15000);
+
+  test('does not spin when more queues are due than there are lanes', async () => {
+    // Lanes stay saturated here, so the scheduler must park on the maintenance cadence and let a
+    // completing poll wake it. Folding a due-but-unlaned queue's (past) nextPollAt into the wake
+    // time instead makes every sleep zero-length, which is the busy spin: count those parks.
+    let zeroLengthParks = 0;
+    const realSetTimeout = global.setTimeout;
+    global.setTimeout = ((fn: (...a: unknown[]) => void, delay?: number, ...rest: unknown[]) => {
+      if (delay === 0) zeroLengthParks++;
+      return realSetTimeout(fn, delay, ...rest);
+    }) as unknown as typeof global.setTimeout;
+
+    const queues = makeQueues(5);
+    const exec = mockExecutor({
+      onPoll: async () => {
+        await sleepms(30);
+      },
+    });
+
+    try {
+      const loop = wfQueueRunner.dispatchLoop(exec, queues, 2);
+      await sleepms(800);
+      wfQueueRunner.stop();
+      await loop;
+    } finally {
+      global.setTimeout = realSetTimeout;
+    }
+
+    // ~0 while the lanes-busy guard holds; ~800 without it, since setTimeout(fn, 0) clamps to 1ms.
+    expect(zeroLengthParks).toBeLessThan(20);
   }, 15000);
 
   test('never polls the same queue in two lanes at once', async () => {
@@ -2986,16 +3022,20 @@ describe('bounded-lane dispatcher', () => {
   }, 15000);
 
   test('releases the lane when a poll throws, and keeps dispatching', async () => {
-    // A non-object rejection makes pollQueue's own `'code' in err` check throw a
-    // TypeError, which escapes it and reaches runQueuePoll's catch.
+    // Escapes pollQueue's own catch — the `'code' in err` guard passes, then reading `.code` throws —
+    // and reaches runQueuePoll's catch however that guard is written.
+    class UnreadableCodeError extends Error {
+      get code(): string {
+        throw new TypeError('unreadable error code');
+      }
+    }
     let polls = 0;
 
     const queues = makeQueues(1);
     const exec = mockExecutor({
       onPoll: () => {
         polls++;
-        // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
-        return Promise.reject('not an Error');
+        return Promise.reject(new UnreadableCodeError('poll failed'));
       },
     });
 
