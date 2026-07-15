@@ -166,6 +166,11 @@ describe('dbos-tests', () => {
     static async sendFromStepIdemWF(dest: string, msg: string, key: string) {
       await SendIdempotencyTestClass.sendFromStepWithKey(dest, msg, key);
     }
+
+    @DBOS.workflow()
+    static async recvOneShort() {
+      return String(await DBOS.recv<string>(undefined, { timeoutSeconds: 3 }));
+    }
   }
 
   test('send-idempotency-key', async () => {
@@ -224,6 +229,23 @@ describe('dbos-tests', () => {
     await SendIdempotencyTestClass.sendFromStepIdemWF(destUUID4, 'hello_step_dup', stepIdemKey);
     // The second recv times out (returns null), proving only one message was delivered.
     expect(await handle4.getResult()).toBe('hello_step-null');
+  });
+
+  test('send-idempotency-key-scoped-per-destination', async () => {
+    // An idempotency key is scoped per destination: the same key sent to two
+    // different workflows must deliver to both (matching Python and Go, where
+    // message_uuid is `${key}::${destinationID}`).
+    const destA = randomUUID();
+    const destB = randomUUID();
+    const handleA = await DBOS.startWorkflow(SendIdempotencyTestClass, { workflowID: destA }).recvOneShort();
+    const handleB = await DBOS.startWorkflow(SendIdempotencyTestClass, { workflowID: destB }).recvOneShort();
+
+    const key = randomUUID();
+    await DBOS.send(destA, 'to_A', undefined, key);
+    await DBOS.send(destB, 'to_B', undefined, key);
+
+    expect(await handleA.getResult()).toBe('to_A');
+    expect(await handleB.getResult()).toBe('to_B');
   });
 
   test('simple-workflow-events', async () => {

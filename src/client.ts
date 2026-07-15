@@ -531,7 +531,7 @@ export class DBOSClient {
    * @param destinationID - The ID of the destination workflow.
    * @param message - The message to send. This can be any serializable object.
    * @param topic - An optional topic to send the message to. If not provided, the default topic will be used.
-   * @param idempotencyKey - An optional idempotency key to ensure that the message is only sent once.
+   * @param idempotencyKey - An optional idempotency key to ensure that the message is only sent once per destination.
    * @returns A Promise that resolves when the message has been sent.
    */
   async send<T>(
@@ -541,14 +541,13 @@ export class DBOSClient {
     idempotencyKey?: string,
     options?: ClientSendOptions,
   ): Promise<void> {
-    const messageUUID = idempotencyKey ?? randomUUID();
     const sermsg = await serializeValue(message, this.serializer, options?.serializationType);
     await this.systemDatabase.sendDirect(
       destinationID,
       sermsg.serializedValue,
       topic,
       sermsg.serialization,
-      messageUUID,
+      idempotencyKey,
     );
   }
 
