@@ -380,7 +380,7 @@ class WFQueueRunner {
   async dispatchLoop(
     exec: DBOSExecutor,
     listenQueuesArg: (WorkflowQueue | string)[] | null,
-    maxConcurrentQueueDispatches: number = 1,
+    maxConcurrentQueueDispatches: number = 3,
   ): Promise<void> {
     this.isRunning = true;
     this.states.clear();

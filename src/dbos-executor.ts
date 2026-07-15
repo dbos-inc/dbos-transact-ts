@@ -154,8 +154,13 @@ export interface DBOSConfig {
   listenQueues?: (WorkflowQueue | string)[];
   /**
    * Maximum number of independent queue dispatch cycles that may run concurrently
-   * in this executor. Defaults to 1, preserving serialized queue dispatch.
+   * in this executor. Defaults to 3. Set to 1 to serialize queue dispatch.
    * This does not limit workflow concurrency or system-database polling reads.
+   *
+   * Each concurrent dispatch checks out a system-database connection for the
+   * duration of its dequeue transaction, so values approaching
+   * `systemDatabasePoolSize` (default 10, of which the polling limiter already
+   * reserves half) leave little of the pool for control-plane operations.
    */
   maxConcurrentQueueDispatches?: number;
   schedulerPollingIntervalMs?: number;

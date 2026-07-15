@@ -2808,14 +2808,14 @@ describe('concurrent-queue-dispatches', () => {
     }
   }, 10000);
 
-  test('a slow partitioned poll blocks another queue dispatch at the default (serialized) concurrency', async () => {
+  test('a slow partitioned poll blocks another queue dispatch at serialized (1) concurrency', async () => {
     await launchWith(1);
     const { slow, releaseSlowPoll } = await pauseSlowPoll();
     try {
       const fast = await DBOS.startWorkflow(ConcurrentDispatchWFs, { queueName: fastQueueName }).run('fast');
       const fastResult = fast.getResult();
       // The single dispatch lane is held by the paused slow poll, so the fast queue cannot be polled:
-      // the timeout must win the race, proving dispatch is serialized at the default concurrency of 1.
+      // the timeout must win the race, proving dispatch is serialized at a concurrency of 1.
       let probeTimer: ReturnType<typeof setTimeout> | undefined;
       const probe = new Promise<'blocked'>((resolve) => {
         probeTimer = setTimeout(() => resolve('blocked'), 2000);
