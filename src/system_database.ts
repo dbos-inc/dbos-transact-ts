@@ -1850,6 +1850,7 @@ export class SystemDatabase {
   registerRunningWorkflow(
     workflowID: string,
     workflowPromise: Promise<unknown>,
+    onSettled: () => void,
     queueName?: string,
     queuePartitionKey?: string,
   ) {
@@ -1859,8 +1860,7 @@ export class SystemDatabase {
         this.logger.debug('Captured error in awaitWorkflowPromise: ' + error);
       })
       .finally(() => {
-        // Remove itself from pending workflow map.
-        this.runningWorkflowMap.delete(workflowID);
+        onSettled();
       });
     this.runningWorkflowMap.set(workflowID, {
       promise: awaitWorkflowPromise,
@@ -1871,6 +1871,10 @@ export class SystemDatabase {
 
   checkForRunningWorkflow(workflowID: string): boolean {
     return this.runningWorkflowMap.has(workflowID);
+  }
+
+  clearRunningWorkflow(workflowID: string): void {
+    this.runningWorkflowMap.delete(workflowID);
   }
 
   countRunningWorkflowsForQueue(queueName: string, queuePartitionKey?: string): number {
