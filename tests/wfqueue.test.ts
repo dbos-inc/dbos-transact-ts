@@ -2935,6 +2935,33 @@ describe('bounded-lane dispatcher', () => {
     expect(overlapped).toBe(false);
   }, 15000);
 
+  test('serves every queue when more are due than there are lanes', async () => {
+    // Every queue here is perpetually due (1ms interval, 20ms poll), so the due set never
+    // shrinks and the pick order alone decides who runs. Taking the due set in registration
+    // order would re-poll the first two forever and starve the rest; earliest-nextPollAt-first
+    // round-robins, because a queue that just polled carries the newest nextPollAt.
+    const polls = new Map<string, number>();
+
+    const queues = makeQueues(6);
+    const exec = mockExecutor({
+      onPoll: async (name) => {
+        polls.set(name, (polls.get(name) ?? 0) + 1);
+        await sleepms(20);
+      },
+    });
+
+    const loop = wfQueueRunner.dispatchLoop(exec, queues, 2);
+    await sleepms(800);
+    wfQueueRunner.stop();
+    await loop;
+
+    const counts = queues.map((q) => polls.get(q.name) ?? 0);
+    expect(Math.min(...counts)).toBeGreaterThan(0);
+    // Service is even, not merely non-zero: round-robin leaves at most a poll or two between
+    // the busiest and quietest queue, whereas a biased pick would skew hard.
+    expect(Math.max(...counts) - Math.min(...counts)).toBeLessThanOrEqual(2);
+  }, 15000);
+
   test('frees a lane as soon as a poll completes, without waiting for the reconcile tick', async () => {
     // One queue, one lane: every poll after the first requires the completing poll to
     // wake the scheduler. If the wake handshake is broken the loop instead sleeps until

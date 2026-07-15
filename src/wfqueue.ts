@@ -573,7 +573,7 @@ class WFQueueRunner {
     await Promise.allSettled(Array.from(inFlightPolls.values()));
   }
 
-  /** Start due queue polls up to the lane limit, picking at random so no queue is systematically favored. */
+  /** Start due queue polls up to the lane limit, in nextPollAt order so the longest-overdue queue goes first. */
   private scheduleDueQueues(
     exec: DBOSExecutor,
     now: number,
@@ -582,11 +582,13 @@ class WFQueueRunner {
     wake: () => void,
   ): void {
     if (!this.isRunning) return;
-    const due = Array.from(this.states.values()).filter(
-      (state) => now >= state.nextPollAt && !inFlightPolls.has(state.queue.name),
-    );
-    while (due.length > 0 && inFlightPolls.size < maxConcurrentQueueDispatches) {
-      const [state] = due.splice(Math.floor(Math.random() * due.length), 1);
+    // Earliest nextPollAt first: a queue passed over while the lanes were full keeps its older
+    // nextPollAt, so it outranks freshly-scheduled queues on the next pass and cannot be starved.
+    const due = Array.from(this.states.values())
+      .filter((state) => now >= state.nextPollAt && !inFlightPolls.has(state.queue.name))
+      .sort((a, b) => a.nextPollAt - b.nextPollAt);
+    for (const state of due) {
+      if (inFlightPolls.size >= maxConcurrentQueueDispatches) break;
       inFlightPolls.set(state.queue.name, this.runQueuePoll(exec, state, inFlightPolls, wake));
     }
   }
