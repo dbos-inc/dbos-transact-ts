@@ -420,6 +420,22 @@ describe('dbos-config', () => {
       expect(internalConfig.systemDatabasePollingConcurrency).toBeUndefined();
     });
 
+    test('translate validates maxConcurrentQueueDispatches', () => {
+      const internalConfig = translateDbosConfig({
+        name: 'dbostest',
+        maxConcurrentQueueDispatches: 4,
+      });
+      expect(internalConfig.maxConcurrentQueueDispatches).toBe(4);
+      // Unset is allowed (dispatcher defaults it to 3).
+      expect(translateDbosConfig({ name: 'dbostest' }).maxConcurrentQueueDispatches).toBeUndefined();
+      // Every non-positive-integer value is rejected.
+      for (const bad of [0, -1, 2.5, NaN, Infinity]) {
+        expect(() => translateDbosConfig({ name: 'dbostest', maxConcurrentQueueDispatches: bad })).toThrow(
+          'maxConcurrentQueueDispatches must be a positive integer',
+        );
+      }
+    });
+
     test('translate passes through a custom logger', () => {
       const myLogger = { info: () => {}, debug: () => {}, warn: () => {}, error: () => {} };
       let internalConfig = translateDbosConfig({ name: 'dbostest', logger: myLogger });
