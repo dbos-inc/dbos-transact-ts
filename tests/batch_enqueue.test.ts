@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { DBOS, StatusString } from '../src';
+import { runWithTopContext } from '../src/context';
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import { getOrCreateQueue, initWorkflows, prepareEnqueuedWorkflow, PreparedWorkflow } from '../src/eventreceiver';
 import { DBOSNotRegisteredError } from '../src/error';
@@ -58,19 +59,35 @@ describe('batch-enqueue', () => {
     await DBOS.shutdown();
   });
 
-  test('prepareEnqueuedWorkflow builds an ENQUEUED row with a fresh context', async () => {
-    const status = await prepareEnqueuedWorkflow(batchWf, ['hi'], {
-      queueName: 'some-queue',
-      workflowID: `w-${randomUUID()}`,
-      queuePartitionKey: 'pk',
-    });
+  test('prepareEnqueuedWorkflow builds an ENQUEUED row, ignoring the ambient context', async () => {
+    const partitioned = getOrCreateQueue(`ctx-part-${randomUUID()}`, { partitionQueue: true });
+    // Build under an authenticated context. The normal enqueue path copies these fields off the
+    // context store; this one documents that it does not, so the context must be present for the
+    // assertions below to mean anything.
+    const status = await runWithTopContext(
+      {
+        authenticatedUser: 'alice',
+        authenticatedRoles: ['admin'],
+        assumedRole: 'admin',
+        request: { url: '/orders' },
+      },
+      async () =>
+        await prepareEnqueuedWorkflow(batchWf, ['hi'], {
+          queueName: partitioned.name,
+          workflowID: `w-${randomUUID()}`,
+          queuePartitionKey: 'pk',
+        }),
+    );
     expect(status.status).toBe(StatusString.ENQUEUED);
-    expect(status.queueName).toBe('some-queue');
+    expect(status.queueName).toBe(partitioned.name);
     expect(status.queuePartitionKey).toBe('pk');
     expect(status.workflowName).toBe('batchWorkflow');
-    // No parent, auth, or attributes leaked from any ambient context.
-    expect(status.parentWorkflowID).toBeUndefined();
+    // Nothing leaked from the surrounding context.
     expect(status.authenticatedUser).toBe('');
+    expect(status.assumedRole).toBe('');
+    expect(status.authenticatedRoles).toEqual([]);
+    expect(status.request).toEqual({});
+    expect(status.parentWorkflowID).toBeUndefined();
     expect(status.attributes).toBeUndefined();
   });
 

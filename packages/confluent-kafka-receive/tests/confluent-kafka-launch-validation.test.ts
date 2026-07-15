@@ -137,9 +137,17 @@ suite('confluent-kafka-receive-config', async () => {
     );
   });
 
-  await test("the caller's config object is never mutated", () => {
-    const config = { 'group.id': 'g', 'enable.auto.commit': false, 'enable.auto.offset.store': true };
-    const snapshot = { ...config };
+  await test("the caller's config object is never mutated, nested objects included", () => {
+    // kafkaJS is the only nested object the function touches, and it survives the top-level spread
+    // by reference — so it must be in the fixture, and the snapshot must be deep, or the one
+    // mutation that could actually happen would go undetected.
+    const config = {
+      'group.id': 'g',
+      'enable.auto.commit': false,
+      'enable.auto.offset.store': true,
+      kafkaJS: { autoCommit: false },
+    };
+    const snapshot = structuredClone(config);
     applyDBOSConsumerConfig(config as never, 250);
     assert.deepEqual(config, snapshot);
   });

@@ -342,6 +342,10 @@ export class ConfluentKafkaReceiver implements DBOSLifecycleCallback {
       const queueName = methodConfig.consumerQueueName ?? KAFKA_QUEUE_NAME;
       const groupId = groupIdOf(config) ?? safeGroupName(className, name, topics);
 
+      // Unlike the kafkajs receiver, this one needs no crash-recovery handler: this client always
+      // retries internally and cannot stop for good (it rejects `retry.restartOnFailure` outright,
+      // and its worker loop logs and retries every error), so there is nothing to recreate. It also
+      // exposes no CRASH event to hook.
       await consumer.run({
         // DBOS resolves offsets itself, only after a batch is durably enqueued, so commits never
         // outrun durable state.

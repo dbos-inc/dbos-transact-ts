@@ -28,8 +28,12 @@ const PARTITION_TOTAL = NUM_PARTITIONS * PER_PARTITION;
 /** Resolves once `total` messages have been recorded, so a test can await completion. */
 class Collector {
   readonly byPartition = new Map<number, number[]>();
-  active = 0;
+  /** Peak workflows in flight across the whole consumer. */
   maxActive = 0;
+  /** Peak workflows in flight within a single partition: 1 iff that partition ran serially. */
+  readonly maxActiveByPartition = new Map<number, number>();
+  #active = 0;
+  readonly #activeByPartition = new Map<number, number>();
   #resolve!: () => void;
   readonly done: Promise<void>;
 
@@ -37,13 +41,17 @@ class Collector {
     this.done = new Promise<void>((r) => (this.#resolve = r));
   }
 
-  enter() {
-    this.active += 1;
-    this.maxActive = Math.max(this.maxActive, this.active);
+  enter(partition: number) {
+    this.#active += 1;
+    this.maxActive = Math.max(this.maxActive, this.#active);
+    const n = (this.#activeByPartition.get(partition) ?? 0) + 1;
+    this.#activeByPartition.set(partition, n);
+    this.maxActiveByPartition.set(partition, Math.max(this.maxActiveByPartition.get(partition) ?? 0, n));
   }
 
   record(partition: number, value: number) {
-    this.active -= 1;
+    this.#active -= 1;
+    this.#activeByPartition.set(partition, (this.#activeByPartition.get(partition) ?? 1) - 1);
     const list = this.byPartition.get(partition) ?? [];
     list.push(value);
     this.byPartition.set(partition, list);
@@ -64,22 +72,27 @@ const customQueueCollector = new Collector(5);
 // A small batchSize splits each partition's backlog across several batches, which reorder unless
 // created_at is monotonic per partition key across batches.
 async function partitionWorkflow(_topic: string, partition: number, message: KafkaMessage) {
-  partitionCollector.enter();
-  // Widen the window so cross-partition parallelism is observable.
-  await new Promise((r) => setTimeout(r, 300));
-  partitionCollector.record(partition, Number(message.value!.toString()));
+  const value = Number(message.value!.toString());
+  partitionCollector.enter(partition);
+  // Sleep *shorter* the later the message, so if a partition's messages ever ran concurrently they
+  // would finish in reverse. Serial execution is then the only way to observe offset order, and the
+  // window is still wide enough to see cross-partition parallelism.
+  await new Promise((r) => setTimeout(r, 300 - value * 50));
+  partitionCollector.record(partition, value);
 }
 
 async function topicWorkflow(_topic: string, partition: number, message: KafkaMessage) {
-  topicCollector.enter();
-  await new Promise((r) => setTimeout(r, 100));
-  topicCollector.record(partition, Number(message.value!.toString()));
+  const value = Number(message.value!.toString());
+  topicCollector.enter(partition);
+  await new Promise((r) => setTimeout(r, 150 - value * 40));
+  topicCollector.record(partition, value);
 }
 
 async function customQueueWorkflow(_topic: string, partition: number, message: KafkaMessage) {
-  customQueueCollector.enter();
+  const value = Number(message.value!.toString());
+  customQueueCollector.enter(partition);
   await new Promise((r) => setTimeout(r, 100));
-  customQueueCollector.record(partition, Number(message.value!.toString()));
+  customQueueCollector.record(partition, value);
 }
 
 const customQueueName = `kafka-custom-q-${suffix}`;
@@ -189,18 +202,27 @@ suite('kafkajs-receive-ordering', async () => {
     },
     async () => {
       await withTimeout(partitionCollector.done, 80000, 'Timeout waiting for partition-ordered messages');
-      // Kafka's guarantee: per-partition order is preserved exactly, across every batch boundary.
       for (let p = 0; p < NUM_PARTITIONS; p++) {
+        // Each partition ran serially: never two of its messages in flight at once. This is the
+        // claim; the order assertion below cannot make it on its own, because the dispatcher starts
+        // workflows in created_at order regardless of concurrency.
+        assert.equal(
+          partitionCollector.maxActiveByPartition.get(p),
+          1,
+          `partition ${p} ran ${partitionCollector.maxActiveByPartition.get(p)} workflows at once; expected serial`,
+        );
+        // Kafka's guarantee: per-partition order is preserved exactly, across every batch boundary.
         assert.deepEqual(
           partitionCollector.byPartition.get(p),
           Array.from({ length: PER_PARTITION }, (_, i) => i),
           `partition ${p} was processed out of order`,
         );
       }
-      // Partitions were processed in parallel with one another.
+      // Partitions were processed in parallel with one another, so the serialization above is
+      // per-partition rather than a global bottleneck.
       assert.ok(
-        partitionCollector.maxActive >= 2,
-        `expected parallelism, got maxActive=${partitionCollector.maxActive}`,
+        partitionCollector.maxActive > 1,
+        `expected cross-partition parallelism, got maxActive=${partitionCollector.maxActive}`,
       );
     },
   );
