@@ -152,6 +152,17 @@ export interface DBOSConfig {
    * up by the supervisor.
    */
   listenQueues?: (WorkflowQueue | string)[];
+  /**
+   * Maximum number of independent queue dispatch cycles that may run concurrently
+   * in this executor. Defaults to 3. Set to 1 to serialize queue dispatch.
+   * This does not limit workflow concurrency or system-database polling reads.
+   *
+   * Each concurrent dispatch checks out a system-database connection for the
+   * duration of its dequeue transaction, so values approaching
+   * `systemDatabasePoolSize` (default 10, of which the polling limiter already
+   * reserves half) leave little of the pool for control-plane operations.
+   */
+  maxConcurrentQueueDispatches?: number;
   schedulerPollingIntervalMs?: number;
   useListenNotify?: boolean;
 }
@@ -207,6 +218,7 @@ export type DBOSConfigInternal = {
   telemetry: TelemetryConfig;
 
   schedulerPollingIntervalMs?: number;
+  maxConcurrentQueueDispatches?: number;
   useListenNotify: boolean;
 
   http?: {
@@ -694,6 +706,18 @@ export class DBOSExecutor {
       }
     }
 
+    // Release the running-workflow map entry before the terminal outcome
+    // becomes durable: once it is visible, a resume can re-dispatch this
+    // workflow ID to this executor, and a stale entry would block that
+    // dispatch. Guarded so the backstop in registerRunningWorkflow's finally
+    // never deletes an entry a resumed run has re-acquired.
+    let runningWorkflowReleased = false;
+    const releaseRunningWorkflow = () => {
+      if (runningWorkflowReleased) return;
+      runningWorkflowReleased = true;
+      this.systemDatabase.clearRunningWorkflow(workflowID);
+    };
+
     const eserializer = this.serializer;
     async function handleWorkflowError(err: Error, exec: DBOSExecutor) {
       // Record the error.
@@ -703,6 +727,7 @@ export class DBOSExecutor {
       const sererr = await serializeResErrorWithSerializer(e, eserializer, ires.serialization ?? null);
       internalStatus.error = sererr.serializedValue;
       internalStatus.status = StatusString.ERROR;
+      releaseRunningWorkflow();
       await exec.systemDatabase.recordWorkflowError(workflowID, internalStatus);
       span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
       return await deserializeResError(sererr.serializedValue, sererr.serialization, eserializer);
@@ -748,6 +773,7 @@ export class DBOSExecutor {
         result = funcResult.deserialized;
         internalStatus.output = funcResult.stringified;
         internalStatus.status = StatusString.SUCCESS;
+        releaseRunningWorkflow();
         await this.systemDatabase.recordWorkflowOutput(workflowID, internalStatus);
         span.setStatus({ code: SpanStatusCode.OK });
       } catch (err) {
@@ -761,6 +787,9 @@ export class DBOSExecutor {
           span.setStatus({ code: SpanStatusCode.ERROR, message: err.message });
           internalStatus.error = err.message;
           if (err.workflowID === workflowID) {
+            // The row is already durably CANCELLED (resumable): release now so
+            // a resume re-dispatched here is not blocked during async unwind.
+            releaseRunningWorkflow();
             internalStatus.status = StatusString.CANCELLED;
             throw err;
           } else {
@@ -794,6 +823,7 @@ export class DBOSExecutor {
       this.systemDatabase.registerRunningWorkflow(
         workflowID,
         workflowPromise,
+        releaseRunningWorkflow,
         params.queueName,
         params.enqueueOptions?.queuePartitionKey,
       );
@@ -1226,7 +1256,7 @@ export class DBOSExecutor {
   }
 
   async initEventReceivers(listenQueues: (WorkflowQueue | string)[] | null) {
-    this.#wfqEnded = wfQueueRunner.dispatchLoop(this, listenQueues);
+    this.#wfqEnded = wfQueueRunner.dispatchLoop(this, listenQueues, this.config.maxConcurrentQueueDispatches);
 
     for (const lcl of getLifecycleListeners()) {
       await lcl.initialize?.();

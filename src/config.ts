@@ -175,6 +175,12 @@ function toArray(endpoint: string | string[] | undefined): Array<string> {
 }
 
 export function translateDbosConfig(options: DBOSConfig, forceConsole: boolean = false): DBOSConfigInternal {
+  if (
+    options.maxConcurrentQueueDispatches !== undefined &&
+    (!Number.isInteger(options.maxConcurrentQueueDispatches) || options.maxConcurrentQueueDispatches <= 0)
+  ) {
+    throw new Error('maxConcurrentQueueDispatches must be a positive integer');
+  }
   const systemDatabaseUrl = getSystemDatabaseUrl({
     system_database_url: options.systemDatabaseUrl,
     name: options.name,
@@ -202,6 +208,7 @@ export function translateDbosConfig(options: DBOSConfig, forceConsole: boolean =
       otelAttributeFormat: options.otelAttributeFormat ?? 'legacy',
     },
     schedulerPollingIntervalMs: options.schedulerPollingIntervalMs,
+    maxConcurrentQueueDispatches: options.maxConcurrentQueueDispatches,
     useListenNotify: options.useListenNotify ?? true,
   };
 }
