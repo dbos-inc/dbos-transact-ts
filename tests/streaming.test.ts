@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { DBOSClient } from '../src/client';
 import { DBOSNonExistentWorkflowError } from '../src/error';
 import { deserializeValue } from '../src/serialization';
+import { DBOS_STREAMS_CHANNEL } from '../src/system_database';
 
 describe('dbos-streaming-tests', () => {
   let config: DBOSConfig;
@@ -709,18 +710,26 @@ describe('dbos-streaming-tests', () => {
     await DBOS.launch();
     const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
     const internals = sysdb as unknown as {
-      pendingStreamNotifications: Set<string>;
-      flushStreamNotifications: () => Promise<void>;
+      pendingNotifications: Map<string, Set<string>>;
+      flushNotifications: () => Promise<void>;
+    };
+    const addPending = (channel: string, payload: string) => {
+      let batch = internals.pendingNotifications.get(channel);
+      if (!batch) {
+        batch = new Set();
+        internals.pendingNotifications.set(channel, batch);
+      }
+      batch.add(payload);
     };
 
     // A stream key past pg_notify's 8000-byte payload limit makes its batch unsendable.
     const poison = `${randomUUID()}::${'x'.repeat(9000)}`;
-    internals.pendingStreamNotifications.clear();
-    internals.pendingStreamNotifications.add(poison);
-    await internals.flushStreamNotifications();
+    internals.pendingNotifications.clear();
+    addPending(DBOS_STREAMS_CHANNEL, poison);
+    await internals.flushNotifications();
 
     // The poison batch is dropped, not requeued (requeuing would loop forever on it).
-    expect(internals.pendingStreamNotifications.has(poison)).toBe(false);
+    expect(internals.pendingNotifications.get(DBOS_STREAMS_CHANNEL)?.has(poison) ?? false).toBe(false);
 
     // The notifier still works afterward: a subsequent good payload is delivered.
     const goodWf = randomUUID();
@@ -730,8 +739,8 @@ describe('dbos-streaming-tests', () => {
       fired = true;
     });
     try {
-      internals.pendingStreamNotifications.add(`${goodWf}::${goodKey}`);
-      await internals.flushStreamNotifications();
+      addPending(DBOS_STREAMS_CHANNEL, `${goodWf}::${goodKey}`);
+      await internals.flushNotifications();
       for (let i = 0; i < 100 && !fired; i++) {
         await new Promise((r) => setTimeout(r, 50));
       }
@@ -746,12 +755,12 @@ describe('dbos-streaming-tests', () => {
     await DBOS.launch();
     const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
     const internals = sysdb as unknown as {
-      pendingStreamNotifications: Set<string>;
-      flushStreamNotifications: () => Promise<void>;
+      pendingNotifications: Map<string, Set<string>>;
+      flushNotifications: () => Promise<void>;
     };
-    const realFlush = internals.flushStreamNotifications.bind(sysdb);
+    const realFlush = internals.flushNotifications.bind(sysdb);
     let raised = false;
-    internals.flushStreamNotifications = async () => {
+    internals.flushNotifications = async () => {
       // Raise once (even on an empty batch) to simulate an unexpected error; then behave normally.
       if (!raised) {
         raised = true;
@@ -775,7 +784,12 @@ describe('dbos-streaming-tests', () => {
         fired = true;
       });
       try {
-        internals.pendingStreamNotifications.add(`${goodWf}::${goodKey}`);
+        let batch = internals.pendingNotifications.get(DBOS_STREAMS_CHANNEL);
+        if (!batch) {
+          batch = new Set();
+          internals.pendingNotifications.set(DBOS_STREAMS_CHANNEL, batch);
+        }
+        batch.add(`${goodWf}::${goodKey}`);
         for (let i = 0; i < 200 && !fired; i++) {
           await new Promise((r) => setTimeout(r, 50));
         }
@@ -784,8 +798,85 @@ describe('dbos-streaming-tests', () => {
         sysdb.streamsMap.deregisterCallback(cbr);
       }
     } finally {
-      internals.flushStreamNotifications = realFlush;
+      internals.flushNotifications = realFlush;
     }
+  });
+
+  test('event-notifier-delivers-without-workflow-events-trigger', async () => {
+    // The per-row workflow_events trigger is dropped; assert it's gone and that the coalescing notifier still wakes a blocked getEvent well under the 10s event poll.
+    const key = 'notifier_event';
+
+    const setterWorkflow = DBOS.registerWorkflow(
+      async () => {
+        await DBOS.sleepms(1000);
+        await DBOS.setEvent(key, 'notifier_value');
+      },
+      { name: 'event-notifier-setter' },
+    );
+    await DBOS.launch();
+
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    // No per-row trigger may remain on the workflow_events table.
+    const trigger = await sysdb.pool.query(
+      `SELECT 1 FROM pg_trigger t
+       JOIN pg_class cl ON t.tgrelid = cl.oid
+       JOIN pg_namespace n ON cl.relnamespace = n.oid
+       WHERE n.nspname = $1 AND cl.relname = 'workflow_events' AND t.tgname = 'dbos_workflow_events_trigger'`,
+      [sysdb.schemaName],
+    );
+    expect(trigger.rows.length).toBe(0);
+
+    const wfid = randomUUID();
+    const handle = await DBOS.withNextWorkflowID(wfid, async () => {
+      return DBOS.startWorkflow(setterWorkflow, {})();
+    });
+
+    // getEvent blocks until the value is set ~1s in; prompt delivery must come from the notifier, not the 10s poll.
+    const begin = Date.now();
+    const value = await DBOS.getEvent<string>(wfid, key, 30);
+    const latency = Date.now() - begin;
+    await handle.getResult();
+
+    expect(value).toBe('notifier_value');
+    // Delivery via the notifier (~10ms coalesce after the value lands) is far faster than the 10s polling fallback.
+    expect(latency).toBeLessThan(3000);
+  });
+
+  test('message-notifications-trigger-is-kept', async () => {
+    // Messages keep their in-transaction NOTIFY trigger (they can be sent from processes with no notifier to buffer them); assert it exists and that send still wakes a blocked recv.
+    const recvWorkflow = DBOS.registerWorkflow(
+      async () => {
+        return await DBOS.recv<string>(undefined, { timeoutSeconds: 30 });
+      },
+      { name: 'notifications-trigger-recv' },
+    );
+    await DBOS.launch();
+
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    // The notifications trigger must be kept.
+    const trigger = await sysdb.pool.query(
+      `SELECT 1 FROM pg_trigger t
+       JOIN pg_class cl ON t.tgrelid = cl.oid
+       JOIN pg_namespace n ON cl.relnamespace = n.oid
+       WHERE n.nspname = $1 AND cl.relname = 'notifications' AND t.tgname = 'dbos_notifications_trigger'`,
+      [sysdb.schemaName],
+    );
+    expect(trigger.rows.length).toBe(1);
+
+    const dest = randomUUID();
+    const handle = await DBOS.withNextWorkflowID(dest, async () => {
+      return DBOS.startWorkflow(recvWorkflow, {})();
+    });
+
+    // Let the recv block on the listener, then send; the trigger's NOTIFY must wake it well under the 10s poll.
+    await DBOS.sleepms(1000);
+    const begin = Date.now();
+    await DBOS.send(dest, 'hello_trigger');
+    const result = await handle.getResult();
+    const latency = Date.now() - begin;
+
+    expect(result).toBe('hello_trigger');
+    expect(latency).toBeLessThan(3000);
   });
 });
 

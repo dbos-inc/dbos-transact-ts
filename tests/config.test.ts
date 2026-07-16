@@ -436,17 +436,15 @@ describe('dbos-config', () => {
       }
     });
 
-    test('translate validates streamNotificationCoalesceMs', () => {
+    test('translate validates notificationCoalesceMs', () => {
       // A valid value is threaded through.
-      expect(
-        translateDbosConfig({ name: 'dbostest', streamNotificationCoalesceMs: 1 }).streamNotificationCoalesceMs,
-      ).toBe(1);
+      expect(translateDbosConfig({ name: 'dbostest', notificationCoalesceMs: 1 }).notificationCoalesceMs).toBe(1);
       // Unset is allowed (the system database defaults it).
-      expect(translateDbosConfig({ name: 'dbostest' }).streamNotificationCoalesceMs).toBeUndefined();
+      expect(translateDbosConfig({ name: 'dbostest' }).notificationCoalesceMs).toBeUndefined();
       // Invalid values are rejected, including NaN/inf which slip past a bare < 1 check.
       for (const bad of [0.5, 0, -1, NaN, Infinity]) {
-        expect(() => translateDbosConfig({ name: 'dbostest', streamNotificationCoalesceMs: bad })).toThrow(
-          'streamNotificationCoalesceMs must be a finite number at least 1 millisecond',
+        expect(() => translateDbosConfig({ name: 'dbostest', notificationCoalesceMs: bad })).toThrow(
+          'notificationCoalesceMs must be a finite number at least 1 millisecond',
         );
       }
     });

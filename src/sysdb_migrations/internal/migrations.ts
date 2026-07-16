@@ -696,5 +696,15 @@ export function allMigrations(
           ]
         : [],
     },
+    // Drop the per-row workflow_events NOTIFY trigger; event writes are now coalesced off the write path. The notifications trigger is kept: messages can be sent from anywhere, including processes with no notifier to buffer them. Gated on useListenNotify like the trigger.
+    {
+      name: '20250716_drop_workflow_events_trigger',
+      pg: useListenNotify
+        ? [
+            `DROP TRIGGER IF EXISTS dbos_workflow_events_trigger ON "${schemaName}".workflow_events`,
+            `DROP FUNCTION IF EXISTS "${schemaName}".workflow_events_function()`,
+          ]
+        : [],
+    },
   ];
 }
