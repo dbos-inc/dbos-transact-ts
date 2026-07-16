@@ -659,6 +659,146 @@ describe('dbos-streaming-tests', () => {
     // Delivery via the notifier (~10ms coalesce) is far faster than the 1s polling fallback.
     expect(maxLatency).toBeLessThan(500);
   });
+
+  test('read-stream-is-one-round-trip-per-value', async () => {
+    // Each reader tick issues a SINGLE joined query fetching the value and the workflow status
+    // together, rather than reading the stream and then looking the status up separately. This is
+    // the core optimization of the PR; a regression to two queries would still be correct but slow.
+    const n = 25;
+    const writerWorkflow = DBOS.registerWorkflow(
+      async () => {
+        for (let i = 0; i < n; i++) {
+          await DBOS.writeStream('s', i);
+        }
+        await DBOS.closeStream('s');
+      },
+      { name: 'one-round-trip-writer' },
+    );
+    await DBOS.launch();
+
+    const wfid = randomUUID();
+    await DBOS.withNextWorkflowID(wfid, async () => {
+      await writerWorkflow();
+    });
+
+    // Only the reader joins streams to workflow_status, so background threads sharing the pool
+    // cannot match; matched loosely rather than by (schema-qualified) table name.
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    const spy = jest.spyOn(sysdb.pool, 'query');
+    const values: unknown[] = [];
+    let queryTexts: string[] = [];
+    try {
+      for await (const value of DBOS.readStream(wfid, 's')) {
+        values.push(value);
+      }
+      // Capture before mockRestore(), which clears spy.mock.calls.
+      queryTexts = spy.mock.calls.map((c) =>
+        typeof c[0] === 'string' ? c[0] : ((c[0] as { text?: string })?.text ?? ''),
+      );
+    } finally {
+      spy.mockRestore();
+    }
+
+    expect(values).toEqual(Array.from({ length: n }, (_, i) => i));
+    const joined = queryTexts.filter((text) => {
+      const s = text.toLowerCase().replace(/\s+/g, ' ');
+      return s.includes('outer join') && s.includes('streams') && s.includes('workflow_status');
+    });
+    // Guards against passing vacuously: reading the status separately issues no joined query at all.
+    expect(joined.length).toBeGreaterThan(0);
+    // One joined query per delivered value, plus the one that finds the close sentinel. Two queries
+    // per tick (a read then a status lookup) would double this.
+    expect(joined.length).toBe(n + 1);
+  });
+
+  test('stream-notifier-drops-unsendable-payload', async () => {
+    // A batch pg_notify rejects (e.g. a payload over the 8000-byte limit) is dropped, not requeued,
+    // so a poison payload can't permanently stall the notifier; it keeps delivering afterward and
+    // polling covers the dropped values.
+    await DBOS.launch();
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    const internals = sysdb as unknown as {
+      pendingStreamNotifications: Set<string>;
+      flushStreamNotifications: () => Promise<void>;
+    };
+
+    // A stream key past pg_notify's 8000-byte payload limit makes its batch unsendable.
+    const poison = `${randomUUID()}::${'x'.repeat(9000)}`;
+    internals.pendingStreamNotifications.clear();
+    internals.pendingStreamNotifications.add(poison);
+    await internals.flushStreamNotifications();
+
+    // The poison batch is dropped, not requeued (requeuing would loop forever on it).
+    expect(internals.pendingStreamNotifications.has(poison)).toBe(false);
+
+    // The notifier still works afterward: a subsequent good payload is delivered.
+    const goodWf = randomUUID();
+    const goodKey = 'deliverable';
+    let fired = false;
+    const cbr = sysdb.streamsMap.registerCallback(`${goodWf}::${goodKey}`, () => {
+      fired = true;
+    });
+    try {
+      internals.pendingStreamNotifications.add(`${goodWf}::${goodKey}`);
+      await internals.flushStreamNotifications();
+      for (let i = 0; i < 100 && !fired; i++) {
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      expect(fired).toBe(true);
+    } finally {
+      sysdb.streamsMap.deregisterCallback(cbr);
+    }
+  });
+
+  test('stream-notifier-survives-flush-error', async () => {
+    // An exception escaping a flush must not kill the notifier loop: it logs, backs off, and
+    // resumes delivering. Without the loop guard the loop would end and stop all stream push
+    // notifications for the process.
+    await DBOS.launch();
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    const internals = sysdb as unknown as {
+      pendingStreamNotifications: Set<string>;
+      flushStreamNotifications: () => Promise<void>;
+    };
+    const realFlush = internals.flushStreamNotifications.bind(sysdb);
+    let raised = false;
+    internals.flushStreamNotifications = async () => {
+      // Raise once (even on an empty batch) to simulate an unexpected error; then behave normally.
+      if (!raised) {
+        raised = true;
+        throw new Error('simulated flush failure');
+      }
+      return realFlush();
+    };
+
+    try {
+      // Wait until the running notifier loop has hit the injected failure.
+      for (let i = 0; i < 200 && !raised; i++) {
+        await new Promise((r) => setTimeout(r, 20));
+      }
+      expect(raised).toBe(true);
+
+      // The loop must have survived it and still deliver a subsequently signaled stream. After the
+      // error it backs off ~1s before resuming, so allow generous time.
+      const goodWf = randomUUID();
+      const goodKey = 'post_error';
+      let fired = false;
+      const cbr = sysdb.streamsMap.registerCallback(`${goodWf}::${goodKey}`, () => {
+        fired = true;
+      });
+      try {
+        internals.pendingStreamNotifications.add(`${goodWf}::${goodKey}`);
+        for (let i = 0; i < 200 && !fired; i++) {
+          await new Promise((r) => setTimeout(r, 50));
+        }
+        expect(fired).toBe(true);
+      } finally {
+        sysdb.streamsMap.deregisterCallback(cbr);
+      }
+    } finally {
+      internals.flushStreamNotifications = realFlush;
+    }
+  });
 });
 
 describe('dbos-client-streaming-tests', () => {
@@ -895,5 +1035,50 @@ describe('dbos-client-streaming-tests', () => {
       values.push(value);
     }
     expect(values).toEqual([]);
+  });
+
+  test('client-read-stream-is-one-round-trip-per-value', async () => {
+    // The client reader fetches value and status in one joined query per tick, like the in-process one.
+    const n = 25;
+    const writerWorkflow = DBOS.registerWorkflow(
+      async () => {
+        for (let i = 0; i < n; i++) {
+          await DBOS.writeStream('s', i);
+        }
+        await DBOS.closeStream('s');
+      },
+      { name: 'client-one-round-trip-writer' },
+    );
+    await DBOS.launch();
+
+    const wfid = randomUUID();
+    await DBOS.withNextWorkflowID(wfid, async () => {
+      await writerWorkflow();
+    });
+
+    const clientSysdb = (client as unknown as { systemDatabase: { pool: import('pg').Pool } }).systemDatabase;
+    const spy = jest.spyOn(clientSysdb.pool, 'query');
+    const values: unknown[] = [];
+    let queryTexts: string[] = [];
+    try {
+      for await (const value of client.readStream(wfid, 's')) {
+        values.push(value);
+      }
+      // Capture before mockRestore(), which clears spy.mock.calls.
+      queryTexts = spy.mock.calls.map((c) =>
+        typeof c[0] === 'string' ? c[0] : ((c[0] as { text?: string })?.text ?? ''),
+      );
+    } finally {
+      spy.mockRestore();
+    }
+
+    expect(values).toEqual(Array.from({ length: n }, (_, i) => i));
+    const joined = queryTexts.filter((text) => {
+      const s = text.toLowerCase().replace(/\s+/g, ' ');
+      return s.includes('outer join') && s.includes('streams') && s.includes('workflow_status');
+    });
+    // Guards against passing vacuously, then asserts one joined query per value plus the sentinel read.
+    expect(joined.length).toBeGreaterThan(0);
+    expect(joined.length).toBe(n + 1);
   });
 });

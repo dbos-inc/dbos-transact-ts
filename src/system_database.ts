@@ -684,7 +684,8 @@ export class SystemDatabase {
   // Interval for coalescing stream-write notifications pushed off the write path (Postgres + L/N only).
   readonly streamNotificationCoalesceMs: number = DEFAULT_STREAM_NOTIFICATION_COALESCE_MS;
   // Coalesced stream-write notification payloads, flushed by the stream notifier loop below.
-  #pendingStreamNotifications: Set<string> = new Set();
+  // Soft-private (not `#`) so tests can inject a payload and drive a flush, as the Python tests do.
+  private pendingStreamNotifications: Set<string> = new Set();
   #streamNotifierActive: boolean = false;
   // Wakes the notifier out of its coalescing sleep so shutdown flushes promptly.
   #streamNotifierWake: (() => void) | null = null;
@@ -2779,11 +2780,17 @@ export class SystemDatabase {
     key: string,
     offset: number,
   ): Promise<{ status: string | null; value: { serializedValue: string; serialization: string | null } | undefined }> {
-    const client: PoolClient = await this.pool.connect();
-    try {
-      // LEFT JOIN so a workflow with nothing at offset still reports its status. Matching offset
-      // exactly keeps this a single index lookup on the (workflow_uuid, key, offset) primary key.
-      const result = await client.query(
+    // LEFT JOIN so a workflow with nothing at offset still reports its status. Matching offset
+    // exactly keeps this a single index lookup on the (workflow_uuid, key, offset) primary key.
+    // Under the poll limiter (a fan-out of stream readers must not check out every pool client and
+    // starve control-plane work); inside @dbRetry so the permit frees across backoff.
+    const result = await this.#pollWithLimiter(() =>
+      this.pool.query<{
+        status: string;
+        value: string | null;
+        serialization: string | null;
+        stream_offset: number | null;
+      }>(
         // "offset" is a reserved word, so alias it (stream_offset) to read it back plainly.
         `SELECT ws.status AS status, s.value AS value, s.serialization AS serialization, s."offset" AS stream_offset
          FROM "${this.schemaName}".workflow_status ws
@@ -2791,25 +2798,18 @@ export class SystemDatabase {
            ON s.workflow_uuid = ws.workflow_uuid AND s.key = $2 AND s."offset" = $3
          WHERE ws.workflow_uuid = $1`,
         [workflowID, key, offset],
-      );
+      ),
+    );
 
-      if (result.rows.length === 0) {
-        return { status: null, value: undefined };
-      }
-      const row = result.rows[0] as {
-        status: string;
-        value: string | null;
-        serialization: string | null;
-        stream_offset: number | null;
-      };
-      // streams.offset is non-nullable, so a NULL here means the join matched nothing at offset.
-      if (row.stream_offset === null) {
-        return { status: row.status, value: undefined };
-      }
-      return { status: row.status, value: { serializedValue: row.value as string, serialization: row.serialization } };
-    } finally {
-      client.release();
+    if (result.rows.length === 0) {
+      return { status: null, value: undefined };
     }
+    const row = result.rows[0];
+    // streams.offset is non-nullable, so a NULL here means the join matched nothing at offset.
+    if (row.stream_offset === null) {
+      return { status: row.status, value: undefined };
+    }
+    return { status: row.status, value: { serializedValue: row.value as string, serialization: row.serialization } };
   }
 
   #signalStreamWrite(workflowID: string, key: string): void {
@@ -2818,7 +2818,7 @@ export class SystemDatabase {
     if (!this.shouldUseDBNotifications) {
       return;
     }
-    this.#pendingStreamNotifications.add(`${workflowID}::${key}`);
+    this.pendingStreamNotifications.add(`${workflowID}::${key}`);
   }
 
   /**
@@ -2835,9 +2835,9 @@ export class SystemDatabase {
         break;
       }
       try {
-        await this.#flushStreamNotifications();
+        await this.flushStreamNotifications();
       } catch (e) {
-        // Last resort: #flushStreamNotifications logs and drops its own batch on failure, so this
+        // Last resort: flushStreamNotifications logs and drops its own batch on failure, so this
         // catches only unexpected errors, which must not kill the sole push path.
         if (this.#streamNotifierActive) {
           this.logger.warn(`Stream notifier error: ${String(e)}`);
@@ -2848,20 +2848,23 @@ export class SystemDatabase {
     }
     // Final flush so values written just before shutdown still wake readers promptly.
     try {
-      await this.#flushStreamNotifications();
+      await this.flushStreamNotifications();
     } catch (e) {
       this.logger.warn(`Stream notifier final flush error: ${String(e)}`);
     }
   }
 
-  /** Emit one coalesced notifying transaction for all pending payloads; drop the batch if it fails. */
-  async #flushStreamNotifications(): Promise<void> {
-    if (this.#pendingStreamNotifications.size === 0) {
+  /**
+   * Emit one coalesced notifying transaction for all pending payloads; drop the batch if it fails.
+   * Soft-private (not `#`) so tests can call it directly and monkeypatch it to inject a flush error.
+   */
+  async flushStreamNotifications(): Promise<void> {
+    if (this.pendingStreamNotifications.size === 0) {
       return;
     }
     // Grab and clear atomically (no await between), so writes during the flush start the next batch.
-    const batch = Array.from(this.#pendingStreamNotifications);
-    this.#pendingStreamNotifications.clear();
+    const batch = Array.from(this.pendingStreamNotifications);
+    this.pendingStreamNotifications.clear();
     try {
       // One statement: one round trip and one acquisition of the async-notify queue lock; unnest
       // emits one notification per payload.
