@@ -120,8 +120,10 @@ import {
   WorkflowSchedule,
   ScheduledWorkflowFn,
   ScheduleOptions,
+  ScheduleUpdate,
   toWorkflowSchedule,
   createScheduleId,
+  buildScheduleUpdate,
   triggerSchedule as triggerScheduleImpl,
   backfillSchedule as backfillScheduleImpl,
 } from './scheduler/scheduler';
@@ -2461,6 +2463,16 @@ export class DBOS {
     await runTransactionalInternalStep(
       (client) => DBOSExecutor.globalInstance!.systemDatabase.setScheduleStatus(name, 'ACTIVE', client),
       'DBOS.resumeSchedule',
+    );
+  }
+
+  static async updateSchedule(name: string, updates: ScheduleUpdate): Promise<void> {
+    ensureDBOSIsLaunched('updateSchedule');
+    const serializer = DBOSExecutor.globalInstance!.serializer;
+    const internalUpdates = await buildScheduleUpdate(updates, serializer);
+    await runTransactionalInternalStep(
+      (client) => DBOSExecutor.globalInstance!.systemDatabase.updateSchedule(name, internalUpdates, client),
+      'DBOS.updateSchedule',
     );
   }
 

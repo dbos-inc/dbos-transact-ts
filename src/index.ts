@@ -13,7 +13,7 @@ export { DBOSClient } from './client';
 
 export { SchedulerMode, SchedulerConfig } from './scheduler/scheduler_decorator';
 
-export { WorkflowSchedule, ScheduledWorkflowFn, ScheduleOptions } from './scheduler/scheduler';
+export { WorkflowSchedule, ScheduledWorkflowFn, ScheduleOptions, ScheduleUpdate } from './scheduler/scheduler';
 
 export {
   AlertHandler,

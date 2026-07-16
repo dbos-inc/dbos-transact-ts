@@ -64,6 +64,8 @@ import {
   toWorkflowSchedule,
   createScheduleId,
   ScheduleOptions,
+  ScheduleUpdate,
+  buildScheduleUpdate,
   triggerSchedule,
   backfillSchedule,
 } from './scheduler/scheduler';
@@ -781,6 +783,11 @@ export class DBOSClient {
 
   async resumeSchedule(name: string): Promise<void> {
     await this.systemDatabase.setScheduleStatus(name, 'ACTIVE');
+  }
+
+  async updateSchedule(name: string, updates: ScheduleUpdate): Promise<void> {
+    const internalUpdates = await buildScheduleUpdate(updates, this.serializer);
+    await this.systemDatabase.updateSchedule(name, internalUpdates);
   }
 
   async applySchedules(

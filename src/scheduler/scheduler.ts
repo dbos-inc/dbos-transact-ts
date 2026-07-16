@@ -1,10 +1,15 @@
-import { type SystemDatabase, WorkflowScheduleInternal, type WorkflowStatusInternal } from '../system_database';
+import {
+  type SystemDatabase,
+  WorkflowScheduleInternal,
+  WorkflowScheduleUpdate,
+  type WorkflowStatusInternal,
+} from '../system_database';
 import { DBOSSerializer, serializeArgs } from '../serialization';
 import { randomUUID } from 'crypto';
 import { DBOS } from '..';
 import { DBOSLifecycleCallback } from '../decorators';
 import { interruptibleSleep, INTERNAL_QUEUE_NAME } from '../utils';
-import { TimeMatcher } from './crontab';
+import { TimeMatcher, validateCrontab, validateTimezone } from './crontab';
 import { DBOSExecutor } from '../dbos-executor';
 import { DBOSError } from '../error';
 import { StatusString } from '../workflow';
@@ -18,6 +23,43 @@ export interface ScheduleOptions {
   automaticBackfill?: boolean;
   cronTimezone?: string;
   queueName?: string;
+}
+
+// Fields updateSchedule can change in place. Omitted keys are left unchanged; the workflow function and runtime state (schedule id, status, last fired time) are never touched.
+export interface ScheduleUpdate {
+  schedule?: string;
+  context?: unknown;
+  automaticBackfill?: boolean;
+  cronTimezone?: string | null;
+  queueName?: string | null;
+}
+
+// Validate and serialize an in-place schedule update into the internal form. An `undefined` value leaves a field unchanged; `null` clears a nullable field. `context` is the exception: including the key (even as `undefined`) sets it, since `undefined` is a valid empty context.
+export async function buildScheduleUpdate(
+  updates: ScheduleUpdate,
+  serializer: DBOSSerializer,
+): Promise<WorkflowScheduleUpdate> {
+  const internal: WorkflowScheduleUpdate = {};
+  if (updates.schedule !== undefined) {
+    validateCrontab(updates.schedule);
+    internal.schedule = updates.schedule;
+  }
+  if ('context' in updates) {
+    internal.context = await serializer.stringify(updates.context);
+  }
+  if (updates.automaticBackfill !== undefined) {
+    internal.automaticBackfill = updates.automaticBackfill;
+  }
+  if (updates.cronTimezone !== undefined) {
+    if (updates.cronTimezone !== null) {
+      validateTimezone(updates.cronTimezone);
+    }
+    internal.cronTimezone = updates.cronTimezone;
+  }
+  if (updates.queueName !== undefined) {
+    internal.queueName = updates.queueName;
+  }
+  return internal;
 }
 
 export interface WorkflowSchedule {
