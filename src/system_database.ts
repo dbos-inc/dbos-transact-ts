@@ -9,6 +9,7 @@ import {
   DBOSWorkflowCancelledError,
   DBOSQueueDuplicatedError,
   DBOSInitializationError,
+  DBOSError,
 } from './error';
 import { GetPendingWorkflowsOutput, GetWorkflowsInput, StatusString } from './workflow';
 import {
@@ -689,6 +690,9 @@ export class SystemDatabase {
     { promise: Promise<unknown>; queueName?: string; queuePartitionKey?: string }
   > = new Map(); // Map from workflowID to workflow promise, queue name and partition key
 
+  // Per-partition-key created_at cursors: keep per-key queue order monotonic across batches
+  readonly #batchCreatedAtCursors: Map<string, number> = new Map();
+
   constructor(
     readonly systemDatabaseUrl: string,
     readonly logger: GlobalLogger,
@@ -855,6 +859,185 @@ export class SystemDatabase {
         client.release();
       }
     }
+  }
+
+  /** Highest created_at among still-active rows per partition key, used to seed the in-memory cursor. */
+  async #maxPartitionKeyCreatedAt(keys: string[]): Promise<Map<string, number>> {
+    const maxima = new Map<string, number>();
+    if (keys.length === 0) return maxima;
+    const { rows } = await this.pool.query<{ queue_partition_key: string; max_created_at: string | null }>(
+      `SELECT queue_partition_key, MAX(created_at) AS max_created_at
+       FROM "${this.schemaName}".workflow_status
+       WHERE queue_partition_key = ANY($1) AND status = ANY($2)
+       GROUP BY queue_partition_key`,
+      [keys, [StatusString.ENQUEUED, StatusString.PENDING]],
+    );
+    for (const row of rows) {
+      if (row.max_created_at !== null) {
+        maxima.set(row.queue_partition_key, Number(row.max_created_at));
+      }
+    }
+    return maxima;
+  }
+
+  /**
+   * Stamp created_at monotonic within each partition key so per-key order holds across batches.
+   * Unordered rows (no partition key) get wall-clock time and never touch the cursors.
+   */
+  async #assignBatchCreatedAt(statuses: WorkflowStatusInternal[]): Promise<number[]> {
+    const nowMS = Date.now();
+    const batchKeys = new Set<string>();
+    for (const status of statuses) {
+      if (status.queuePartitionKey !== undefined) {
+        batchKeys.add(status.queuePartitionKey);
+      }
+    }
+    // On first sight of a key, seed its cursor from the DB high-water mark so per-key order
+    // survives a restart or rebalance instead of resetting to wall-clock.
+    const unseen = Array.from(batchKeys).filter((key) => !this.#batchCreatedAtCursors.has(key));
+    const seeds = await this.#maxPartitionKeyCreatedAt(unseen);
+    // Synchronous from here, so a concurrent batch cannot interleave with these cursor updates.
+    for (const [key, seededMax] of seeds) {
+      // max() guards against a concurrent batch that already advanced this key.
+      this.#batchCreatedAtCursors.set(key, Math.max(this.#batchCreatedAtCursors.get(key) ?? 0, seededMax + 1));
+    }
+    const createdAts: number[] = [];
+    const nextForKey = new Map<string, number>();
+    for (const status of statuses) {
+      const key = status.queuePartitionKey;
+      if (key === undefined) {
+        createdAts.push(nowMS);
+        continue;
+      }
+      const value = nextForKey.get(key) ?? Math.max(nowMS, this.#batchCreatedAtCursors.get(key) ?? 0);
+      createdAts.push(value);
+      nextForKey.set(key, value + 1);
+    }
+    for (const [key, next] of nextForKey) {
+      this.#batchCreatedAtCursors.set(key, next);
+    }
+    return createdAts;
+  }
+
+  /**
+   * Batch-insert ENQUEUED workflow status rows in a single transaction.
+   *
+   * Rows whose workflow_uuid already exists are skipped rather than updated, making this
+   * idempotent under redelivery (e.g. Kafka). Returns the IDs of the rows actually inserted.
+   *
+   * Deliberately not `@dbRetry()`-decorated, unlike its neighbours: that loop is unabortable, so a
+   * connection outage would trap the caller in it rather than let it back off and observe a
+   * shutdown. Callers retry this themselves.
+   */
+  async enqueueWorkflows(statuses: WorkflowStatusInternal[]): Promise<Set<string>> {
+    const inserted = new Set<string>();
+    if (statuses.length === 0) return inserted;
+    for (const status of statuses) {
+      if (status.status !== StatusString.ENQUEUED) {
+        throw new DBOSError(
+          `enqueueWorkflows only accepts ${StatusString.ENQUEUED} workflows, but ${status.workflowUUID} is ${status.status}`,
+        );
+      }
+      if (status.deduplicationID !== undefined) {
+        throw new DBOSError(`enqueueWorkflows does not support deduplication IDs, but ${status.workflowUUID} has one`);
+      }
+    }
+    const createdAts = await this.#assignBatchCreatedAt(statuses);
+    const columns = [
+      'workflow_uuid',
+      'status',
+      'name',
+      'class_name',
+      'config_name',
+      'queue_name',
+      'authenticated_user',
+      'assumed_role',
+      'authenticated_roles',
+      'request',
+      'executor_id',
+      'application_version',
+      'application_id',
+      'created_at',
+      'recovery_attempts',
+      'updated_at',
+      'workflow_timeout_ms',
+      'workflow_deadline_epoch_ms',
+      'inputs',
+      'deduplication_id',
+      'priority',
+      'queue_partition_key',
+      'parent_workflow_id',
+      'serialization',
+      'owner_xid',
+      'delay_until_epoch_ms',
+      'attributes',
+      'schedule_name',
+    ];
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
+      // Chunk to stay well under the bind-parameter limit.
+      const chunkSize = 500;
+      for (let start = 0; start < statuses.length; start += chunkSize) {
+        const chunk = statuses.slice(start, start + chunkSize);
+        const tuples: string[] = [];
+        const params: unknown[] = [];
+        let paramIdx = 1;
+        for (let i = 0; i < chunk.length; i++) {
+          const status = chunk[i];
+          const createdAt = createdAts[start + i];
+          tuples.push(`(${columns.map(() => `$${paramIdx++}`).join(', ')})`);
+          params.push(
+            status.workflowUUID,
+            status.status,
+            status.workflowName,
+            // For cross-language compatibility, these MUST be NULL in the database when not set
+            status.workflowClassName === '' ? null : status.workflowClassName,
+            status.workflowConfigName === '' ? null : status.workflowConfigName,
+            status.queueName ?? null,
+            status.authenticatedUser,
+            status.assumedRole,
+            JSON.stringify(status.authenticatedRoles),
+            JSON.stringify(status.request),
+            status.executorId,
+            status.applicationVersion ?? null,
+            status.applicationID,
+            createdAt,
+            0,
+            createdAt,
+            status.timeoutMS ?? null,
+            status.deadlineEpochMS ?? null,
+            status.input,
+            null,
+            status.priority,
+            status.queuePartitionKey ?? null,
+            status.parentWorkflowID ?? null,
+            status.serialization,
+            null,
+            status.delayUntilEpochMS ?? null,
+            status.attributes ? JSON.stringify(status.attributes) : null,
+            status.scheduleName ?? null,
+          );
+        }
+        const { rows } = await client.query<{ workflow_uuid: string }>(
+          `INSERT INTO "${this.schemaName}".workflow_status (${columns.join(', ')})
+           VALUES ${tuples.join(', ')}
+           ON CONFLICT (workflow_uuid) DO NOTHING
+           RETURNING workflow_uuid`,
+          params,
+        );
+        for (const row of rows) {
+          inserted.add(row.workflow_uuid);
+        }
+      }
+      await client.query('COMMIT');
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
+    return inserted;
   }
 
   @dbRetry()

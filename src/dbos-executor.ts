@@ -9,6 +9,7 @@ import {
   DBOSAwaitedWorkflowCancelledError,
   DBOSQueueDuplicatedError,
   DBOSStepTimeoutError,
+  DBOSInvalidWorkflowInputError,
 } from './error';
 import {
   InvokedHandle,
@@ -236,6 +237,20 @@ export interface InternalWorkflowParams extends WorkflowParams {
   readonly isQueueDispatch?: boolean;
 }
 
+/** Options for assembling an ENQUEUED workflow row without persisting it. */
+export interface PrepareEnqueuedWorkflowOptions {
+  /** Queue the workflow is enqueued on. */
+  readonly queueName: string;
+  /** Workflow ID. Doubles as the idempotency key for a batch insert, so it must be deterministic. */
+  readonly workflowID: string;
+  /**
+   * Partition key for a partitioned queue. Not validated here: a partitioned queue only ever
+   * dequeues rows that carry a key, so a row enqueued onto one without a key sits ENQUEUED
+   * forever rather than failing.
+   */
+  readonly queuePartitionKey?: string;
+}
+
 export const OperationType = {
   HANDLER: 'handler',
   WORKFLOW: 'workflow',
@@ -425,6 +440,68 @@ export class DBOSExecutor {
     ...args: T
   ): Promise<WorkflowHandle<R>> {
     return this.internalWorkflow(wf, params, undefined, undefined, ...args);
+  }
+
+  /**
+   * Build, without persisting, an ENQUEUED status row for `wf` on `options.queueName`.
+   *
+   * For batch enqueuers (e.g. a Kafka consumer) that persist many rows in one transaction via
+   * {@link SystemDatabase.enqueueWorkflows}. Any ambient DBOS context is ignored: the workflow ID and
+   * enqueue options are passed explicitly, and the row inherits no parent, auth, or attributes.
+   */
+  async prepareEnqueuedWorkflow<T extends unknown[], R>(
+    wf: TypedAsyncFunction<T, R>,
+    args: T,
+    options: PrepareEnqueuedWorkflowOptions,
+  ): Promise<WorkflowStatusInternal> {
+    const wInfo = getFunctionRegistration(wf);
+    if (!wInfo || !wInfo.workflowConfig) {
+      throw new DBOSNotRegisteredError(wf.name, `${wf.name} is not a registered workflow function`);
+    }
+    if (wInfo.isInstance) {
+      // The row would carry no config name, so the dequeuer could not find the instance to bind and
+      // would run the workflow with a null `this`.
+      throw new DBOSError(
+        `Cannot enqueue instance method "${wInfo.name}" in a batch. Only static methods and free functions can be used.`,
+      );
+    }
+    const { name: workflowName, className: workflowClassName } = getRegisteredFunctionFullName(wf);
+    const serializationType = wInfo.workflowConfig.serialization;
+    let funcArgs: Awaited<ReturnType<typeof serializeFunctionInputOutput>>;
+    try {
+      funcArgs = await serializeFunctionInputOutput(
+        serializationType === 'portable' ? ({ positionalArgs: args } as JsonWorkflowArgs) : args,
+        [workflowName, '<arguments>'],
+        this.serializer,
+        serializationType,
+      );
+    } catch (e) {
+      // Tagged so a batch enqueuer can tell "these arguments are bad" apart from the failures above,
+      // which condemn every workflow it would enqueue rather than just this one.
+      throw new DBOSInvalidWorkflowInputError(workflowName, e);
+    }
+    return {
+      workflowUUID: options.workflowID,
+      status: StatusString.ENQUEUED,
+      workflowName,
+      workflowClassName,
+      workflowConfigName: '',
+      queueName: options.queueName,
+      output: null,
+      error: null,
+      authenticatedUser: '',
+      assumedRole: '',
+      authenticatedRoles: [],
+      request: {},
+      executorId: globalParams.executorID,
+      applicationVersion: globalParams.appVersion,
+      applicationID: globalParams.appID,
+      createdAt: Date.now(),
+      input: funcArgs.stringified,
+      priority: 0,
+      queuePartitionKey: options.queuePartitionKey,
+      serialization: funcArgs.sername,
+    };
   }
 
   // If callerWFID and functionID are set, it means the workflow is invoked from within a workflow.

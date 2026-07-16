@@ -350,6 +350,12 @@ interface QueueRuntimeState {
 class WFQueueRunner {
   readonly wfQueuesByName: Map<string, WorkflowQueue> = new Map();
 
+  /**
+   * Queues fed by this process's own pollers (e.g. a Kafka consumer). Always dispatched,
+   * regardless of any listenQueues filter, so this process executes what it enqueues.
+   */
+  readonly pollerQueueNames: Set<string> = new Set();
+
   private isRunning: boolean = false;
   private abortController?: AbortController;
   private listenQueueNames: Set<string> | null = null;
@@ -375,6 +381,7 @@ class WFQueueRunner {
 
   clearRegistrations() {
     this.wfQueuesByName.clear();
+    this.pollerQueueNames.clear();
   }
 
   async dispatchLoop(
@@ -425,6 +432,12 @@ class WFQueueRunner {
         result.push(entry);
       }
     }
+    // Poller-fed queues are always dispatched: this process enqueues onto them, so under a
+    // listenQueues filter their workflows would otherwise sit ENQUEUED forever.
+    for (const name of this.pollerQueueNames) {
+      const q = this.wfQueuesByName.get(name);
+      if (q && !result.some((r) => r.name === name)) result.push(q);
+    }
     return result;
   }
 
@@ -459,7 +472,13 @@ class WFQueueRunner {
         }
         continue;
       }
-      if (this.listenQueueNames !== null && !this.listenQueueNames.has(record.name)) continue;
+      if (
+        this.listenQueueNames !== null &&
+        !this.listenQueueNames.has(record.name) &&
+        !this.pollerQueueNames.has(record.name)
+      ) {
+        continue;
+      }
       present.add(record.name);
       const existing = this.states.get(record.name);
       if (existing) {

@@ -43,12 +43,20 @@
       "types": "./dist/src/datasource.d.ts",
       "import": "./dist/src/datasource.js",
       "require": "./dist/src/datasource.js"
+    },
+    "./eventreceiver": {
+      "types": "./dist/src/eventreceiver.d.ts",
+      "import": "./dist/src/eventreceiver.js",
+      "require": "./dist/src/eventreceiver.js"
     }
   },
   "typesVersions": {
     "*": {
       "datasource": [
         "./dist/src/datasource.d.ts"
+      ],
+      "eventreceiver": [
+        "./dist/src/eventreceiver.d.ts"
       ]
     }
   },
@@ -59,7 +67,9 @@
     "build": "tsc --project tsconfig.json && npm run --workspaces build",
     "lint": "eslint --ignore-pattern **/coverage/ .",
     "setversion": "npm run --workspaces setversion && grunt setversion",
-    "test": "npm run build && npm run --workspaces test  && jest ./tests --coverage --collectCoverageFrom='src/**/*' --detectOpenHandles",
+    "test": "npm run build && npm run test:packages && npm run test:unit",
+    "test:unit": "jest ./tests --coverage --collectCoverageFrom='src/**/*' --detectOpenHandles",
+    "test:packages": "npm run --workspaces test",
     "check:package": "npm run build && publint && attw --pack .",
     "prepare": "husky"
   },
