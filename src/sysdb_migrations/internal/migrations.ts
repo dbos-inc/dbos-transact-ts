@@ -36,33 +36,28 @@ export function allMigrations(
       name: '20240123183030_triggers',
       pg: useListenNotify
         ? [
-            `
-    CREATE OR REPLACE FUNCTION "${schemaName}".notifications_function() RETURNS TRIGGER AS $$
+            `CREATE OR REPLACE FUNCTION "${schemaName}".notifications_function() RETURNS TRIGGER AS $$
     DECLARE
         payload text := NEW.destination_uuid || '::' || NEW.topic;
     BEGIN
         PERFORM pg_notify('dbos_notifications_channel', payload);
         RETURN NEW;
     END;
-    $$ LANGUAGE plpgsql;
-
-    CREATE TRIGGER dbos_notifications_trigger
+    $$ LANGUAGE plpgsql;`,
+            `CREATE TRIGGER dbos_notifications_trigger
     AFTER INSERT ON "${schemaName}".notifications
-    FOR EACH ROW EXECUTE FUNCTION "${schemaName}".notifications_function();
-
-    CREATE OR REPLACE FUNCTION "${schemaName}".workflow_events_function() RETURNS TRIGGER AS $$
+    FOR EACH ROW EXECUTE FUNCTION "${schemaName}".notifications_function();`,
+            `CREATE OR REPLACE FUNCTION "${schemaName}".workflow_events_function() RETURNS TRIGGER AS $$
     DECLARE
         payload text := NEW.workflow_uuid || '::' || NEW.key;
     BEGIN
         PERFORM pg_notify('dbos_workflow_events_channel', payload);
         RETURN NEW;
     END;
-    $$ LANGUAGE plpgsql;
-
-    CREATE TRIGGER dbos_workflow_events_trigger
+    $$ LANGUAGE plpgsql;`,
+            `CREATE TRIGGER dbos_workflow_events_trigger
     AFTER INSERT ON "${schemaName}".workflow_events
-    FOR EACH ROW EXECUTE FUNCTION "${schemaName}".workflow_events_function();
-  `,
+    FOR EACH ROW EXECUTE FUNCTION "${schemaName}".workflow_events_function();`,
           ]
         : [],
     },
