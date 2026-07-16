@@ -38,6 +38,9 @@ export async function prepareEnqueuedWorkflow<T extends unknown[], R>(
  * transaction. Workflows whose ID already exists are skipped rather than updated, so redelivering
  * the same batch is a no-op and each workflow runs exactly once.
  *
+ * Throws rather than retrying if the database is unreachable, so the caller keeps control: retry
+ * the same batch until it succeeds, and commit nothing to the source until it does.
+ *
  * @returns The IDs of the workflows actually enqueued by this call.
  */
 export async function enqueueWorkflows(workflows: PreparedWorkflow[]): Promise<Set<string>> {

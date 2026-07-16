@@ -924,8 +924,11 @@ export class SystemDatabase {
    *
    * Rows whose workflow_uuid already exists are skipped rather than updated, making this
    * idempotent under redelivery (e.g. Kafka). Returns the IDs of the rows actually inserted.
+   *
+   * Deliberately not `@dbRetry()`-decorated, unlike its neighbours: that loop is unabortable, so a
+   * connection outage would trap the caller in it rather than let it back off and observe a
+   * shutdown. Callers retry this themselves.
    */
-  @dbRetry()
   async enqueueWorkflows(statuses: WorkflowStatusInternal[]): Promise<Set<string>> {
     const inserted = new Set<string>();
     if (statuses.length === 0) return inserted;
