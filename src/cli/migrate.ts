@@ -3,25 +3,62 @@ import { GlobalLogger } from '../telemetry/logs';
 import { ensureSystemDatabase } from '../system_database';
 import { allMigrations } from '../sysdb_migrations/internal/migrations';
 
-export function generateMigrationSQL(schemaName: string = 'dbos'): string {
+function freshDatabaseGuard(schemaName: string): string {
+  return `DO $$
+DECLARE
+  current_version bigint;
+BEGIN
+  SELECT "version" INTO current_version FROM "${schemaName}"."dbos_migrations" ORDER BY "version" DESC LIMIT 1;
+  IF current_version IS NOT NULL THEN
+    RAISE EXCEPTION 'DBOS schema "${schemaName}" is already at version %; this script is for fresh databases only. Use dbos migrate instead.', current_version;
+  END IF;
+END
+$$;`;
+}
+
+type PrintedSection = { comment: string; statements: string[] };
+
+function printedSections(schemaName: string): PrintedSection[] {
   const migrations = allMigrations(schemaName);
+  const sections: PrintedSection[] = [];
+  for (let i = 0; i < migrations.length; i++) {
+    const m = migrations[i];
+    const stmts = (m.pg ?? []).map((s) => {
+      const stmt = s.trim();
+      return stmt.endsWith(';') ? stmt : `${stmt};`;
+    });
+    if (stmts.length === 0) continue;
+    sections.push({ comment: `-- migration ${i + 1}${m.name ? `: ${m.name}` : ''}`, statements: stmts });
+    if (stmts.some((s) => /create table .*"dbos_migrations"/i.test(s))) {
+      sections.push({
+        comment: '-- abort if this database has already been migrated (fresh databases only)',
+        statements: [freshDatabaseGuard(schemaName)],
+      });
+    }
+  }
+  sections.push({
+    comment: '-- record applied migration version',
+    statements: [`INSERT INTO "${schemaName}"."dbos_migrations" ("version") VALUES (${migrations.length});`],
+  });
+  return sections;
+}
+
+/** Individual executable statements, in order, for tests and tooling. */
+export function generateMigrationStatements(schemaName: string = 'dbos'): string[] {
+  return printedSections(schemaName).flatMap((s) => s.statements);
+}
+
+export function generateMigrationSQL(schemaName: string = 'dbos'): string {
   const lines: string[] = [
     '-- DBOS system database migration SQL',
+    '-- For FRESH databases only: the script aborts if the dbos_migrations table',
+    '-- already contains a row. Use `dbos migrate` for existing databases.',
     '-- Run with psql in autocommit mode (the default); some statements use',
     '-- CREATE INDEX CONCURRENTLY and cannot run inside a transaction block.',
   ];
-  for (let i = 0; i < migrations.length; i++) {
-    const m = migrations[i];
-    const stmts = m.pg ?? [];
-    if (stmts.length === 0) continue;
-    lines.push('', `-- migration ${i + 1}${m.name ? `: ${m.name}` : ''}`);
-    for (const s of stmts) {
-      const stmt = s.trim();
-      lines.push(stmt.endsWith(';') ? stmt : `${stmt};`);
-    }
+  for (const section of printedSections(schemaName)) {
+    lines.push('', section.comment, ...section.statements);
   }
-  lines.push('', '-- record applied migration version');
-  lines.push(`INSERT INTO "${schemaName}"."dbos_migrations" ("version") VALUES (${migrations.length});`);
   return lines.join('\n');
 }
 
@@ -30,6 +67,7 @@ export async function migrate(
   systemDatabaseUrl: string,
   logger: GlobalLogger,
   printOnly: boolean = false,
+  schemaName: string = 'dbos',
 ) {
   if (printOnly) {
     if (migrationCommands.length > 0) {
@@ -37,7 +75,7 @@ export async function migrate(
         'Skipping user-defined migration commands from dbos-config.yaml in --print-only mode (they are shell commands, not SQL).',
       );
     }
-    process.stdout.write(generateMigrationSQL() + '\n');
+    process.stdout.write(generateMigrationSQL(schemaName) + '\n');
     return 0;
   }
 
@@ -56,7 +94,7 @@ export async function migrate(
 
   logger.info('Creating DBOS system database.');
   try {
-    await ensureSystemDatabase(systemDatabaseUrl, logger);
+    await ensureSystemDatabase(systemDatabaseUrl, logger, undefined, schemaName);
   } catch (e) {
     if (e instanceof Error) {
       logger.error(`Error creating DBOS system database: ${e.message}`);

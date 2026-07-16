@@ -76,16 +76,18 @@ program
   .command('migrate')
   .description('Perform a database migration')
   .option('--print-only', 'Print the migration SQL to stdout without executing anything')
-  .action(async (options: { printOnly?: boolean }) => {
+  .option('-s, --schema <string>', 'The schema name for DBOS system tables (default: dbos)')
+  .action(async (options: { printOnly?: boolean; schema?: string }) => {
     const configFile = await readConfigFile();
     let config = getDbosConfig(configFile);
     const runtimeConfig = getRuntimeConfig(configFile);
     if (process.env.DBOS__CLOUD === 'true') {
       [config] = overwriteConfigForDBOSCloud(config, runtimeConfig, configFile);
     }
+    const schemaName = options.schema ?? configFile.system_database_schema_name ?? 'dbos';
 
     await runAndLog(configFile.database?.migrate ?? [], config, (cmds, url, logger) =>
-      migrate(cmds, url, logger, options.printOnly ?? false),
+      migrate(cmds, url, logger, options.printOnly ?? false, schemaName),
     );
   });
 
