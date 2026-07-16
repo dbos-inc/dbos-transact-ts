@@ -101,7 +101,7 @@ async function committedOffset(): Promise<number> {
 suite('confluent-kafka-receive-durability', async () => {
   const kafkaAvailable = await validateKafka(kafkaConfig);
   let producer: Producer | undefined = undefined;
-  const originalInit = eventreceiver.initWorkflows;
+  const originalEnqueue = eventreceiver.enqueueWorkflows;
 
   before(
     async () => {
@@ -121,12 +121,12 @@ suite('confluent-kafka-receive-durability', async () => {
 
       // Fail every enqueue for this topic until the outage is lifted. Scope it to this topic: the
       // patch is global, and the workflow ID carries the topic it came from.
-      (eventreceiver as { initWorkflows: typeof originalInit }).initWorkflows = async (statuses) => {
+      (eventreceiver as { enqueueWorkflows: typeof originalEnqueue }).enqueueWorkflows = async (statuses) => {
         if (outageActive && statuses.every((s) => s.workflowUUID.includes(durableTopic))) {
           enqueueAttempts += 1;
           throw new Error('Simulated database outage');
         }
-        return await originalInit(statuses);
+        return await originalEnqueue(statuses);
       };
 
       const client = new Client({ user: 'postgres', database: 'postgres' });
@@ -141,7 +141,7 @@ suite('confluent-kafka-receive-durability', async () => {
   );
 
   after(async () => {
-    (eventreceiver as { initWorkflows: typeof originalInit }).initWorkflows = originalInit;
+    (eventreceiver as { enqueueWorkflows: typeof originalEnqueue }).enqueueWorkflows = originalEnqueue;
     await DBOS.shutdown({ deregister: true });
     await producer?.disconnect();
   });

@@ -3,12 +3,12 @@ import { randomUUID } from 'node:crypto';
 import { ConfiguredInstance, DBOS, StatusString } from '../src';
 import { runWithTopContext } from '../src/context';
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
-import { getOrCreateQueue, initWorkflows, prepareEnqueuedWorkflow, PreparedWorkflow } from '../src/eventreceiver';
+import { getOrCreateQueue, enqueueWorkflows, prepareEnqueuedWorkflow, PreparedWorkflow } from '../src/eventreceiver';
 import { DBOSNotRegisteredError } from '../src/error';
 import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
 
 // Batch enqueue, as used by event receivers (e.g. the Kafka consumers). These tests exercise
-// prepareEnqueuedWorkflow + initWorkflows directly; nothing here needs a broker.
+// prepareEnqueuedWorkflow + enqueueWorkflows directly; nothing here needs a broker.
 
 async function batchWorkflow(_value: string) {
   await Promise.resolve();
@@ -121,7 +121,7 @@ describe('batch-enqueue', () => {
     ).rejects.toThrow(DBOSNotRegisteredError);
   });
 
-  test('initWorkflows is idempotent under redelivery', async () => {
+  test('enqueueWorkflows is idempotent under redelivery', async () => {
     const queueName = unpolledQueue();
     const prefix = `batch-${randomUUID()}`;
     const build = async (): Promise<PreparedWorkflow[]> =>
@@ -131,20 +131,20 @@ describe('batch-enqueue', () => {
         ),
       );
 
-    const inserted = await initWorkflows(await build());
+    const inserted = await enqueueWorkflows(await build());
     expect(inserted).toEqual(new Set(Array.from({ length: 5 }, (_, i) => `${prefix}-${i}`)));
 
     // Redelivering the same batch inserts nothing.
-    expect(await initWorkflows(await build())).toEqual(new Set());
+    expect(await enqueueWorkflows(await build())).toEqual(new Set());
 
     // A partially-redelivered batch inserts only the new row.
     const partial = await build();
     partial[0].workflowUUID = `${prefix}-new`;
-    expect(await initWorkflows(partial)).toEqual(new Set([`${prefix}-new`]));
+    expect(await enqueueWorkflows(partial)).toEqual(new Set([`${prefix}-new`]));
   });
 
-  test('initWorkflows rejects rows it cannot durably enqueue', async () => {
-    expect(await initWorkflows([])).toEqual(new Set());
+  test('enqueueWorkflows rejects rows it cannot durably enqueue', async () => {
+    expect(await enqueueWorkflows([])).toEqual(new Set());
 
     const queueName = unpolledQueue();
     const notEnqueued = await prepareEnqueuedWorkflow(batchWf, ['v'], {
@@ -152,11 +152,11 @@ describe('batch-enqueue', () => {
       workflowID: `bad-${randomUUID()}`,
     });
     notEnqueued.status = StatusString.PENDING;
-    await expect(initWorkflows([notEnqueued])).rejects.toThrow(/only accepts ENQUEUED/);
+    await expect(enqueueWorkflows([notEnqueued])).rejects.toThrow(/only accepts ENQUEUED/);
 
     const deduped = await prepareEnqueuedWorkflow(batchWf, ['v'], { queueName, workflowID: `dd-${randomUUID()}` });
     deduped.deduplicationID = 'some-dedup-id';
-    await expect(initWorkflows([deduped])).rejects.toThrow(/does not support deduplication IDs/);
+    await expect(enqueueWorkflows([deduped])).rejects.toThrow(/does not support deduplication IDs/);
   });
 
   test('unordered rows get wall-clock created_at and a null partition key', async () => {
@@ -168,7 +168,7 @@ describe('batch-enqueue', () => {
         prepareEnqueuedWorkflow(batchWf, [String(i)], { queueName, workflowID: `${prefix}-${i}` }),
       ),
     );
-    expect(await initWorkflows(rows)).toEqual(new Set(Array.from({ length: 3 }, (_, i) => `${prefix}-${i}`)));
+    expect(await enqueueWorkflows(rows)).toEqual(new Set(Array.from({ length: 3 }, (_, i) => `${prefix}-${i}`)));
 
     const byID = await createdAtByWorkflowID(prefix);
     expect(byID.size).toBe(3);
@@ -199,7 +199,7 @@ describe('batch-enqueue', () => {
         );
       }
     }
-    expect((await initWorkflows(statuses)).size).toBe(numKeys * perKey);
+    expect((await enqueueWorkflows(statuses)).size).toBe(numKeys * perKey);
 
     const byID = await createdAtByWorkflowID(prefix);
     expect(byID.size).toBe(numKeys * perKey);
@@ -241,7 +241,7 @@ describe('batch-enqueue', () => {
         ),
       );
 
-    expect((await initWorkflows(await build(0, 5))).size).toBe(5);
+    expect((await enqueueWorkflows(await build(0, 5))).size).toBe(5);
 
     // Drift the backlog an hour ahead: wall-clock alone can no longer order past it.
     const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
@@ -258,7 +258,7 @@ describe('batch-enqueue', () => {
     await DBOS.shutdown();
     await DBOS.launch();
 
-    expect((await initWorkflows(await build(5, 10))).size).toBe(5);
+    expect((await enqueueWorkflows(await build(5, 10))).size).toBe(5);
 
     const byID = await createdAtByWorkflowID(prefix);
     expect(byID.size).toBe(10);

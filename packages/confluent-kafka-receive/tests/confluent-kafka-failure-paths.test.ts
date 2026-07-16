@@ -88,7 +88,7 @@ async function validateKafka(config: KafkaConfig) {
 suite('confluent-kafka-receive-failure-paths', async () => {
   const kafkaAvailable = await validateKafka(kafkaConfig);
   let producer: Producer | undefined = undefined;
-  const originalInit = eventreceiver.initWorkflows;
+  const originalEnqueue = eventreceiver.enqueueWorkflows;
   const originalPrepare = eventreceiver.prepareEnqueuedWorkflow;
 
   before(
@@ -120,13 +120,13 @@ suite('confluent-kafka-receive-failure-paths', async () => {
       const isOutageBatch = (statuses: { workflowUUID: string }[]) =>
         statuses.every((s) => s.workflowUUID.includes(outageTopic));
       let failRemaining = 3;
-      (eventreceiver as { initWorkflows: typeof originalInit }).initWorkflows = async (statuses) => {
+      (eventreceiver as { enqueueWorkflows: typeof originalEnqueue }).enqueueWorkflows = async (statuses) => {
         if (isOutageBatch(statuses) && failRemaining > 0) {
           failRemaining -= 1;
           failuresInjected += 1;
           throw new Error('Simulated database outage');
         }
-        const inserted = await originalInit(statuses);
+        const inserted = await originalEnqueue(statuses);
         for (const id of inserted) {
           if (id.includes(outageTopic)) insertedTotal += 1;
         }
@@ -171,7 +171,7 @@ suite('confluent-kafka-receive-failure-paths', async () => {
 
   after(
     async () => {
-      (eventreceiver as { initWorkflows: typeof originalInit }).initWorkflows = originalInit;
+      (eventreceiver as { enqueueWorkflows: typeof originalEnqueue }).enqueueWorkflows = originalEnqueue;
       (eventreceiver as { prepareEnqueuedWorkflow: typeof originalPrepare }).prepareEnqueuedWorkflow = originalPrepare;
       if (!kafkaAvailable) return;
       await producer?.disconnect();

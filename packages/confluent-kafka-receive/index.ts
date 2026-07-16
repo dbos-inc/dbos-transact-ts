@@ -2,7 +2,7 @@ import { DBOS, DBOSLifecycleCallback, Error as DBOSErrors, FunctionName, Workflo
 import {
   getOrCreateQueue,
   getQueue,
-  initWorkflows,
+  enqueueWorkflows,
   prepareEnqueuedWorkflow,
   PreparedWorkflow,
   registerPollerQueue,
@@ -457,7 +457,7 @@ export class ConfluentKafkaReceiver implements DBOSLifecycleCallback {
         // Retry this same chunk until durable, rather than dropping it: nothing has been committed,
         // so giving up here would lose these messages until the next rebalance.
         const result = await retryUntilSuccess(
-          () => initWorkflows(prepared),
+          () => enqueueWorkflows(prepared),
           'durably enqueue consumed messages',
           signal,
         );

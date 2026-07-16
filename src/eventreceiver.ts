@@ -13,13 +13,13 @@ export type { PrepareEnqueuedWorkflowOptions };
 
 /**
  * An assembled, not-yet-persisted ENQUEUED workflow row. Produced by {@link prepareEnqueuedWorkflow}
- * and durably enqueued by {@link initWorkflows}.
+ * and durably enqueued by {@link enqueueWorkflows}.
  */
 export type PreparedWorkflow = WorkflowStatusInternal;
 
 /**
  * Build, without persisting, an ENQUEUED row for `workflow`, to be durably enqueued in bulk by
- * {@link initWorkflows}. Together they let a receiver enqueue a batch of workflows in one
+ * {@link enqueueWorkflows}. Together they let a receiver enqueue a batch of workflows in one
  * transaction instead of one transaction per workflow.
  *
  * Any ambient DBOS context is ignored: the row inherits no parent, auth, or attributes.
@@ -40,9 +40,9 @@ export async function prepareEnqueuedWorkflow<T extends unknown[], R>(
  *
  * @returns The IDs of the workflows actually enqueued by this call.
  */
-export async function initWorkflows(workflows: PreparedWorkflow[]): Promise<Set<string>> {
-  ensureDBOSIsLaunched('initWorkflows');
-  return await DBOSExecutor.globalInstance!.systemDatabase.initWorkflows(workflows);
+export async function enqueueWorkflows(workflows: PreparedWorkflow[]): Promise<Set<string>> {
+  ensureDBOSIsLaunched('enqueueWorkflows');
+  return await DBOSExecutor.globalInstance!.systemDatabase.enqueueWorkflows(workflows);
 }
 
 /**

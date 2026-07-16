@@ -926,17 +926,17 @@ export class SystemDatabase {
    * idempotent under redelivery (e.g. Kafka). Returns the IDs of the rows actually inserted.
    */
   @dbRetry()
-  async initWorkflows(statuses: WorkflowStatusInternal[]): Promise<Set<string>> {
+  async enqueueWorkflows(statuses: WorkflowStatusInternal[]): Promise<Set<string>> {
     const inserted = new Set<string>();
     if (statuses.length === 0) return inserted;
     for (const status of statuses) {
       if (status.status !== StatusString.ENQUEUED) {
         throw new DBOSError(
-          `initWorkflows only accepts ${StatusString.ENQUEUED} workflows, but ${status.workflowUUID} is ${status.status}`,
+          `enqueueWorkflows only accepts ${StatusString.ENQUEUED} workflows, but ${status.workflowUUID} is ${status.status}`,
         );
       }
       if (status.deduplicationID !== undefined) {
-        throw new DBOSError(`initWorkflows does not support deduplication IDs, but ${status.workflowUUID} has one`);
+        throw new DBOSError(`enqueueWorkflows does not support deduplication IDs, but ${status.workflowUUID} has one`);
       }
     }
     const createdAts = await this.#assignBatchCreatedAt(statuses);

@@ -2,7 +2,7 @@ import { DBOS, DBOSLifecycleCallback, Error as DBOSErrors, FunctionName, Workflo
 import {
   getOrCreateQueue,
   getQueue,
-  initWorkflows,
+  enqueueWorkflows,
   prepareEnqueuedWorkflow,
   PreparedWorkflow,
   registerPollerQueue,
@@ -77,6 +77,8 @@ interface ConsumerSpec {
   ordering: KafkaOrdering;
   batchSize: number;
   queueName: string;
+  /** How long the next rebuild waits. Outlives each crash, so a recurring one keeps escalating. */
+  rebuildWaitMS: number;
 }
 
 export interface KafkaConsumerOptions {
@@ -290,6 +292,7 @@ export class KafkaReceiver implements DBOSLifecycleCallback {
         ordering: methodConfig.ordering ?? 'none',
         batchSize: methodConfig.batchSize ?? DEFAULT_BATCH_SIZE,
         queueName: methodConfig.consumerQueueName ?? KAFKA_QUEUE_NAME,
+        rebuildWaitMS: MIN_RETRY_WAIT_MS,
       });
     }
   }
@@ -351,8 +354,11 @@ export class KafkaReceiver implements DBOSLifecycleCallback {
         // DBOS resolves offsets itself, only after a batch is durably enqueued, so commits never
         // outrun durable state.
         eachBatchAutoResolve: false,
-        eachBatch: (payload) =>
-          this.#eachBatch(payload, spec.func, spec.config.groupId, spec.ordering, spec.batchSize, spec.queueName),
+        eachBatch: async (payload) => {
+          await this.#eachBatch(payload, spec.func, spec.config.groupId, spec.ordering, spec.batchSize, spec.queueName);
+          // A batch came through intact: let a later crash back off from the floor, not the escalated wait.
+          spec.rebuildWaitMS = MIN_RETRY_WAIT_MS;
+        },
       });
     } catch (e) {
       // #recreateConsumer retries with a fresh one, so release this consumer rather than let every
@@ -373,19 +379,20 @@ export class KafkaReceiver implements DBOSLifecycleCallback {
   #recreateConsumer(kafka: KafkaJS, spec: ConsumerSpec): void {
     const signal = this.#abortController.signal;
     const rebuild = (async () => {
-      let waitMS = MIN_RETRY_WAIT_MS;
       while (!signal.aborted) {
+        const waitMS = spec.rebuildWaitMS;
         await sleepms(waitMS, signal);
         if (signal.aborted) return;
+        // Escalate before the attempt: a start that succeeds and then crashes never reaches the catch.
+        spec.rebuildWaitMS = Math.min(waitMS * 2, MAX_RETRY_WAIT_MS);
         try {
           await this.#startConsumer(kafka, spec);
           return;
         } catch (e) {
           const message = e instanceof Error ? e.message : String(e);
           DBOS.logger.error(
-            `Failed to recreate Kafka consumer for group ${spec.config.groupId}: ${message}. Retrying in ${Math.round(waitMS / 1000)}s.`,
+            `Failed to recreate Kafka consumer for group ${spec.config.groupId}: ${message}. Retrying in ${Math.round(spec.rebuildWaitMS / 1000)}s.`,
           );
-          waitMS = Math.min(waitMS * 2, MAX_RETRY_WAIT_MS);
         }
       }
     })();
@@ -441,7 +448,7 @@ export class KafkaReceiver implements DBOSLifecycleCallback {
         // Retry this same chunk until durable, rather than dropping it: nothing has been committed,
         // so giving up here would lose these messages until the next rebalance.
         const result = await retryUntilSuccess(
-          () => initWorkflows(prepared),
+          () => enqueueWorkflows(prepared),
           'durably enqueue consumed messages',
           signal,
         );

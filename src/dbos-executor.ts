@@ -446,7 +446,7 @@ export class DBOSExecutor {
    * Build, without persisting, an ENQUEUED status row for `wf` on `options.queueName`.
    *
    * For batch enqueuers (e.g. a Kafka consumer) that persist many rows in one transaction via
-   * {@link SystemDatabase.initWorkflows}. Any ambient DBOS context is ignored: the workflow ID and
+   * {@link SystemDatabase.enqueueWorkflows}. Any ambient DBOS context is ignored: the workflow ID and
    * enqueue options are passed explicitly, and the row inherits no parent, auth, or attributes.
    */
   async prepareEnqueuedWorkflow<T extends unknown[], R>(
