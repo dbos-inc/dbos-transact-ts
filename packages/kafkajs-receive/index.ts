@@ -36,6 +36,9 @@ const KAFKA_ORDERED_QUEUE_NAME = '_dbos_kafkajs_ordered_queue';
 const DEFAULT_BATCH_SIZE = 250;
 const MIN_RETRY_WAIT_MS = 1000;
 const MAX_RETRY_WAIT_MS = 60000;
+/** Longest a backoff may go unheartbeated. Under sessionTimeout (default 30s), so a retrying
+ * consumer keeps its partitions; KafkaJS ignores calls closer together than heartbeatInterval. */
+const HEARTBEAT_SLICE_MS = 3000;
 
 const sleepms = (ms: number, signal?: AbortSignal) =>
   new Promise<void>((resolve) => {
@@ -142,14 +145,32 @@ function qualifiedName(className: string, name: string): string {
   return className ? `${className}.${name}` : name;
 }
 
+/** Sleep, heartbeating along the way so the broker keeps seeing us. Propagates a rebalance. */
+async function sleepHeartbeating(ms: number, signal: AbortSignal, heartbeat: () => Promise<void>): Promise<void> {
+  const deadline = Date.now() + ms;
+  for (;;) {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0 || signal.aborted) return;
+    await sleepms(Math.min(remaining, HEARTBEAT_SLICE_MS), signal);
+    if (signal.aborted) return;
+    await heartbeat();
+  }
+}
+
 /**
  * Run `operation` until it succeeds, backing off between attempts. Gives up only once `signal`
  * is aborted, in which case it returns `undefined`.
+ *
+ * `heartbeat` is called throughout the backoff: an outage long enough to matter is also long enough
+ * to lose the group, and a consumer evicted mid-retry drags every peer into a rebalance with it. It
+ * throws if the group is already rebalancing, which abandons the retry — correct, since the
+ * partition is gone and whatever it held is redelivered to its new owner.
  */
 async function retryUntilSuccess<T>(
   operation: () => Promise<T>,
   description: string,
   signal: AbortSignal,
+  heartbeat?: () => Promise<void>,
 ): Promise<{ value: T } | undefined> {
   let waitMS = MIN_RETRY_WAIT_MS;
   while (!signal.aborted) {
@@ -160,7 +181,8 @@ async function retryUntilSuccess<T>(
       DBOS.logger.error(
         `Kafka consumer failed to ${description}: ${message}. Retrying in ${Math.round(waitMS / 1000)}s.`,
       );
-      await sleepms(waitMS, signal);
+      if (heartbeat) await sleepHeartbeating(waitMS, signal, heartbeat);
+      else await sleepms(waitMS, signal);
       waitMS = Math.min(waitMS * 2, MAX_RETRY_WAIT_MS);
     }
   }
@@ -451,6 +473,7 @@ export class KafkaReceiver implements DBOSLifecycleCallback {
           () => enqueueWorkflows(prepared),
           'durably enqueue consumed messages',
           signal,
+          () => payload.heartbeat(),
         );
         // Aborted before the chunk was durable; offsets weren't resolved, so Kafka redelivers.
         if (result === undefined) return;
