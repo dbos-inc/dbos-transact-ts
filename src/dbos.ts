@@ -1653,11 +1653,9 @@ export class DBOS {
         if (finalRead) {
           break;
         }
-        // No value yet: stop if the workflow is done, else wait for a notification, bounded by the
-        // polling interval so termination (which fires no notification) is still noticed.
+        // No value yet: stop if the workflow is done, else wait for a notification (bounded by the poll interval so termination is noticed).
         if (!isWorkflowActive(status)) {
-          // Cancel and timeout set a terminal status out-of-band while the workflow is still
-          // writing, so drain to the first empty offset before stopping.
+          // Cancel/timeout set a terminal status while the workflow may still be writing, so drain to the first empty offset before stopping.
           finalRead = true;
           continue;
         }

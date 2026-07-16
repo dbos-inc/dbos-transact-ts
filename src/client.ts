@@ -696,8 +696,7 @@ export class DBOSClient {
         // One round trip for both the value and the workflow's status.
         const { status, value } = await this.systemDatabase.readStreamValue(workflowID, key, offset);
         if (status === null) {
-          // A stream on an unknown workflow ends the generator quietly, where the in-process reader
-          // raises: the batch read reports a missing workflow the same way as one with nothing buffered.
+          // An unknown workflow ends the generator quietly (the in-process reader raises instead).
           break;
         }
         if (value !== undefined) {
@@ -712,11 +711,9 @@ export class DBOSClient {
         if (finalRead) {
           break;
         }
-        // No value yet: stop if the workflow is done, else wait for a notification, bounded by the
-        // polling interval so termination (which fires no notification) is still noticed.
+        // No value yet: stop if the workflow is done, else wait for a notification (bounded by the poll interval so termination is noticed).
         if (!isWorkflowActive(status)) {
-          // Cancel and timeout set a terminal status out-of-band while the workflow is still
-          // writing, so drain to the first empty offset before stopping.
+          // Cancel/timeout set a terminal status while the workflow may still be writing, so drain to the first empty offset before stopping.
           finalRead = true;
           continue;
         }

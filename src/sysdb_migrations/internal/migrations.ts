@@ -686,9 +686,7 @@ export function allMigrations(
         `ALTER TABLE "${schemaName}"."workflow_status" ADD COLUMN IF NOT EXISTS "is_debounced" BOOLEAN NOT NULL DEFAULT FALSE`,
       ],
     },
-    // Drop the per-row streams NOTIFY trigger (added above): notifications are now coalesced and
-    // pushed off the write path by the system database's stream notifier loop. Gated on
-    // useListenNotify to match the trigger's own gating.
+    // Drop the per-row streams NOTIFY trigger (added above); notifications are now coalesced off the write path. Gated on useListenNotify like the trigger.
     {
       name: '20250714_drop_streams_trigger',
       pg: useListenNotify

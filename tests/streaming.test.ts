@@ -563,8 +563,7 @@ describe('dbos-streaming-tests', () => {
   });
 
   test('read-stream-value-returns-status-and-value', async () => {
-    // readStreamValue answers both questions a reader tick asks -- "is there a value at this
-    // offset?" and "is the workflow still running?" -- in one round trip, from one snapshot.
+    // readStreamValue answers both "is there a value at this offset?" and "is the workflow still running?" in one round trip.
     const writerWorkflow = DBOS.registerWorkflow(
       async () => {
         await DBOS.writeStream('s', 0);
@@ -614,9 +613,7 @@ describe('dbos-streaming-tests', () => {
   });
 
   test('stream-trigger-dropped-notifier-delivers', async () => {
-    // Migration 43 drops the per-row NOTIFY trigger; wakeups now come from the coalescing app-side
-    // notifier. Assert the trigger is gone, then confirm a blocked reader is still woken promptly
-    // (well under the 1s polling fallback) by the notifier.
+    // The per-row NOTIFY trigger is dropped; assert it's gone and that the coalescing notifier still wakes a blocked reader well under the 1s poll.
     const streamKey = 'notifier_stream';
     const numValues = 3;
 
@@ -661,9 +658,7 @@ describe('dbos-streaming-tests', () => {
   });
 
   test('read-stream-is-one-round-trip-per-value', async () => {
-    // Each reader tick issues a SINGLE joined query fetching the value and the workflow status
-    // together, rather than reading the stream and then looking the status up separately. This is
-    // the core optimization of the PR; a regression to two queries would still be correct but slow.
+    // Each reader tick issues a single joined query fetching value and status together; a regression to two queries would be correct but slow.
     const n = 25;
     const writerWorkflow = DBOS.registerWorkflow(
       async () => {
@@ -681,8 +676,7 @@ describe('dbos-streaming-tests', () => {
       await writerWorkflow();
     });
 
-    // Only the reader joins streams to workflow_status, so background threads sharing the pool
-    // cannot match; matched loosely rather than by (schema-qualified) table name.
+    // Only the reader joins streams to workflow_status, so background threads sharing the pool can't match; matched loosely, not by table name.
     const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
     const spy = jest.spyOn(sysdb.pool, 'query');
     const values: unknown[] = [];
@@ -706,15 +700,12 @@ describe('dbos-streaming-tests', () => {
     });
     // Guards against passing vacuously: reading the status separately issues no joined query at all.
     expect(joined.length).toBeGreaterThan(0);
-    // One joined query per delivered value, plus the one that finds the close sentinel. Two queries
-    // per tick (a read then a status lookup) would double this.
+    // One joined query per delivered value, plus the one that finds the close sentinel; two queries per tick would double this.
     expect(joined.length).toBe(n + 1);
   });
 
   test('stream-notifier-drops-unsendable-payload', async () => {
-    // A batch pg_notify rejects (e.g. a payload over the 8000-byte limit) is dropped, not requeued,
-    // so a poison payload can't permanently stall the notifier; it keeps delivering afterward and
-    // polling covers the dropped values.
+    // A rejected batch (e.g. a payload over the 8000-byte limit) is dropped, not requeued, so a poison payload can't permanently stall the notifier.
     await DBOS.launch();
     const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
     const internals = sysdb as unknown as {
@@ -751,9 +742,7 @@ describe('dbos-streaming-tests', () => {
   });
 
   test('stream-notifier-survives-flush-error', async () => {
-    // An exception escaping a flush must not kill the notifier loop: it logs, backs off, and
-    // resumes delivering. Without the loop guard the loop would end and stop all stream push
-    // notifications for the process.
+    // An exception escaping a flush must not kill the notifier loop; it logs, backs off, and resumes delivering.
     await DBOS.launch();
     const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
     const internals = sysdb as unknown as {
@@ -778,8 +767,7 @@ describe('dbos-streaming-tests', () => {
       }
       expect(raised).toBe(true);
 
-      // The loop must have survived it and still deliver a subsequently signaled stream. After the
-      // error it backs off ~1s before resuming, so allow generous time.
+      // The loop must survive and still deliver a subsequently signaled stream; it backs off ~1s after the error, so allow generous time.
       const goodWf = randomUUID();
       const goodKey = 'post_error';
       let fired = false;
@@ -980,9 +968,7 @@ describe('dbos-client-streaming-tests', () => {
   });
 
   test('stream-low-latency-polling-fallback', async () => {
-    // With LISTEN/NOTIFY disabled the in-process reader still receives every value
-    // via the polling fallback: the app-side notifier stays idle and no notifications
-    // fire, so the reader is woken once its wait times out instead.
+    // With LISTEN/NOTIFY off the notifier stays idle and no notifications fire; the reader is woken by the polling fallback instead.
     const streamKey = 'polling_fallback_stream';
     const numValues = 3;
 
@@ -1027,8 +1013,7 @@ describe('dbos-client-streaming-tests', () => {
   });
 
   test('client-read-stream-nonexistent-workflow', async () => {
-    // A stream on an unknown workflow ends the client's generator quietly, where the in-process
-    // reader raises. The batch read reports a missing workflow the same way as one with nothing buffered.
+    // A stream on an unknown workflow ends the client's generator quietly (the in-process reader raises instead).
     await DBOS.launch();
     const values: unknown[] = [];
     for await (const value of client.readStream(randomUUID(), 's')) {

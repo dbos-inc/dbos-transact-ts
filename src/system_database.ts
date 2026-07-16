@@ -683,8 +683,7 @@ export class SystemDatabase {
 
   // Interval for coalescing stream-write notifications pushed off the write path (Postgres + L/N only).
   readonly streamNotificationCoalesceMs: number = DEFAULT_STREAM_NOTIFICATION_COALESCE_MS;
-  // Coalesced stream-write notification payloads, flushed by the stream notifier loop below.
-  // Soft-private (not `#`) so tests can inject a payload and drive a flush, as the Python tests do.
+  // Coalesced stream-write notification payloads, flushed by the notifier loop; soft-private so tests can drive a flush.
   private pendingStreamNotifications: Set<string> = new Set();
   #streamNotifierActive: boolean = false;
   // Wakes the notifier out of its coalescing sleep so shutdown flushes promptly.
@@ -2765,25 +2764,14 @@ export class SystemDatabase {
     );
   }
 
-  /**
-   * Read the stream value at `offset` and the owning workflow's status in one round trip.
-   *
-   * Returns `{ status, value }`. `status` is `null` if the workflow does not exist; `value` is
-   * `undefined` if nothing is written at `offset`. Both come from one statement, so they share a
-   * snapshot. A terminal status does not imply the stream is complete: cancel and timeout set it
-   * out-of-band while the workflow is still running, so a caller that stops reading must first
-   * drain to the first empty offset.
-   */
+  // Read the value at `offset` and the workflow's status in one query: status null = no such workflow, value undefined = nothing at that offset.
   @dbRetry()
   async readStreamValue(
     workflowID: string,
     key: string,
     offset: number,
   ): Promise<{ status: string | null; value: { serializedValue: string; serialization: string | null } | undefined }> {
-    // LEFT JOIN so a workflow with nothing at offset still reports its status. Matching offset
-    // exactly keeps this a single index lookup on the (workflow_uuid, key, offset) primary key.
-    // Under the poll limiter (a fan-out of stream readers must not check out every pool client and
-    // starve control-plane work); inside @dbRetry so the permit frees across backoff.
+    // LEFT JOIN so a workflow with nothing at offset still reports its status (single PK lookup); under the poll limiter, inside @dbRetry so the permit frees across backoff.
     const result = await this.#pollWithLimiter(() =>
       this.pool.query<{
         status: string;
@@ -2813,18 +2801,14 @@ export class SystemDatabase {
   }
 
   #signalStreamWrite(workflowID: string, key: string): void {
-    // Accumulate a coalesced wakeup for readers of (workflowID, key); the notifier loop pushes it
-    // off the write path. No-op without LISTEN/NOTIFY (e.g. clients, CockroachDB), which poll.
+    // Coalesce a wakeup for readers of (workflowID, key); no-op without LISTEN/NOTIFY (clients, CockroachDB), which poll.
     if (!this.shouldUseDBNotifications) {
       return;
     }
     this.pendingStreamNotifications.add(`${workflowID}::${key}`);
   }
 
-  /**
-   * Periodically flush coalesced stream-write notifications, keeping the notifying commit (which
-   * serializes on Postgres's async-notify queue lock) off the write path.
-   */
+  // Periodically flush coalesced stream-write notifications, keeping the notifying commit off the write path.
   async #runStreamNotifier(): Promise<void> {
     while (this.#streamNotifierActive) {
       const { promise, cancel } = cancellableSleep(this.streamNotificationCoalesceMs);
@@ -2837,8 +2821,7 @@ export class SystemDatabase {
       try {
         await this.flushStreamNotifications();
       } catch (e) {
-        // Last resort: flushStreamNotifications logs and drops its own batch on failure, so this
-        // catches only unexpected errors, which must not kill the sole push path.
+        // Last resort: the flush drops its own failed batch, so this catches only unexpected errors that must not kill the push path.
         if (this.#streamNotifierActive) {
           this.logger.warn(`Stream notifier error: ${String(e)}`);
           const { promise: backoff } = cancellableSleep(1000);
@@ -2854,10 +2837,7 @@ export class SystemDatabase {
     }
   }
 
-  /**
-   * Emit one coalesced notifying transaction for all pending payloads; drop the batch if it fails.
-   * Soft-private (not `#`) so tests can call it directly and monkeypatch it to inject a flush error.
-   */
+  // Emit one notifying transaction for all pending payloads; drop the batch on failure. Soft-private so tests can drive it.
   async flushStreamNotifications(): Promise<void> {
     if (this.pendingStreamNotifications.size === 0) {
       return;
@@ -2866,8 +2846,7 @@ export class SystemDatabase {
     const batch = Array.from(this.pendingStreamNotifications);
     this.pendingStreamNotifications.clear();
     try {
-      // One statement: one round trip and one acquisition of the async-notify queue lock; unnest
-      // emits one notification per payload.
+      // One statement: one round trip, one async-notify queue-lock acquisition; unnest emits one notification per payload.
       const client = await this.pool.connect();
       try {
         await client.query(`SELECT pg_notify('dbos_streams_channel', p) FROM unnest($1::text[]) AS p`, [batch]);
@@ -2875,8 +2854,7 @@ export class SystemDatabase {
         client.release();
       }
     } catch (e) {
-      // Drop the batch (do not requeue) on failure, e.g. a payload over pg_notify's 8000-byte limit;
-      // readers' polling fallback delivers these values, so one poison payload can't stall forever.
+      // Drop the batch (don't requeue) on failure, e.g. a payload over pg_notify's 8000-byte limit; polling still delivers those values.
       this.logger.warn(`Stream notifier flush error: ${String(e)}`);
     }
   }

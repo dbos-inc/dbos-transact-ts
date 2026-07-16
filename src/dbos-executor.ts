@@ -166,11 +166,7 @@ export interface DBOSConfig {
   maxConcurrentQueueDispatches?: number;
   schedulerPollingIntervalMs?: number;
   useListenNotify?: boolean;
-  /**
-   * Interval in milliseconds for coalescing stream-write notifications pushed via LISTEN/NOTIFY.
-   * Bounds stream read latency and caps the rate of notifying commits independent of write
-   * throughput. Defaults to 10. Minimum value is 1.
-   */
+  /** Interval (ms) for coalescing stream-write notifications over LISTEN/NOTIFY; bounds read latency. Default 10, min 1. */
   streamNotificationCoalesceMs?: number;
 }
 
