@@ -452,6 +452,14 @@ describe('dynamic-scheduler-tests', () => {
     expect(sched.queueName).toBeNull();
     expect(sched.automaticBackfill).toBe(false);
 
+    // Passing `context` explicitly as `undefined` sets it to an empty context — distinct
+    // from omitting the key (which leaves it unchanged, as verified above at 'Asia/Tokyo').
+    expect((await DBOS.getSchedule('update-sched'))!.context).toEqual({ region: 'eu' });
+    await DBOS.updateSchedule('update-sched', { context: undefined });
+    sched = (await DBOS.getSchedule('update-sched'))!;
+    expect(sched.context).toBeUndefined();
+    expect(sched.schedule).toBe('0 0 2 2 *'); // untouched
+
     // An empty update on an existing schedule is a no-op.
     await DBOS.updateSchedule('update-sched', {});
     expect((await DBOS.getSchedule('update-sched'))!.schedule).toBe('0 0 2 2 *');
