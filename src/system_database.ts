@@ -2238,10 +2238,10 @@ export class SystemDatabase {
     message: string | null,
     topic: string | undefined,
     serialization: string | null,
-    messageUUID?: string,
+    idempotencyKey?: string,
   ): Promise<void> {
     topic = topic ?? this.nullTopic;
-    messageUUID = messageUUID ?? randomUUID();
+    const messageUUID = idempotencyKey ? `${idempotencyKey}::${destinationID}` : randomUUID();
     const client: PoolClient = await this.pool.connect();
 
     try {
@@ -2276,10 +2276,11 @@ export class SystemDatabase {
     message: string | null,
     topic: string | undefined,
     serialization: string | null,
-    messageUUID?: string,
+    idempotencyKey?: string,
   ): Promise<void> {
     topic = topic ?? this.nullTopic;
-    messageUUID = messageUUID ?? randomUUID();
+    // Same per-destination scoping as send() above.
+    const messageUUID = idempotencyKey ? `${idempotencyKey}::${destinationID}` : randomUUID();
     try {
       await this.pool.query(
         `INSERT INTO "${this.schemaName}".notifications (destination_uuid, topic, message, serialization, message_uuid)
