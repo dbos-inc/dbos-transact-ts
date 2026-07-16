@@ -3,6 +3,7 @@ import {
   type DuplicationPolicy,
   type WorkflowStatusInternal,
   type WorkflowScheduleInternal,
+  type WorkflowScheduleUpdate,
   type VersionInfo,
   type DebounceParams,
   type DebounceResult,
@@ -64,8 +65,6 @@ import {
   toWorkflowSchedule,
   createScheduleId,
   ScheduleOptions,
-  ScheduleUpdate,
-  buildScheduleUpdate,
   triggerSchedule,
   backfillSchedule,
 } from './scheduler/scheduler';
@@ -785,8 +784,29 @@ export class DBOSClient {
     await this.systemDatabase.setScheduleStatus(name, 'ACTIVE');
   }
 
-  async updateSchedule(name: string, updates: ScheduleUpdate): Promise<void> {
-    const internalUpdates = await buildScheduleUpdate(updates, this.serializer);
+  async updateSchedule(
+    name: string,
+    updates: {
+      schedule?: string;
+      context?: unknown;
+      automaticBackfill?: boolean;
+      cronTimezone?: string | null;
+      queueName?: string | null;
+    },
+  ): Promise<void> {
+    if (updates.schedule !== undefined) {
+      validateCrontab(updates.schedule);
+    }
+    if (updates.cronTimezone) {
+      validateTimezone(updates.cronTimezone);
+    }
+    // Only the keys the caller provided are updated. An `undefined` value leaves a field unchanged; `null` clears a nullable field. Including `context` (even as `undefined`) sets it, since `undefined` is a valid empty context.
+    const internalUpdates: WorkflowScheduleUpdate = {};
+    if (updates.schedule !== undefined) internalUpdates.schedule = updates.schedule;
+    if ('context' in updates) internalUpdates.context = await this.serializer.stringify(updates.context);
+    if (updates.automaticBackfill !== undefined) internalUpdates.automaticBackfill = updates.automaticBackfill;
+    if (updates.cronTimezone !== undefined) internalUpdates.cronTimezone = updates.cronTimezone;
+    if (updates.queueName !== undefined) internalUpdates.queueName = updates.queueName;
     await this.systemDatabase.updateSchedule(name, internalUpdates);
   }
 

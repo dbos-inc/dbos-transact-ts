@@ -113,6 +113,7 @@ import {
   DBOS_STREAM_CLOSED_SENTINEL,
   DBOS_FUNCNAME_WRITESTREAM,
   WorkflowScheduleInternal,
+  WorkflowScheduleUpdate,
   VersionInfo,
 } from './system_database';
 import { PoolClient } from 'pg';
@@ -120,10 +121,8 @@ import {
   WorkflowSchedule,
   ScheduledWorkflowFn,
   ScheduleOptions,
-  ScheduleUpdate,
   toWorkflowSchedule,
   createScheduleId,
-  buildScheduleUpdate,
   triggerSchedule as triggerScheduleImpl,
   backfillSchedule as backfillScheduleImpl,
 } from './scheduler/scheduler';
@@ -2466,10 +2465,31 @@ export class DBOS {
     );
   }
 
-  static async updateSchedule(name: string, updates: ScheduleUpdate): Promise<void> {
+  static async updateSchedule(
+    name: string,
+    updates: {
+      schedule?: string;
+      context?: unknown;
+      automaticBackfill?: boolean;
+      cronTimezone?: string | null;
+      queueName?: string | null;
+    },
+  ): Promise<void> {
     ensureDBOSIsLaunched('updateSchedule');
+    if (updates.schedule !== undefined) {
+      validateCrontab(updates.schedule);
+    }
+    if (updates.cronTimezone) {
+      validateTimezone(updates.cronTimezone);
+    }
     const serializer = DBOSExecutor.globalInstance!.serializer;
-    const internalUpdates = await buildScheduleUpdate(updates, serializer);
+    // Only the keys the caller provided are updated. An `undefined` value leaves a field unchanged; `null` clears a nullable field. Including `context` (even as `undefined`) sets it, since `undefined` is a valid empty context.
+    const internalUpdates: WorkflowScheduleUpdate = {};
+    if (updates.schedule !== undefined) internalUpdates.schedule = updates.schedule;
+    if ('context' in updates) internalUpdates.context = await serializer.stringify(updates.context);
+    if (updates.automaticBackfill !== undefined) internalUpdates.automaticBackfill = updates.automaticBackfill;
+    if (updates.cronTimezone !== undefined) internalUpdates.cronTimezone = updates.cronTimezone;
+    if (updates.queueName !== undefined) internalUpdates.queueName = updates.queueName;
     await runTransactionalInternalStep(
       (client) => DBOSExecutor.globalInstance!.systemDatabase.updateSchedule(name, internalUpdates, client),
       'DBOS.updateSchedule',
