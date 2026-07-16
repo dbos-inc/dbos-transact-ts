@@ -73,6 +73,14 @@ export const DEFAULT_POOL_SIZE = 10;
 
 export const DBOS_STREAM_CLOSED_SENTINEL = '__DBOS_STREAM_CLOSED__';
 
+// LISTEN/NOTIFY channels. Streams and workflow_events are pushed by the notifier loop off the write path; notifications fires from an in-transaction DB trigger so recv is never woken before its row commits.
+export const DBOS_NOTIFICATIONS_CHANNEL = 'dbos_notifications_channel';
+export const DBOS_WORKFLOW_EVENTS_CHANNEL = 'dbos_workflow_events_channel';
+export const DBOS_STREAMS_CHANNEL = 'dbos_streams_channel';
+
+// Interval for coalescing LISTEN/NOTIFY notifications off the write path; caps the rate of notifying commits regardless of write throughput.
+export const DEFAULT_NOTIFICATION_COALESCE_MS = 10;
+
 export interface WorkflowScheduleInternal {
   scheduleId: string;
   scheduleName: string;
@@ -678,6 +686,16 @@ export class SystemDatabase {
   readonly streamsMap: NotificationMap<void> = new NotificationMap();
   customPool: boolean = false;
 
+  // Interval for coalescing LISTEN/NOTIFY notifications pushed off the write path (Postgres + L/N only).
+  readonly notificationCoalesceMs: number = DEFAULT_NOTIFICATION_COALESCE_MS;
+  // Coalesced NOTIFY payloads keyed by channel, flushed by the notifier loop; soft-private so tests can drive a flush.
+  private pendingNotifications: Map<string, Set<string>> = new Map();
+  #notifierActive: boolean = false;
+  // Wakes the notifier out of its coalescing sleep so shutdown flushes promptly.
+  #notifierWake: (() => void) | null = null;
+  // The notifier loop's completion, awaited on destroy so a final flush precedes closing the pool.
+  #notifierLoop: Promise<void> | undefined = undefined;
+
   /**
    * Caps how many DB-backed polling reads (from wait operations) may run
    * concurrently against the pool, so a polling storm cannot check out every
@@ -702,9 +720,11 @@ export class SystemDatabase {
     schemaName: string = 'dbos',
     useListenNotify: boolean = true,
     pollingConcurrency?: number,
+    notificationCoalesceMs: number = DEFAULT_NOTIFICATION_COALESCE_MS,
   ) {
     this.schemaName = schemaName;
     this.shouldUseDBNotifications = useListenNotify;
+    this.notificationCoalesceMs = notificationCoalesceMs;
 
     if (systemDatabasePool) {
       this.pool = systemDatabasePool;
@@ -749,12 +769,22 @@ export class SystemDatabase {
 
     if (this.shouldUseDBNotifications) {
       await this.#listenForNotifications();
+      // Push coalesced stream and event notifications off the write path.
+      this.#notifierActive = true;
+      this.#notifierLoop = this.#runNotifier();
     }
   }
 
   async destroy() {
     if (this.reconnectTimeout) {
       clearTimeout(this.reconnectTimeout);
+    }
+    // Stop the notifier and await its final flush before the pool closes.
+    this.#notifierActive = false;
+    this.#notifierWake?.();
+    if (this.#notifierLoop) {
+      await this.#notifierLoop;
+      this.#notifierLoop = undefined;
     }
     if (this.notificationsClient) {
       try {
@@ -2437,6 +2467,8 @@ export class SystemDatabase {
 
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
+      // Only a real write (not a replay) should wake readers.
+      let didWrite = false;
       await this.#runAndRecordResult(client, DBOS_FUNCNAME_SETEVENT, workflowID, functionID, async () => {
         await client.query(
           `INSERT INTO "${this.schemaName}".workflow_events (workflow_uuid, key, value, serialization)
@@ -2454,9 +2486,14 @@ export class SystemDatabase {
              DO UPDATE SET value = $4, serialization = $5;`,
           [workflowID, functionID, key, message, serialization],
         );
+        didWrite = true;
         return undefined;
       });
       await client.query('COMMIT');
+      // Notify only after commit, so a woken getEvent sees the value.
+      if (didWrite) {
+        this.#signalNotification(DBOS_WORKFLOW_EVENTS_CHANNEL, `${workflowID}::${key}`);
+      }
     } catch (e) {
       this.logger.error(e);
       await client.query(`ROLLBACK`);
@@ -2672,6 +2709,8 @@ export class SystemDatabase {
       );
 
       await client.query('COMMIT');
+      // Notify only after commit, so a woken reader sees the value.
+      this.#signalNotification(DBOS_STREAMS_CHANNEL, `${workflowID}::${key}`);
     } catch (e) {
       this.logger.error(e);
       await client.query('ROLLBACK');
@@ -2694,10 +2733,12 @@ export class SystemDatabase {
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
 
+      // Only a real insert (not a replay) should wake readers.
+      let didWrite = false;
       await this.#runAndRecordResult(client, functionName, workflowID, functionID, async () => {
         // Find the maximum offset for this workflow_uuid and key combination
         const maxOffsetResult = await client.query(
-          `SELECT MAX("offset") FROM "${this.schemaName}".streams 
+          `SELECT MAX("offset") FROM "${this.schemaName}".streams
            WHERE workflow_uuid = $1 AND key = $2`,
           [workflowID, key],
         );
@@ -2713,10 +2754,15 @@ export class SystemDatabase {
           [workflowID, key, serializedValue, nextOffset, functionID, serialization],
         );
 
+        didWrite = true;
         return undefined;
       });
 
       await client.query('COMMIT');
+      // Notify only after commit, so a woken reader sees the value.
+      if (didWrite) {
+        this.#signalNotification(DBOS_STREAMS_CHANNEL, `${workflowID}::${key}`);
+      }
     } catch (e) {
       this.logger.error(e);
       await client.query('ROLLBACK');
@@ -2737,29 +2783,116 @@ export class SystemDatabase {
     );
   }
 
+  // Read the value at `offset` and the workflow's status in one query: status null = no such workflow, value undefined = nothing at that offset.
   @dbRetry()
-  async readStream(
+  async readStreamValue(
     workflowID: string,
     key: string,
     offset: number,
-  ): Promise<{ serializedValue: string; serialization: string | null }> {
-    const client: PoolClient = await this.pool.connect();
-    try {
-      const result = await client.query(
-        `SELECT value, serialization FROM "${this.schemaName}".streams 
-         WHERE workflow_uuid = $1 AND key = $2 AND "offset" = $3`,
+  ): Promise<{ status: string | null; value: { serializedValue: string; serialization: string | null } | undefined }> {
+    // LEFT JOIN so a workflow with nothing at offset still reports its status (single PK lookup); under the poll limiter, inside @dbRetry so the permit frees across backoff.
+    const result = await this.#pollWithLimiter(() =>
+      this.pool.query<{
+        status: string;
+        value: string | null;
+        serialization: string | null;
+        stream_offset: number | null;
+      }>(
+        // "offset" is a reserved word, so alias it (stream_offset) to read it back plainly.
+        `SELECT ws.status AS status, s.value AS value, s.serialization AS serialization, s."offset" AS stream_offset
+         FROM "${this.schemaName}".workflow_status ws
+         LEFT OUTER JOIN "${this.schemaName}".streams s
+           ON s.workflow_uuid = ws.workflow_uuid AND s.key = $2 AND s."offset" = $3
+         WHERE ws.workflow_uuid = $1`,
         [workflowID, key, offset],
-      );
+      ),
+    );
 
-      if (result.rows.length === 0) {
-        throw new Error(`No value found for workflow_uuid=${workflowID}, key=${key}, offset=${offset}`);
+    if (result.rows.length === 0) {
+      return { status: null, value: undefined };
+    }
+    const row = result.rows[0];
+    // streams.offset is non-nullable, so a NULL here means the join matched nothing at offset.
+    if (row.stream_offset === null) {
+      return { status: row.status, value: undefined };
+    }
+    return { status: row.status, value: { serializedValue: row.value as string, serialization: row.serialization } };
+  }
+
+  #signalNotification(channel: string, payload: string): void {
+    // Coalesce a wakeup on `channel` for `payload`; no-op without LISTEN/NOTIFY (clients, CockroachDB), which poll.
+    if (!this.shouldUseDBNotifications) {
+      return;
+    }
+    let batch = this.pendingNotifications.get(channel);
+    if (batch === undefined) {
+      batch = new Set();
+      this.pendingNotifications.set(channel, batch);
+    }
+    batch.add(payload);
+  }
+
+  // Periodically flush coalesced notifications across all channels, keeping the notifying commit off the write path.
+  async #runNotifier(): Promise<void> {
+    while (this.#notifierActive) {
+      const { promise, cancel } = cancellableSleep(this.notificationCoalesceMs);
+      this.#notifierWake = cancel;
+      await promise;
+      this.#notifierWake = null;
+      if (!this.#notifierActive) {
+        break;
       }
+      try {
+        await this.flushNotifications();
+      } catch (e) {
+        // Last resort: the flush drops its own failed batch, so this catches only unexpected errors that must not kill the push path.
+        if (this.#notifierActive) {
+          this.logger.warn(`Notifier error: ${String(e)}`);
+          const { promise: backoff } = cancellableSleep(1000);
+          await backoff;
+        }
+      }
+    }
+    // Final flush so values written just before shutdown still wake readers promptly.
+    try {
+      await this.flushNotifications();
+    } catch (e) {
+      this.logger.warn(`Notifier final flush error: ${String(e)}`);
+    }
+  }
 
-      // Deserialize the value before returning
-      const row = result.rows[0] as { value: string; serialization: string | null };
-      return { serializedValue: row.value, serialization: row.serialization };
-    } finally {
-      client.release();
+  // Emit one notifying transaction per channel for all pending payloads; drop a channel's batch on failure. Soft-private so tests can drive it.
+  async flushNotifications(): Promise<void> {
+    let hasPending = false;
+    for (const batch of this.pendingNotifications.values()) {
+      if (batch.size > 0) {
+        hasPending = true;
+        break;
+      }
+    }
+    if (!hasPending) {
+      return;
+    }
+    // Grab and clear atomically (no await between), so writes during the flush start the next batch.
+    const batches = this.pendingNotifications;
+    this.pendingNotifications = new Map();
+    // One transaction per channel so an unsendable payload on one channel drops only its own batch.
+    for (const [channel, batch] of batches) {
+      if (batch.size === 0) {
+        continue;
+      }
+      try {
+        // One statement: one round trip, one async-notify queue-lock acquisition; unnest emits one notification per payload.
+        const client = await this.pool.connect();
+        try {
+          await client.query(`SELECT pg_notify($1, p) FROM unnest($2::text[]) AS p`, [channel, Array.from(batch)]);
+        } finally {
+          client.release();
+        }
+      } catch (e) {
+        // Drop the batch (don't requeue) on failure, e.g. a payload over pg_notify's 8000-byte limit; polling still delivers those values.
+        this.logger.warn(`Notifier flush error on ${channel}: ${String(e)}`);
+      }
     }
   }
 
@@ -4364,9 +4497,9 @@ export class SystemDatabase {
       let client: PoolClient | null = null;
       try {
         client = await this.pool.connect();
-        await client.query('LISTEN dbos_notifications_channel;');
-        await client.query('LISTEN dbos_workflow_events_channel;');
-        await client.query('LISTEN dbos_streams_channel;');
+        await client.query(`LISTEN ${DBOS_NOTIFICATIONS_CHANNEL};`);
+        await client.query(`LISTEN ${DBOS_WORKFLOW_EVENTS_CHANNEL};`);
+        await client.query(`LISTEN ${DBOS_STREAMS_CHANNEL};`);
 
         // Self-test: verify LISTEN actually works by sending a NOTIFY and checking it arrives.
         // If a transaction-mode pooler (e.g. PgBouncer pool_mode=transaction) is in the path,
@@ -4395,11 +4528,11 @@ export class SystemDatabase {
 
         const handler = (msg: Notification) => {
           if (!this.shouldUseDBNotifications) return;
-          if (msg.channel === 'dbos_notifications_channel' && msg.payload) {
+          if (msg.channel === DBOS_NOTIFICATIONS_CHANNEL && msg.payload) {
             this.notificationsMap.callCallbacks(msg.payload);
-          } else if (msg.channel === 'dbos_workflow_events_channel' && msg.payload) {
+          } else if (msg.channel === DBOS_WORKFLOW_EVENTS_CHANNEL && msg.payload) {
             this.workflowEventsMap.callCallbacks(msg.payload);
-          } else if (msg.channel === 'dbos_streams_channel' && msg.payload) {
+          } else if (msg.channel === DBOS_STREAMS_CHANNEL && msg.payload) {
             this.streamsMap.callCallbacks(msg.payload);
           }
         };
