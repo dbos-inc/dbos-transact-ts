@@ -75,7 +75,8 @@ program
 program
   .command('migrate')
   .description('Perform a database migration')
-  .action(async () => {
+  .option('--print-only', 'Print the migration SQL to stdout without executing anything')
+  .action(async (options: { printOnly?: boolean }) => {
     const configFile = await readConfigFile();
     let config = getDbosConfig(configFile);
     const runtimeConfig = getRuntimeConfig(configFile);
@@ -83,7 +84,9 @@ program
       [config] = overwriteConfigForDBOSCloud(config, runtimeConfig, configFile);
     }
 
-    await runAndLog(configFile.database?.migrate ?? [], config, migrate);
+    await runAndLog(configFile.database?.migrate ?? [], config, (cmds, url, logger) =>
+      migrate(cmds, url, logger, options.printOnly ?? false),
+    );
   });
 
 program

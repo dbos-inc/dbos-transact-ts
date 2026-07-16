@@ -1,8 +1,46 @@
 import { execSync, SpawnSyncReturns } from 'child_process';
 import { GlobalLogger } from '../telemetry/logs';
 import { ensureSystemDatabase } from '../system_database';
+import { allMigrations } from '../sysdb_migrations/internal/migrations';
 
-export async function migrate(migrationCommands: string[], systemDatabaseUrl: string, logger: GlobalLogger) {
+export function generateMigrationSQL(schemaName: string = 'dbos'): string {
+  const migrations = allMigrations(schemaName);
+  const lines: string[] = [
+    '-- DBOS system database migration SQL',
+    '-- Run with psql in autocommit mode (the default); some statements use',
+    '-- CREATE INDEX CONCURRENTLY and cannot run inside a transaction block.',
+  ];
+  for (let i = 0; i < migrations.length; i++) {
+    const m = migrations[i];
+    const stmts = m.pg ?? [];
+    if (stmts.length === 0) continue;
+    lines.push('', `-- migration ${i + 1}${m.name ? `: ${m.name}` : ''}`);
+    for (const s of stmts) {
+      const stmt = s.trim();
+      lines.push(stmt.endsWith(';') ? stmt : `${stmt};`);
+    }
+  }
+  lines.push('', '-- record applied migration version');
+  lines.push(`INSERT INTO "${schemaName}"."dbos_migrations" ("version") VALUES (${migrations.length});`);
+  return lines.join('\n');
+}
+
+export async function migrate(
+  migrationCommands: string[],
+  systemDatabaseUrl: string,
+  logger: GlobalLogger,
+  printOnly: boolean = false,
+) {
+  if (printOnly) {
+    if (migrationCommands.length > 0) {
+      console.warn(
+        'Skipping user-defined migration commands from dbos-config.yaml in --print-only mode (they are shell commands, not SQL).',
+      );
+    }
+    process.stdout.write(generateMigrationSQL() + '\n');
+    return 0;
+  }
+
   let status = 0;
 
   try {
