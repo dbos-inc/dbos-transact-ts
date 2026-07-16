@@ -73,6 +73,9 @@ export const DEFAULT_POOL_SIZE = 10;
 
 export const DBOS_STREAM_CLOSED_SENTINEL = '__DBOS_STREAM_CLOSED__';
 
+// Interval for coalescing stream-write notifications off the write path; caps the rate of notifying commits regardless of write throughput.
+export const DEFAULT_STREAM_NOTIFICATION_COALESCE_MS = 10;
+
 export interface WorkflowScheduleInternal {
   scheduleId: string;
   scheduleName: string;
@@ -678,6 +681,16 @@ export class SystemDatabase {
   readonly streamsMap: NotificationMap<void> = new NotificationMap();
   customPool: boolean = false;
 
+  // Interval for coalescing stream-write notifications pushed off the write path (Postgres + L/N only).
+  readonly streamNotificationCoalesceMs: number = DEFAULT_STREAM_NOTIFICATION_COALESCE_MS;
+  // Coalesced stream-write notification payloads, flushed by the stream notifier loop below.
+  #pendingStreamNotifications: Set<string> = new Set();
+  #streamNotifierActive: boolean = false;
+  // Wakes the notifier out of its coalescing sleep so shutdown flushes promptly.
+  #streamNotifierWake: (() => void) | null = null;
+  // The notifier loop's completion, awaited on destroy so a final flush precedes closing the pool.
+  #streamNotifierLoop: Promise<void> | undefined = undefined;
+
   /**
    * Caps how many DB-backed polling reads (from wait operations) may run
    * concurrently against the pool, so a polling storm cannot check out every
@@ -702,9 +715,11 @@ export class SystemDatabase {
     schemaName: string = 'dbos',
     useListenNotify: boolean = true,
     pollingConcurrency?: number,
+    streamNotificationCoalesceMs: number = DEFAULT_STREAM_NOTIFICATION_COALESCE_MS,
   ) {
     this.schemaName = schemaName;
     this.shouldUseDBNotifications = useListenNotify;
+    this.streamNotificationCoalesceMs = streamNotificationCoalesceMs;
 
     if (systemDatabasePool) {
       this.pool = systemDatabasePool;
@@ -749,12 +764,22 @@ export class SystemDatabase {
 
     if (this.shouldUseDBNotifications) {
       await this.#listenForNotifications();
+      // Push coalesced stream-write notifications off the write path.
+      this.#streamNotifierActive = true;
+      this.#streamNotifierLoop = this.#runStreamNotifier();
     }
   }
 
   async destroy() {
     if (this.reconnectTimeout) {
       clearTimeout(this.reconnectTimeout);
+    }
+    // Stop the stream notifier and await its final flush before the pool closes.
+    this.#streamNotifierActive = false;
+    this.#streamNotifierWake?.();
+    if (this.#streamNotifierLoop) {
+      await this.#streamNotifierLoop;
+      this.#streamNotifierLoop = undefined;
     }
     if (this.notificationsClient) {
       try {
@@ -2672,6 +2697,7 @@ export class SystemDatabase {
       );
 
       await client.query('COMMIT');
+      this.#signalStreamWrite(workflowID, key);
     } catch (e) {
       this.logger.error(e);
       await client.query('ROLLBACK');
@@ -2717,6 +2743,7 @@ export class SystemDatabase {
       });
 
       await client.query('COMMIT');
+      this.#signalStreamWrite(workflowID, key);
     } catch (e) {
       this.logger.error(e);
       await client.query('ROLLBACK');
@@ -2737,29 +2764,117 @@ export class SystemDatabase {
     );
   }
 
+  /**
+   * Read the stream value at `offset` and the owning workflow's status in one round trip.
+   *
+   * Returns `{ status, value }`. `status` is `null` if the workflow does not exist; `value` is
+   * `undefined` if nothing is written at `offset`. Both come from one statement, so they share a
+   * snapshot. A terminal status does not imply the stream is complete: cancel and timeout set it
+   * out-of-band while the workflow is still running, so a caller that stops reading must first
+   * drain to the first empty offset.
+   */
   @dbRetry()
-  async readStream(
+  async readStreamValue(
     workflowID: string,
     key: string,
     offset: number,
-  ): Promise<{ serializedValue: string; serialization: string | null }> {
+  ): Promise<{ status: string | null; value: { serializedValue: string; serialization: string | null } | undefined }> {
     const client: PoolClient = await this.pool.connect();
     try {
+      // LEFT JOIN so a workflow with nothing at offset still reports its status. Matching offset
+      // exactly keeps this a single index lookup on the (workflow_uuid, key, offset) primary key.
       const result = await client.query(
-        `SELECT value, serialization FROM "${this.schemaName}".streams 
-         WHERE workflow_uuid = $1 AND key = $2 AND "offset" = $3`,
+        // "offset" is a reserved word, so alias it (stream_offset) to read it back plainly.
+        `SELECT ws.status AS status, s.value AS value, s.serialization AS serialization, s."offset" AS stream_offset
+         FROM "${this.schemaName}".workflow_status ws
+         LEFT OUTER JOIN "${this.schemaName}".streams s
+           ON s.workflow_uuid = ws.workflow_uuid AND s.key = $2 AND s."offset" = $3
+         WHERE ws.workflow_uuid = $1`,
         [workflowID, key, offset],
       );
 
       if (result.rows.length === 0) {
-        throw new Error(`No value found for workflow_uuid=${workflowID}, key=${key}, offset=${offset}`);
+        return { status: null, value: undefined };
       }
-
-      // Deserialize the value before returning
-      const row = result.rows[0] as { value: string; serialization: string | null };
-      return { serializedValue: row.value, serialization: row.serialization };
+      const row = result.rows[0] as {
+        status: string;
+        value: string | null;
+        serialization: string | null;
+        stream_offset: number | null;
+      };
+      // streams.offset is non-nullable, so a NULL here means the join matched nothing at offset.
+      if (row.stream_offset === null) {
+        return { status: row.status, value: undefined };
+      }
+      return { status: row.status, value: { serializedValue: row.value as string, serialization: row.serialization } };
     } finally {
       client.release();
+    }
+  }
+
+  #signalStreamWrite(workflowID: string, key: string): void {
+    // Accumulate a coalesced wakeup for readers of (workflowID, key); the notifier loop pushes it
+    // off the write path. No-op without LISTEN/NOTIFY (e.g. clients, CockroachDB), which poll.
+    if (!this.shouldUseDBNotifications) {
+      return;
+    }
+    this.#pendingStreamNotifications.add(`${workflowID}::${key}`);
+  }
+
+  /**
+   * Periodically flush coalesced stream-write notifications, keeping the notifying commit (which
+   * serializes on Postgres's async-notify queue lock) off the write path.
+   */
+  async #runStreamNotifier(): Promise<void> {
+    while (this.#streamNotifierActive) {
+      const { promise, cancel } = cancellableSleep(this.streamNotificationCoalesceMs);
+      this.#streamNotifierWake = cancel;
+      await promise;
+      this.#streamNotifierWake = null;
+      if (!this.#streamNotifierActive) {
+        break;
+      }
+      try {
+        await this.#flushStreamNotifications();
+      } catch (e) {
+        // Last resort: #flushStreamNotifications logs and drops its own batch on failure, so this
+        // catches only unexpected errors, which must not kill the sole push path.
+        if (this.#streamNotifierActive) {
+          this.logger.warn(`Stream notifier error: ${String(e)}`);
+          const { promise: backoff } = cancellableSleep(1000);
+          await backoff;
+        }
+      }
+    }
+    // Final flush so values written just before shutdown still wake readers promptly.
+    try {
+      await this.#flushStreamNotifications();
+    } catch (e) {
+      this.logger.warn(`Stream notifier final flush error: ${String(e)}`);
+    }
+  }
+
+  /** Emit one coalesced notifying transaction for all pending payloads; drop the batch if it fails. */
+  async #flushStreamNotifications(): Promise<void> {
+    if (this.#pendingStreamNotifications.size === 0) {
+      return;
+    }
+    // Grab and clear atomically (no await between), so writes during the flush start the next batch.
+    const batch = Array.from(this.#pendingStreamNotifications);
+    this.#pendingStreamNotifications.clear();
+    try {
+      // One statement: one round trip and one acquisition of the async-notify queue lock; unnest
+      // emits one notification per payload.
+      const client = await this.pool.connect();
+      try {
+        await client.query(`SELECT pg_notify('dbos_streams_channel', p) FROM unnest($1::text[]) AS p`, [batch]);
+      } finally {
+        client.release();
+      }
+    } catch (e) {
+      // Drop the batch (do not requeue) on failure, e.g. a payload over pg_notify's 8000-byte limit;
+      // readers' polling fallback delivers these values, so one poison payload can't stall forever.
+      this.logger.warn(`Stream notifier flush error: ${String(e)}`);
     }
   }
 

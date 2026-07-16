@@ -436,6 +436,21 @@ describe('dbos-config', () => {
       }
     });
 
+    test('translate validates streamNotificationCoalesceMs', () => {
+      // A valid value is threaded through.
+      expect(
+        translateDbosConfig({ name: 'dbostest', streamNotificationCoalesceMs: 1 }).streamNotificationCoalesceMs,
+      ).toBe(1);
+      // Unset is allowed (the system database defaults it).
+      expect(translateDbosConfig({ name: 'dbostest' }).streamNotificationCoalesceMs).toBeUndefined();
+      // Invalid values are rejected, including NaN/inf which slip past a bare < 1 check.
+      for (const bad of [0.5, 0, -1, NaN, Infinity]) {
+        expect(() => translateDbosConfig({ name: 'dbostest', streamNotificationCoalesceMs: bad })).toThrow(
+          'streamNotificationCoalesceMs must be a finite number at least 1 millisecond',
+        );
+      }
+    });
+
     test('translate passes through a custom logger', () => {
       const myLogger = { info: () => {}, debug: () => {}, warn: () => {}, error: () => {} };
       let internalConfig = translateDbosConfig({ name: 'dbostest', logger: myLogger });

@@ -679,6 +679,7 @@ export class DBOSClient {
   async *readStream<T>(workflowID: string, key: string): AsyncGenerator<T, void, unknown> {
     const payload = `${workflowID}::${key}`;
     let offset = 0;
+    let finalRead = false;
 
     while (true) {
       // Register a listener before reading so a notification arriving between the
@@ -692,33 +693,39 @@ export class DBOSClient {
       });
       const cbr = this.systemDatabase.streamsMap.registerCallback(payload, resolveNotification!);
       try {
-        let value: { serializedValue: string; serialization: string | null };
-        try {
-          value = await this.systemDatabase.readStream(workflowID, key, offset);
-        } catch (error: unknown) {
-          if (error instanceof Error && error.message.includes('No value found')) {
-            // No value yet: stop if the workflow is done, else wait for a
-            // notification, bounded by the polling interval so termination
-            // (which fires no notification) is still noticed.
-            const status = await this.getWorkflow(workflowID);
-            if (!status || !isWorkflowActive(status.status)) {
-              break;
-            }
-            const { promise, cancel } = cancellableSleep(1000); // 1 second polling fallback
-            try {
-              await Promise.race([messagePromise, promise]);
-            } finally {
-              cancel();
-            }
-            continue;
-          }
-          throw error;
-        }
-        if (value.serializedValue === DBOS_STREAM_CLOSED_SENTINEL) {
+        // One round trip for both the value and the workflow's status.
+        const { status, value } = await this.systemDatabase.readStreamValue(workflowID, key, offset);
+        if (status === null) {
+          // A stream on an unknown workflow ends the generator quietly, where the in-process reader
+          // raises: the batch read reports a missing workflow the same way as one with nothing buffered.
           break;
         }
-        yield (await deserializeValue(value.serializedValue, value.serialization, this.serializer)) as T;
-        offset += 1;
+        if (value !== undefined) {
+          if (value.serializedValue === DBOS_STREAM_CLOSED_SENTINEL) {
+            return;
+          }
+          yield (await deserializeValue(value.serializedValue, value.serialization, this.serializer)) as T;
+          offset += 1;
+          // More may be buffered; read the next offset before waiting.
+          continue;
+        }
+        if (finalRead) {
+          break;
+        }
+        // No value yet: stop if the workflow is done, else wait for a notification, bounded by the
+        // polling interval so termination (which fires no notification) is still noticed.
+        if (!isWorkflowActive(status)) {
+          // Cancel and timeout set a terminal status out-of-band while the workflow is still
+          // writing, so drain to the first empty offset before stopping.
+          finalRead = true;
+          continue;
+        }
+        const { promise, cancel } = cancellableSleep(1000); // 1 second polling fallback
+        try {
+          await Promise.race([messagePromise, promise]);
+        } finally {
+          cancel();
+        }
       } finally {
         this.systemDatabase.streamsMap.deregisterCallback(cbr);
       }

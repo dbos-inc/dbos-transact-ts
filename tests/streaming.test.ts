@@ -1,8 +1,10 @@
 import { DBOS } from '../src/';
 import { generateDBOSTestConfig, reexecuteWorkflowById, setUpDBOSTestSysDb } from './helpers';
-import { DBOSConfig } from '../src/dbos-executor';
+import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import { randomUUID } from 'node:crypto';
 import { DBOSClient } from '../src/client';
+import { DBOSNonExistentWorkflowError } from '../src/error';
+import { deserializeValue } from '../src/serialization';
 
 describe('dbos-streaming-tests', () => {
   let config: DBOSConfig;
@@ -559,6 +561,104 @@ describe('dbos-streaming-tests', () => {
     // Verify the step was called exactly 4 times (3 failures + 1 success)
     expect(callCount).toBe(4);
   });
+
+  test('read-stream-value-returns-status-and-value', async () => {
+    // readStreamValue answers both questions a reader tick asks -- "is there a value at this
+    // offset?" and "is the workflow still running?" -- in one round trip, from one snapshot.
+    const writerWorkflow = DBOS.registerWorkflow(
+      async () => {
+        await DBOS.writeStream('s', 0);
+        await DBOS.writeStream('s', null);
+        await DBOS.closeStream('s');
+      },
+      { name: 'read-stream-value-writer' },
+    );
+    await DBOS.launch();
+
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    const wfid = randomUUID();
+    await DBOS.withNextWorkflowID(wfid, async () => {
+      await writerWorkflow();
+    });
+
+    const deser = async (v: { serializedValue: string; serialization: string | null } | undefined) =>
+      v === undefined ? undefined : await deserializeValue(v.serializedValue, v.serialization, sysdb.getSerializer());
+
+    // The value at the offset and the status, together.
+    let r = await sysdb.readStreamValue(wfid, 's', 0);
+    expect(r.status).toBe('SUCCESS');
+    expect(await deser(r.value)).toBe(0);
+
+    // A written null is a value, not an absence -- which is why absence needs its own sentinel.
+    r = await sysdb.readStreamValue(wfid, 's', 1);
+    expect(r.status).toBe('SUCCESS');
+    expect(r.value).not.toBeUndefined();
+    expect(await deser(r.value)).toBeNull();
+
+    // Past the end: still reports status, so the reader can tell "not yet" from "never".
+    r = await sysdb.readStreamValue(wfid, 's', 99);
+    expect(r.status).toBe('SUCCESS');
+    expect(r.value).toBeUndefined();
+
+    // A non-existent workflow is distinguishable from a workflow with no value at the offset.
+    r = await sysdb.readStreamValue(randomUUID(), 's', 0);
+    expect(r.status).toBeNull();
+    expect(r.value).toBeUndefined();
+  });
+
+  test('read-stream-nonexistent-workflow-raises', async () => {
+    // The in-process reader raises on an unknown workflow, where the client's generator ends quietly.
+    await DBOS.launch();
+    const gen = DBOS.readStream(randomUUID(), 's');
+    await expect(gen.next()).rejects.toThrow(DBOSNonExistentWorkflowError);
+  });
+
+  test('stream-trigger-dropped-notifier-delivers', async () => {
+    // Migration 43 drops the per-row NOTIFY trigger; wakeups now come from the coalescing app-side
+    // notifier. Assert the trigger is gone, then confirm a blocked reader is still woken promptly
+    // (well under the 1s polling fallback) by the notifier.
+    const streamKey = 'notifier_stream';
+    const numValues = 3;
+
+    const writerWorkflow = DBOS.registerWorkflow(
+      async () => {
+        for (let i = 0; i < numValues; i++) {
+          await DBOS.writeStream(streamKey, Date.now());
+          await DBOS.sleepms(1000);
+        }
+        await DBOS.closeStream(streamKey);
+      },
+      { name: 'notifier-delivery-writer' },
+    );
+    await DBOS.launch();
+
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    // No per-row trigger may remain on the streams table.
+    const trigger = await sysdb.pool.query(
+      `SELECT 1 FROM pg_trigger t
+       JOIN pg_class cl ON t.tgrelid = cl.oid
+       JOIN pg_namespace n ON cl.relnamespace = n.oid
+       WHERE n.nspname = $1 AND cl.relname = 'streams' AND t.tgname = 'dbos_streams_trigger'`,
+      [sysdb.schemaName],
+    );
+    expect(trigger.rows.length).toBe(0);
+
+    const wfid = randomUUID();
+    const handle = await DBOS.withNextWorkflowID(wfid, async () => {
+      return DBOS.startWorkflow(writerWorkflow, {})();
+    });
+
+    let maxLatency = 0;
+    let count = 0;
+    for await (const writtenAt of DBOS.readStream<number>(wfid, streamKey)) {
+      maxLatency = Math.max(maxLatency, Date.now() - writtenAt);
+      count += 1;
+    }
+    await handle.getResult();
+    expect(count).toBe(numValues);
+    // Delivery via the notifier (~10ms coalesce) is far faster than the 1s polling fallback.
+    expect(maxLatency).toBeLessThan(500);
+  });
 });
 
 describe('dbos-client-streaming-tests', () => {
@@ -741,9 +841,8 @@ describe('dbos-client-streaming-tests', () => {
 
   test('stream-low-latency-polling-fallback', async () => {
     // With LISTEN/NOTIFY disabled the in-process reader still receives every value
-    // via the polling fallback. The trigger installed by the migration harmlessly
-    // fires notifications nobody listens for; the reader is woken once its wait
-    // times out instead.
+    // via the polling fallback: the app-side notifier stays idle and no notifications
+    // fire, so the reader is woken once its wait times out instead.
     const streamKey = 'polling_fallback_stream';
     const numValues = 3;
 
@@ -785,5 +884,16 @@ describe('dbos-client-streaming-tests', () => {
       // the next test's launch reads the restored value.
       config.useListenNotify = priorUseListenNotify;
     }
+  });
+
+  test('client-read-stream-nonexistent-workflow', async () => {
+    // A stream on an unknown workflow ends the client's generator quietly, where the in-process
+    // reader raises. The batch read reports a missing workflow the same way as one with nothing buffered.
+    await DBOS.launch();
+    const values: unknown[] = [];
+    for await (const value of client.readStream(randomUUID(), 's')) {
+      values.push(value);
+    }
+    expect(values).toEqual([]);
   });
 });

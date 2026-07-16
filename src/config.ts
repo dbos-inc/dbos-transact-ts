@@ -181,6 +181,13 @@ export function translateDbosConfig(options: DBOSConfig, forceConsole: boolean =
   ) {
     throw new Error('maxConcurrentQueueDispatches must be a positive integer');
   }
+  if (
+    options.streamNotificationCoalesceMs !== undefined &&
+    // Reject NaN/inf too (they slip past a bare < 1 check) so the notifier's sleep can't misbehave.
+    (!Number.isFinite(options.streamNotificationCoalesceMs) || options.streamNotificationCoalesceMs < 1)
+  ) {
+    throw new Error('streamNotificationCoalesceMs must be a finite number at least 1 millisecond');
+  }
   const systemDatabaseUrl = getSystemDatabaseUrl({
     system_database_url: options.systemDatabaseUrl,
     name: options.name,
@@ -210,6 +217,7 @@ export function translateDbosConfig(options: DBOSConfig, forceConsole: boolean =
     schedulerPollingIntervalMs: options.schedulerPollingIntervalMs,
     maxConcurrentQueueDispatches: options.maxConcurrentQueueDispatches,
     useListenNotify: options.useListenNotify ?? true,
+    streamNotificationCoalesceMs: options.streamNotificationCoalesceMs,
   };
 }
 

@@ -43,6 +43,7 @@ import {
   DBOSUnexpectedStepError,
   DBOSInvalidQueuePriorityError,
   DBOSQueueDuplicatedError,
+  DBOSNonExistentWorkflowError,
 } from './error';
 import {
   getDbosConfig,
@@ -1623,6 +1624,7 @@ export class DBOS {
     const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
     const payload = `${workflowID}::${key}`;
     let offset = 0;
+    let finalRead = false;
 
     while (true) {
       // Register a listener before reading so a notification arriving between the
@@ -1634,33 +1636,37 @@ export class DBOS {
       });
       const cbr = sysdb.streamsMap.registerCallback(payload, resolveNotification!);
       try {
-        let value: { serializedValue: string; serialization: string | null };
-        try {
-          value = await sysdb.readStream(workflowID, key, offset);
-        } catch (error: unknown) {
-          if (error instanceof Error && error.message.includes('No value found')) {
-            // No value yet: stop if the workflow is done, else wait for a
-            // notification, bounded by the polling interval so termination
-            // (which fires no notification) is still noticed.
-            const status = await DBOS.getWorkflowStatus(workflowID);
-            if (!status || !isWorkflowActive(status.status)) {
-              break;
-            }
-            const { promise, cancel } = cancellableSleep(1000); // 1 second polling fallback
-            try {
-              await Promise.race([messagePromise, promise]);
-            } finally {
-              cancel();
-            }
-            continue;
-          }
-          throw error;
+        // One round trip for both the value and the workflow's status.
+        const { status, value } = await sysdb.readStreamValue(workflowID, key, offset);
+        if (status === null) {
+          throw new DBOSNonExistentWorkflowError(`Workflow ${workflowID} does not exist`);
         }
-        if (value.serializedValue === DBOS_STREAM_CLOSED_SENTINEL) {
+        if (value !== undefined) {
+          if (value.serializedValue === DBOS_STREAM_CLOSED_SENTINEL) {
+            return;
+          }
+          yield (await deserializeValue(value.serializedValue, value.serialization, sysdb.getSerializer())) as T;
+          offset += 1;
+          // More may be buffered; read the next offset before waiting.
+          continue;
+        }
+        if (finalRead) {
           break;
         }
-        yield (await deserializeValue(value.serializedValue, value.serialization, sysdb.getSerializer())) as T;
-        offset += 1;
+        // No value yet: stop if the workflow is done, else wait for a notification, bounded by the
+        // polling interval so termination (which fires no notification) is still noticed.
+        if (!isWorkflowActive(status)) {
+          // Cancel and timeout set a terminal status out-of-band while the workflow is still
+          // writing, so drain to the first empty offset before stopping.
+          finalRead = true;
+          continue;
+        }
+        const { promise, cancel } = cancellableSleep(1000); // 1 second polling fallback
+        try {
+          await Promise.race([messagePromise, promise]);
+        } finally {
+          cancel();
+        }
       } finally {
         sysdb.streamsMap.deregisterCallback(cbr);
       }
