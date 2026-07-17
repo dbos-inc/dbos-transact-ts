@@ -95,6 +95,15 @@ export interface WorkflowScheduleInternal {
   queueName: string | null;
 }
 
+// Definition fields updateSchedule can change in place. Only the keys present are updated; runtime state (schedule_id, status, last_fired_at) is left untouched.
+export interface WorkflowScheduleUpdate {
+  schedule?: string;
+  context?: string; // JSON-serialized
+  automaticBackfill?: boolean;
+  cronTimezone?: string | null;
+  queueName?: string | null;
+}
+
 export interface VersionInfo {
   versionId: string;
   versionName: string;
@@ -3897,6 +3906,48 @@ export class SystemDatabase {
       status,
       name,
     ]);
+  }
+
+  async updateSchedule(name: string, updates: WorkflowScheduleUpdate, client?: PoolClient): Promise<void> {
+    const q = client ?? this.pool;
+
+    // Only update the definition fields the caller provided, leaving runtime state (schedule_id, status, last_fired_at) untouched.
+    const columns: [keyof WorkflowScheduleUpdate, string][] = [
+      ['schedule', 'schedule'],
+      ['context', 'context'],
+      ['automaticBackfill', 'automatic_backfill'],
+      ['cronTimezone', 'cron_timezone'],
+      ['queueName', 'queue_name'],
+    ];
+    const setClauses: string[] = [];
+    const params: unknown[] = [];
+    let paramIdx = 1;
+    for (const [key, column] of columns) {
+      if (key in updates) {
+        setClauses.push(`${column} = $${paramIdx++}`);
+        params.push(updates[key] ?? null);
+      }
+    }
+
+    if (setClauses.length === 0) {
+      // Nothing to change, but still surface a missing schedule as an error.
+      const existing = await q.query(`SELECT 1 FROM "${this.schemaName}".workflow_schedules WHERE schedule_name = $1`, [
+        name,
+      ]);
+      if (existing.rows.length === 0) {
+        throw new DBOSError(`Schedule '${name}' not found`);
+      }
+      return;
+    }
+
+    params.push(name);
+    const result = await q.query(
+      `UPDATE "${this.schemaName}".workflow_schedules SET ${setClauses.join(', ')} WHERE schedule_name = $${paramIdx}`,
+      params,
+    );
+    if (result.rowCount === 0) {
+      throw new DBOSError(`Schedule '${name}' not found`);
+    }
   }
 
   async updateLastFiredAt(name: string, lastFiredAt: string): Promise<void> {

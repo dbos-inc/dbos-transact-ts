@@ -400,6 +400,120 @@ describe('dynamic-scheduler-tests', () => {
   });
 
   // ---------------------------------------------------------------------------
+  // update-schedule
+  //
+  // updateSchedule edits a schedule's definition in place, preserving runtime
+  // state the caller doesn't own (schedule id, status, last_fired_at).
+  // ---------------------------------------------------------------------------
+
+  test('update-schedule', async () => {
+    await DBOS.createSchedule({
+      scheduleName: 'update-sched',
+      workflowFn: regMyWf,
+      schedule: '0 0 1 1 *',
+      context: { region: 'us' },
+      options: { cronTimezone: 'America/New_York', automaticBackfill: true, queueName: 'q1' },
+    });
+
+    // Simulate runtime state the caller doesn't own.
+    await DBOS.pauseSchedule('update-sched');
+    const firedAt = new Date('2020-01-01T00:00:00.000Z').toISOString();
+    await DBOSExecutor.globalInstance!.systemDatabase.updateLastFiredAt('update-sched', firedAt);
+    const originalId = (await DBOS.getSchedule('update-sched'))!.scheduleId;
+
+    // Update only the cadence and context.
+    await DBOS.updateSchedule('update-sched', { schedule: '0 0 2 2 *', context: { region: 'eu' } });
+    let sched = (await DBOS.getSchedule('update-sched'))!;
+    expect(sched.schedule).toBe('0 0 2 2 *');
+    expect(sched.context).toEqual({ region: 'eu' });
+    // Untouched fields — declared and runtime — are preserved.
+    expect(sched.scheduleId).toBe(originalId);
+    expect(sched.status).toBe('PAUSED');
+    expect(sched.lastFiredAt).toBe(firedAt);
+    expect(sched.cronTimezone).toBe('America/New_York');
+    expect(sched.automaticBackfill).toBe(true);
+    expect(sched.queueName).toBe('q1');
+
+    // A single-field update leaves everything else alone.
+    await DBOS.updateSchedule('update-sched', { cronTimezone: 'Asia/Tokyo' });
+    sched = (await DBOS.getSchedule('update-sched'))!;
+    expect(sched.cronTimezone).toBe('Asia/Tokyo');
+    expect(sched.schedule).toBe('0 0 2 2 *');
+    expect(sched.context).toEqual({ region: 'eu' });
+
+    // null clears nullable fields; automaticBackfill can be toggled off.
+    await DBOS.updateSchedule('update-sched', {
+      cronTimezone: null,
+      queueName: null,
+      automaticBackfill: false,
+    });
+    sched = (await DBOS.getSchedule('update-sched'))!;
+    expect(sched.cronTimezone).toBeNull();
+    expect(sched.queueName).toBeNull();
+    expect(sched.automaticBackfill).toBe(false);
+
+    // Passing `context` explicitly as `undefined` sets it to an empty context — distinct
+    // from omitting the key (which leaves it unchanged, as verified above at 'Asia/Tokyo').
+    expect((await DBOS.getSchedule('update-sched'))!.context).toEqual({ region: 'eu' });
+    await DBOS.updateSchedule('update-sched', { context: undefined });
+    sched = (await DBOS.getSchedule('update-sched'))!;
+    expect(sched.context).toBeUndefined();
+    expect(sched.schedule).toBe('0 0 2 2 *'); // untouched
+
+    // An empty update on an existing schedule is a no-op.
+    await DBOS.updateSchedule('update-sched', {});
+    expect((await DBOS.getSchedule('update-sched'))!.schedule).toBe('0 0 2 2 *');
+
+    // Reject an invalid cron expression.
+    await expect(DBOS.updateSchedule('update-sched', { schedule: 'not a cron' })).rejects.toThrow();
+    // Reject an invalid timezone.
+    await expect(DBOS.updateSchedule('update-sched', { cronTimezone: 'Not/A/Timezone' })).rejects.toThrow(
+      /Invalid timezone/,
+    );
+    // Reject updating a schedule that does not exist.
+    await expect(DBOS.updateSchedule('nonexistent', { schedule: '* * * * *' })).rejects.toThrow(/not found/);
+    await expect(DBOS.updateSchedule('nonexistent', {})).rejects.toThrow(/not found/);
+
+    await DBOS.deleteSchedule('update-sched');
+    expect((await DBOS.listSchedules()).length).toBe(0);
+  });
+
+  // ---------------------------------------------------------------------------
+  // update-schedule-live-update
+  //
+  // An in-place update must take effect live: the scheduler detects the changed
+  // definition and restarts the running loop with the new context.
+  // ---------------------------------------------------------------------------
+
+  test('update-schedule-live-update', async () => {
+    liveUpdateResults.contexts = [];
+    const isVersion = (c: unknown, v: number) => JSON.stringify(c) === JSON.stringify({ version: v });
+
+    try {
+      await DBOS.createSchedule({
+        scheduleName: 'update-live',
+        workflowFn: regLiveUpdateWf,
+        schedule: '* * * * * *',
+        context: { version: 1 },
+      });
+      await retryUntilSuccess(() => {
+        expect(liveUpdateResults.contexts.some((c) => isVersion(c, 1))).toBe(true);
+      });
+
+      const countBefore = liveUpdateResults.contexts.length;
+      await DBOS.updateSchedule('update-live', { context: { version: 2 } });
+
+      // The poller detects the changed definition and restarts the loop with the new context; use a generous budget since during the handoff the old loop can still claim shared per-second workflow IDs, so a firing or two may land as version 1.
+      await retryUntilSuccess(() => {
+        const v2 = liveUpdateResults.contexts.slice(countBefore).filter((c) => isVersion(c, 2));
+        expect(v2.length).toBeGreaterThanOrEqual(2);
+      }, 30000);
+    } finally {
+      await DBOS.deleteSchedule('update-live');
+    }
+  });
+
+  // ---------------------------------------------------------------------------
   // schedule-crud-from-workflow
   // ---------------------------------------------------------------------------
 
@@ -416,10 +530,12 @@ describe('dynamic-scheduler-tests', () => {
     expect(schedules[0].scheduleName).toBe('wf-schedule');
     expect(schedules[0].context).toEqual({ from: 'workflow' });
 
+    await DBOS.updateSchedule('wf-schedule', { context: { from: 'update' } });
+
     const sched = await DBOS.getSchedule('wf-schedule');
     expect(sched).not.toBeNull();
     expect(sched!.scheduleName).toBe('wf-schedule');
-    expect(sched!.context).toEqual({ from: 'workflow' });
+    expect(sched!.context).toEqual({ from: 'update' });
 
     await DBOS.deleteSchedule('wf-schedule');
     expect(await DBOS.getSchedule('wf-schedule')).toBeNull();
@@ -436,6 +552,7 @@ describe('dynamic-scheduler-tests', () => {
     expect(stepNames).toEqual([
       'DBOS.createSchedule',
       'DBOS.listSchedules',
+      'DBOS.updateSchedule',
       'DBOS.getSchedule',
       'DBOS.deleteSchedule',
       'DBOS.getSchedule',
@@ -1223,6 +1340,16 @@ describe('dynamic-scheduler-tests', () => {
           options: { cronTimezone: 'Not/A/Timezone' },
         }),
       ).rejects.toThrow(/Invalid timezone/);
+
+      // Update in place: change the cadence and clear the timezone, preserving schedule id and other fields.
+      const tzId = tzSched!.scheduleId;
+      await client.updateSchedule('client-tz', { schedule: '*/15 * * * *', cronTimezone: null });
+      const updatedTz = await client.getSchedule('client-tz');
+      expect(updatedTz!.scheduleId).toBe(tzId);
+      expect(updatedTz!.schedule).toBe('*/15 * * * *');
+      expect(updatedTz!.cronTimezone).toBeNull();
+      expect(updatedTz!.automaticBackfill).toBe(true);
+      await expect(client.updateSchedule('nonexistent', { schedule: '* * * * *' })).rejects.toThrow(/not found/);
 
       // List with filters
       await client.createSchedule({
