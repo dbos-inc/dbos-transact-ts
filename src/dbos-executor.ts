@@ -166,6 +166,8 @@ export interface DBOSConfig {
   maxConcurrentQueueDispatches?: number;
   schedulerPollingIntervalMs?: number;
   useListenNotify?: boolean;
+  /** Interval (ms) for coalescing LISTEN/NOTIFY notifications (streams and events) off the write path; bounds read latency. Default 10, min 1. */
+  notificationCoalesceMs?: number;
 }
 
 export interface DBOSRuntimeConfig {
@@ -221,6 +223,7 @@ export type DBOSConfigInternal = {
   schedulerPollingIntervalMs?: number;
   maxConcurrentQueueDispatches?: number;
   useListenNotify: boolean;
+  notificationCoalesceMs?: number;
 
   http?: {
     cors_middleware?: boolean;
@@ -343,6 +346,7 @@ export class DBOSExecutor {
         this.systemDBSchemaName,
         this.config.useListenNotify,
         this.config.systemDatabasePollingConcurrency,
+        this.config.notificationCoalesceMs,
       );
     }
 

@@ -36,33 +36,28 @@ export function allMigrations(
       name: '20240123183030_triggers',
       pg: useListenNotify
         ? [
-            `
-    CREATE OR REPLACE FUNCTION "${schemaName}".notifications_function() RETURNS TRIGGER AS $$
+            `CREATE OR REPLACE FUNCTION "${schemaName}".notifications_function() RETURNS TRIGGER AS $$
     DECLARE
         payload text := NEW.destination_uuid || '::' || NEW.topic;
     BEGIN
         PERFORM pg_notify('dbos_notifications_channel', payload);
         RETURN NEW;
     END;
-    $$ LANGUAGE plpgsql;
-
-    CREATE TRIGGER dbos_notifications_trigger
+    $$ LANGUAGE plpgsql;`,
+            `CREATE TRIGGER dbos_notifications_trigger
     AFTER INSERT ON "${schemaName}".notifications
-    FOR EACH ROW EXECUTE FUNCTION "${schemaName}".notifications_function();
-
-    CREATE OR REPLACE FUNCTION "${schemaName}".workflow_events_function() RETURNS TRIGGER AS $$
+    FOR EACH ROW EXECUTE FUNCTION "${schemaName}".notifications_function();`,
+            `CREATE OR REPLACE FUNCTION "${schemaName}".workflow_events_function() RETURNS TRIGGER AS $$
     DECLARE
         payload text := NEW.workflow_uuid || '::' || NEW.key;
     BEGIN
         PERFORM pg_notify('dbos_workflow_events_channel', payload);
         RETURN NEW;
     END;
-    $$ LANGUAGE plpgsql;
-
-    CREATE TRIGGER dbos_workflow_events_trigger
+    $$ LANGUAGE plpgsql;`,
+            `CREATE TRIGGER dbos_workflow_events_trigger
     AFTER INSERT ON "${schemaName}".workflow_events
-    FOR EACH ROW EXECUTE FUNCTION "${schemaName}".workflow_events_function();
-  `,
+    FOR EACH ROW EXECUTE FUNCTION "${schemaName}".workflow_events_function();`,
           ]
         : [],
     },
@@ -685,6 +680,26 @@ export function allMigrations(
         `ALTER TABLE "${schemaName}"."workflow_status" ADD COLUMN IF NOT EXISTS "debounce_deadline_epoch_ms" BIGINT DEFAULT NULL`,
         `ALTER TABLE "${schemaName}"."workflow_status" ADD COLUMN IF NOT EXISTS "is_debounced" BOOLEAN NOT NULL DEFAULT FALSE`,
       ],
+    },
+    // Drop the per-row streams NOTIFY trigger (added above); notifications are now coalesced off the write path. Gated on useListenNotify like the trigger.
+    {
+      name: '20250714_drop_streams_trigger',
+      pg: useListenNotify
+        ? [
+            `DROP TRIGGER IF EXISTS dbos_streams_trigger ON "${schemaName}".streams`,
+            `DROP FUNCTION IF EXISTS "${schemaName}".streams_function()`,
+          ]
+        : [],
+    },
+    // Drop the per-row workflow_events NOTIFY trigger; event writes are now coalesced off the write path. The notifications trigger is kept: messages can be sent from anywhere, including processes with no notifier to buffer them. Gated on useListenNotify like the trigger.
+    {
+      name: '20250716_drop_workflow_events_trigger',
+      pg: useListenNotify
+        ? [
+            `DROP TRIGGER IF EXISTS dbos_workflow_events_trigger ON "${schemaName}".workflow_events`,
+            `DROP FUNCTION IF EXISTS "${schemaName}".workflow_events_function()`,
+          ]
+        : [],
     },
   ];
 }

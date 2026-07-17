@@ -1,8 +1,11 @@
 import { DBOS } from '../src/';
 import { generateDBOSTestConfig, reexecuteWorkflowById, setUpDBOSTestSysDb } from './helpers';
-import { DBOSConfig } from '../src/dbos-executor';
+import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import { randomUUID } from 'node:crypto';
 import { DBOSClient } from '../src/client';
+import { DBOSNonExistentWorkflowError } from '../src/error';
+import { deserializeValue } from '../src/serialization';
+import { DBOS_STREAMS_CHANNEL } from '../src/system_database';
 
 describe('dbos-streaming-tests', () => {
   let config: DBOSConfig;
@@ -559,6 +562,322 @@ describe('dbos-streaming-tests', () => {
     // Verify the step was called exactly 4 times (3 failures + 1 success)
     expect(callCount).toBe(4);
   });
+
+  test('read-stream-value-returns-status-and-value', async () => {
+    // readStreamValue answers both "is there a value at this offset?" and "is the workflow still running?" in one round trip.
+    const writerWorkflow = DBOS.registerWorkflow(
+      async () => {
+        await DBOS.writeStream('s', 0);
+        await DBOS.writeStream('s', null);
+        await DBOS.closeStream('s');
+      },
+      { name: 'read-stream-value-writer' },
+    );
+    await DBOS.launch();
+
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    const wfid = randomUUID();
+    await DBOS.withNextWorkflowID(wfid, async () => {
+      await writerWorkflow();
+    });
+
+    const deser = async (v: { serializedValue: string; serialization: string | null } | undefined) =>
+      v === undefined ? undefined : await deserializeValue(v.serializedValue, v.serialization, sysdb.getSerializer());
+
+    // The value at the offset and the status, together.
+    let r = await sysdb.readStreamValue(wfid, 's', 0);
+    expect(r.status).toBe('SUCCESS');
+    expect(await deser(r.value)).toBe(0);
+
+    // A written null is a value, not an absence -- which is why absence needs its own sentinel.
+    r = await sysdb.readStreamValue(wfid, 's', 1);
+    expect(r.status).toBe('SUCCESS');
+    expect(r.value).not.toBeUndefined();
+    expect(await deser(r.value)).toBeNull();
+
+    // Past the end: still reports status, so the reader can tell "not yet" from "never".
+    r = await sysdb.readStreamValue(wfid, 's', 99);
+    expect(r.status).toBe('SUCCESS');
+    expect(r.value).toBeUndefined();
+
+    // A non-existent workflow is distinguishable from a workflow with no value at the offset.
+    r = await sysdb.readStreamValue(randomUUID(), 's', 0);
+    expect(r.status).toBeNull();
+    expect(r.value).toBeUndefined();
+  });
+
+  test('read-stream-nonexistent-workflow-raises', async () => {
+    // The in-process reader raises on an unknown workflow, where the client's generator ends quietly.
+    await DBOS.launch();
+    const gen = DBOS.readStream(randomUUID(), 's');
+    await expect(gen.next()).rejects.toThrow(DBOSNonExistentWorkflowError);
+  });
+
+  test('stream-trigger-dropped-notifier-delivers', async () => {
+    // The per-row NOTIFY trigger is dropped; assert it's gone and that the coalescing notifier still wakes a blocked reader well under the 1s poll.
+    const streamKey = 'notifier_stream';
+    const numValues = 3;
+
+    const writerWorkflow = DBOS.registerWorkflow(
+      async () => {
+        for (let i = 0; i < numValues; i++) {
+          await DBOS.writeStream(streamKey, Date.now());
+          await DBOS.sleepms(1000);
+        }
+        await DBOS.closeStream(streamKey);
+      },
+      { name: 'notifier-delivery-writer' },
+    );
+    await DBOS.launch();
+
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    // No per-row trigger may remain on the streams table.
+    const trigger = await sysdb.pool.query(
+      `SELECT 1 FROM pg_trigger t
+       JOIN pg_class cl ON t.tgrelid = cl.oid
+       JOIN pg_namespace n ON cl.relnamespace = n.oid
+       WHERE n.nspname = $1 AND cl.relname = 'streams' AND t.tgname = 'dbos_streams_trigger'`,
+      [sysdb.schemaName],
+    );
+    expect(trigger.rows.length).toBe(0);
+
+    const wfid = randomUUID();
+    const handle = await DBOS.withNextWorkflowID(wfid, async () => {
+      return DBOS.startWorkflow(writerWorkflow, {})();
+    });
+
+    let maxLatency = 0;
+    let count = 0;
+    for await (const writtenAt of DBOS.readStream<number>(wfid, streamKey)) {
+      maxLatency = Math.max(maxLatency, Date.now() - writtenAt);
+      count += 1;
+    }
+    await handle.getResult();
+    expect(count).toBe(numValues);
+    // Delivery via the notifier (~10ms coalesce) is far faster than the 1s polling fallback.
+    expect(maxLatency).toBeLessThan(500);
+  });
+
+  test('read-stream-is-one-round-trip-per-value', async () => {
+    // Each reader tick issues a single joined query fetching value and status together; a regression to two queries would be correct but slow.
+    const n = 25;
+    const writerWorkflow = DBOS.registerWorkflow(
+      async () => {
+        for (let i = 0; i < n; i++) {
+          await DBOS.writeStream('s', i);
+        }
+        await DBOS.closeStream('s');
+      },
+      { name: 'one-round-trip-writer' },
+    );
+    await DBOS.launch();
+
+    const wfid = randomUUID();
+    await DBOS.withNextWorkflowID(wfid, async () => {
+      await writerWorkflow();
+    });
+
+    // Only the reader joins streams to workflow_status, so background threads sharing the pool can't match; matched loosely, not by table name.
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    const spy = jest.spyOn(sysdb.pool, 'query');
+    const values: unknown[] = [];
+    let queryTexts: string[] = [];
+    try {
+      for await (const value of DBOS.readStream(wfid, 's')) {
+        values.push(value);
+      }
+      // Capture before mockRestore(), which clears spy.mock.calls.
+      queryTexts = spy.mock.calls.map((c) =>
+        typeof c[0] === 'string' ? c[0] : ((c[0] as { text?: string })?.text ?? ''),
+      );
+    } finally {
+      spy.mockRestore();
+    }
+
+    expect(values).toEqual(Array.from({ length: n }, (_, i) => i));
+    const joined = queryTexts.filter((text) => {
+      const s = text.toLowerCase().replace(/\s+/g, ' ');
+      return s.includes('outer join') && s.includes('streams') && s.includes('workflow_status');
+    });
+    // Guards against passing vacuously: reading the status separately issues no joined query at all.
+    expect(joined.length).toBeGreaterThan(0);
+    // One joined query per delivered value, plus the one that finds the close sentinel; two queries per tick would double this.
+    expect(joined.length).toBe(n + 1);
+  });
+
+  test('stream-notifier-drops-unsendable-payload', async () => {
+    // A rejected batch (e.g. a payload over the 8000-byte limit) is dropped, not requeued, so a poison payload can't permanently stall the notifier.
+    await DBOS.launch();
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    const internals = sysdb as unknown as {
+      pendingNotifications: Map<string, Set<string>>;
+      flushNotifications: () => Promise<void>;
+    };
+    const addPending = (channel: string, payload: string) => {
+      let batch = internals.pendingNotifications.get(channel);
+      if (!batch) {
+        batch = new Set();
+        internals.pendingNotifications.set(channel, batch);
+      }
+      batch.add(payload);
+    };
+
+    // A stream key past pg_notify's 8000-byte payload limit makes its batch unsendable.
+    const poison = `${randomUUID()}::${'x'.repeat(9000)}`;
+    internals.pendingNotifications.clear();
+    addPending(DBOS_STREAMS_CHANNEL, poison);
+    await internals.flushNotifications();
+
+    // The poison batch is dropped, not requeued (requeuing would loop forever on it).
+    expect(internals.pendingNotifications.get(DBOS_STREAMS_CHANNEL)?.has(poison) ?? false).toBe(false);
+
+    // The notifier still works afterward: a subsequent good payload is delivered.
+    const goodWf = randomUUID();
+    const goodKey = 'deliverable';
+    let fired = false;
+    const cbr = sysdb.streamsMap.registerCallback(`${goodWf}::${goodKey}`, () => {
+      fired = true;
+    });
+    try {
+      addPending(DBOS_STREAMS_CHANNEL, `${goodWf}::${goodKey}`);
+      await internals.flushNotifications();
+      for (let i = 0; i < 100 && !fired; i++) {
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      expect(fired).toBe(true);
+    } finally {
+      sysdb.streamsMap.deregisterCallback(cbr);
+    }
+  });
+
+  test('stream-notifier-survives-flush-error', async () => {
+    // An exception escaping a flush must not kill the notifier loop; it logs, backs off, and resumes delivering.
+    await DBOS.launch();
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    const internals = sysdb as unknown as {
+      pendingNotifications: Map<string, Set<string>>;
+      flushNotifications: () => Promise<void>;
+    };
+    const realFlush = internals.flushNotifications.bind(sysdb);
+    let raised = false;
+    internals.flushNotifications = async () => {
+      // Raise once (even on an empty batch) to simulate an unexpected error; then behave normally.
+      if (!raised) {
+        raised = true;
+        throw new Error('simulated flush failure');
+      }
+      return realFlush();
+    };
+
+    try {
+      // Wait until the running notifier loop has hit the injected failure.
+      for (let i = 0; i < 200 && !raised; i++) {
+        await new Promise((r) => setTimeout(r, 20));
+      }
+      expect(raised).toBe(true);
+
+      // The loop must survive and still deliver a subsequently signaled stream; it backs off ~1s after the error, so allow generous time.
+      const goodWf = randomUUID();
+      const goodKey = 'post_error';
+      let fired = false;
+      const cbr = sysdb.streamsMap.registerCallback(`${goodWf}::${goodKey}`, () => {
+        fired = true;
+      });
+      try {
+        let batch = internals.pendingNotifications.get(DBOS_STREAMS_CHANNEL);
+        if (!batch) {
+          batch = new Set();
+          internals.pendingNotifications.set(DBOS_STREAMS_CHANNEL, batch);
+        }
+        batch.add(`${goodWf}::${goodKey}`);
+        for (let i = 0; i < 200 && !fired; i++) {
+          await new Promise((r) => setTimeout(r, 50));
+        }
+        expect(fired).toBe(true);
+      } finally {
+        sysdb.streamsMap.deregisterCallback(cbr);
+      }
+    } finally {
+      internals.flushNotifications = realFlush;
+    }
+  });
+
+  test('event-notifier-delivers-without-workflow-events-trigger', async () => {
+    // The per-row workflow_events trigger is dropped; assert it's gone and that the coalescing notifier still wakes a blocked getEvent well under the 10s event poll.
+    const key = 'notifier_event';
+
+    const setterWorkflow = DBOS.registerWorkflow(
+      async () => {
+        await DBOS.sleepms(1000);
+        await DBOS.setEvent(key, 'notifier_value');
+      },
+      { name: 'event-notifier-setter' },
+    );
+    await DBOS.launch();
+
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    // No per-row trigger may remain on the workflow_events table.
+    const trigger = await sysdb.pool.query(
+      `SELECT 1 FROM pg_trigger t
+       JOIN pg_class cl ON t.tgrelid = cl.oid
+       JOIN pg_namespace n ON cl.relnamespace = n.oid
+       WHERE n.nspname = $1 AND cl.relname = 'workflow_events' AND t.tgname = 'dbos_workflow_events_trigger'`,
+      [sysdb.schemaName],
+    );
+    expect(trigger.rows.length).toBe(0);
+
+    const wfid = randomUUID();
+    const handle = await DBOS.withNextWorkflowID(wfid, async () => {
+      return DBOS.startWorkflow(setterWorkflow, {})();
+    });
+
+    // getEvent blocks until the value is set ~1s in; prompt delivery must come from the notifier, not the 10s poll.
+    const begin = Date.now();
+    const value = await DBOS.getEvent<string>(wfid, key, 30);
+    const latency = Date.now() - begin;
+    await handle.getResult();
+
+    expect(value).toBe('notifier_value');
+    // Delivery via the notifier (~10ms coalesce after the value lands) is far faster than the 10s polling fallback.
+    expect(latency).toBeLessThan(3000);
+  });
+
+  test('message-notifications-trigger-is-kept', async () => {
+    // Messages keep their in-transaction NOTIFY trigger (they can be sent from processes with no notifier to buffer them); assert it exists and that send still wakes a blocked recv.
+    const recvWorkflow = DBOS.registerWorkflow(
+      async () => {
+        return await DBOS.recv<string>(undefined, { timeoutSeconds: 30 });
+      },
+      { name: 'notifications-trigger-recv' },
+    );
+    await DBOS.launch();
+
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    // The notifications trigger must be kept.
+    const trigger = await sysdb.pool.query(
+      `SELECT 1 FROM pg_trigger t
+       JOIN pg_class cl ON t.tgrelid = cl.oid
+       JOIN pg_namespace n ON cl.relnamespace = n.oid
+       WHERE n.nspname = $1 AND cl.relname = 'notifications' AND t.tgname = 'dbos_notifications_trigger'`,
+      [sysdb.schemaName],
+    );
+    expect(trigger.rows.length).toBe(1);
+
+    const dest = randomUUID();
+    const handle = await DBOS.withNextWorkflowID(dest, async () => {
+      return DBOS.startWorkflow(recvWorkflow, {})();
+    });
+
+    // Let the recv block on the listener, then send; the trigger's NOTIFY must wake it well under the 10s poll.
+    await DBOS.sleepms(1000);
+    const begin = Date.now();
+    await DBOS.send(dest, 'hello_trigger');
+    const result = await handle.getResult();
+    const latency = Date.now() - begin;
+
+    expect(result).toBe('hello_trigger');
+    expect(latency).toBeLessThan(3000);
+  });
 });
 
 describe('dbos-client-streaming-tests', () => {
@@ -740,10 +1059,7 @@ describe('dbos-client-streaming-tests', () => {
   });
 
   test('stream-low-latency-polling-fallback', async () => {
-    // With LISTEN/NOTIFY disabled the in-process reader still receives every value
-    // via the polling fallback. The trigger installed by the migration harmlessly
-    // fires notifications nobody listens for; the reader is woken once its wait
-    // times out instead.
+    // With LISTEN/NOTIFY off the notifier stays idle and no notifications fire; the reader is woken by the polling fallback instead.
     const streamKey = 'polling_fallback_stream';
     const numValues = 3;
 
@@ -785,5 +1101,60 @@ describe('dbos-client-streaming-tests', () => {
       // the next test's launch reads the restored value.
       config.useListenNotify = priorUseListenNotify;
     }
+  });
+
+  test('client-read-stream-nonexistent-workflow', async () => {
+    // A stream on an unknown workflow ends the client's generator quietly (the in-process reader raises instead).
+    await DBOS.launch();
+    const values: unknown[] = [];
+    for await (const value of client.readStream(randomUUID(), 's')) {
+      values.push(value);
+    }
+    expect(values).toEqual([]);
+  });
+
+  test('client-read-stream-is-one-round-trip-per-value', async () => {
+    // The client reader fetches value and status in one joined query per tick, like the in-process one.
+    const n = 25;
+    const writerWorkflow = DBOS.registerWorkflow(
+      async () => {
+        for (let i = 0; i < n; i++) {
+          await DBOS.writeStream('s', i);
+        }
+        await DBOS.closeStream('s');
+      },
+      { name: 'client-one-round-trip-writer' },
+    );
+    await DBOS.launch();
+
+    const wfid = randomUUID();
+    await DBOS.withNextWorkflowID(wfid, async () => {
+      await writerWorkflow();
+    });
+
+    const clientSysdb = (client as unknown as { systemDatabase: { pool: import('pg').Pool } }).systemDatabase;
+    const spy = jest.spyOn(clientSysdb.pool, 'query');
+    const values: unknown[] = [];
+    let queryTexts: string[] = [];
+    try {
+      for await (const value of client.readStream(wfid, 's')) {
+        values.push(value);
+      }
+      // Capture before mockRestore(), which clears spy.mock.calls.
+      queryTexts = spy.mock.calls.map((c) =>
+        typeof c[0] === 'string' ? c[0] : ((c[0] as { text?: string })?.text ?? ''),
+      );
+    } finally {
+      spy.mockRestore();
+    }
+
+    expect(values).toEqual(Array.from({ length: n }, (_, i) => i));
+    const joined = queryTexts.filter((text) => {
+      const s = text.toLowerCase().replace(/\s+/g, ' ');
+      return s.includes('outer join') && s.includes('streams') && s.includes('workflow_status');
+    });
+    // Guards against passing vacuously, then asserts one joined query per value plus the sentinel read.
+    expect(joined.length).toBeGreaterThan(0);
+    expect(joined.length).toBe(n + 1);
   });
 });
