@@ -1,7 +1,9 @@
 import { execSync, SpawnSyncReturns } from 'child_process';
+import { Client } from 'pg';
 import { GlobalLogger } from '../telemetry/logs';
 import { ensureSystemDatabase } from '../system_database';
 import { allMigrations } from '../sysdb_migrations/internal/migrations';
+import { getCurrentSysDBVersion } from '../sysdb_migrations/migration_runner';
 
 function freshDatabaseGuard(schemaName: string): string {
   return `DO $$
@@ -16,12 +18,31 @@ END
 $$;`;
 }
 
+function deltaVersionGuard(schemaName: string, fromVersion: number): string {
+  return `DO $$
+DECLARE
+  current_version bigint;
+BEGIN
+  SELECT "version" INTO current_version FROM "${schemaName}"."dbos_migrations" ORDER BY "version" DESC LIMIT 1;
+  IF current_version IS DISTINCT FROM ${fromVersion} THEN
+    RAISE EXCEPTION 'DBOS schema "${schemaName}" is at version % but this delta script requires version ${fromVersion}. Regenerate it with dbos migrate --print-only.', current_version;
+  END IF;
+END
+$$;`;
+}
+
 type PrintedSection = { comment: string; statements: string[] };
 
-function printedSections(schemaName: string): PrintedSection[] {
+function printedSections(schemaName: string, fromVersion: number): PrintedSection[] {
   const migrations = allMigrations(schemaName);
   const sections: PrintedSection[] = [];
-  for (let i = 0; i < migrations.length; i++) {
+  if (fromVersion > 0) {
+    sections.push({
+      comment: `-- abort unless the database is exactly at DBOS schema version ${fromVersion}`,
+      statements: [deltaVersionGuard(schemaName, fromVersion)],
+    });
+  }
+  for (let i = fromVersion; i < migrations.length; i++) {
     const m = migrations[i];
     const stmts = (m.pg ?? []).map((s) => {
       const stmt = s.trim();
@@ -29,7 +50,7 @@ function printedSections(schemaName: string): PrintedSection[] {
     });
     if (stmts.length === 0) continue;
     sections.push({ comment: `-- migration ${i + 1}${m.name ? `: ${m.name}` : ''}`, statements: stmts });
-    if (stmts.some((s) => /create table .*"dbos_migrations"/i.test(s))) {
+    if (fromVersion === 0 && stmts.some((s) => /create table .*"dbos_migrations"/i.test(s))) {
       sections.push({
         comment: '-- abort if this database has already been migrated (fresh databases only)',
         statements: [freshDatabaseGuard(schemaName)],
@@ -38,28 +59,71 @@ function printedSections(schemaName: string): PrintedSection[] {
   }
   sections.push({
     comment: '-- record applied migration version',
-    statements: [`INSERT INTO "${schemaName}"."dbos_migrations" ("version") VALUES (${migrations.length});`],
+    statements: [
+      fromVersion === 0
+        ? `INSERT INTO "${schemaName}"."dbos_migrations" ("version") VALUES (${migrations.length});`
+        : `UPDATE "${schemaName}"."dbos_migrations" SET "version" = ${migrations.length};`,
+    ],
   });
   return sections;
 }
 
-/** Individual executable statements, in order, for tests and tooling. */
-export function generateMigrationStatements(schemaName: string = 'dbos'): string[] {
-  return printedSections(schemaName).flatMap((s) => s.statements);
+/**
+ * Individual executable statements, in order, for tests and tooling.
+ * fromVersion 0 generates the full fresh-database script; N > 0 generates a
+ * delta upgrading a database at version N. Empty if already at the latest version.
+ */
+export function generateMigrationStatements(schemaName: string = 'dbos', fromVersion: number = 0): string[] {
+  if (fromVersion >= allMigrations(schemaName).length) return [];
+  return printedSections(schemaName, fromVersion).flatMap((s) => s.statements);
 }
 
-export function generateMigrationSQL(schemaName: string = 'dbos'): string {
-  const lines: string[] = [
-    '-- DBOS system database migration SQL',
-    '-- For FRESH databases only: the script aborts if the dbos_migrations table',
-    '-- already contains a row. Use `dbos migrate` for existing databases.',
-    '-- Run with psql in autocommit mode (the default); some statements use',
-    '-- CREATE INDEX CONCURRENTLY and cannot run inside a transaction block.',
-  ];
-  for (const section of printedSections(schemaName)) {
+export function generateMigrationSQL(schemaName: string = 'dbos', fromVersion: number = 0): string {
+  const latest = allMigrations(schemaName).length;
+  if (fromVersion >= latest) {
+    return `-- Database is already at the latest DBOS schema version (${fromVersion}); nothing to do.`;
+  }
+  const lines =
+    fromVersion === 0
+      ? [
+          '-- DBOS system database migration SQL',
+          '-- For FRESH databases only: the script aborts if the dbos_migrations table',
+          '-- already contains a row. Use `dbos migrate` for existing databases.',
+          '-- Run with psql in autocommit mode (the default); some statements use',
+          '-- CREATE INDEX CONCURRENTLY and cannot run inside a transaction block.',
+        ]
+      : [
+          `-- DBOS system database migration SQL (delta: version ${fromVersion} -> ${latest})`,
+          `-- Upgrades a database at DBOS schema version ${fromVersion}; aborts if the current`,
+          '-- version differs.',
+          '-- Run with psql in autocommit mode (the default); some statements use',
+          '-- CREATE INDEX CONCURRENTLY and cannot run inside a transaction block.',
+        ];
+  for (const section of printedSections(schemaName, fromVersion)) {
     lines.push('', section.comment, ...section.statements);
   }
   return lines.join('\n');
+}
+
+/**
+ * Best-effort read of the current DBOS schema version. Returns 0 (fresh) if the
+ * database is unreachable or the schema/table is missing. Never writes and
+ * never emits output, so --print-only stdout/stderr stay pure SQL.
+ */
+async function tryGetCurrentVersion(systemDatabaseUrl: string, schemaName: string): Promise<number> {
+  const client = new Client({ connectionString: systemDatabaseUrl, connectionTimeoutMillis: 5000 });
+  try {
+    await client.connect();
+    return await getCurrentSysDBVersion(client, schemaName);
+  } catch {
+    return 0;
+  } finally {
+    try {
+      await client.end();
+    } catch {
+      // ignore
+    }
+  }
 }
 
 export async function migrate(
@@ -70,12 +134,17 @@ export async function migrate(
   schemaName: string = 'dbos',
 ) {
   if (printOnly) {
-    if (migrationCommands.length > 0) {
-      console.warn(
-        'Skipping user-defined migration commands from dbos-config.yaml in --print-only mode (they are shell commands, not SQL).',
+    // User-defined migration commands from dbos-config.yaml are shell commands,
+    // not SQL, so they are skipped here. Nothing is logged in this mode: stdout
+    // must stay pure SQL/comments so it can be piped into a .sql file.
+    const fromVersion = await tryGetCurrentVersion(systemDatabaseUrl, schemaName);
+    // Wait for the write to flush: the CLI exits via process.exit(), which
+    // would otherwise truncate piped output.
+    await new Promise<void>((resolve, reject) => {
+      process.stdout.write(generateMigrationSQL(schemaName, fromVersion) + '\n', (err) =>
+        err ? reject(err) : resolve(),
       );
-    }
-    process.stdout.write(generateMigrationSQL(schemaName) + '\n');
+    });
     return 0;
   }
 
