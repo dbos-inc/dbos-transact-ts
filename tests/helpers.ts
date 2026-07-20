@@ -112,6 +112,20 @@ export function uuidValidate(uuid: string) {
   return regex.test(uuid);
 }
 
+// Poll `check` until it stops throwing, rethrowing its last failure if the deadline passes.
+export async function retryUntilSuccess(check: () => void | Promise<void>, timeoutMs: number = 15000) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    try {
+      await check();
+      return;
+    } catch (e) {
+      if (Date.now() >= deadline) throw e;
+      await sleepms(100);
+    }
+  }
+}
+
 export function recoverPendingWorkflows(executorIDs: string[] = ['local']) {
   expect(DBOSExecutor.globalInstance).toBeDefined();
   return DBOSExecutor.globalInstance!.recoverPendingWorkflows(executorIDs);

@@ -1131,8 +1131,8 @@ export class SystemDatabase {
 
   async getPendingWorkflows(executorID: string, appVersion: string): Promise<GetPendingWorkflowsOutput[]> {
     const getWorkflows = await this.pool.query<workflow_status>(
-      `SELECT workflow_uuid, queue_name 
-       FROM "${this.schemaName}".workflow_status 
+      `SELECT workflow_uuid
+       FROM "${this.schemaName}".workflow_status
        WHERE status=$1 AND executor_id=$2 AND application_version=$3`,
       [StatusString.PENDING, executorID, appVersion],
     );
@@ -1140,22 +1140,27 @@ export class SystemDatabase {
       (i) =>
         <GetPendingWorkflowsOutput>{
           workflowUUID: i.workflow_uuid,
-          queueName: i.queue_name,
         },
     );
   }
 
-  async reenqueuePendingQueuedWorkflows(executorID: string, appVersion: string): Promise<string[]> {
+  // Recovery re-enqueues rather than executing directly so the queue's atomic dequeue admits exactly one runner, and the executor ID predicate rejects sweeps for rows a live executor has already claimed.
+  async reenqueueWorkflowsForRecovery(
+    executorID: string,
+    appVersion: string,
+    recoveryQueueName: string,
+  ): Promise<string[]> {
     const result = await this.pool.query<{ workflow_uuid: string }>(
       `UPDATE "${this.schemaName}".workflow_status
        SET started_at_epoch_ms = NULL,
-           status = $1
-       WHERE status = $2
-         AND executor_id = $3
-         AND application_version = $4
-         AND queue_name IS NOT NULL
+           status = $1,
+           updated_at = $2,
+           queue_name = COALESCE(queue_name, $3)
+       WHERE status = $4
+         AND executor_id = $5
+         AND application_version = $6
        RETURNING workflow_uuid`,
-      [StatusString.ENQUEUED, StatusString.PENDING, executorID, appVersion],
+      [StatusString.ENQUEUED, Date.now(), recoveryQueueName, StatusString.PENDING, executorID, appVersion],
     );
     return result.rows.map((row) => row.workflow_uuid);
   }
@@ -2994,18 +2999,6 @@ export class SystemDatabase {
        WHERE status = $3 AND delay_until_epoch_ms <= $2`,
       [StatusString.ENQUEUED, Date.now(), StatusString.DELAYED],
     );
-  }
-
-  async clearQueueAssignment(workflowID: string): Promise<boolean> {
-    // Reset the status of the task from "PENDING" to "ENQUEUED"
-    const wqRes = await this.pool.query<workflow_status>(
-      `UPDATE "${this.schemaName}".workflow_status
-        SET started_at_epoch_ms = NULL, status = $2
-        WHERE workflow_uuid = $1 AND queue_name is NOT NULL AND status = $3`,
-      [workflowID, StatusString.ENQUEUED, StatusString.PENDING],
-    );
-    // If no rows were affected, the workflow is not anymore in the queue or was already completed
-    return (wqRes.rowCount ?? 0) > 0;
   }
 
   @dbRetry()

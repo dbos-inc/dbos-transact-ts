@@ -4,13 +4,14 @@ import {
   setUpDBOSTestSysDb,
   Event,
   recoverPendingWorkflows,
+  retryUntilSuccess,
   setWfAndChildrenToPending,
 } from './helpers';
-import { DBOSConfig } from '../src/dbos-executor';
+import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import { Client } from 'pg';
 import { StatusString } from '../dist/src';
 import { DBOSAwaitedWorkflowExceededMaxRecoveryAttempts, DBOSMaxRecoveryAttemptsExceededError } from '../src/error';
-import { sleepms } from '../src/utils';
+import { INTERNAL_QUEUE_NAME } from '../src/utils';
 import { runWithTopContext } from '../src/context';
 import assert from 'assert';
 
@@ -101,6 +102,18 @@ describe('recovery-tests', () => {
     }
   }
 
+  class BlockedRecovery {
+    static startCount = 0;
+    static blocker = new Event();
+
+    @DBOS.workflow()
+    static async blockedWorkflow(input: string): Promise<string> {
+      BlockedRecovery.startCount += 1;
+      await BlockedRecovery.blocker.wait();
+      return input;
+    }
+  }
+
   test('dead-letter-queue', async () => {
     LocalRecovery.cnt = 0;
 
@@ -116,9 +129,12 @@ describe('recovery-tests', () => {
     // Send to DLQ and verify it enters the DLQ status.
     await setWfAndChildrenToPending(handle.workflowID, false); // Simulate not finishing
     await recoverPendingWorkflows();
+    // Recovery re-enqueues, so the DLQ transition happens when the queue dequeues the workflow.
+    await retryUntilSuccess(async () => {
+      expect((await handle.getStatus())?.status).toBe(StatusString.MAX_RECOVERY_ATTEMPTS_EXCEEDED);
+    });
     let status = await handle.getStatus();
     expect(status?.recoveryAttempts).toBe(LocalRecovery.maxRecoveryAttempts + 2);
-    expect(status?.status).toBe(StatusString.MAX_RECOVERY_ATTEMPTS_EXCEEDED);
 
     // Verify a direct invocation errors
     await expect(
@@ -177,10 +193,12 @@ describe('recovery-tests', () => {
     // One more recovery attempt should move the workflow to the dead-letter queue.
     await setWfAndChildrenToPending(handle.workflowID, false);
     await recoverPendingWorkflows();
-    await sleepms(2000); // Can't wait() because the workflow will land in the DLQ
+    // Can't wait() because the workflow will land in the DLQ instead of starting.
+    await retryUntilSuccess(async () => {
+      expect((await handle.getStatus())?.status).toBe(StatusString.MAX_RECOVERY_ATTEMPTS_EXCEEDED);
+    });
     status = await handle.getStatus();
     expect(status?.recoveryAttempts).toBe(LocalRecovery.maxRecoveryAttempts + 2);
-    expect(status?.status).toBe(StatusString.MAX_RECOVERY_ATTEMPTS_EXCEEDED);
   });
 
   test('local-recovery', async () => {
@@ -204,6 +222,88 @@ describe('recovery-tests', () => {
     await expect(recoverHandles[0].getResult()).resolves.toBe('test_recovery_user');
     await expect(handle.getResult()).resolves.toBe('test_recovery_user');
     expect(LocalRecovery.cnt).toBe(10); // Should run twice.
+  });
+
+  test('recovery-reenqueue-is-ownership-conditional', async () => {
+    // Recovery only re-enqueues workflows still owned by an executor it declared dead, so a duplicate or delayed sweep for that executor cannot yank back a workflow a live executor has since claimed.
+    const sysDB = DBOSExecutor.globalInstance!.systemDatabase;
+    BlockedRecovery.startCount = 0;
+    BlockedRecovery.blocker.clear();
+    const handle = await DBOS.startWorkflow(BlockedRecovery).blockedWorkflow('bob');
+
+    // Orphan the workflow: PENDING, owned by an executor that is now dead.
+    await systemDBClient.query(`UPDATE dbos.workflow_status SET status=$1, executor_id=$2 WHERE workflow_uuid=$3`, [
+      StatusString.PENDING,
+      'deadexecutor',
+      handle.workflowID,
+    ]);
+
+    // Release the workflow even on failure: an assertion that escapes while it is blocked wedges shutdown in teardown and hangs the suite.
+    try {
+      // A sweep naming a different executor must not touch the row.
+      await expect(
+        sysDB.reenqueueWorkflowsForRecovery('someotherexecutor', globalParams.appVersion, INTERNAL_QUEUE_NAME),
+      ).resolves.toEqual([]);
+      expect((await handle.getStatus())?.status).toBe(StatusString.PENDING);
+
+      // A sweep naming the dead executor re-enqueues it onto the internal queue.
+      await expect(
+        sysDB.reenqueueWorkflowsForRecovery('deadexecutor', globalParams.appVersion, INTERNAL_QUEUE_NAME),
+      ).resolves.toEqual([handle.workflowID]);
+
+      // The queue's dequeue returns the row to PENDING, now stamped with this live executor's ID -- the state the claim rests on.
+      await retryUntilSuccess(async () => {
+        const status = await handle.getStatus();
+        expect(status?.status).toBe(StatusString.PENDING);
+        expect(status?.executorId).toBe(DBOSExecutor.globalInstance!.executorID);
+      });
+
+      // The row is PENDING again, so only the executor predicate can reject this duplicate sweep.
+      await expect(
+        sysDB.reenqueueWorkflowsForRecovery('deadexecutor', globalParams.appVersion, INTERNAL_QUEUE_NAME),
+      ).resolves.toEqual([]);
+      expect((await handle.getStatus())?.status).toBe(StatusString.PENDING);
+    } finally {
+      BlockedRecovery.blocker.set();
+    }
+
+    await expect(handle.getResult()).resolves.toBe('bob');
+  });
+
+  test('duplicate-recovery-does-not-rerun-running-workflow', async () => {
+    // Recovery hands a running workflow back to the queue, and each sweep yields exactly one dequeue.
+    BlockedRecovery.startCount = 0;
+    BlockedRecovery.blocker.clear();
+    const handle = await DBOS.startWorkflow(BlockedRecovery).blockedWorkflow('bob');
+    await retryUntilSuccess(() => expect(BlockedRecovery.startCount).toBe(1));
+
+    // Started directly, so it carries no queue at all.
+    expect((await handle.getStatus())?.queueName).toBeUndefined();
+
+    // Release the workflow even on failure, or teardown hangs waiting on it.
+    try {
+      // Each sweep re-enqueues the running workflow (recovering a live executor is not prevented).
+      for (const expectedAttempts of [2, 3]) {
+        await recoverPendingWorkflows([DBOSExecutor.globalInstance!.executorID]);
+
+        // A workflow that was never enqueued acquires the internal queue's name, and it is never cleared afterwards, so reading it here is not a race.
+        expect((await handle.getStatus())?.queueName).toBe(INTERNAL_QUEUE_NAME);
+
+        // The ENQUEUED->PENDING dequeue admits a single runner, so recoveryAttempts advances by exactly one per sweep.
+        await retryUntilSuccess(async () => {
+          const status = await handle.getStatus();
+          expect(status?.recoveryAttempts).toBe(expectedAttempts);
+          expect(status?.status).toBe(StatusString.PENDING);
+        });
+        // The workflow is already running in this process, so it is not started a second time.
+        expect(BlockedRecovery.startCount).toBe(1);
+      }
+    } finally {
+      BlockedRecovery.blocker.set();
+    }
+
+    await expect(handle.getResult()).resolves.toBe('bob');
+    expect(BlockedRecovery.startCount).toBe(1);
   });
 
   async function stepOne(): Promise<number | undefined> {
@@ -254,10 +354,14 @@ describe('recovery-tests', () => {
     const timeoutSeconds = 30;
     const barrierPath = path.join(os.tmpdir(), `dbos-recv-recovery-${randomUUID()}`);
 
+    // The workers run under their own application version: recovery re-enqueues onto the internal
+    // queue, and this process, which has no registration for the worker's workflow, must not dequeue it.
+    const workerAppVersion = `recv-recovery-${randomUUID()}`;
+
     const startWorker = spawnRecvWorker(['start', workflowID, topic, `${timeoutSeconds}`], {
       ...process.env,
       DBOS__VMID: 'local',
-      DBOS__APPVERSION: globalParams.appVersion,
+      DBOS__APPVERSION: workerAppVersion,
     });
     await startWorker.waitFor('STARTED');
     const startResult = await startWorker.done;
@@ -266,12 +370,12 @@ describe('recovery-tests', () => {
     const recoveryWorker1 = spawnRecvWorker(['recover', workflowID, topic, `${timeoutSeconds}`, barrierPath], {
       ...process.env,
       DBOS__VMID: 'test-recv-worker-1',
-      DBOS__APPVERSION: globalParams.appVersion,
+      DBOS__APPVERSION: workerAppVersion,
     });
     const recoveryWorker2 = spawnRecvWorker(['recover', workflowID, topic, `${timeoutSeconds}`, barrierPath], {
       ...process.env,
       DBOS__VMID: 'test-recv-worker-2',
-      DBOS__APPVERSION: globalParams.appVersion,
+      DBOS__APPVERSION: workerAppVersion,
     });
 
     try {

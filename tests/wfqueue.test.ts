@@ -11,6 +11,7 @@ import {
   setWfAndChildrenToPending,
 } from './helpers';
 import { WorkflowQueue } from '../src';
+import { EnqueueOptions } from '../src/system_database';
 import { randomUUID } from 'node:crypto';
 import { globalParams, sleepms, INTERNAL_QUEUE_NAME } from '../src/utils';
 
@@ -1305,6 +1306,40 @@ describe('enqueue-options', () => {
       return Promise.resolve(input + '-c');
     }
   }
+
+  class UnqueuedExample {
+    @DBOS.workflow()
+    static async simpleWorkflow(input: string): Promise<string> {
+      return Promise.resolve(input);
+    }
+  }
+
+  test('test_enqueue_options_require_a_queue', async () => {
+    // Only the queue machinery reads these, and a stored dedup ID becomes a unique-constraint violation once anything assigns the row a queue name.
+    const options: EnqueueOptions[] = [
+      { deduplicationID: 'dedup_without_queue' },
+      { priority: 5 },
+      { queuePartitionKey: 'key_without_queue' },
+      { delaySeconds: 30 },
+    ];
+    for (const option of options) {
+      const wfid = randomUUID();
+      await expect(
+        DBOS.startWorkflow(UnqueuedExample, { workflowID: wfid, enqueueOptions: option }).simpleWorkflow('bob'),
+      ).rejects.toThrow(new RegExp(`${Object.keys(option)[0]}.*not being enqueued`));
+      // The call must be rejected before any row is written, or it would leave the orphaned PENDING row this validation exists to prevent.
+      await expect(DBOS.getWorkflowStatus(wfid)).resolves.toBeNull();
+    }
+
+    // applicationVersion is excluded because without a queue it still selects which executors can recover the workflow.
+    const pinnedID = randomUUID();
+    await DBOS.startWorkflow(UnqueuedExample, {
+      workflowID: pinnedID,
+      enqueueOptions: { applicationVersion: 'some_other_version' },
+    }).simpleWorkflow('bob');
+    const pinned = await DBOS.getWorkflowStatus(pinnedID);
+    expect(pinned?.applicationVersion).toBe('some_other_version');
+  });
 
   test('test_deduplication', async () => {
     const wfid = randomUUID();
