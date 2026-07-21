@@ -231,15 +231,15 @@ describe('recovery-tests', () => {
     BlockedRecovery.blocker.clear();
     const handle = await DBOS.startWorkflow(BlockedRecovery).blockedWorkflow('bob');
 
-    // Orphan the workflow: PENDING, owned by an executor that is now dead.
-    await systemDBClient.query(`UPDATE dbos.workflow_status SET status=$1, executor_id=$2 WHERE workflow_uuid=$3`, [
-      StatusString.PENDING,
-      'deadexecutor',
-      handle.workflowID,
-    ]);
-
-    // Release the workflow even on failure: an assertion that escapes while it is blocked wedges shutdown in teardown and hangs the suite.
+    // Release the workflow even on failure: anything that escapes while it is blocked wedges shutdown in teardown and hangs the suite.
     try {
+      // Orphan the workflow: PENDING, owned by an executor that is now dead.
+      await systemDBClient.query(`UPDATE dbos.workflow_status SET status=$1, executor_id=$2 WHERE workflow_uuid=$3`, [
+        StatusString.PENDING,
+        'deadexecutor',
+        handle.workflowID,
+      ]);
+
       // A sweep naming a different executor must not touch the row.
       await expect(
         sysDB.reenqueueWorkflowsForRecovery('someotherexecutor', globalParams.appVersion, INTERNAL_QUEUE_NAME),
@@ -275,13 +275,14 @@ describe('recovery-tests', () => {
     BlockedRecovery.startCount = 0;
     BlockedRecovery.blocker.clear();
     const handle = await DBOS.startWorkflow(BlockedRecovery).blockedWorkflow('bob');
-    await retryUntilSuccess(() => expect(BlockedRecovery.startCount).toBe(1));
-
-    // Started directly, so it carries no queue at all.
-    expect((await handle.getStatus())?.queueName).toBeUndefined();
 
     // Release the workflow even on failure, or teardown hangs waiting on it.
     try {
+      await retryUntilSuccess(() => expect(BlockedRecovery.startCount).toBe(1));
+
+      // Started directly, so it carries no queue at all.
+      expect((await handle.getStatus())?.queueName).toBeUndefined();
+
       // Each sweep re-enqueues the running workflow (recovering a live executor is not prevented).
       for (const expectedAttempts of [2, 3]) {
         await recoverPendingWorkflows([DBOSExecutor.globalInstance!.executorID]);

@@ -322,7 +322,8 @@ describe('queued-wf-tests-simple', () => {
     console.log('start again');
     await DBOS.launch();
     const wfh = DBOS.retrieveWorkflow('testqueuedwfcrash');
-    expect((await wfh.getStatus())?.status).toBe('PENDING');
+    // Launch recovery re-enqueued it; whether the queue has already dequeued it here is a race.
+    expect([StatusString.ENQUEUED, StatusString.PENDING]).toContain((await wfh.getStatus())?.status);
 
     // It should proceed.  And should not take too long, either...
     //  We could also recover the workflow
