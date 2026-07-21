@@ -131,6 +131,13 @@ export function recoverPendingWorkflows(executorIDs: string[] = ['local']) {
   return DBOSExecutor.globalInstance!.recoverPendingWorkflows(executorIDs);
 }
 
+// Recover and return the handle for `workflowID`; the handle array's order is unspecified, so indexing it can pick another test's workflow and block forever.
+export async function recoverWorkflow(workflowID: string, executorIDs: string[] = ['local']) {
+  const handles = (await recoverPendingWorkflows(executorIDs)).filter((h) => h.workflowID === workflowID);
+  expect(handles).toHaveLength(1);
+  return handles[0];
+}
+
 export function executeWorkflowById(workflowId: string) {
   expect(DBOSExecutor.globalInstance).toBeDefined();
   return DBOSExecutor.globalInstance!.executeWorkflowId(workflowId);

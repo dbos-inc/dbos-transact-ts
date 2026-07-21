@@ -4,6 +4,7 @@ import {
   setUpDBOSTestSysDb,
   Event,
   recoverPendingWorkflows,
+  recoverWorkflow,
   retryUntilSuccess,
   setWfAndChildrenToPending,
 } from './helpers';
@@ -122,7 +123,7 @@ describe('recovery-tests', () => {
 
     for (let i = 0; i < LocalRecovery.maxRecoveryAttempts; i++) {
       await setWfAndChildrenToPending(handle.workflowID, false); // Simulate not finishing
-      await (await recoverPendingWorkflows())[0].getResult();
+      await (await recoverWorkflow(handle.workflowID)).getResult();
       expect(LocalRecovery.recoveryCount).toBe(i + 2);
     }
 
@@ -186,7 +187,7 @@ describe('recovery-tests', () => {
     for (let i = 0; i < LocalRecovery.maxRecoveryAttempts; i++) {
       LocalRecovery.startEvent.clear();
       await setWfAndChildrenToPending(handle.workflowID, false);
-      await (await recoverPendingWorkflows())[0].getResult();
+      await (await recoverWorkflow(handle.workflowID)).getResult();
       expect(LocalRecovery.recoveryCount).toBe(i + 2);
     }
 
