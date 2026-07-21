@@ -66,6 +66,7 @@ describe('sysdb migration runner', () => {
     expect(await indexExists(client, 'idx_workflow_status_in_flight')).toBe(true);
     expect(await indexExists(client, 'idx_workflow_status_rate_limited')).toBe(true);
     expect(await indexExists(client, 'uq_workflow_status_dedup_id')).toBe(true);
+    expect(await indexExists(client, 'idx_workflow_status_partition_dequeue')).toBe(true);
 
     expect(await indexExists(client, 'workflow_status_status_index')).toBe(false);
     expect(await indexExists(client, 'workflow_status_executor_id_index')).toBe(false);
