@@ -112,9 +112,30 @@ export function uuidValidate(uuid: string) {
   return regex.test(uuid);
 }
 
+// Poll `check` until it stops throwing, rethrowing its last failure if the deadline passes.
+export async function retryUntilSuccess(check: () => void | Promise<void>, timeoutMs: number = 15000) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    try {
+      await check();
+      return;
+    } catch (e) {
+      if (Date.now() >= deadline) throw e;
+      await sleepms(100);
+    }
+  }
+}
+
 export function recoverPendingWorkflows(executorIDs: string[] = ['local']) {
   expect(DBOSExecutor.globalInstance).toBeDefined();
   return DBOSExecutor.globalInstance!.recoverPendingWorkflows(executorIDs);
+}
+
+// Recover and return the handle for `workflowID`; the handle array's order is unspecified, so indexing it can pick another test's workflow and block forever.
+export async function recoverWorkflow(workflowID: string, executorIDs: string[] = ['local']) {
+  const handles = (await recoverPendingWorkflows(executorIDs)).filter((h) => h.workflowID === workflowID);
+  expect(handles).toHaveLength(1);
+  return handles[0];
 }
 
 export function executeWorkflowById(workflowId: string) {
