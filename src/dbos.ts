@@ -1840,6 +1840,21 @@ export class DBOS {
           throw Error(`Priority is not enabled for queue ${queueName}. Setting priority will not have any effect.`);
         }
       }
+    } else {
+      // Only the queue machinery reads these, and a stored dedup ID becomes a unique-constraint violation once anything assigns the row a queue name; applicationVersion is excluded because it still selects recovery executors.
+      const enqueueOnlyOptions: (keyof EnqueueOptions)[] = [
+        'deduplicationID',
+        'priority',
+        'queuePartitionKey',
+        'delaySeconds',
+      ];
+      const setOptions = enqueueOnlyOptions.filter((name) => params.enqueueOptions?.[name] !== undefined);
+      if (setOptions.length > 0) {
+        throw new DBOSError(
+          `Enqueue option(s) ${setOptions.join(', ')} set on a workflow that is not being enqueued. ` +
+            'These options are only supported when enqueueing a workflow onto a queue.',
+        );
+      }
     }
 
     if (isChild) {

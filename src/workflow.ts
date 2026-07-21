@@ -198,7 +198,6 @@ export interface GetWorkflowsInput {
 
 export interface GetPendingWorkflowsOutput {
   workflowUUID: string;
-  queueName?: string;
 }
 
 export interface StepInfo {

@@ -4,6 +4,8 @@ import { globalParams, sleepms } from '../src/utils';
 import {
   generateDBOSTestConfig,
   recoverPendingWorkflows,
+  recoverWorkflow,
+  retryUntilSuccess,
   setUpDBOSTestSysDb,
   setWfAndChildrenToPending,
 } from './helpers';
@@ -424,11 +426,14 @@ describe('DBOSClient', () => {
       // Force back to PENDING and recover repeatedly until it exhausts recovery attempts and lands in the DLQ.
       for (let i = 0; i < DLQ_MAX_RECOVERY_ATTEMPTS; i++) {
         await setWfAndChildrenToPending(handle.workflowID, false);
-        await (await recoverPendingWorkflows())[0].getResult();
+        await (await recoverWorkflow(handle.workflowID)).getResult();
       }
       await setWfAndChildrenToPending(handle.workflowID, false);
       await recoverPendingWorkflows();
-      expect((await handle.getStatus())?.status).toBe(StatusString.MAX_RECOVERY_ATTEMPTS_EXCEEDED);
+      // Recovery re-enqueues, so the DLQ transition happens when the queue dequeues the workflow.
+      await retryUntilSuccess(async () => {
+        expect((await handle.getStatus())?.status).toBe(StatusString.MAX_RECOVERY_ATTEMPTS_EXCEEDED);
+      });
 
       await expect(client.retrieveWorkflow(handle.workflowID).getResult()).rejects.toThrow(
         DBOSAwaitedWorkflowExceededMaxRecoveryAttempts,

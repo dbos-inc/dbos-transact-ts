@@ -1214,54 +1214,26 @@ export class DBOSExecutor {
   /* INTERNAL HELPERS */
   /**
    * A recovery process that by default runs during executor init time.
-   * It runs to completion all pending workflows that were executing when the previous executor failed.
+   * It returns all workflows that were executing when the previous executor failed to a queue, which re-dispatches them.
    */
   async recoverPendingWorkflows(executorIDs: string[] = ['local']): Promise<WorkflowHandle<unknown>[]> {
     const handlerArray: WorkflowHandle<unknown>[] = [];
     for (const execID of executorIDs) {
       this.logger.debug(`Recovering workflows assigned to executor: ${execID}`);
-      const requeuedWorkflowIDs = await this.systemDatabase.reenqueuePendingQueuedWorkflows(
+      const recoveredWorkflowIDs = await this.systemDatabase.reenqueueWorkflowsForRecovery(
         execID,
         globalParams.appVersion,
+        INTERNAL_QUEUE_NAME,
       );
-      if (requeuedWorkflowIDs.length > 0) {
+      if (recoveredWorkflowIDs.length > 0) {
         this.logger.info(
-          `Re-enqueued ${requeuedWorkflowIDs.length} queued workflows from application version ${globalParams.appVersion}`,
+          `Recovering ${recoveredWorkflowIDs.length} workflows from application version ${globalParams.appVersion}`,
         );
-        for (const workflowID of requeuedWorkflowIDs) {
-          handlerArray.push(this.retrieveWorkflow(workflowID));
-        }
-      }
-
-      const pendingWorkflows = await this.systemDatabase.getPendingWorkflows(execID, globalParams.appVersion);
-      if (pendingWorkflows.length > 0) {
-        this.logger.info(
-          `Recovering ${pendingWorkflows.length} workflows from application version ${globalParams.appVersion}`,
-        );
-      } else if (requeuedWorkflowIDs.length === 0) {
+      } else {
         this.logger.info(`No workflows to recover from application version ${globalParams.appVersion}`);
       }
-      for (const pendingWorkflow of pendingWorkflows) {
-        this.logger.debug(
-          `Recovering workflow: ${pendingWorkflow.workflowUUID}. Queue name: ${pendingWorkflow.queueName}`,
-        );
-        try {
-          // If the workflow is member of a queue, re-enqueue it.
-          if (pendingWorkflow.queueName) {
-            const cleared = await this.systemDatabase.clearQueueAssignment(pendingWorkflow.workflowUUID);
-            if (cleared) {
-              handlerArray.push(this.retrieveWorkflow(pendingWorkflow.workflowUUID));
-            } else {
-              handlerArray.push(
-                await this.executeWorkflowId(pendingWorkflow.workflowUUID, { isRecoveryDispatch: true }),
-              );
-            }
-          } else {
-            handlerArray.push(await this.executeWorkflowId(pendingWorkflow.workflowUUID, { isRecoveryDispatch: true }));
-          }
-        } catch (e) {
-          this.logger.warn(`Recovery of workflow ${pendingWorkflow.workflowUUID} failed: ${(e as Error).message}`);
-        }
+      for (const workflowID of recoveredWorkflowIDs) {
+        handlerArray.push(this.retrieveWorkflow(workflowID));
       }
     }
     return handlerArray;
