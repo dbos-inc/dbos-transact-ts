@@ -8,7 +8,7 @@ import { hostname } from 'node:os';
 import { globalTimeout } from '../workflow_management';
 import assert from 'node:assert';
 import * as zlib from 'node:zlib';
-import { inspect, promisify } from 'node:util';
+import { promisify } from 'node:util';
 import type { ExportedWorkflow } from '../system_database';
 import { triggerSchedule, backfillSchedule } from '../scheduler/scheduler';
 
@@ -528,7 +528,9 @@ export class Conductor {
                   workflow_class_name: s.workflowClassName || undefined,
                   schedule: s.schedule,
                   status: s.status,
-                  context: loadContextList ? inspect(await this.dbosExec.serializer.parse(s.context)) : undefined,
+                  context: loadContextList
+                    ? protocol.inspectForConductor(await this.dbosExec.serializer.parse(s.context))
+                    : undefined,
                   last_fired_at: s.lastFiredAt,
                   automatic_backfill: s.automaticBackfill,
                   cron_timezone: s.cronTimezone,
@@ -556,7 +558,9 @@ export class Conductor {
                   workflow_class_name: sched.workflowClassName || undefined,
                   schedule: sched.schedule,
                   status: sched.status,
-                  context: loadContextGet ? inspect(await this.dbosExec.serializer.parse(sched.context)) : undefined,
+                  context: loadContextGet
+                    ? protocol.inspectForConductor(await this.dbosExec.serializer.parse(sched.context))
+                    : undefined,
                   last_fired_at: sched.lastFiredAt,
                   automatic_backfill: sched.automaticBackfill,
                   cron_timezone: sched.cronTimezone,
@@ -690,7 +694,7 @@ export class Conductor {
               const rawEvents = await this.dbosExec.systemDatabase.getAllEvents(eventsMsg.workflow_id);
               eventOutputs = Object.entries(rawEvents).map(([key, value]) => ({
                 key,
-                value: inspect(value),
+                value: protocol.inspectForConductor(value),
               }));
             } catch (e) {
               errorMsg = `Exception encountered when getting events for workflow ${eventsMsg.workflow_id}: ${(e as Error).message}`;
@@ -706,7 +710,7 @@ export class Conductor {
               const rawNotifs = await this.dbosExec.systemDatabase.getAllNotifications(notifsMsg.workflow_id);
               notifOutputs = rawNotifs.map((n) => ({
                 topic: n.topic,
-                message: inspect(n.message),
+                message: protocol.inspectForConductor(n.message),
                 created_at_epoch_ms: n.createdAtEpochMs,
                 consumed: n.consumed,
               }));
@@ -728,7 +732,7 @@ export class Conductor {
               const rawStreams = await this.dbosExec.systemDatabase.getAllStreamEntries(streamsMsg.workflow_id);
               streamOutputs = Object.entries(rawStreams).map(([key, values]) => ({
                 key,
-                values: values.map((v) => inspect(v)),
+                values: values.map((v) => protocol.inspectForConductor(v)),
               }));
             } catch (e) {
               errorMsg = `Exception encountered when getting streams for workflow ${streamsMsg.workflow_id}: ${(e as Error).message}`;
