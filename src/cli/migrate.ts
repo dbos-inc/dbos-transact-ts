@@ -13,11 +13,18 @@ export type MigrateOptions = {
 
 type PrintedSection = { comment?: string; statements: string[] };
 
+const CREATES_MIGRATIONS_TABLE = /create table .*"dbos_migrations"/i;
+
 function migrationSections(schemaName: string, startMigration: number): PrintedSection[] {
   const migrations = allMigrations(schemaName);
   const sections: PrintedSection[] = [];
-  let tableExists = startMigration > 1;
-  let versionRowExists = startMigration > 1;
+  // A database at version V has run migrations 1..V, so the dbos_migrations
+  // table (and its single version row) exists iff the migration creating it
+  // is before startMigration.
+  let tableExists = migrations
+    .slice(0, startMigration - 1)
+    .some((m) => (m.pg ?? []).some((s) => CREATES_MIGRATIONS_TABLE.test(s)));
+  let versionRowExists = tableExists;
   for (let i = startMigration; i <= migrations.length; i++) {
     const m = migrations[i - 1];
     const stmts = (m.pg ?? [])
@@ -26,7 +33,7 @@ function migrationSections(schemaName: string, startMigration: number): PrintedS
       .map((s) => (s.endsWith(';') ? s : `${s};`));
     const statements = [...stmts];
     if (!tableExists) {
-      tableExists = stmts.some((s) => /create table .*"dbos_migrations"/i.test(s));
+      tableExists = stmts.some((s) => CREATES_MIGRATIONS_TABLE.test(s));
     }
     // Per-migration version bookkeeping, mirroring the runner: an interrupted
     // apply can be resumed from the next migration number. The runner records
@@ -62,6 +69,7 @@ export function generateMigrationStatements(schemaName: string = 'dbos', startMi
  */
 export function generateMigrationSQL(schemaName: string = 'dbos', startMigration: number = 1): string {
   const lines: string[] = [
+    '-- This script is for PostgreSQL only.',
     '-- Contains CREATE/DROP INDEX CONCURRENTLY: run outside a transaction block (e.g. plain psql, not psql --single-transaction).',
   ];
   if (startMigration === 1) {

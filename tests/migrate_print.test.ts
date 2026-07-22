@@ -78,10 +78,11 @@ describe('migrate --print-migrations and --print-user-role', () => {
     const lines = out.split('\n');
     expect(lines[0]).toBe(`-- DBOS system database migrations for ${maskDatabaseUrl(UNREACHABLE_URL)}`);
     expect(lines[0]).not.toContain('nopass');
-    expect(lines[1]).toBe(
+    expect(lines[1]).toBe('-- This script is for PostgreSQL only.');
+    expect(lines[2]).toBe(
       '-- Contains CREATE/DROP INDEX CONCURRENTLY: run outside a transaction block (e.g. plain psql, not psql --single-transaction).',
     );
-    expect(lines[2]).toBe('-- This script is for FRESH databases only.');
+    expect(lines[3]).toBe('-- This script is for FRESH databases only.');
 
     // The migrations themselves create the schema and the dbos_migrations table.
     expect(out).toContain('-- Migration 1: 20240123182943_schema');
@@ -127,6 +128,18 @@ describe('migrate --print-migrations and --print-user-role', () => {
     expect(out).toContain('UPDATE "dbos"."dbos_migrations" SET "version" = 10;');
     expect(out).toContain(`UPDATE "dbos"."dbos_migrations" SET "version" = ${LATEST};`);
     expect(out).not.toContain('DO $$');
+  });
+
+  test('print-migrations 2 inserts the version row since migration 2 creates the table', async () => {
+    const { status, out, err } = await runMigrate(UNREACHABLE_URL, { printMigrations: '2' });
+    expect(status).toBe(0);
+    expect(err).toBe('');
+    expect(out).not.toContain('CREATE SCHEMA');
+    // Migration 2 creates the (empty) dbos_migrations table, so the first
+    // bookkeeping statement must be an INSERT, then UPDATEs from there on.
+    expect(out).toContain('INSERT INTO "dbos"."dbos_migrations" ("version") VALUES (2);');
+    expect(out.match(/INSERT INTO "dbos"\."dbos_migrations"/g)).toHaveLength(1);
+    expect(out).toContain('UPDATE "dbos"."dbos_migrations" SET "version" = 3;');
   });
 
   test('invalid print-migrations values are rejected on stderr with nothing on stdout', async () => {
