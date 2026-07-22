@@ -75,15 +75,33 @@ program
 program
   .command('migrate')
   .description('Perform a database migration')
-  .action(async () => {
+  .option(
+    '--print-migrations <all|N>',
+    "Print the SQL of all migrations ('--print-migrations all') or of migrations from a number onward ('--print-migrations 3') instead of running them",
+  )
+  .option(
+    '--print-user-role',
+    'Print the SQL granting the application role (--app-role) access to DBOS system tables instead of executing it',
+  )
+  .option('-r, --app-role <string>', 'The role with which you will run your DBOS application')
+  .option('-s, --schema <string>', 'The schema name for DBOS system tables (default: dbos)')
+  .action(async (options: { printMigrations?: string; printUserRole?: boolean; appRole?: string; schema?: string }) => {
     const configFile = await readConfigFile();
     let config = getDbosConfig(configFile);
     const runtimeConfig = getRuntimeConfig(configFile);
     if (process.env.DBOS__CLOUD === 'true') {
       [config] = overwriteConfigForDBOSCloud(config, runtimeConfig, configFile);
     }
+    const schemaName = options.schema ?? configFile.system_database_schema_name ?? 'dbos';
 
-    await runAndLog(configFile.database?.migrate ?? [], config, migrate);
+    await runAndLog(configFile.database?.migrate ?? [], config, (cmds, url, logger) =>
+      migrate(cmds, url, logger, {
+        schemaName,
+        printMigrations: options.printMigrations,
+        printUserRole: options.printUserRole,
+        appRole: options.appRole,
+      }),
+    );
   });
 
 program
