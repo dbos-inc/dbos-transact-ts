@@ -701,5 +701,12 @@ export function allMigrations(
           ]
         : [],
     },
+    {
+      name: '20250721_workflow_status_partition_dequeue_index',
+      online: true,
+      pg: [
+        `CREATE INDEX ${c} IF NOT EXISTS "idx_workflow_status_partition_dequeue" ON "${schemaName}"."workflow_status" ("queue_name", "status", "queue_partition_key", "priority", "created_at") WHERE "status" IN ('ENQUEUED', 'PENDING') AND "queue_partition_key" IS NOT NULL`,
+      ],
+    },
   ];
 }
