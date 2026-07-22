@@ -310,6 +310,24 @@ export interface MetricData {
   value: number;
 }
 
+/** The statements granting permissions on all entities in the system schema to a role. */
+export function getDbosSchemaPermissionsSql(schemaName: string, roleName: string): string[] {
+  return [
+    // Grant usage on the system schema
+    `GRANT USAGE ON SCHEMA "${schemaName}" TO "${roleName}"`,
+    // Grant all privileges on all existing tables in the system schema (includes views)
+    `GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA "${schemaName}" TO "${roleName}"`,
+    // Grant all privileges on all sequences in the system schema
+    `GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA "${schemaName}" TO "${roleName}"`,
+    // Grant execute on all functions and procedures in the system schema
+    `GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA "${schemaName}" TO "${roleName}"`,
+    // Grant default privileges for future objects in the system schema
+    `ALTER DEFAULT PRIVILEGES IN SCHEMA "${schemaName}" GRANT ALL ON TABLES TO "${roleName}"`,
+    `ALTER DEFAULT PRIVILEGES IN SCHEMA "${schemaName}" GRANT ALL ON SEQUENCES TO "${roleName}"`,
+    `ALTER DEFAULT PRIVILEGES IN SCHEMA "${schemaName}" GRANT EXECUTE ON FUNCTIONS TO "${roleName}"`,
+  ];
+}
+
 export async function grantDbosSchemaPermissions(
   databaseUrl: string,
   roleName: string,
@@ -322,38 +340,10 @@ export async function grantDbosSchemaPermissions(
   await client.connect();
 
   try {
-    // Grant usage on the schema
-    const grantUsageSql = `GRANT USAGE ON SCHEMA "${schemaName}" TO "${roleName}"`;
-    logger.info(grantUsageSql);
-    await client.query(grantUsageSql);
-
-    // Grant all privileges on all existing tables in schema (includes views)
-    const grantTablesSql = `GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA "${schemaName}" TO "${roleName}"`;
-    logger.info(grantTablesSql);
-    await client.query(grantTablesSql);
-
-    // Grant all privileges on all sequences in schema
-    const grantSequencesSql = `GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA "${schemaName}" TO "${roleName}"`;
-    logger.info(grantSequencesSql);
-    await client.query(grantSequencesSql);
-
-    // Grant execute on all functions and procedures in schema
-    const grantFunctionsSql = `GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA "${schemaName}" TO "${roleName}"`;
-    logger.info(grantFunctionsSql);
-    await client.query(grantFunctionsSql);
-
-    // Grant default privileges for future objects in schema
-    const alterTablesSql = `ALTER DEFAULT PRIVILEGES IN SCHEMA "${schemaName}" GRANT ALL ON TABLES TO "${roleName}"`;
-    logger.info(alterTablesSql);
-    await client.query(alterTablesSql);
-
-    const alterSequencesSql = `ALTER DEFAULT PRIVILEGES IN SCHEMA "${schemaName}" GRANT ALL ON SEQUENCES TO "${roleName}"`;
-    logger.info(alterSequencesSql);
-    await client.query(alterSequencesSql);
-
-    const alterFunctionsSql = `ALTER DEFAULT PRIVILEGES IN SCHEMA "${schemaName}" GRANT EXECUTE ON FUNCTIONS TO "${roleName}"`;
-    logger.info(alterFunctionsSql);
-    await client.query(alterFunctionsSql);
+    for (const sql of getDbosSchemaPermissionsSql(schemaName, roleName)) {
+      logger.info(sql);
+      await client.query(sql);
+    }
   } catch (e) {
     logger.error(`Failed to grant permissions to role ${roleName}: ${(e as Error).message}`);
     throw e;

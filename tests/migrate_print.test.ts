@@ -3,132 +3,257 @@ import { mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import path from 'path';
 import { Client } from 'pg';
-import { migrate, generateMigrationSQL, generateMigrationStatements } from '../src/cli/migrate';
+import { migrate, generateMigrationSQL, generateMigrationStatements, MigrateOptions } from '../src/cli/migrate';
 import { allMigrations } from '../src/sysdb_migrations/internal/migrations';
-import { runSysMigrationsPg } from '../src/sysdb_migrations/migration_runner';
+import { getCurrentSysDBVersion } from '../src/sysdb_migrations/migration_runner';
 import { ensureSystemDatabase } from '../src/system_database';
+import { maskDatabaseUrl } from '../src/database_utils';
 import { GlobalLogger } from '../src/telemetry/logs';
 import { generateDBOSTestConfig } from './helpers';
 
 const FUNNY_SCHEMA = 'F8nny_sCHem@-n@m3';
-const LATEST_VERSION = allMigrations().length;
+const LATEST = allMigrations().length;
 const UNREACHABLE_URL = 'postgres://nobody:nopass@nonexistent-host.invalid:1/no_such_db';
 
-/** Print the migration SQL in-process, capturing stdout. */
-async function printMigrationSQL(systemDatabaseUrl: string, schemaName?: string): Promise<string> {
+type CliResult = { status: number; out: string; err: string };
+
+/** Run migrate() in-process, capturing stdout and stderr. */
+async function runMigrate(url: string, options: MigrateOptions): Promise<CliResult> {
   let out = '';
-  const stdoutSpy = jest
-    .spyOn(process.stdout, 'write')
-    .mockImplementation((chunk: unknown, encodingOrCb?: unknown, cb?: unknown) => {
-      out += String(chunk);
+  let err = '';
+  const impl = (sink: (s: string) => void) =>
+    ((chunk: unknown, encodingOrCb?: unknown, cb?: unknown) => {
+      sink(String(chunk));
       const callback = typeof encodingOrCb === 'function' ? encodingOrCb : cb;
       if (typeof callback === 'function') (callback as () => void)();
       return true;
-    });
+    }) as typeof process.stdout.write;
+  const outSpy = jest.spyOn(process.stdout, 'write').mockImplementation(impl((s) => (out += s)));
+  const errSpy = jest.spyOn(process.stderr, 'write').mockImplementation(impl((s) => (err += s)));
   try {
-    const status = await migrate([], systemDatabaseUrl, new GlobalLogger(), true, schemaName);
-    expect(status).toBe(0);
+    const status = await migrate([], url, new GlobalLogger(), options);
+    return { status, out, err };
   } finally {
-    stdoutSpy.mockRestore();
+    outSpy.mockRestore();
+    errSpy.mockRestore();
   }
-  return out;
 }
 
-describe('migrate --print-only', () => {
-  test('generateMigrationSQL emits complete, terminated SQL with version bookkeeping', () => {
-    const sql = generateMigrationSQL();
-    expect(sql).toContain('-- For FRESH databases only');
-    expect(sql).toContain('CREATE SCHEMA IF NOT EXISTS "dbos";');
-    expect(sql).toContain(
-      'create table "dbos"."dbos_migrations" ("version" bigint not null, constraint "dbos_migrations_pkey" primary key ("version"));',
+function testUrls(dbName: string): { adminUrl: string; dbUrl: string } {
+  const config = generateDBOSTestConfig();
+  const adminUrl = new URL(config.systemDatabaseUrl!);
+  adminUrl.pathname = '/postgres';
+  const dbUrl = new URL(adminUrl.toString());
+  dbUrl.pathname = `/${dbName}`;
+  return { adminUrl: adminUrl.toString(), dbUrl: dbUrl.toString() };
+}
+
+async function recreateDatabase(adminUrl: string, dbName: string): Promise<void> {
+  const client = new Client({ connectionString: adminUrl });
+  await client.connect();
+  try {
+    await client.query(`DROP DATABASE IF EXISTS ${dbName} WITH (FORCE);`);
+    await client.query(`CREATE DATABASE ${dbName};`);
+  } finally {
+    await client.end();
+  }
+}
+
+async function dropDatabase(adminUrl: string, dbName: string): Promise<void> {
+  const client = new Client({ connectionString: adminUrl });
+  await client.connect();
+  try {
+    await client.query(`DROP DATABASE IF EXISTS ${dbName} WITH (FORCE);`);
+  } finally {
+    await client.end();
+  }
+}
+
+describe('migrate --print-migrations and --print-user-role', () => {
+  test('print-migrations all: headers, per-migration bookkeeping, pure SQL, no database needed', async () => {
+    const { status, out, err } = await runMigrate(UNREACHABLE_URL, { printMigrations: 'all' });
+    expect(status).toBe(0);
+    expect(err).toBe('');
+
+    const lines = out.split('\n');
+    expect(lines[0]).toBe(`-- DBOS system database migrations for ${maskDatabaseUrl(UNREACHABLE_URL)}`);
+    expect(lines[0]).not.toContain('nopass');
+    expect(lines[1]).toBe(
+      '-- Contains CREATE/DROP INDEX CONCURRENTLY: run outside a transaction block (e.g. plain psql, not psql --single-transaction).',
     );
-    expect(sql).toContain('create table "dbos"."operation_outputs"');
-    expect(sql).toContain('create table "dbos"."workflow_status"');
-    const version = allMigrations().length;
-    expect(sql.trimEnd().endsWith(`INSERT INTO "dbos"."dbos_migrations" ("version") VALUES (${version});`)).toBe(true);
-    // Only SQL and -- comments; every statement is terminated with a semicolon.
-    for (const line of sql.split('\n')) {
+    expect(lines[2]).toBe('-- This script is for FRESH databases only.');
+
+    // The migrations themselves create the schema and the dbos_migrations table.
+    expect(out).toContain('-- Migration 1: 20240123182943_schema');
+    expect(out).toContain('CREATE SCHEMA IF NOT EXISTS "dbos";');
+    expect(out).toContain('-- Migration 2: 20240123182944_dbos_migrations');
+
+    // Per-migration bookkeeping mirrors the runner: nothing before the
+    // dbos_migrations table exists, INSERT once, then UPDATE per migration.
+    expect(out).not.toContain('("version") VALUES (1)');
+    expect(out).toContain('INSERT INTO "dbos"."dbos_migrations" ("version") VALUES (2);');
+    expect(out.match(/INSERT INTO "dbos"\."dbos_migrations"/g)).toHaveLength(1);
+    for (let i = 3; i <= LATEST; i++) {
+      expect(out).toContain(`UPDATE "dbos"."dbos_migrations" SET "version" = ${i};`);
+    }
+    expect(out.trimEnd().endsWith(`UPDATE "dbos"."dbos_migrations" SET "version" = ${LATEST};`)).toBe(true);
+
+    // No guard blocks, no role grants, no log noise.
+    expect(out).not.toContain('DO $$');
+    expect(out).not.toContain('GRANT');
+    for (const line of lines) {
       expect(line).not.toMatch(/\[(info|warn|error)\]/);
     }
   });
 
-  test('fail-fast guard follows the dbos_migrations table creation', () => {
-    const sql = generateMigrationSQL();
-    const createIdx = sql.indexOf('create table "dbos"."dbos_migrations"');
-    const guardIdx = sql.indexOf('this script is for fresh databases only. Use dbos migrate instead.');
-    const nextMigrationIdx = sql.indexOf('-- migration 3');
-    expect(createIdx).toBeGreaterThan(-1);
-    expect(guardIdx).toBeGreaterThan(createIdx);
-    expect(guardIdx).toBeLessThan(nextMigrationIdx);
-    expect(sql).toContain('RAISE EXCEPTION');
-    expect(sql).toContain(`SELECT "version" INTO current_version FROM "dbos"."dbos_migrations"`);
+  test('print-migrations 1 is identical to all', async () => {
+    const all = await runMigrate(UNREACHABLE_URL, { printMigrations: 'all' });
+    const one = await runMigrate(UNREACHABLE_URL, { printMigrations: '1' });
+    expect(one.status).toBe(0);
+    expect(one.out).toBe(all.out);
+    expect(generateMigrationSQL('dbos', 1)).toBe(generateMigrationSQL());
   });
 
-  test('generateMigrationSQL double-quotes identifiers for a schema with special characters', () => {
-    const sql = generateMigrationSQL(FUNNY_SCHEMA);
-    expect(sql).toContain(`CREATE SCHEMA IF NOT EXISTS "${FUNNY_SCHEMA}";`);
-    expect(sql).toContain(`create table "${FUNNY_SCHEMA}"."dbos_migrations"`);
-    expect(sql).toContain(`create table "${FUNNY_SCHEMA}"."workflow_status"`);
-    expect(sql).toContain(`DBOS schema "${FUNNY_SCHEMA}" is already at version %`);
-    const version = allMigrations().length;
-    expect(
-      sql.trimEnd().endsWith(`INSERT INTO "${FUNNY_SCHEMA}"."dbos_migrations" ("version") VALUES (${version});`),
-    ).toBe(true);
-    expect(sql).not.toContain('"dbos".');
-    // The schema name never appears unquoted before a dot (which psql would fold or reject).
-    expect(sql).not.toMatch(new RegExp(`[^"]F8nny_sCHem@-n@m3"?\\.`));
+  test('print-migrations N omits the prelude and earlier migrations', async () => {
+    const { status, out, err } = await runMigrate(UNREACHABLE_URL, { printMigrations: '10' });
+    expect(status).toBe(0);
+    expect(err).toBe('');
+    expect(out).not.toContain('CREATE SCHEMA');
+    expect(out).not.toContain('FRESH databases');
+    expect(out).not.toContain('-- Migration 9');
+    expect(out).not.toContain('INSERT INTO "dbos"."dbos_migrations"');
+    expect(out).toContain('-- Migration 10');
+    expect(out).toContain('-- Migration 11');
+    expect(out).toContain('UPDATE "dbos"."dbos_migrations" SET "version" = 10;');
+    expect(out).toContain(`UPDATE "dbos"."dbos_migrations" SET "version" = ${LATEST};`);
+    expect(out).not.toContain('DO $$');
   });
 
-  test('generateMigrationSQL substitutes the schema name', () => {
-    const sql = generateMigrationSQL('custom_schema');
-    expect(sql).toContain('CREATE SCHEMA IF NOT EXISTS "custom_schema";');
-    expect(sql).not.toContain('"dbos".');
+  test('invalid print-migrations values are rejected on stderr with nothing on stdout', async () => {
+    for (const bad of ['0', String(LATEST + 1), '-1']) {
+      const res = await runMigrate(UNREACHABLE_URL, { printMigrations: bad });
+      expect(res.status).toBe(1);
+      expect(res.out).toBe('');
+      expect(res.err).toBe(`Migration ${bad} does not exist: valid migrations are 1 through ${LATEST}\n`);
+    }
+    const res = await runMigrate(UNREACHABLE_URL, { printMigrations: 'foo' });
+    expect(res.status).toBe(1);
+    expect(res.out).toBe('');
+    expect(res.err).toBe(`Invalid --print-migrations value 'foo': expected 'all' or a migration number\n`);
   });
 
-  test('delta script upgrades from version N with a version guard and no fresh prelude', () => {
-    const fromVersion = 20;
-    const sql = generateMigrationSQL('dbos', fromVersion);
-    expect(sql).toContain(`-- DBOS system database migration SQL (delta: version ${fromVersion} -> ${LATEST_VERSION})`);
-    expect(sql).toContain(`IF current_version IS DISTINCT FROM ${fromVersion} THEN`);
-    expect(sql).toContain(`this delta script requires version ${fromVersion}`);
-    // No fresh-database prelude or guard.
-    expect(sql).not.toContain('CREATE SCHEMA');
-    expect(sql).not.toContain('-- migration 1:');
-    expect(sql).not.toContain(`-- migration ${fromVersion}:`);
-    expect(sql).not.toContain('fresh databases only');
-    expect(sql).not.toContain('INSERT INTO "dbos"."dbos_migrations"');
-    // Applies exactly N+1..latest and records the version with an UPDATE.
-    expect(sql).toContain(`-- migration ${fromVersion + 1}:`);
-    expect(sql.trimEnd().endsWith(`UPDATE "dbos"."dbos_migrations" SET "version" = ${LATEST_VERSION};`)).toBe(true);
-    // The guard is the first statement, before any migration.
-    expect(sql.indexOf('IS DISTINCT FROM')).toBeLessThan(sql.indexOf(`-- migration ${fromVersion + 1}:`));
+  test('schema and role names containing quotes are rejected', async () => {
+    let res = await runMigrate(UNREACHABLE_URL, { printMigrations: 'all', schemaName: 'bad"schema' });
+    expect(res.status).toBe(1);
+    expect(res.out).toBe('');
+    expect(res.err).toBe('Schema names containing quotes are not supported\n');
+
+    res = await runMigrate(UNREACHABLE_URL, { printUserRole: true, appRole: "bad'role" });
+    expect(res.status).toBe(1);
+    expect(res.out).toBe('');
+    expect(res.err).toBe('Role names containing quotes are not supported\n');
   });
 
-  test('at the latest version, prints only a nothing-to-do comment', () => {
-    expect(generateMigrationSQL('dbos', LATEST_VERSION)).toBe(
-      `-- Database is already at the latest DBOS schema version (${LATEST_VERSION}); nothing to do.`,
+  test('print-user-role requires app-role, excludes print-migrations, and emits only grant SQL', async () => {
+    let res = await runMigrate(UNREACHABLE_URL, { printUserRole: true });
+    expect(res.status).toBe(1);
+    expect(res.out).toBe('');
+    expect(res.err).toBe('--print-user-role requires --app-role\n');
+
+    res = await runMigrate(UNREACHABLE_URL, { printMigrations: 'all', printUserRole: true, appRole: 'my-app-role' });
+    expect(res.status).toBe(1);
+    expect(res.out).toBe('');
+    expect(res.err).toBe('--print-user-role cannot be combined with --print-migrations\n');
+
+    res = await runMigrate(UNREACHABLE_URL, { printUserRole: true, appRole: 'my-app-role', schemaName: FUNNY_SCHEMA });
+    expect(res.status).toBe(0);
+    expect(res.err).toBe('');
+    const lines = res.out.trimEnd().split('\n');
+    expect(lines[0]).toBe(`-- Permissions on DBOS schema ${FUNNY_SCHEMA} for role my-app-role`);
+    expect(lines).toHaveLength(8);
+    expect(lines).toContain(`GRANT USAGE ON SCHEMA "${FUNNY_SCHEMA}" TO "my-app-role";`);
+    expect(lines).toContain(
+      `ALTER DEFAULT PRIVILEGES IN SCHEMA "${FUNNY_SCHEMA}" GRANT EXECUTE ON FUNCTIONS TO "my-app-role";`,
     );
-    expect(generateMigrationStatements('dbos', LATEST_VERSION)).toEqual([]);
-  });
-
-  test('migrate with printOnly on an unreachable database silently prints the full fresh script', async () => {
-    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
-    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
-    const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
-    try {
-      const out = await printMigrationSQL(UNREACHABLE_URL);
-      expect(out).toBe(generateMigrationSQL() + '\n');
-      expect(warnSpy).not.toHaveBeenCalled();
-      expect(errorSpy).not.toHaveBeenCalled();
-      expect(logSpy).not.toHaveBeenCalled();
-    } finally {
-      warnSpy.mockRestore();
-      errorSpy.mockRestore();
-      logSpy.mockRestore();
+    for (const line of lines) {
+      expect(line.startsWith('--') || line.startsWith('GRANT') || line.startsWith('ALTER')).toBe(true);
     }
   });
 
-  test('spawned CLI with unreachable database prints pure SQL to stdout, nothing to stderr, exit 0', () => {
+  test('printed statements apply to a fresh database and the runner then treats it as migrated', async () => {
+    const dbName = 'migrate_print_sql_test_db';
+    const { adminUrl, dbUrl } = testUrls(dbName);
+    await recreateDatabase(adminUrl, dbName);
+
+    const { status, out, err } = await runMigrate(dbUrl, { printMigrations: 'all', schemaName: FUNNY_SCHEMA });
+    expect(status).toBe(0);
+    expect(err).toBe('');
+    expect(out).toContain(`CREATE SCHEMA IF NOT EXISTS "${FUNNY_SCHEMA}";`);
+    // The schema name never appears unquoted before a dot (psql would fold or reject it).
+    expect(out).not.toMatch(/[^"]F8nny_sCHem@-n@m3"?\./);
+    expect(out).not.toContain('"dbos".');
+
+    const client = new Client({ connectionString: dbUrl });
+    await client.connect();
+    try {
+      // Apply each printed statement in autocommit, as psql would.
+      for (const stmt of generateMigrationStatements(FUNNY_SCHEMA)) {
+        await client.query(stmt);
+      }
+      const versionRows = await client.query<{ version: string }>(
+        `SELECT "version" FROM "${FUNNY_SCHEMA}"."dbos_migrations"`,
+      );
+      expect(versionRows.rows).toHaveLength(1);
+      expect(Number(versionRows.rows[0].version)).toBe(LATEST);
+
+      // A real migration pass treats the scripted database as fully migrated.
+      await ensureSystemDatabase(dbUrl, new GlobalLogger(), undefined, FUNNY_SCHEMA);
+      expect(await getCurrentSysDBVersion(client, FUNNY_SCHEMA)).toBe(LATEST);
+      const afterEnsure = await client.query(`SELECT "version" FROM "${FUNNY_SCHEMA}"."dbos_migrations"`);
+      expect(afterEnsure.rows).toHaveLength(1);
+    } finally {
+      await client.end();
+      await dropDatabase(adminUrl, dbName);
+    }
+  }, 60000);
+
+  test('a partial database is completed by the print-migrations latest output', async () => {
+    const dbName = 'migrate_print_partial_test_db';
+    const { adminUrl, dbUrl } = testUrls(dbName);
+    await recreateDatabase(adminUrl, dbName);
+
+    const client = new Client({ connectionString: dbUrl });
+    await client.connect();
+    try {
+      // Truncate the full script right after the version latest-1 bookkeeping.
+      const statements = generateMigrationStatements('dbos');
+      const marker = `UPDATE "dbos"."dbos_migrations" SET "version" = ${LATEST - 1};`;
+      const markerIdx = statements.indexOf(marker);
+      expect(markerIdx).toBeGreaterThan(-1);
+      for (const stmt of statements.slice(0, markerIdx + 1)) {
+        await client.query(stmt);
+      }
+      expect(await getCurrentSysDBVersion(client, 'dbos')).toBe(LATEST - 1);
+
+      // The last migration printed alone applies on top of version latest-1.
+      const { status, out } = await runMigrate(dbUrl, { printMigrations: String(LATEST) });
+      expect(status).toBe(0);
+      expect(out).not.toContain('CREATE SCHEMA');
+      expect(out).not.toContain('DO $$');
+      for (const stmt of generateMigrationStatements('dbos', LATEST)) {
+        await client.query(stmt);
+      }
+      expect(await getCurrentSysDBVersion(client, 'dbos')).toBe(LATEST);
+
+      await ensureSystemDatabase(dbUrl, new GlobalLogger());
+      expect(await getCurrentSysDBVersion(client, 'dbos')).toBe(LATEST);
+    } finally {
+      await client.end();
+      await dropDatabase(adminUrl, dbName);
+    }
+  }, 60000);
+
+  test('spawned CLI prints pure SQL to stdout, nothing to stderr, exit 0 with unreachable database', async () => {
     const cliPath = path.resolve(__dirname, '..', 'dist', 'src', 'cli', 'cli.js');
     const workDir = mkdtempSync(path.join(tmpdir(), 'dbos-migrate-print-'));
     try {
@@ -136,154 +261,43 @@ describe('migrate --print-only', () => {
         path.join(workDir, 'dbos-config.yaml'),
         `name: migrateprinttest\nsystem_database_url: ${UNREACHABLE_URL}\n`,
       );
-      const res = spawnSync(process.execPath, [cliPath, 'migrate', '--print-only'], {
-        cwd: workDir,
-        encoding: 'utf-8',
-      });
+      const spawn = (...args: string[]) =>
+        spawnSync(process.execPath, [cliPath, 'migrate', ...args], { cwd: workDir, encoding: 'utf-8' });
+
+      let res = spawn('--print-migrations', 'all');
       expect(res.status).toBe(0);
       expect(res.stderr).toBe('');
-      expect(res.stdout).toBe(generateMigrationSQL() + '\n');
+      expect(res.stdout).toBe((await runMigrate(UNREACHABLE_URL, { printMigrations: 'all' })).out);
+
+      res = spawn('--print-user-role', '-r', 'my_app_role', '-s', 'custom_schema');
+      expect(res.status).toBe(0);
+      expect(res.stderr).toBe('');
+      expect(res.stdout).toBe(
+        (
+          await runMigrate(UNREACHABLE_URL, {
+            printUserRole: true,
+            appRole: 'my_app_role',
+            schemaName: 'custom_schema',
+          })
+        ).out,
+      );
+
+      res = spawn('--print-user-role');
+      expect(res.status).toBe(1);
+      expect(res.stdout).toBe('');
+      expect(res.stderr).toContain('--app-role');
+
+      res = spawn('--print-migrations', 'all', '--print-user-role', '-r', 'my_app_role');
+      expect(res.status).toBe(1);
+      expect(res.stdout).toBe('');
+      expect(res.stderr).toContain('cannot be combined');
+
+      res = spawn('--print-migrations', 'nope');
+      expect(res.status).toBe(1);
+      expect(res.stdout).toBe('');
+      expect(res.stderr).toContain("expected 'all' or a migration number");
     } finally {
       rmSync(workDir, { recursive: true, force: true });
-    }
-  }, 30000);
-
-  test('printed SQL applies end-to-end to a fresh database with a special-character schema', async () => {
-    const config = generateDBOSTestConfig();
-    const baseUrl = new URL(config.systemDatabaseUrl!);
-    baseUrl.pathname = '/postgres';
-    const dbName = 'migrate_print_sql_test_db';
-    const dbUrl = new URL(baseUrl.toString());
-    dbUrl.pathname = `/${dbName}`;
-
-    const adminClient = new Client({ connectionString: baseUrl.toString() });
-    await adminClient.connect();
-    await adminClient.query(`DROP DATABASE IF EXISTS ${dbName} WITH (FORCE);`);
-    await adminClient.query(`CREATE DATABASE ${dbName};`);
-    await adminClient.end();
-
-    const client = new Client({ connectionString: dbUrl.toString() });
-    await client.connect();
-    try {
-      // Connection OK but schema/table missing: the CLI prints the full fresh script.
-      expect(await printMigrationSQL(dbUrl.toString(), FUNNY_SCHEMA)).toBe(generateMigrationSQL(FUNNY_SCHEMA) + '\n');
-
-      // Apply each printed statement in autocommit, as psql would.
-      const statements = generateMigrationStatements(FUNNY_SCHEMA);
-      for (const stmt of statements) {
-        await client.query(stmt);
-      }
-
-      const schemaExists = await client.query<{ exists: boolean }>(
-        'SELECT EXISTS (SELECT FROM information_schema.schemata WHERE schema_name = $1)',
-        [FUNNY_SCHEMA],
-      );
-      expect(schemaExists.rows[0].exists).toBe(true);
-
-      for (const table of ['dbos_migrations', 'workflow_status', 'operation_outputs', 'notifications', 'streams']) {
-        const tableExists = await client.query<{ exists: boolean }>(
-          'SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = $1 AND table_name = $2)',
-          [FUNNY_SCHEMA, table],
-        );
-        expect(tableExists.rows[0].exists).toBe(true);
-      }
-
-      const versionRows = await client.query<{ version: string }>(
-        `SELECT "version" FROM "${FUNNY_SCHEMA}"."dbos_migrations"`,
-      );
-      expect(versionRows.rows.length).toBe(1);
-      expect(Number(versionRows.rows[0].version)).toBe(allMigrations().length);
-
-      // Re-running the fail-fast guard on the now-migrated database aborts.
-      const guard = statements.find((s) => s.includes('fresh databases only'))!;
-      expect(guard).toBeDefined();
-      await expect(client.query(guard)).rejects.toThrow(
-        `DBOS schema "${FUNNY_SCHEMA}" is already at version ${allMigrations().length}; this script is for fresh databases only. Use dbos migrate instead.`,
-      );
-    } finally {
-      await client.end();
-      const cleanupClient = new Client({ connectionString: baseUrl.toString() });
-      await cleanupClient.connect();
-      await cleanupClient.query(`DROP DATABASE IF EXISTS ${dbName} WITH (FORCE);`);
-      await cleanupClient.end();
-    }
-  }, 60000);
-
-  test('delta script end-to-end: partial database, delta print, apply, latest, guard mismatch', async () => {
-    const partialVersion = 20;
-    const config = generateDBOSTestConfig();
-    const baseUrl = new URL(config.systemDatabaseUrl!);
-    baseUrl.pathname = '/postgres';
-    const dbName = 'migrate_print_delta_test_db';
-    const dbUrl = new URL(baseUrl.toString());
-    dbUrl.pathname = `/${dbName}`;
-
-    const adminClient = new Client({ connectionString: baseUrl.toString() });
-    await adminClient.connect();
-    await adminClient.query(`DROP DATABASE IF EXISTS ${dbName} WITH (FORCE);`);
-    await adminClient.query(`CREATE DATABASE ${dbName};`);
-    await adminClient.end();
-
-    const client = new Client({ connectionString: dbUrl.toString() });
-    await client.connect();
-    try {
-      // Build a genuinely partial database: run the real migration runner
-      // through migration N only.
-      await runSysMigrationsPg(client, allMigrations(FUNNY_SCHEMA).slice(0, partialVersion), FUNNY_SCHEMA, {
-        onWarn: () => {},
-      });
-      const partialRows = await client.query<{ version: string }>(
-        `SELECT "version" FROM "${FUNNY_SCHEMA}"."dbos_migrations"`,
-      );
-      expect(Number(partialRows.rows[0].version)).toBe(partialVersion);
-
-      // The CLI connects, detects version N, and prints only the delta.
-      const printed = await printMigrationSQL(dbUrl.toString(), FUNNY_SCHEMA);
-      expect(printed).toBe(generateMigrationSQL(FUNNY_SCHEMA, partialVersion) + '\n');
-      expect(printed).toContain(`(delta: version ${partialVersion} -> ${LATEST_VERSION})`);
-      expect(printed).toContain(`IF current_version IS DISTINCT FROM ${partialVersion} THEN`);
-      expect(printed).toContain(`-- migration ${partialVersion + 1}:`);
-      expect(printed).not.toContain('CREATE SCHEMA');
-      expect(printed).not.toContain(`-- migration ${partialVersion}:`);
-      expect(printed).not.toContain('fresh databases only');
-      expect(printed).toContain(`"${FUNNY_SCHEMA}"."dbos_migrations"`);
-
-      // Apply the delta statement by statement in autocommit, as psql would.
-      const deltaStatements = generateMigrationStatements(FUNNY_SCHEMA, partialVersion);
-      for (const stmt of deltaStatements) {
-        await client.query(stmt);
-      }
-      const versionRows = await client.query<{ version: string }>(
-        `SELECT "version" FROM "${FUNNY_SCHEMA}"."dbos_migrations"`,
-      );
-      expect(versionRows.rows.length).toBe(1);
-      expect(Number(versionRows.rows[0].version)).toBe(LATEST_VERSION);
-
-      // A real migration pass treats the delta-migrated database as up-to-date.
-      await ensureSystemDatabase(dbUrl.toString(), new GlobalLogger(), undefined, FUNNY_SCHEMA);
-      const afterEnsure = await client.query<{ version: string }>(
-        `SELECT "version" FROM "${FUNNY_SCHEMA}"."dbos_migrations"`,
-      );
-      expect(afterEnsure.rows.length).toBe(1);
-      expect(Number(afterEnsure.rows[0].version)).toBe(LATEST_VERSION);
-
-      // At the latest version the CLI prints only the nothing-to-do comment.
-      expect(await printMigrationSQL(dbUrl.toString(), FUNNY_SCHEMA)).toBe(
-        `-- Database is already at the latest DBOS schema version (${LATEST_VERSION}); nothing to do.\n`,
-      );
-
-      // Guard mismatch: the version-N delta guard aborts on a database at a different version.
-      const guard = deltaStatements[0];
-      expect(guard).toContain('IS DISTINCT FROM');
-      await expect(client.query(guard)).rejects.toThrow(
-        `DBOS schema "${FUNNY_SCHEMA}" is at version ${LATEST_VERSION} but this delta script requires version ${partialVersion}. Regenerate it with dbos migrate --print-only.`,
-      );
-    } finally {
-      await client.end();
-      const cleanupClient = new Client({ connectionString: baseUrl.toString() });
-      await cleanupClient.connect();
-      await cleanupClient.query(`DROP DATABASE IF EXISTS ${dbName} WITH (FORCE);`);
-      await cleanupClient.end();
     }
   }, 60000);
 });
