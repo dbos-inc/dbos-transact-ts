@@ -115,6 +115,40 @@ describe('recovery-tests', () => {
     }
   }
 
+  class RestampExecutor {
+    static stepOneDone = new Event();
+    static proceed = new Event();
+
+    @DBOS.workflow()
+    static async twoStepWorkflow() {
+      await DBOS.runStep(() => Promise.resolve(1), { name: 'stepOne' });
+      RestampExecutor.stepOneDone.set();
+      await RestampExecutor.proceed.wait();
+      return await DBOS.runStep(() => Promise.resolve(2), { name: 'stepTwo' });
+    }
+  }
+
+  test('restamp-executor-id-on-step-checkpoint', async () => {
+    const handle = await DBOS.startWorkflow(RestampExecutor).twoStepWorkflow();
+    await RestampExecutor.stepOneDone.wait();
+
+    // Simulate another executor holding the marker.
+    await systemDBClient.query(`UPDATE dbos.workflow_status SET executor_id=$1 WHERE workflow_uuid=$2`, [
+      'stale-executor',
+      handle.workflowID,
+    ]);
+
+    RestampExecutor.proceed.set();
+    await expect(handle.getResult()).resolves.toBe(2);
+
+    // Checkpointing the second step should have re-stamped executor_id to this executor.
+    const result = await systemDBClient.query<{ executor_id: string }>(
+      `SELECT executor_id FROM dbos.workflow_status WHERE workflow_uuid=$1`,
+      [handle.workflowID],
+    );
+    expect(result.rows[0].executor_id).toBe(globalParams.executorID);
+  });
+
   test('dead-letter-queue', async () => {
     LocalRecovery.cnt = 0;
 

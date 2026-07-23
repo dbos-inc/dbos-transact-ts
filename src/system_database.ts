@@ -4405,6 +4405,16 @@ export class SystemDatabase {
         );
         throw new DBOSWorkflowConflictError(workflowID);
       }
+      if (Number(out?.rows?.[0]?.completed_at_epoch_ms) === endTimeEpochMs) {
+        // Winning the checkpoint proves this executor is advancing the workflow:
+        // claim the executor_id marker (skips the write when already ours).
+        await client.query(
+          `UPDATE "${this.schemaName}".workflow_status
+             SET executor_id = $1
+           WHERE workflow_uuid = $2 AND executor_id IS DISTINCT FROM $1`,
+          [globalParams.executorID, workflowID],
+        );
+      }
     } catch (error) {
       const err: DatabaseError = error as DatabaseError;
       if (err.code === '40001' || err.code === '23505') {
