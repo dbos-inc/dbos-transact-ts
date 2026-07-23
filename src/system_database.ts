@@ -3565,10 +3565,8 @@ export class SystemDatabase {
       throw new Error('time_bucket_size_ms must be > 0');
     }
 
-    // operation_outputs has no explicit status column; derive it from
-    // whether `error` is populated. Bookkeeping rows from recordChildWorkflow
-    // and DBOS.getResult have NULL error and NULL output, so they appear
-    // as SUCCESS here — callers can filter them by function_name.
+    // operation_outputs has no explicit status column; derive it from whether `error` is populated.
+    // Child-workflow mapping rows have NULL error, so they appear as SUCCESS — callers filter by function_name.
     const statusExpr = `CASE WHEN error IS NULL THEN 'SUCCESS' ELSE 'ERROR' END`;
 
     const groupByFlags: [string, boolean, string][] = [
@@ -3601,9 +3599,8 @@ export class SystemDatabase {
       throw new Error('At least one group_by flag must be set to True');
     }
 
-    // Build select columns from boolean flags. MAX ignores NULLs, so rows
-    // without start/complete timestamps (child-workflow and getResult
-    // markers) drop out of the duration max.
+    // Build select columns from boolean flags. Child-workflow mapping rows record start and
+    // complete at nearly the same instant, so they contribute ~0 to the duration max.
     const selectFlags: [string, boolean, string][] = [
       ['count', input.selectCount ?? false, 'COUNT(*)'],
       ['max_duration_ms', input.selectMaxDurationMs ?? false, 'MAX(completed_at_epoch_ms - started_at_epoch_ms)'],

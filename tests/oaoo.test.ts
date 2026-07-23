@@ -138,6 +138,12 @@ describe('oaoo-tests', () => {
     });
     expect(Date.now() - initTime).toBeGreaterThanOrEqual(1950);
 
+    // The sleep step's recorded timing must reflect the full sleep length, not zero.
+    const sleepSteps = (await DBOS.listWorkflowSteps(workflowUUID))!;
+    expect(sleepSteps.length).toBe(1);
+    expect(sleepSteps[0].name).toBe('DBOS.sleep');
+    expect(sleepSteps[0].completedAtEpochMs! - sleepSteps[0].startedAtEpochMs!).toBe(2000);
+
     // Rerunning should skip the sleep
     const startTime = Date.now();
     await DBOS.withNextWorkflowID(workflowUUID, async () => {
@@ -153,6 +159,13 @@ describe('oaoo-tests', () => {
       await expect(WorkflowOAOO.recvWorkflow(2)).resolves.toBeFalsy();
     });
     expect(Date.now() - initTime).toBeGreaterThanOrEqual(1950);
+
+    // The recv step records the full wait; its durable timeout marker stays zero-duration.
+    const recvSteps = (await DBOS.listWorkflowSteps(workflowUUID))!;
+    const recvStep = recvSteps.find((s) => s.name === 'DBOS.recv')!;
+    const recvTimeout = recvSteps.find((s) => s.name === 'DBOS.sleep')!;
+    expect(recvStep.completedAtEpochMs! - recvStep.startedAtEpochMs!).toBeGreaterThanOrEqual(1950);
+    expect(recvTimeout.completedAtEpochMs! - recvTimeout.startedAtEpochMs!).toBe(0);
 
     // Rerunning should skip the sleep
     const startTime = Date.now();
@@ -170,6 +183,13 @@ describe('oaoo-tests', () => {
       async () => await expect(WorkflowOAOO.getEventWorkflow(2)).resolves.toBeFalsy(),
     );
     expect(Date.now() - initTime).toBeGreaterThanOrEqual(1950);
+
+    // The getEvent step records the full wait; its durable timeout marker stays zero-duration.
+    const geSteps = (await DBOS.listWorkflowSteps(workflowUUID))!;
+    const geStep = geSteps.find((s) => s.name === 'DBOS.getEvent')!;
+    const geTimeout = geSteps.find((s) => s.name === 'DBOS.sleep')!;
+    expect(geStep.completedAtEpochMs! - geStep.startedAtEpochMs!).toBeGreaterThanOrEqual(1950);
+    expect(geTimeout.completedAtEpochMs! - geTimeout.startedAtEpochMs!).toBe(0);
 
     // Rerunning should skip the sleep
     const startTime = Date.now();
