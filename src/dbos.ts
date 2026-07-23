@@ -425,6 +425,14 @@ export class DBOS {
     let internalConfig = DBOS.#dbosConfig ? translateDbosConfig(DBOS.#dbosConfig) : getDbosConfig(configFile);
     let runtimeConfig = DBOS.#dbosConfig ? translateRuntimeConfig(DBOS.#dbosConfig) : getRuntimeConfig(configFile);
 
+    // Retained unresolved so the deprecation notice below can tell "unset" from "explicitly off".
+    const adminServerConfig = DBOS.#dbosConfig
+      ? { runAdminServer: DBOS.#dbosConfig.runAdminServer, adminPort: DBOS.#dbosConfig.adminPort }
+      : {
+          runAdminServer: configFile.runtimeConfig?.runAdminServer,
+          adminPort: configFile.runtimeConfig?.admin_port,
+        };
+
     if (process.env.DBOS__CLOUD === 'true') {
       [internalConfig, runtimeConfig] = overwriteConfigForDBOSCloud(internalConfig, runtimeConfig, configFile);
     }
@@ -523,7 +531,8 @@ export class DBOS {
     // Start the DBOS admin server
     const logger = DBOS.logger;
     if (runtimeConfig.runAdminServer) {
-      if (!globalParams.dbosCloud) {
+      // In DBOS Cloud the admin server is forced on, so there is nothing for the user to act on.
+      if (process.env.DBOS__CLOUD !== 'true') {
         logger.warn('The DBOS admin server is deprecated and will be removed in a future version of DBOS.');
       }
       const adminApp = DBOSAdminServer.setupAdminApp(executor);
@@ -542,6 +551,11 @@ export class DBOS {
       } catch (e) {
         logger.warn(`Unable to start DBOS admin server on port ${runtimeConfig.admin_port}`);
       }
+    } else if (adminServerConfig.runAdminServer === undefined && adminServerConfig.adminPort !== undefined) {
+      // These users configured a port but relied on the server starting by default, which it no longer does.
+      logger.warn(
+        'The DBOS admin server is deprecated and no longer starts by default. Set runAdminServer to true to re-enable it.',
+      );
     }
   }
 
