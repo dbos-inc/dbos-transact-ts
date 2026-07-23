@@ -756,7 +756,8 @@ class WaitFirstTestClass {
 
   @DBOS.workflow()
   static async slowWorkflow() {
-    await DBOS.sleep(2);
+    // Sleep well past the 1s result-poll interval so waitFirst reliably observes fastWorkflow complete first.
+    await DBOS.sleep(2000);
     return 'slow';
   }
 
