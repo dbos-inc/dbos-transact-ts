@@ -532,7 +532,7 @@ export class DBOS {
     const logger = DBOS.logger;
     if (runtimeConfig.runAdminServer) {
       // In DBOS Cloud the admin server is forced on, so there is nothing for the user to act on.
-      if (process.env.DBOS__CLOUD !== 'true') {
+      if (!globalParams.dbosCloud) {
         logger.warn('The DBOS admin server is deprecated and will be removed in a future version of DBOS.');
       }
       const adminApp = DBOSAdminServer.setupAdminApp(executor);
