@@ -2252,7 +2252,7 @@ export class SystemDatabase {
   // ==================== Sleep ====================
   @dbRetry()
   async durableSleepms(workflowID: string, functionID: number, durationMS: number): Promise<void> {
-    const endTime = await this.#durableSleep(workflowID, functionID, durationMS);
+    const endTime = await this.#durableSleep(workflowID, functionID, durationMS, true);
 
     while (Date.now() < endTime) {
       await sleepms(Math.min(endTime - Date.now(), sleepConfig.maxTimeoutMS));
@@ -4478,8 +4478,15 @@ export class SystemDatabase {
   // timeout so it survives recovery. Returns the absolute end time in epoch ms; the
   // caller is responsible for actually waiting until then. Throws if the workflow has
   // been cancelled.
-  async #durableSleep(workflowID: string, functionID: number, durationMS: number): Promise<number> {
-    const endTimeMs = Date.now() + durationMS;
+  // For an actual sleep, completed_at is the wake deadline so the step's duration reflects the sleep; a timeout marker (which usually never fires) keeps zero duration.
+  async #durableSleep(
+    workflowID: string,
+    functionID: number,
+    durationMS: number,
+    recordCompletionAtDeadline: boolean = false,
+  ): Promise<number> {
+    const startTimeMs = Date.now();
+    const endTimeMs = startTimeMs + durationMS;
 
     const client = await this.pool.connect();
     try {
@@ -4496,8 +4503,8 @@ export class SystemDatabase {
         functionID,
         DBOS_FUNCNAME_SLEEP,
         false,
-        Date.now(),
-        Date.now(),
+        startTimeMs,
+        recordCompletionAtDeadline ? endTimeMs : startTimeMs,
         {
           output: DBOSPortableJSON.stringify(endTimeMs),
           serialization: DBOSPortableJSON.name(),
