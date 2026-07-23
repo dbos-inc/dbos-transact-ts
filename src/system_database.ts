@@ -3600,7 +3600,8 @@ export class SystemDatabase {
     }
 
     // Build select columns from boolean flags. Child-workflow mapping rows record start and
-    // complete at nearly the same instant, so they contribute ~0 to the duration max.
+    // complete at nearly the same instant, so they contribute ~0; DBOS.getResult and DBOS.sleep
+    // rows span their whole wait, so those dominate the duration max.
     const selectFlags: [string, boolean, string][] = [
       ['count', input.selectCount ?? false, 'COUNT(*)'],
       ['max_duration_ms', input.selectMaxDurationMs ?? false, 'MAX(completed_at_epoch_ms - started_at_epoch_ms)'],
@@ -4475,7 +4476,8 @@ export class SystemDatabase {
   // timeout so it survives recovery. Returns the absolute end time in epoch ms; the
   // caller is responsible for actually waiting until then. Throws if the workflow has
   // been cancelled.
-  // For an actual sleep, completed_at is the wake deadline so the step's duration reflects the sleep; a timeout marker (which usually never fires) keeps zero duration.
+  // For an actual sleep, completed_at is the wake deadline so the step's duration reflects the
+  // sleep; a timeout marker records zero duration since its deadline may never be reached.
   async #durableSleep(
     workflowID: string,
     functionID: number,
@@ -4483,7 +4485,8 @@ export class SystemDatabase {
     recordCompletionAtDeadline: boolean = false,
   ): Promise<number> {
     const startTimeMs = Date.now();
-    const endTimeMs = startTimeMs + durationMS;
+    // Round once so the deadline stays integral: completed_at_epoch_ms is BIGINT and rejects fractional values.
+    const endTimeMs = startTimeMs + Math.ceil(durationMS);
 
     const client = await this.pool.connect();
     try {

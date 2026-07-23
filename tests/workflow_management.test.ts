@@ -4076,8 +4076,8 @@ describe('test-step-aggregates', () => {
 
     @DBOS.workflow()
     static async parent() {
-      // child workflow markers and DBOS.getResult are bookkeeping rows
-      // with NULL timestamps — they should drop out of max_duration_ms.
+      // child workflow markers and DBOS.getResult produce their own bookkeeping rows; the
+      // assertions below group by function_name, so they don't affect quickStep/slowStep.
       await DurationWorkflows.child();
       await DurationWorkflows.quickStep();
       await DurationWorkflows.slowStep();

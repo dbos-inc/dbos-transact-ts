@@ -1141,6 +1141,9 @@ export class DBOS {
    * @param durationMS - Length of sleep, in milliseconds.
    */
   static async sleepms(durationMS: number): Promise<void> {
+    if (!Number.isFinite(durationMS)) {
+      throw new DBOSError('sleep duration must be a finite number of milliseconds');
+    }
     if (DBOS.isWithinWorkflow() && !DBOS.isInStep()) {
       if (DBOS.isInTransaction()) {
         throw new DBOSInvalidWorkflowTransitionError('Invalid call to `DBOS.sleep` inside a `transaction`');
