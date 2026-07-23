@@ -229,7 +229,7 @@ export function translateRuntimeConfig(
   config: Partial<DBOSRuntimeConfig & DBOSConfig> /*eww*/ = {},
 ): DBOSRuntimeConfig {
   return {
-    runAdminServer: config.runAdminServer ?? true,
+    runAdminServer: config.runAdminServer ?? false,
     admin_port: config.admin_port ?? config.adminPort ?? 3001,
     start: config.start ?? [],
     setup: config.setup ?? [],

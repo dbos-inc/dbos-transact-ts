@@ -523,6 +523,9 @@ export class DBOS {
     // Start the DBOS admin server
     const logger = DBOS.logger;
     if (runtimeConfig.runAdminServer) {
+      if (!globalParams.dbosCloud) {
+        logger.warn('The DBOS admin server is deprecated and will be removed in a future version of DBOS.');
+      }
       const adminApp = DBOSAdminServer.setupAdminApp(executor);
       try {
         await DBOSAdminServer.checkPortAvailabilityIPv4Ipv6(runtimeConfig.admin_port, logger as GlobalLogger);

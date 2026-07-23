@@ -36,9 +36,24 @@ describe('not-running-admin-server', () => {
     await DBOS.shutdown();
   });
 
+  test('test-admin-server-off-by-default', async () => {
+    config = generateDBOSTestConfig();
+    DBOS.setConfig({ ...config });
+    await setUpDBOSTestSysDb(config);
+    await DBOS.launch();
+
+    await expect(async () => {
+      await fetch(`http://localhost:3001${HealthUrl}`, {
+        method: 'GET',
+      });
+    }).rejects.toThrow();
+
+    await DBOS.shutdown();
+  });
+
   test('test-admin-server-set-port', async () => {
     config = generateDBOSTestConfig();
-    DBOS.setConfig({ ...config, adminPort: 4444 });
+    DBOS.setConfig({ ...config, runAdminServer: true, adminPort: 4444 });
     await setUpDBOSTestSysDb(config);
     await DBOS.launch();
 

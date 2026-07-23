@@ -102,6 +102,7 @@ function matchPath(pattern: string, pathname: string): Record<string, string> | 
   return params;
 }
 
+/** @deprecated The admin server is deprecated and will be removed in a future version of DBOS. */
 export class DBOSAdminServer {
   static setupAdminApp(dbosExec: DBOSExecutor): http.Server {
     const routes: Route[] = [];
