@@ -25,7 +25,15 @@ import {
   queues,
   SysDBSerializationFormat,
 } from '../schemas/system_db_schema';
-import { globalParams, cancellableSleep, INTERNAL_QUEUE_NAME, Semaphore, sleepConfig, sleepms } from './utils';
+import {
+  globalParams,
+  cancellableSleep,
+  dbRetryConfig,
+  INTERNAL_QUEUE_NAME,
+  Semaphore,
+  sleepConfig,
+  sleepms,
+} from './utils';
 import { GlobalLogger } from './telemetry/logs';
 import { WorkflowQueue } from './wfqueue';
 import { randomUUID } from 'crypto';
@@ -606,7 +614,6 @@ function dbRetry(
     maxBackoff?: number;
   } = {},
 ) {
-  const { initialBackoff = 1.0, maxBackoff = 60.0 } = options;
   return function <T extends (...args: never[]) => Promise<unknown>>(
     target: unknown,
     propertyName: string,
@@ -614,8 +621,10 @@ function dbRetry(
   ): TypedPropertyDescriptor<T> {
     const method = descriptor.value!;
     descriptor.value = async function (this: never, ...args: never): Promise<unknown> {
+      // Read the defaults per call so the backoff stays tunable after the decorator is applied.
+      const maxBackoff = options.maxBackoff ?? dbRetryConfig.maxBackoffSec;
       let retries = 0;
-      let backoff = initialBackoff;
+      let backoff = options.initialBackoff ?? dbRetryConfig.initialBackoffSec;
       while (true) {
         try {
           return await method.apply(this, args);
