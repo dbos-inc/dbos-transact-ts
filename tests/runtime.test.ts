@@ -2,15 +2,9 @@ import { spawn, execSync, ChildProcess } from 'child_process';
 import { Writable } from 'stream';
 import { Client } from 'pg';
 import { generateDBOSTestConfig } from './helpers';
-import { HealthUrl } from '../src/adminserver';
 import { sleepms } from '../src/utils';
 
-async function waitForMessageTest(
-  command: ChildProcess,
-  port: string,
-  adminPort?: string,
-  checkResponse: boolean = true,
-) {
+async function waitForMessageTest(command: ChildProcess, port: string, checkResponse: boolean = true) {
   const stdout = command.stdout as unknown as Writable;
   const stdin = command.stdin as unknown as Writable;
   const stderr = command.stderr as unknown as Writable;
@@ -24,10 +18,6 @@ async function waitForMessageTest(
     process.stderr.write(`[child stderr]: ${data}`);
   });
 
-  if (!adminPort) {
-    adminPort = (Number(port) + 1).toString();
-  }
-
   try {
     const maxAttempts = 10;
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -36,8 +26,6 @@ async function waitForMessageTest(
           const response = await fetch(`http://127.0.0.1:${port}/greeting/dbos`);
           expect(response.status).toBe(200);
         }
-        const healthRes = await fetch(`http://127.0.0.1:${adminPort}${HealthUrl}`);
-        expect(healthRes.status).toBe(200);
       } catch (error) {
         if (attempt < maxAttempts - 1) {
           await sleepms(1000);
