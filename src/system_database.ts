@@ -25,7 +25,15 @@ import {
   queues,
   SysDBSerializationFormat,
 } from '../schemas/system_db_schema';
-import { globalParams, cancellableSleep, INTERNAL_QUEUE_NAME, Semaphore, sleepConfig, sleepms } from './utils';
+import {
+  globalParams,
+  cancellableSleep,
+  dbRetryConfig,
+  INTERNAL_QUEUE_NAME,
+  Semaphore,
+  sleepConfig,
+  sleepms,
+} from './utils';
 import { GlobalLogger } from './telemetry/logs';
 import { WorkflowQueue } from './wfqueue';
 import { randomUUID } from 'crypto';
@@ -606,7 +614,6 @@ function dbRetry(
     maxBackoff?: number;
   } = {},
 ) {
-  const { initialBackoff = 1.0, maxBackoff = 60.0 } = options;
   return function <T extends (...args: never[]) => Promise<unknown>>(
     target: unknown,
     propertyName: string,
@@ -614,8 +621,10 @@ function dbRetry(
   ): TypedPropertyDescriptor<T> {
     const method = descriptor.value!;
     descriptor.value = async function (this: never, ...args: never): Promise<unknown> {
+      // Read the defaults per call so the backoff stays tunable after the decorator is applied.
+      const maxBackoff = options.maxBackoff ?? dbRetryConfig.maxBackoffSec;
       let retries = 0;
-      let backoff = initialBackoff;
+      let backoff = options.initialBackoff ?? dbRetryConfig.initialBackoffSec;
       while (true) {
         try {
           return await method.apply(this, args);
@@ -2252,7 +2261,7 @@ export class SystemDatabase {
   // ==================== Sleep ====================
   @dbRetry()
   async durableSleepms(workflowID: string, functionID: number, durationMS: number): Promise<void> {
-    const endTime = await this.#durableSleep(workflowID, functionID, durationMS);
+    const endTime = await this.#durableSleep(workflowID, functionID, durationMS, true);
 
     while (Date.now() < endTime) {
       await sleepms(Math.min(endTime - Date.now(), sleepConfig.maxTimeoutMS));
@@ -3565,10 +3574,8 @@ export class SystemDatabase {
       throw new Error('time_bucket_size_ms must be > 0');
     }
 
-    // operation_outputs has no explicit status column; derive it from
-    // whether `error` is populated. Bookkeeping rows from recordChildWorkflow
-    // and DBOS.getResult have NULL error and NULL output, so they appear
-    // as SUCCESS here — callers can filter them by function_name.
+    // operation_outputs has no explicit status column; derive it from whether `error` is populated.
+    // Child-workflow mapping rows have NULL error, so they appear as SUCCESS — callers filter by function_name.
     const statusExpr = `CASE WHEN error IS NULL THEN 'SUCCESS' ELSE 'ERROR' END`;
 
     const groupByFlags: [string, boolean, string][] = [
@@ -3601,9 +3608,9 @@ export class SystemDatabase {
       throw new Error('At least one group_by flag must be set to True');
     }
 
-    // Build select columns from boolean flags. MAX ignores NULLs, so rows
-    // without start/complete timestamps (child-workflow and getResult
-    // markers) drop out of the duration max.
+    // Build select columns from boolean flags. Child-workflow mapping rows record start and
+    // complete at nearly the same instant, so they contribute ~0; DBOS.getResult and DBOS.sleep
+    // rows span their whole wait, so those dominate the duration max.
     const selectFlags: [string, boolean, string][] = [
       ['count', input.selectCount ?? false, 'COUNT(*)'],
       ['max_duration_ms', input.selectMaxDurationMs ?? false, 'MAX(completed_at_epoch_ms - started_at_epoch_ms)'],
@@ -4488,8 +4495,17 @@ export class SystemDatabase {
   // timeout so it survives recovery. Returns the absolute end time in epoch ms; the
   // caller is responsible for actually waiting until then. Throws if the workflow has
   // been cancelled.
-  async #durableSleep(workflowID: string, functionID: number, durationMS: number): Promise<number> {
-    const endTimeMs = Date.now() + durationMS;
+  // For an actual sleep, completed_at is the wake deadline so the step's duration reflects the
+  // sleep; a timeout marker records zero duration since its deadline may never be reached.
+  async #durableSleep(
+    workflowID: string,
+    functionID: number,
+    durationMS: number,
+    recordCompletionAtDeadline: boolean = false,
+  ): Promise<number> {
+    const startTimeMs = Date.now();
+    // Round once so the deadline stays integral: completed_at_epoch_ms is BIGINT and rejects fractional values.
+    const endTimeMs = startTimeMs + Math.ceil(durationMS);
 
     const client = await this.pool.connect();
     try {
@@ -4506,8 +4522,8 @@ export class SystemDatabase {
         functionID,
         DBOS_FUNCNAME_SLEEP,
         false,
-        Date.now(),
-        Date.now(),
+        startTimeMs,
+        recordCompletionAtDeadline ? endTimeMs : startTimeMs,
         {
           output: DBOSPortableJSON.stringify(endTimeMs),
           serialization: DBOSPortableJSON.name(),

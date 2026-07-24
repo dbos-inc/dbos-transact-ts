@@ -64,6 +64,12 @@ export const sleepConfig = {
   maxTimeoutMS: 2_147_483_647,
 };
 
+// Backoff, in seconds, for retrying system database operations after a lost connection.
+export const dbRetryConfig = {
+  initialBackoffSec: 1.0,
+  maxBackoffSec: 60.0,
+};
+
 // The name of the internal queue used by DBOS
 export const INTERNAL_QUEUE_NAME = '_dbos_internal_queue';
 
