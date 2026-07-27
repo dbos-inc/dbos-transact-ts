@@ -10,6 +10,7 @@ import {
 import { Command } from 'commander';
 import { DBOSConfigInternal } from '../dbos-executor';
 import { migrate } from './migrate';
+import { runSchemaPrintMode } from './schema';
 import { GlobalLogger } from '../telemetry/logs';
 import { TelemetryCollector } from '../telemetry/collector';
 import { TelemetryExporter } from '../telemetry/exporters';
@@ -75,32 +76,17 @@ program
 program
   .command('migrate')
   .description('Perform a database migration')
-  .option(
-    '--print-migrations <all|N>',
-    "Print the SQL of all migrations ('--print-migrations all') or of migrations from a number onward ('--print-migrations 3') instead of running them",
-  )
-  .option(
-    '--print-user-role',
-    'Print the SQL granting the application role (--app-role) access to DBOS system tables instead of executing it',
-  )
-  .option('-r, --app-role <string>', 'The role with which you will run your DBOS application')
-  .option('-s, --schema <string>', 'The schema name for DBOS system tables (default: dbos)')
-  .action(async (options: { printMigrations?: string; printUserRole?: boolean; appRole?: string; schema?: string }) => {
+  .action(async () => {
     const configFile = await readConfigFile();
     let config = getDbosConfig(configFile);
     const runtimeConfig = getRuntimeConfig(configFile);
     if (process.env.DBOS__CLOUD === 'true') {
       [config] = overwriteConfigForDBOSCloud(config, runtimeConfig, configFile);
     }
-    const schemaName = options.schema ?? configFile.system_database_schema_name ?? 'dbos';
+    const schemaName = configFile.system_database_schema_name ?? 'dbos';
 
     await runAndLog(configFile.database?.migrate ?? [], config, (cmds, url, logger) =>
-      migrate(cmds, url, logger, {
-        schemaName,
-        printMigrations: options.printMigrations,
-        printUserRole: options.printUserRole,
-        appRole: options.appRole,
-      }),
+      migrate(cmds, url, logger, schemaName),
     );
   });
 
@@ -110,40 +96,70 @@ program
   .argument('[systemDatabaseUrl]', 'System database URL')
   .option('-r, --app-role <string>', 'The role with which you will run your DBOS application')
   .option('-s, --schema <string>', 'The schema name for DBOS system tables (default: dbos)')
-  .action(async (systemDatabaseUrl: string | undefined, options: { appRole?: string; schema?: string }) => {
-    const logger = new GlobalLogger();
+  .option(
+    '--print-migrations <all|N>',
+    "Print the SQL of all migrations ('--print-migrations all') or of migrations from a number onward ('--print-migrations 3') instead of running them",
+  )
+  .option(
+    '--print-user-role',
+    'Print the SQL granting the application role (--app-role) access to DBOS system tables instead of executing it',
+  )
+  .action(
+    async (
+      systemDatabaseUrl: string | undefined,
+      options: { appRole?: string; schema?: string; printMigrations?: string; printUserRole?: boolean },
+    ) => {
+      const logger = new GlobalLogger();
 
-    // Determine system database URL from argument or config
-    const databaseURLs = await getDatabaseURLs(systemDatabaseUrl);
-    systemDatabaseUrl = databaseURLs.systemDatabaseURL;
+      // Get schema name from CLI option first, then config, then default
+      let schemaName = options.schema ?? 'dbos';
+      if (!options.schema) {
+        try {
+          if (existsSync(dbosConfigFilePath)) {
+            const configFile = await readConfigFile(dbosConfigFilePath);
+            schemaName = configFile.system_database_schema_name ?? 'dbos';
+          }
+        } catch (e) {
+          // If config file doesn't exist or can't be read, use default
+        }
+      }
 
-    // Get schema name from CLI option first, then config, then default
-    let schemaName = options.schema ?? 'dbos';
-    if (!options.schema) {
+      if (options.printMigrations !== undefined || options.printUserRole) {
+        // Print modes never connect, so a missing database URL is fine.
+        if (!systemDatabaseUrl) {
+          try {
+            systemDatabaseUrl = (await getDatabaseURLs(undefined)).systemDatabaseURL;
+          } catch (e) {}
+        }
+        process.exit(
+          await runSchemaPrintMode(systemDatabaseUrl, {
+            schemaName,
+            printMigrations: options.printMigrations,
+            printUserRole: options.printUserRole,
+            appRole: options.appRole,
+          }),
+        );
+      }
+
+      // Determine system database URL from argument or config
+      const databaseURLs = await getDatabaseURLs(systemDatabaseUrl);
+      systemDatabaseUrl = databaseURLs.systemDatabaseURL;
+
       try {
-        if (existsSync(dbosConfigFilePath)) {
-          const configFile = await readConfigFile(dbosConfigFilePath);
-          schemaName = configFile.system_database_schema_name ?? 'dbos';
+        // Load the DBOS system schema.
+        logger.info(`Creating DBOS system database and schema: ${schemaName}`);
+        await ensureSystemDatabase(systemDatabaseUrl, logger, undefined, schemaName);
+
+        // Grant permissions to application role if specified
+        if (options.appRole) {
+          await grantDbosSchemaPermissions(systemDatabaseUrl, options.appRole, logger, schemaName);
         }
       } catch (e) {
-        // If config file doesn't exist or can't be read, use default
+        logger.error(e);
+        process.exit(1);
       }
-    }
-
-    try {
-      // Load the DBOS system schema.
-      logger.info(`Creating DBOS system database and schema: ${schemaName}`);
-      await ensureSystemDatabase(systemDatabaseUrl, logger, undefined, schemaName);
-
-      // Grant permissions to application role if specified
-      if (options.appRole) {
-        await grantDbosSchemaPermissions(systemDatabaseUrl, options.appRole, logger, schemaName);
-      }
-    } catch (e) {
-      logger.error(e);
-      process.exit(1);
-    }
-  });
+    },
+  );
 
 program
   .command('postgres')

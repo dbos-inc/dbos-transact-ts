@@ -3,7 +3,12 @@ import { mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import path from 'path';
 import { Client } from 'pg';
-import { migrate, generateMigrationSQL, generateMigrationStatements, MigrateOptions } from '../src/cli/migrate';
+import {
+  runSchemaPrintMode,
+  generateMigrationSQL,
+  generateMigrationStatements,
+  SchemaPrintOptions,
+} from '../src/cli/schema';
 import { allMigrations } from '../src/sysdb_migrations/internal/migrations';
 import { getCurrentSysDBVersion } from '../src/sysdb_migrations/migration_runner';
 import { ensureSystemDatabase } from '../src/system_database';
@@ -17,8 +22,8 @@ const UNREACHABLE_URL = 'postgres://nobody:nopass@nonexistent-host.invalid:1/no_
 
 type CliResult = { status: number; out: string; err: string };
 
-/** Run migrate() in-process, capturing stdout and stderr. */
-async function runMigrate(url: string, options: MigrateOptions): Promise<CliResult> {
+/** Run runSchemaPrintMode() in-process, capturing stdout and stderr. */
+async function runPrint(url: string | undefined, options: SchemaPrintOptions): Promise<CliResult> {
   let out = '';
   let err = '';
   const impl = (sink: (s: string) => void) =>
@@ -31,7 +36,7 @@ async function runMigrate(url: string, options: MigrateOptions): Promise<CliResu
   const outSpy = jest.spyOn(process.stdout, 'write').mockImplementation(impl((s) => (out += s)));
   const errSpy = jest.spyOn(process.stderr, 'write').mockImplementation(impl((s) => (err += s)));
   try {
-    const status = await migrate([], url, new GlobalLogger(), options);
+    const status = await runSchemaPrintMode(url, options);
     return { status, out, err };
   } finally {
     outSpy.mockRestore();
@@ -69,9 +74,9 @@ async function dropDatabase(adminUrl: string, dbName: string): Promise<void> {
   }
 }
 
-describe('migrate --print-migrations and --print-user-role', () => {
+describe('schema --print-migrations and --print-user-role', () => {
   test('print-migrations all: headers, per-migration bookkeeping, pure SQL, no database needed', async () => {
-    const { status, out, err } = await runMigrate(UNREACHABLE_URL, { printMigrations: 'all' });
+    const { status, out, err } = await runPrint(UNREACHABLE_URL, { printMigrations: 'all' });
     expect(status).toBe(0);
     expect(err).toBe('');
 
@@ -107,16 +112,23 @@ describe('migrate --print-migrations and --print-user-role', () => {
     }
   });
 
+  test('print-migrations without a database URL omits it from the header', async () => {
+    const { status, out, err } = await runPrint(undefined, { printMigrations: 'all' });
+    expect(status).toBe(0);
+    expect(err).toBe('');
+    expect(out.split('\n')[0]).toBe('-- DBOS system database migrations');
+  });
+
   test('print-migrations 1 is identical to all', async () => {
-    const all = await runMigrate(UNREACHABLE_URL, { printMigrations: 'all' });
-    const one = await runMigrate(UNREACHABLE_URL, { printMigrations: '1' });
+    const all = await runPrint(UNREACHABLE_URL, { printMigrations: 'all' });
+    const one = await runPrint(UNREACHABLE_URL, { printMigrations: '1' });
     expect(one.status).toBe(0);
     expect(one.out).toBe(all.out);
     expect(generateMigrationSQL('dbos', 1)).toBe(generateMigrationSQL());
   });
 
   test('print-migrations N omits the prelude and earlier migrations', async () => {
-    const { status, out, err } = await runMigrate(UNREACHABLE_URL, { printMigrations: '10' });
+    const { status, out, err } = await runPrint(UNREACHABLE_URL, { printMigrations: '10' });
     expect(status).toBe(0);
     expect(err).toBe('');
     expect(out).not.toContain('CREATE SCHEMA');
@@ -131,7 +143,7 @@ describe('migrate --print-migrations and --print-user-role', () => {
   });
 
   test('print-migrations 2 inserts the version row since migration 2 creates the table', async () => {
-    const { status, out, err } = await runMigrate(UNREACHABLE_URL, { printMigrations: '2' });
+    const { status, out, err } = await runPrint(UNREACHABLE_URL, { printMigrations: '2' });
     expect(status).toBe(0);
     expect(err).toBe('');
     expect(out).not.toContain('CREATE SCHEMA');
@@ -144,41 +156,41 @@ describe('migrate --print-migrations and --print-user-role', () => {
 
   test('invalid print-migrations values are rejected on stderr with nothing on stdout', async () => {
     for (const bad of ['0', String(LATEST + 1), '-1']) {
-      const res = await runMigrate(UNREACHABLE_URL, { printMigrations: bad });
+      const res = await runPrint(UNREACHABLE_URL, { printMigrations: bad });
       expect(res.status).toBe(1);
       expect(res.out).toBe('');
       expect(res.err).toBe(`Migration ${bad} does not exist: valid migrations are 1 through ${LATEST}\n`);
     }
-    const res = await runMigrate(UNREACHABLE_URL, { printMigrations: 'foo' });
+    const res = await runPrint(UNREACHABLE_URL, { printMigrations: 'foo' });
     expect(res.status).toBe(1);
     expect(res.out).toBe('');
     expect(res.err).toBe(`Invalid --print-migrations value 'foo': expected 'all' or a migration number\n`);
   });
 
   test('schema and role names containing quotes are rejected', async () => {
-    let res = await runMigrate(UNREACHABLE_URL, { printMigrations: 'all', schemaName: 'bad"schema' });
+    let res = await runPrint(UNREACHABLE_URL, { printMigrations: 'all', schemaName: 'bad"schema' });
     expect(res.status).toBe(1);
     expect(res.out).toBe('');
     expect(res.err).toBe('Schema names containing quotes are not supported\n');
 
-    res = await runMigrate(UNREACHABLE_URL, { printUserRole: true, appRole: "bad'role" });
+    res = await runPrint(UNREACHABLE_URL, { printUserRole: true, appRole: "bad'role" });
     expect(res.status).toBe(1);
     expect(res.out).toBe('');
     expect(res.err).toBe('Role names containing quotes are not supported\n');
   });
 
   test('print-user-role requires app-role, excludes print-migrations, and emits only grant SQL', async () => {
-    let res = await runMigrate(UNREACHABLE_URL, { printUserRole: true });
+    let res = await runPrint(UNREACHABLE_URL, { printUserRole: true });
     expect(res.status).toBe(1);
     expect(res.out).toBe('');
     expect(res.err).toBe('--print-user-role requires --app-role\n');
 
-    res = await runMigrate(UNREACHABLE_URL, { printMigrations: 'all', printUserRole: true, appRole: 'my-app-role' });
+    res = await runPrint(UNREACHABLE_URL, { printMigrations: 'all', printUserRole: true, appRole: 'my-app-role' });
     expect(res.status).toBe(1);
     expect(res.out).toBe('');
     expect(res.err).toBe('--print-user-role cannot be combined with --print-migrations\n');
 
-    res = await runMigrate(UNREACHABLE_URL, { printUserRole: true, appRole: 'my-app-role', schemaName: FUNNY_SCHEMA });
+    res = await runPrint(UNREACHABLE_URL, { printUserRole: true, appRole: 'my-app-role', schemaName: FUNNY_SCHEMA });
     expect(res.status).toBe(0);
     expect(res.err).toBe('');
     const lines = res.out.trimEnd().split('\n');
@@ -194,11 +206,11 @@ describe('migrate --print-migrations and --print-user-role', () => {
   });
 
   test('printed statements apply to a fresh database and the runner then treats it as migrated', async () => {
-    const dbName = 'migrate_print_sql_test_db';
+    const dbName = 'schema_print_sql_test_db';
     const { adminUrl, dbUrl } = testUrls(dbName);
     await recreateDatabase(adminUrl, dbName);
 
-    const { status, out, err } = await runMigrate(dbUrl, { printMigrations: 'all', schemaName: FUNNY_SCHEMA });
+    const { status, out, err } = await runPrint(dbUrl, { printMigrations: 'all', schemaName: FUNNY_SCHEMA });
     expect(status).toBe(0);
     expect(err).toBe('');
     expect(out).toContain(`CREATE SCHEMA IF NOT EXISTS "${FUNNY_SCHEMA}";`);
@@ -231,7 +243,7 @@ describe('migrate --print-migrations and --print-user-role', () => {
   }, 60000);
 
   test('a partial database is completed by the print-migrations latest output', async () => {
-    const dbName = 'migrate_print_partial_test_db';
+    const dbName = 'schema_print_partial_test_db';
     const { adminUrl, dbUrl } = testUrls(dbName);
     await recreateDatabase(adminUrl, dbName);
 
@@ -249,7 +261,7 @@ describe('migrate --print-migrations and --print-user-role', () => {
       expect(await getCurrentSysDBVersion(client, 'dbos')).toBe(LATEST - 1);
 
       // The last migration printed alone applies on top of version latest-1.
-      const { status, out } = await runMigrate(dbUrl, { printMigrations: String(LATEST) });
+      const { status, out } = await runPrint(dbUrl, { printMigrations: String(LATEST) });
       expect(status).toBe(0);
       expect(out).not.toContain('CREATE SCHEMA');
       expect(out).not.toContain('DO $$');
@@ -268,26 +280,26 @@ describe('migrate --print-migrations and --print-user-role', () => {
 
   test('spawned CLI prints pure SQL to stdout, nothing to stderr, exit 0 with unreachable database', async () => {
     const cliPath = path.resolve(__dirname, '..', 'dist', 'src', 'cli', 'cli.js');
-    const workDir = mkdtempSync(path.join(tmpdir(), 'dbos-migrate-print-'));
+    const workDir = mkdtempSync(path.join(tmpdir(), 'dbos-schema-print-'));
     try {
       writeFileSync(
         path.join(workDir, 'dbos-config.yaml'),
-        `name: migrateprinttest\nsystem_database_url: ${UNREACHABLE_URL}\n`,
+        `name: schemaprinttest\nsystem_database_url: ${UNREACHABLE_URL}\n`,
       );
       const spawn = (...args: string[]) =>
-        spawnSync(process.execPath, [cliPath, 'migrate', ...args], { cwd: workDir, encoding: 'utf-8' });
+        spawnSync(process.execPath, [cliPath, 'schema', ...args], { cwd: workDir, encoding: 'utf-8' });
 
       let res = spawn('--print-migrations', 'all');
       expect(res.status).toBe(0);
       expect(res.stderr).toBe('');
-      expect(res.stdout).toBe((await runMigrate(UNREACHABLE_URL, { printMigrations: 'all' })).out);
+      expect(res.stdout).toBe((await runPrint(UNREACHABLE_URL, { printMigrations: 'all' })).out);
 
       res = spawn('--print-user-role', '-r', 'my_app_role', '-s', 'custom_schema');
       expect(res.status).toBe(0);
       expect(res.stderr).toBe('');
       expect(res.stdout).toBe(
         (
-          await runMigrate(UNREACHABLE_URL, {
+          await runPrint(UNREACHABLE_URL, {
             printUserRole: true,
             appRole: 'my_app_role',
             schemaName: 'custom_schema',
