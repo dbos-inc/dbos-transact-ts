@@ -4609,8 +4609,13 @@ export class SystemDatabase {
         client.on('notification', handler);
         client.on('error', (err: Error) => {
           this.logger.warn(`Error in notifications client: ${err}`);
+          if (this.notificationsClient === client) {
+            this.notificationsClient = null;
+          }
           if (client) {
             client.removeAllListeners();
+            // Errors can still arrive while release() tears the connection down; a bare emit would crash the process.
+            client.on('error', () => {});
             client.release(true);
           }
           reconnect();
@@ -4620,6 +4625,7 @@ export class SystemDatabase {
         this.logger.warn(`Error in notifications listener: ${String(error)}`);
         if (client) {
           client.removeAllListeners();
+          client.on('error', () => {});
           client.release(true);
         }
         reconnect();
