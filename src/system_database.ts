@@ -3214,17 +3214,10 @@ export class SystemDatabase {
     return claimedIDs;
   }
 
-  /**
-   * Max heads dequeued per partitioned sweep: bounds the work of a single poll.
-   * Leftover partitions rotate in on later polls via the PENDING gate.
-   */
+  /** Max heads admitted per sweep: bounds dispatch, not the partition walk; lowest keys win, so higher keys can wait under sustained load. */
   partitionedDequeueSweepCap: number = 1024;
 
-  /**
-   * Dequeue every partition's head-of-line workflow in one transaction, at most
-   * {@link partitionedDequeueSweepCap} per sweep. Valid only for concurrency=1, no-limiter
-   * queues: all workers rank the same head, so guarded flips admit at most one row per partition.
-   */
+  /** Dequeue each partition's head-of-line workflow in one transaction, at most {@link partitionedDequeueSweepCap} per sweep; only valid for concurrency=1, no-limiter queues. */
   async findAndMarkStartablePartitionedWorkflows(
     queue: WorkflowQueue,
     executorID: string,

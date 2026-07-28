@@ -3196,11 +3196,7 @@ describe('bounded-lane dispatcher', () => {
   }, 15000);
 });
 
-/**
- * The batched partitioned dequeue: with concurrency=1 and no limiter, one transaction claims every
- * partition's head-of-line workflow. These tests drive the sweep by hand against unpolled queues
- * (`listenQueues: []` dispatches nothing), so each sweep's exact result set is observable.
- */
+// These drive the sweep by hand against unpolled queues (`listenQueues: []` dispatches nothing), so each sweep's exact result set is observable.
 describe('partitioned-batch-dequeue', () => {
   let config: DBOSConfig;
   let sysdb: SystemDatabase;
@@ -3407,10 +3403,7 @@ describe('partitioned-batch-dequeue', () => {
   });
 });
 
-/**
- * Dispatch-level behavior of the batched partitioned path: which queue configurations reach it,
- * and the end-to-end guarantee it provides.
- */
+// Dispatch-level behavior: which queue configurations reach the batched path, and the guarantee it provides end to end.
 describe('partitioned-batch-dequeue-dispatch', () => {
   let config: DBOSConfig;
 

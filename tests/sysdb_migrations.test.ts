@@ -75,8 +75,7 @@ describe('sysdb migration runner', () => {
     expect(await indexExists(client, 'idx_workflow_status_rate_limited')).toBe(true);
     expect(await indexExists(client, 'uq_workflow_status_dedup_id')).toBe(true);
     expect(await indexExists(client, 'idx_workflow_status_partition_dequeue')).toBe(true);
-    // The drop/recreate pair must leave the workflow_uuid tiebreaker in place, which is what makes
-    // the batched partitioned dequeue's head probe index-provided.
+    // The drop/recreate pair must leave the workflow_uuid tiebreaker in place, which is what keeps the batched head probe index-provided.
     expect(await indexDefinition(client, 'idx_workflow_status_partition_dequeue')).toContain(
       'priority, created_at, workflow_uuid',
     );
