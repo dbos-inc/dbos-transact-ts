@@ -3215,7 +3215,7 @@ export class SystemDatabase {
   }
 
   /** Max heads admitted per sweep: bounds dispatch, not the partition walk; lowest keys win, so higher keys can wait under sustained load. */
-  partitionedDequeueSweepCap: number = 1024;
+  partitionedDequeueSweepCap: number = 8192;
 
   /** Dequeue each partition's head-of-line workflow in one transaction, at most {@link partitionedDequeueSweepCap} per sweep; only valid for concurrency=1, no-limiter queues. */
   async findAndMarkStartablePartitionedWorkflows(
