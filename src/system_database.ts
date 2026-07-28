@@ -1080,53 +1080,57 @@ export class SystemDatabase {
   }
 
   @dbRetry()
-  async recordWorkflowOutput(workflowID: string, status: WorkflowStatusInternal): Promise<void> {
+  async recordWorkflowOutput(workflowID: string, status: WorkflowStatusInternal): Promise<boolean> {
     const client = await this.pool.connect();
     try {
-      await this.#recordWorkflowOutcome(client, workflowID, StatusString.SUCCESS, { output: status.output });
+      return await this.#recordWorkflowOutcome(client, workflowID, StatusString.SUCCESS, { output: status.output });
     } finally {
       client.release();
     }
   }
 
   @dbRetry()
-  async recordWorkflowError(workflowID: string, status: WorkflowStatusInternal): Promise<void> {
+  async recordWorkflowError(workflowID: string, status: WorkflowStatusInternal): Promise<boolean> {
     const client = await this.pool.connect();
     try {
-      await this.#recordWorkflowOutcome(client, workflowID, StatusString.ERROR, { error: status.error });
+      return await this.#recordWorkflowOutcome(client, workflowID, StatusString.ERROR, { error: status.error });
     } finally {
       client.release();
     }
   }
 
-  // Record a workflow's terminal outcome (SUCCESS or ERROR), but never overwrite
-  // the terminal CANCELLED status: a workflow can be cancelled during its final
-  // step, and if so it must not be able to subsequently complete. If the
-  // workflow is cancelled, abort the function so it does not complete. This
-  // mirrors the cancellation check done before each step.
+  // Record a workflow's terminal outcome (SUCCESS or ERROR), reporting whether
+  // the write landed. The write applies only to a PENDING row: a run owns its
+  // workflow's outcome exactly as long as the row says that run is what the
+  // workflow is doing. (Note: this does not prevent a write when another
+  // concurrent execution is already running and the status is PENDING. However,
+  // both executions should be deterministic and idempotent.)
+  //
+  // Returning false means the row was CANCELLED, dead-lettered, already
+  // terminal, or handed to another execution (ENQUEUED/DELAYED, e.g. by a
+  // concurrent resume). If the row does not exist at all, a
+  // DBOSNonExistentWorkflowError is thrown.
   async #recordWorkflowOutcome(
     client: PoolClient,
     workflowID: string,
     status: (typeof StatusString)[keyof typeof StatusString],
     outcome: { output?: string | null; error?: string | null },
-  ): Promise<void> {
-    let cancelled = false;
-    try {
-      await client.query('BEGIN');
-      await this.updateWorkflowStatus(client, workflowID, status, {
-        update: { ...outcome, resetDeduplicationID: true, setCompletedAt: true },
-        where: { notStatus: StatusString.CANCELLED },
-        throwOnFailure: false,
-      });
-      cancelled = (await this.getWorkflowStatusValue(client, workflowID)) === StatusString.CANCELLED;
-      await client.query('COMMIT');
-    } catch (e) {
-      await client.query('ROLLBACK');
-      throw e;
+  ): Promise<boolean> {
+    const rowCount = await this.updateWorkflowStatus(client, workflowID, status, {
+      update: { ...outcome, resetDeduplicationID: true, setCompletedAt: true },
+      where: { status: StatusString.PENDING },
+      throwOnFailure: false,
+    });
+    if (rowCount > 0) {
+      return true;
     }
-    if (cancelled) {
-      throw new DBOSWorkflowCancelledError(workflowID);
+    // The guarded UPDATE matched no rows. Re-read (only on this rare no-op path)
+    // to distinguish a row this run no longer owns from a row that is gone.
+    const currentStatus = await this.getWorkflowStatusValue(client, workflowID);
+    if (currentStatus === undefined) {
+      throw new DBOSNonExistentWorkflowError(`Workflow ${workflowID} does not exist`);
     }
+    return false;
   }
 
   async getPendingWorkflows(executorID: string, appVersion: string): Promise<GetPendingWorkflowsOutput[]> {
@@ -4433,7 +4437,7 @@ export class SystemDatabase {
       };
       throwOnFailure?: boolean;
     } = {},
-  ): Promise<void> {
+  ): Promise<number> {
     // Use SQL now() so updated_at and completed_at (when set together) are
     // computed in the same statement against the same clock.
     const nowMsExpr = `(EXTRACT(EPOCH FROM now()) * 1000)::bigint`;
@@ -4508,6 +4512,7 @@ export class SystemDatabase {
     if (throwOnFailure && result.rowCount !== 1) {
       throw new DBOSWorkflowConflictError(`Attempt to record transition of nonexistent workflow ${workflowID}`);
     }
+    return result.rowCount ?? 0;
   }
 
   private async recordOperationResultInternal(

@@ -4,6 +4,7 @@ import {
   DBOSWorkflowConflictError,
   DBOSNotRegisteredError,
   DBOSMaxStepRetriesError,
+  DBOSMaxRecoveryAttemptsExceededError,
   DBOSWorkflowCancelledError,
   DBOSUnexpectedStepError,
   DBOSAwaitedWorkflowCancelledError,
@@ -738,7 +739,7 @@ export class DBOSExecutor {
     };
 
     const eserializer = this.serializer;
-    async function handleWorkflowError(err: Error, exec: DBOSExecutor) {
+    async function handleWorkflowError(err: Error, exec: DBOSExecutor): Promise<{ recorded: boolean; error: Error }> {
       // Record the error.
       const e = err as Error & { dbos_already_logged?: boolean };
       exec.logger.error(e);
@@ -747,10 +748,36 @@ export class DBOSExecutor {
       internalStatus.error = sererr.serializedValue;
       internalStatus.status = StatusString.ERROR;
       releaseRunningWorkflow();
-      await exec.systemDatabase.recordWorkflowError(workflowID, internalStatus);
+      const recorded = await exec.systemDatabase.recordWorkflowError(workflowID, internalStatus);
       span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
-      return await deserializeResError(sererr.serializedValue, sererr.serialization, eserializer);
+      return {
+        recorded,
+        error: await deserializeResError(sererr.serializedValue, sererr.serialization, eserializer),
+      };
     }
+
+    // The terminal-outcome write applies only while the workflow's row is
+    // PENDING. When the write does not land, this run no longer owns the
+    // workflow's outcome (cancelled, dead-lettered, completed by a concurrent
+    // execution, or handed back to the queue by a resume): park the run and
+    // deliver the recorded outcome through its own handle instead of the
+    // locally computed one.
+    const adoptRecordedOutcome = async (): Promise<R> => {
+      this.logger.warn(
+        `Workflow ${workflowID} outcome was not recorded: the workflow is no longer owned by this execution. Waiting for the recorded outcome`,
+      );
+      const recordedResult = (await this.systemDatabase.awaitWorkflowResult(workflowID))!;
+      if (recordedResult.cancelled) {
+        // awaitWorkflowResult reports a CANCELLED row from an awaiter's point
+        // of view, but this outcome is delivered to the workflow's own handle:
+        // report the workflow's cancellation.
+        throw new DBOSWorkflowCancelledError(workflowID);
+      }
+      if (recordedResult.maxRecoveryAttemptsExceeded) {
+        throw new DBOSMaxRecoveryAttemptsExceededError(workflowID, maxRecoveryAttempts);
+      }
+      return await DBOSExecutor.reviveResultOrError<R>(recordedResult, this.serializer);
+    };
 
     const runWorkflow = async () => {
       let result: R;
@@ -793,7 +820,10 @@ export class DBOSExecutor {
         internalStatus.output = funcResult.stringified;
         internalStatus.status = StatusString.SUCCESS;
         releaseRunningWorkflow();
-        await this.systemDatabase.recordWorkflowOutput(workflowID, internalStatus);
+        const recorded = await this.systemDatabase.recordWorkflowOutput(workflowID, internalStatus);
+        if (!recorded) {
+          result = await adoptRecordedOutcome();
+        }
         span.setStatus({ code: SpanStatusCode.OK });
       } catch (err) {
         if (err instanceof DBOSWorkflowConflictError) {
@@ -813,18 +843,25 @@ export class DBOSExecutor {
             throw err;
           } else {
             const e = new DBOSAwaitedWorkflowCancelledError(err.workflowID);
-            await handleWorkflowError(e as Error, this);
-            throw e;
+            const { recorded } = await handleWorkflowError(e as Error, this);
+            if (!recorded) {
+              result = await adoptRecordedOutcome();
+            } else {
+              throw e;
+            }
           }
         } else {
-          // If we want to be consistent about what is thrown (stored result vs live)
-          //  we would have to do this.  It is a breaking change in the sense that it
-          //  is a behavior change, but it would "break" things that are already broken
-          if (serializationType === 'portable') {
-            throw await handleWorkflowError(err as Error, this);
+          const { recorded, error } = await handleWorkflowError(err as Error, this);
+          if (!recorded) {
+            result = await adoptRecordedOutcome();
+          } else if (serializationType === 'portable') {
+            // If we want to be consistent about what is thrown (stored result vs live)
+            //  we would have to do this.  It is a breaking change in the sense that it
+            //  is a behavior change, but it would "break" things that are already broken
+            throw error;
+          } else {
+            throw err;
           }
-          await handleWorkflowError(err as Error, this);
-          throw err;
         }
       } finally {
         this.tracer.endSpan(span);
