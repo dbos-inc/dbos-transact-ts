@@ -1,6 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { Client } from 'pg';
 
+import { InMemorySpanExporter, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base';
+import { context, SpanStatusCode, trace } from '@opentelemetry/api';
+
 import { DBOS, StatusString } from '../src';
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import {
@@ -11,6 +14,72 @@ import {
 import { serializeResError, serializeValue } from '../src/serialization';
 import { sleepms } from '../src/utils';
 import { Event, generateDBOSTestConfig, retryUntilSuccess, setUpDBOSTestSysDb } from './helpers';
+import { NodeTracerProvider } from './nodetraceprovider';
+
+// Each run blocks until the test has rewritten its row, then returns a
+// result the test can tell apart from anything recorded out-of-band.
+const controls = new Map<string, { started: Event; release: Event }>();
+
+class OutcomeOwnership {
+  @DBOS.workflow()
+  static async blockedWorkflow(id: string): Promise<string> {
+    const ctrl = controls.get(id);
+    if (!ctrl) {
+      throw new Error(`no control registered for workflow ${id}`);
+    }
+    ctrl.started.set();
+    await ctrl.release.wait();
+    return 'own-result';
+  }
+
+  // Stands in for a run that observes its own cancellation mid-flight: the
+  // cancellation is thrown only after the test has rewritten the row.
+  @DBOS.workflow()
+  static async selfCancellingWorkflow(id: string): Promise<string> {
+    const ctrl = controls.get(id);
+    if (!ctrl) {
+      throw new Error(`no control registered for workflow ${id}`);
+    }
+    ctrl.started.set();
+    await ctrl.release.wait();
+    throw new DBOSWorkflowCancelledError(id);
+  }
+}
+
+// Start a run and return once it is blocked inside the workflow function,
+// with its row PENDING.
+async function startBlockedRun(workflow: 'blockedWorkflow' | 'selfCancellingWorkflow' = 'blockedWorkflow') {
+  const id = `outcome-ownership-${randomUUID()}`;
+  const ctrl = { started: new Event(), release: new Event() };
+  controls.set(id, ctrl);
+  const handle = await DBOS.startWorkflow(OutcomeOwnership, { workflowID: id })[workflow](id);
+  await ctrl.started.wait();
+  return { handle, ctrl };
+}
+
+// Encode a value/error the way the workflow's outcome would be recorded.
+async function encodeOutput(value: string) {
+  return await serializeValue(value, DBOSExecutor.globalInstance!.serializer, undefined);
+}
+async function encodeError(message: string) {
+  return await serializeResError(new Error(message), DBOSExecutor.globalInstance!.serializer, undefined);
+}
+
+// Take the row away from the blocked run, standing in for the concurrent
+// resume/recovery/cancel that would do it in production.
+async function rewriteRowWith(
+  client: Client,
+  workflowID: string,
+  status: (typeof StatusString)[keyof typeof StatusString],
+  fields: { output?: string | null; error?: string | null; serialization?: string | null } = {},
+) {
+  await client.query(
+    `UPDATE dbos.workflow_status
+     SET status=$1, output=$2, error=$3, serialization=COALESCE($4, serialization)
+     WHERE workflow_uuid=$5`,
+    [status, fields.output ?? null, fields.error ?? null, fields.serialization ?? null, workflowID],
+  );
+}
 
 // A run may record its outcome only while its workflow_status row is still
 // PENDING: that row is what says "this run is what the workflow is doing".
@@ -21,36 +90,6 @@ import { Event, generateDBOSTestConfig, retryUntilSuccess, setUpDBOSTestSysDb } 
 describe('workflow-outcome-ownership', () => {
   let config: DBOSConfig;
   let systemDBClient: Client;
-
-  // Each run blocks until the test has rewritten its row, then returns a
-  // result the test can tell apart from anything recorded out-of-band.
-  const controls = new Map<string, { started: Event; release: Event }>();
-
-  class OutcomeOwnership {
-    @DBOS.workflow()
-    static async blockedWorkflow(id: string): Promise<string> {
-      const ctrl = controls.get(id);
-      if (!ctrl) {
-        throw new Error(`no control registered for workflow ${id}`);
-      }
-      ctrl.started.set();
-      await ctrl.release.wait();
-      return 'own-result';
-    }
-
-    // Stands in for a run that observes its own cancellation mid-flight: the
-    // cancellation is thrown only after the test has rewritten the row.
-    @DBOS.workflow()
-    static async selfCancellingWorkflow(id: string): Promise<string> {
-      const ctrl = controls.get(id);
-      if (!ctrl) {
-        throw new Error(`no control registered for workflow ${id}`);
-      }
-      ctrl.started.set();
-      await ctrl.release.wait();
-      throw new DBOSWorkflowCancelledError(id);
-    }
-  }
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
@@ -69,38 +108,12 @@ describe('workflow-outcome-ownership', () => {
     await DBOS.shutdown();
   });
 
-  // Start a run and return once it is blocked inside the workflow function,
-  // with its row PENDING.
-  async function startBlockedRun(workflow: 'blockedWorkflow' | 'selfCancellingWorkflow' = 'blockedWorkflow') {
-    const id = `outcome-ownership-${randomUUID()}`;
-    const ctrl = { started: new Event(), release: new Event() };
-    controls.set(id, ctrl);
-    const handle = await DBOS.startWorkflow(OutcomeOwnership, { workflowID: id })[workflow](id);
-    await ctrl.started.wait();
-    return { handle, ctrl };
-  }
-
-  // Encode a value/error the way the workflow's outcome would be recorded.
-  async function encodeOutput(value: string) {
-    return await serializeValue(value, DBOSExecutor.globalInstance!.serializer, undefined);
-  }
-  async function encodeError(message: string) {
-    return await serializeResError(new Error(message), DBOSExecutor.globalInstance!.serializer, undefined);
-  }
-
-  // Take the row away from the blocked run, standing in for the concurrent
-  // resume/recovery/cancel that would do it in production.
-  async function rewriteRow(
+  function rewriteRow(
     workflowID: string,
     status: (typeof StatusString)[keyof typeof StatusString],
     fields: { output?: string | null; error?: string | null; serialization?: string | null } = {},
   ) {
-    await systemDBClient.query(
-      `UPDATE dbos.workflow_status
-       SET status=$1, output=$2, error=$3, serialization=COALESCE($4, serialization)
-       WHERE workflow_uuid=$5`,
-      [status, fields.output ?? null, fields.error ?? null, fields.serialization ?? null, workflowID],
-    );
+    return rewriteRowWith(systemDBClient, workflowID, status, fields);
   }
 
   test('recorded-success-supersedes-the-run-result', async () => {
@@ -225,5 +238,94 @@ describe('workflow-outcome-ownership', () => {
     ctrl.release.set();
 
     await expect(handle.getResult()).rejects.toThrow(DBOSWorkflowCancelledError);
+  });
+});
+
+// The workflow span reflects the adopted outcome: `cached` marks a result
+// served from the store rather than computed by this run, and the final span
+// status follows the adopted result, overriding anything stamped before
+// parking.
+describe('workflow-outcome-ownership-spans', () => {
+  let config: DBOSConfig;
+  let systemDBClient: Client;
+  const memoryExporter = new InMemorySpanExporter();
+
+  beforeAll(async () => {
+    const provider = new NodeTracerProvider({
+      spanProcessors: [new SimpleSpanProcessor(memoryExporter)],
+    });
+    provider.register();
+    config = { ...generateDBOSTestConfig(), tracingEnabled: true };
+    await setUpDBOSTestSysDb(config);
+    DBOS.setConfig(config);
+  });
+
+  afterAll(() => {
+    trace.disable();
+    context.disable();
+  });
+
+  beforeEach(async () => {
+    memoryExporter.reset();
+    await DBOS.launch();
+    systemDBClient = new Client({ connectionString: config.systemDatabaseUrl });
+    await systemDBClient.connect();
+  });
+
+  afterEach(async () => {
+    await systemDBClient.end();
+    await DBOS.shutdown();
+  });
+
+  function workflowSpan(workflowID: string) {
+    return memoryExporter.getFinishedSpans().find((s) => s.attributes['operationUUID'] === workflowID);
+  }
+
+  test('adopted-success-sets-span-ok-and-cached', async () => {
+    const { handle, ctrl } = await startBlockedRun();
+    const recorded = await encodeOutput('recorded-elsewhere');
+    await rewriteRowWith(systemDBClient, handle.workflowID, StatusString.SUCCESS, {
+      output: recorded.serializedValue,
+      serialization: recorded.serialization,
+    });
+    ctrl.release.set();
+    await expect(handle.getResult()).resolves.toBe('recorded-elsewhere');
+
+    const span = workflowSpan(handle.workflowID);
+    expect(span).toBeDefined();
+    expect(span!.attributes['cached']).toBe(true);
+    expect(span!.status.code).toBe(SpanStatusCode.OK);
+  });
+
+  test('adopted-cancellation-sets-span-error-and-cached', async () => {
+    const { handle, ctrl } = await startBlockedRun('selfCancellingWorkflow');
+    await rewriteRowWith(systemDBClient, handle.workflowID, StatusString.CANCELLED);
+    ctrl.release.set();
+    await expect(handle.getResult()).rejects.toThrow(DBOSWorkflowCancelledError);
+
+    const span = workflowSpan(handle.workflowID);
+    expect(span).toBeDefined();
+    expect(span!.attributes['cached']).toBe(true);
+    expect(span!.status.code).toBe(SpanStatusCode.ERROR);
+    expect(span!.status.message).toContain('cancelled');
+  });
+
+  test('cancelled-run-adopting-a-recorded-success-sets-span-ok', async () => {
+    // The cancellation branch stamps no ERROR up front: when the adopted
+    // outcome is a success (a resume raced the cancellation), the span must
+    // report OK.
+    const { handle, ctrl } = await startBlockedRun('selfCancellingWorkflow');
+    const recorded = await encodeOutput('recorded-after-cancel');
+    await rewriteRowWith(systemDBClient, handle.workflowID, StatusString.SUCCESS, {
+      output: recorded.serializedValue,
+      serialization: recorded.serialization,
+    });
+    ctrl.release.set();
+    await expect(handle.getResult()).resolves.toBe('recorded-after-cancel');
+
+    const span = workflowSpan(handle.workflowID);
+    expect(span).toBeDefined();
+    expect(span!.attributes['cached']).toBe(true);
+    expect(span!.status.code).toBe(SpanStatusCode.OK);
   });
 });

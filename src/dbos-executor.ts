@@ -758,20 +758,30 @@ export class DBOSExecutor {
 
     // This run does not own the workflow's outcome: park the run and deliver
     // the recorded outcome through its own handle instead of the locally
-    // computed one.
+    // computed one. The span reflects the adopted outcome — `cached` marks a
+    // result served from the store rather than computed by this run, and the
+    // final status overrides anything a caller stamped before parking.
     const adoptRecordedOutcome = async (warning: string): Promise<R> => {
       this.logger.warn(warning);
       const recordedResult = (await this.systemDatabase.awaitWorkflowResult(workflowID))!;
-      if (recordedResult.cancelled) {
-        // awaitWorkflowResult reports a CANCELLED row from an awaiter's point
-        // of view, but this outcome is delivered to the workflow's own handle:
-        // report the workflow's cancellation.
-        throw new DBOSWorkflowCancelledError(workflowID);
+      span.setAttribute('cached', true);
+      try {
+        if (recordedResult.cancelled) {
+          // awaitWorkflowResult reports a CANCELLED row from an awaiter's point
+          // of view, but this outcome is delivered to the workflow's own handle:
+          // report the workflow's cancellation.
+          throw new DBOSWorkflowCancelledError(workflowID);
+        }
+        if (recordedResult.maxRecoveryAttemptsExceeded) {
+          throw new DBOSMaxRecoveryAttemptsExceededError(workflowID, maxRecoveryAttempts);
+        }
+        const adopted = await DBOSExecutor.reviveResultOrError<R>(recordedResult, this.serializer);
+        span.setStatus({ code: SpanStatusCode.OK });
+        return adopted;
+      } catch (e) {
+        span.setStatus({ code: SpanStatusCode.ERROR, message: (e as Error).message });
+        throw e;
       }
-      if (recordedResult.maxRecoveryAttemptsExceeded) {
-        throw new DBOSMaxRecoveryAttemptsExceededError(workflowID, maxRecoveryAttempts);
-      }
-      return await DBOSExecutor.reviveResultOrError<R>(recordedResult, this.serializer);
     };
 
     const notRecordedWarning = `Workflow ${workflowID} outcome was not recorded: the workflow is no longer owned by this execution. Waiting for the recorded outcome`;
@@ -828,11 +838,7 @@ export class DBOSExecutor {
           // before parking so a resume re-dispatched here is not blocked.
           releaseRunningWorkflow();
           result = await adoptRecordedOutcome(`Aborting duplicate execution of workflow ${workflowID}.`);
-          span.setAttribute('cached', true);
-          span.setStatus({ code: SpanStatusCode.OK });
         } else if (err instanceof DBOSWorkflowCancelledError) {
-          span.setStatus({ code: SpanStatusCode.ERROR, message: err.message });
-          internalStatus.error = err.message;
           if (err.workflowID === workflowID) {
             // The run observed its own cancellation. Park the execution.
             releaseRunningWorkflow();
