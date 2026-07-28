@@ -3017,15 +3017,24 @@ export class SystemDatabase {
 
   @dbRetry()
   async getQueuePartitions(queueName: string): Promise<string[]> {
-    const { rows } = await this.pool.query<{ queue_partition_key: string }>(
-      `SELECT DISTINCT queue_partition_key FROM "${this.schemaName}".workflow_status
-       WHERE queue_name = $1
-         AND status = $2
-         AND queue_partition_key IS NOT NULL`,
+    // Recursive-CTE loose index scan: SELECT DISTINCT would scan every ENQUEUED row, whereas each iteration here is one seek on idx_workflow_status_partition_dequeue, so cost scales with the number of partitions rather than the backlog depth.
+    const { rows } = await this.pool.query<{ pk: string }>(
+      `WITH RECURSIVE partitions AS (
+         (SELECT MIN(queue_partition_key) AS pk
+          FROM "${this.schemaName}".workflow_status
+          WHERE queue_name = $1 AND status = $2 AND queue_partition_key IS NOT NULL)
+         UNION ALL
+         (SELECT (SELECT MIN(queue_partition_key)
+                  FROM "${this.schemaName}".workflow_status
+                  WHERE queue_name = $1 AND status = $2 AND queue_partition_key > partitions.pk)
+          FROM partitions
+          WHERE partitions.pk IS NOT NULL)
+       )
+       SELECT pk FROM partitions WHERE pk IS NOT NULL`,
       [queueName, StatusString.ENQUEUED],
     );
 
-    return rows.map((row) => row.queue_partition_key);
+    return rows.map((row) => row.pk);
   }
 
   async findAndMarkStartableWorkflows(
@@ -4600,8 +4609,13 @@ export class SystemDatabase {
         client.on('notification', handler);
         client.on('error', (err: Error) => {
           this.logger.warn(`Error in notifications client: ${err}`);
+          if (this.notificationsClient === client) {
+            this.notificationsClient = null;
+          }
           if (client) {
             client.removeAllListeners();
+            // Errors can still arrive while release() tears the connection down; a bare emit would crash the process.
+            client.on('error', () => {});
             client.release(true);
           }
           reconnect();
@@ -4611,6 +4625,7 @@ export class SystemDatabase {
         this.logger.warn(`Error in notifications listener: ${String(error)}`);
         if (client) {
           client.removeAllListeners();
+          client.on('error', () => {});
           client.release(true);
         }
         reconnect();

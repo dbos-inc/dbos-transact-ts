@@ -182,6 +182,8 @@ export async function causeChaos(db: string): Promise<void> {
   const client = new Client({
     connectionString: db, // or your config object
   });
+  // A concurrent causeChaos can terminate this backend too; without a listener that 'error' event crashes the process.
+  client.on('error', () => {});
 
   try {
     await client.connect();
