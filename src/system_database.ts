@@ -3018,7 +3018,7 @@ export class SystemDatabase {
 
   @dbRetry()
   async getQueuePartitions(queueName: string): Promise<string[]> {
-    // Recursive-CTE loose index scan: SELECT DISTINCT would scan every ENQUEUED row, whereas each iteration here is one seek on idx_workflow_status_partition_dequeue, so cost scales with the number of partitions rather than the backlog depth.
+    // Recursive-CTE loose index scan: SELECT DISTINCT would scan every ENQUEUED row, whereas each iteration here is one seek on idx_workflow_status_partition_dequeue_v2, so cost scales with the number of partitions rather than the backlog depth.
     const { rows } = await this.pool.query<{ pk: string }>(
       `WITH RECURSIVE partitions AS (
          (SELECT MIN(queue_partition_key) AS pk
