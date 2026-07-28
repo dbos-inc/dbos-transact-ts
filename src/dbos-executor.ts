@@ -756,16 +756,11 @@ export class DBOSExecutor {
       };
     }
 
-    // The terminal-outcome write applies only while the workflow's row is
-    // PENDING. When the write does not land, this run no longer owns the
-    // workflow's outcome (cancelled, dead-lettered, completed by a concurrent
-    // execution, or handed back to the queue by a resume): park the run and
-    // deliver the recorded outcome through its own handle instead of the
-    // locally computed one.
-    const adoptRecordedOutcome = async (): Promise<R> => {
-      this.logger.warn(
-        `Workflow ${workflowID} outcome was not recorded: the workflow is no longer owned by this execution. Waiting for the recorded outcome`,
-      );
+    // This run does not own the workflow's outcome: park the run and deliver
+    // the recorded outcome through its own handle instead of the locally
+    // computed one.
+    const adoptRecordedOutcome = async (warning: string): Promise<R> => {
+      this.logger.warn(warning);
       const recordedResult = (await this.systemDatabase.awaitWorkflowResult(workflowID))!;
       if (recordedResult.cancelled) {
         // awaitWorkflowResult reports a CANCELLED row from an awaiter's point
@@ -778,6 +773,8 @@ export class DBOSExecutor {
       }
       return await DBOSExecutor.reviveResultOrError<R>(recordedResult, this.serializer);
     };
+
+    const notRecordedWarning = `Workflow ${workflowID} outcome was not recorded: the workflow is no longer owned by this execution. Waiting for the recorded outcome`;
 
     const runWorkflow = async () => {
       let result: R;
@@ -822,30 +819,31 @@ export class DBOSExecutor {
         releaseRunningWorkflow();
         const recorded = await this.systemDatabase.recordWorkflowOutput(workflowID, internalStatus);
         if (!recorded) {
-          result = await adoptRecordedOutcome();
+          result = await adoptRecordedOutcome(notRecordedWarning);
         }
         span.setStatus({ code: SpanStatusCode.OK });
       } catch (err) {
         if (err instanceof DBOSWorkflowConflictError) {
-          // Retrieve the handle and wait for the result.
-          const retrievedHandle = this.retrieveWorkflow<R>(workflowID);
-          result = await retrievedHandle.getResult();
+          // Another execution owns this workflow's step checkpoints. Release
+          // before parking so a resume re-dispatched here is not blocked.
+          releaseRunningWorkflow();
+          result = await adoptRecordedOutcome(`Aborting duplicate execution of workflow ${workflowID}.`);
           span.setAttribute('cached', true);
           span.setStatus({ code: SpanStatusCode.OK });
         } else if (err instanceof DBOSWorkflowCancelledError) {
           span.setStatus({ code: SpanStatusCode.ERROR, message: err.message });
           internalStatus.error = err.message;
           if (err.workflowID === workflowID) {
-            // The row is already durably CANCELLED (resumable): release now so
-            // a resume re-dispatched here is not blocked during async unwind.
+            // The run observed its own cancellation. Park the execution.
             releaseRunningWorkflow();
-            internalStatus.status = StatusString.CANCELLED;
-            throw err;
+            result = await adoptRecordedOutcome(
+              `Workflow ${workflowID} was cancelled during execution. Waiting for the recorded outcome`,
+            );
           } else {
             const e = new DBOSAwaitedWorkflowCancelledError(err.workflowID);
             const { recorded } = await handleWorkflowError(e as Error, this);
             if (!recorded) {
-              result = await adoptRecordedOutcome();
+              result = await adoptRecordedOutcome(notRecordedWarning);
             } else {
               throw e;
             }
@@ -853,7 +851,7 @@ export class DBOSExecutor {
         } else {
           const { recorded, error } = await handleWorkflowError(err as Error, this);
           if (!recorded) {
-            result = await adoptRecordedOutcome();
+            result = await adoptRecordedOutcome(notRecordedWarning);
           } else if (serializationType === 'portable') {
             // If we want to be consistent about what is thrown (stored result vs live)
             //  we would have to do this.  It is a breaking change in the sense that it

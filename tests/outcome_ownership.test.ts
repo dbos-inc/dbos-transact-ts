@@ -3,7 +3,11 @@ import { Client } from 'pg';
 
 import { DBOS, StatusString } from '../src';
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
-import { DBOSMaxRecoveryAttemptsExceededError, DBOSNonExistentWorkflowError } from '../src/error';
+import {
+  DBOSMaxRecoveryAttemptsExceededError,
+  DBOSNonExistentWorkflowError,
+  DBOSWorkflowCancelledError,
+} from '../src/error';
 import { serializeResError, serializeValue } from '../src/serialization';
 import { sleepms } from '../src/utils';
 import { Event, generateDBOSTestConfig, retryUntilSuccess, setUpDBOSTestSysDb } from './helpers';
@@ -33,6 +37,19 @@ describe('workflow-outcome-ownership', () => {
       await ctrl.release.wait();
       return 'own-result';
     }
+
+    // Stands in for a run that observes its own cancellation mid-flight: the
+    // cancellation is thrown only after the test has rewritten the row.
+    @DBOS.workflow()
+    static async selfCancellingWorkflow(id: string): Promise<string> {
+      const ctrl = controls.get(id);
+      if (!ctrl) {
+        throw new Error(`no control registered for workflow ${id}`);
+      }
+      ctrl.started.set();
+      await ctrl.release.wait();
+      throw new DBOSWorkflowCancelledError(id);
+    }
   }
 
   beforeAll(async () => {
@@ -54,11 +71,11 @@ describe('workflow-outcome-ownership', () => {
 
   // Start a run and return once it is blocked inside the workflow function,
   // with its row PENDING.
-  async function startBlockedRun() {
+  async function startBlockedRun(workflow: 'blockedWorkflow' | 'selfCancellingWorkflow' = 'blockedWorkflow') {
     const id = `outcome-ownership-${randomUUID()}`;
     const ctrl = { started: new Event(), release: new Event() };
     controls.set(id, ctrl);
-    const handle = await DBOS.startWorkflow(OutcomeOwnership, { workflowID: id }).blockedWorkflow(id);
+    const handle = await DBOS.startWorkflow(OutcomeOwnership, { workflowID: id })[workflow](id);
     await ctrl.started.wait();
     return { handle, ctrl };
   }
@@ -184,5 +201,29 @@ describe('workflow-outcome-ownership', () => {
 
     // A run whose row vanished must not report a completion.
     await expect(handle.getResult()).rejects.toThrow(DBOSNonExistentWorkflowError);
+  });
+
+  test('cancelled-run-adopts-a-recorded-outcome', async () => {
+    // A run that observes its own cancellation adopts the recorded outcome
+    // rather than trusting its local view: here a concurrent "resume" already
+    // rewrote the row to SUCCESS, so the handle reports that outcome instead
+    // of a cancellation that is no longer the workflow's state.
+    const { handle, ctrl } = await startBlockedRun('selfCancellingWorkflow');
+    const recorded = await encodeOutput('recorded-after-cancel');
+    await rewriteRow(handle.workflowID, StatusString.SUCCESS, {
+      output: recorded.serializedValue,
+      serialization: recorded.serialization,
+    });
+    ctrl.release.set();
+
+    await expect(handle.getResult()).resolves.toBe('recorded-after-cancel');
+  });
+
+  test('cancelled-run-still-reports-cancellation-for-a-cancelled-row', async () => {
+    const { handle, ctrl } = await startBlockedRun('selfCancellingWorkflow');
+    await rewriteRow(handle.workflowID, StatusString.CANCELLED);
+    ctrl.release.set();
+
+    await expect(handle.getResult()).rejects.toThrow(DBOSWorkflowCancelledError);
   });
 });
