@@ -45,6 +45,7 @@ import {
   DEBUG_TRIGGER_STEP_COMMIT,
   DEBUG_TRIGGER_INITWF_COMMIT,
   DEBUG_TRIGGER_FIND_AND_MARK_AFTER_SELECT,
+  DEBUG_TRIGGER_PARTITIONED_DEQUEUE_AFTER_CANDIDATES,
   debugTriggerPoint,
 } from './debugpoint';
 import { DBOSPortableJSON, DBOSSerializer, safeParse } from './serialization';
@@ -3211,6 +3212,148 @@ export class SystemDatabase {
 
     // Return the IDs of all functions we marked started
     return claimedIDs;
+  }
+
+  /**
+   * Max heads dequeued per partitioned sweep: bounds the work of a single poll.
+   * Leftover partitions rotate in on later polls via the PENDING gate.
+   */
+  partitionedDequeueSweepCap: number = 1024;
+
+  /**
+   * Dequeue every partition's head-of-line workflow in one transaction, at most
+   * {@link partitionedDequeueSweepCap} per sweep. Valid only for concurrency=1, no-limiter
+   * queues: all workers rank the same head, so guarded flips admit at most one row per partition.
+   */
+  async findAndMarkStartablePartitionedWorkflows(
+    queue: WorkflowQueue,
+    executorID: string,
+    appVersion: string,
+  ): Promise<string[]> {
+    if (queue.concurrency !== 1 || queue.rateLimit !== undefined) {
+      throw new DBOSError(
+        `Batched partitioned dequeue requires a queue with concurrency 1 and no rate limit: ${queue.name}`,
+      );
+    }
+    // workerConcurrency needs no handling here: dispatch routes 0 (the pause-dequeue idiom) to the fallback path, and validation caps any other value at concurrency=1, which the PENDING gate already enforces globally.
+    const startTimeMs = Date.now();
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const latestVersionResult = await client.query<{ version_name: string }>(
+        `SELECT version_name
+         FROM "${this.schemaName}".application_versions
+         ORDER BY version_timestamp DESC LIMIT 1`,
+      );
+      const latestVersion = latestVersionResult.rows[0]?.version_name;
+      const isLatestVersion = latestVersion === undefined || latestVersion === appVersion;
+      const versionClause = (n: number) =>
+        isLatestVersion
+          ? `(application_version = $${n} OR application_version IS NULL)`
+          : `application_version = $${n}`;
+
+      // Walk distinct partition keys with a recursive-CTE loose index scan (one seek per key, mirroring getQueuePartitions) so sweep cost scales with partition count, not backlog depth.
+      const candidateResult = await client.query<{ workflow_uuid: string }>(
+        `WITH RECURSIVE partitions AS (
+           (SELECT MIN(queue_partition_key) AS pk
+            FROM "${this.schemaName}".workflow_status
+            WHERE queue_name = $1 AND status = $2 AND queue_partition_key IS NOT NULL)
+           UNION ALL
+           (SELECT (SELECT MIN(queue_partition_key)
+                    FROM "${this.schemaName}".workflow_status
+                    WHERE queue_name = $1 AND status = $2 AND queue_partition_key > partitions.pk)
+            FROM partitions
+            WHERE partitions.pk IS NOT NULL)
+         )
+         SELECT head.workflow_uuid
+         FROM partitions
+         -- LATERAL plans as a tight nested loop; a correlated scalar subquery runs as a slower per-row SubPlan.
+         JOIN LATERAL (
+           SELECT workflow_uuid
+           FROM "${this.schemaName}".workflow_status
+           WHERE queue_name = $1 AND status = $2
+             AND queue_partition_key = partitions.pk
+             AND ${versionClause(3)}
+           -- workflow_uuid totalizes the head order (same head for every worker under created_at ties) and the index's trailing workflow_uuid keeps this a pure top-1 probe.
+           ORDER BY priority ASC, created_at ASC, workflow_uuid ASC
+           LIMIT 1
+         ) head ON TRUE
+         WHERE partitions.pk IS NOT NULL
+           -- Admit a partition's head only while nothing in that partition runs anywhere, on any app version.
+           AND NOT EXISTS (
+             SELECT 1
+             FROM "${this.schemaName}".workflow_status
+             WHERE queue_name = $1 AND status = $4
+               AND queue_partition_key IS NOT NULL AND queue_partition_key = partitions.pk
+           )
+         ORDER BY partitions.pk ASC
+         LIMIT $5`,
+        [queue.name, StatusString.ENQUEUED, appVersion, StatusString.PENDING, this.partitionedDequeueSweepCap],
+      );
+      const candidateIDs = candidateResult.rows.map((row) => row.workflow_uuid);
+      if (candidateIDs.length === 0) {
+        await client.query('COMMIT');
+        return [];
+      }
+      await debugTriggerPoint(DEBUG_TRIGGER_PARTITIONED_DEQUEUE_AFTER_CANDIDATES);
+
+      // Re-check queue/partition/version alongside status so a row resumeWorkflows moved to another queue mid-sweep is dropped, not hijacked.
+      const claimGuard = (ids: number, status: number, name: number, version: number) =>
+        `workflow_uuid = ANY($${ids}::text[])
+           AND status = $${status}
+           AND queue_name = $${name}
+           AND queue_partition_key IS NOT NULL
+           AND ${versionClause(version)}`;
+
+      // Lock the fixed candidate set — never a LIMIT query, whose SKIP LOCKED could slide past a locked head and admit out of order.
+      const lockedResult = await client.query<{ workflow_uuid: string }>(
+        `SELECT workflow_uuid
+         FROM "${this.schemaName}".workflow_status
+         WHERE ${claimGuard(1, 2, 3, 4)}
+         FOR UPDATE SKIP LOCKED`,
+        [candidateIDs, StatusString.ENQUEUED, queue.name, appVersion],
+      );
+      const lockedIDs = new Set(lockedResult.rows.map((row) => row.workflow_uuid));
+      // Preserve partition order for submission.
+      const claimIDs = candidateIDs.filter((id) => lockedIDs.has(id));
+      if (claimIDs.length === 0) {
+        await client.query('COMMIT');
+        return [];
+      }
+
+      // Start the workflows by marking them PENDING; RETURNING reports exactly the rows this statement flipped.
+      const flippedResult = await client.query<{ workflow_uuid: string }>(
+        `UPDATE "${this.schemaName}".workflow_status
+         SET status = $1,
+             executor_id = $2,
+             application_version = $6,
+             started_at_epoch_ms = $7,
+             rate_limited = FALSE,
+             workflow_deadline_epoch_ms = CASE
+               WHEN workflow_timeout_ms IS NOT NULL AND workflow_deadline_epoch_ms IS NULL
+               THEN (EXTRACT(epoch FROM now()) * 1000)::bigint + workflow_timeout_ms
+               ELSE workflow_deadline_epoch_ms
+             END
+         WHERE ${claimGuard(3, 4, 5, 6)}
+         RETURNING workflow_uuid`,
+        [StatusString.PENDING, executorID, claimIDs, StatusString.ENQUEUED, queue.name, appVersion, startTimeMs],
+      );
+
+      await client.query('COMMIT');
+
+      const flippedIDs = new Set(flippedResult.rows.map((row) => row.workflow_uuid));
+      const claimedIDs = claimIDs.filter((id) => flippedIDs.has(id));
+      if (claimedIDs.length > 0) {
+        this.logger.debug(`[${queue.name}] dequeueing ${claimedIDs.length} task(s)`);
+      }
+      return claimedIDs;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   // ==================== Queries & Maintenance ====================

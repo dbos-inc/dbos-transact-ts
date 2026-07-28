@@ -708,5 +708,19 @@ export function allMigrations(
         `CREATE INDEX ${c} IF NOT EXISTS "idx_workflow_status_partition_dequeue" ON "${schemaName}"."workflow_status" ("queue_name", "status", "queue_partition_key", "priority", "created_at") WHERE "status" IN ('ENQUEUED', 'PENDING') AND "queue_partition_key" IS NOT NULL`,
       ],
     },
+    // Recreated with a workflow_uuid tiebreaker column by the next migration.
+    {
+      name: '20250723_drop_workflow_status_partition_dequeue_index',
+      online: true,
+      pg: [`DROP INDEX ${c} IF EXISTS "${schemaName}"."idx_workflow_status_partition_dequeue"`],
+    },
+    // Trailing workflow_uuid totalizes the dequeue order (same head for every worker under ties) and keeps the tiebroken head probe index-provided.
+    {
+      name: '20250723_workflow_status_partition_dequeue_index_tiebreak',
+      online: true,
+      pg: [
+        `CREATE INDEX ${c} IF NOT EXISTS "idx_workflow_status_partition_dequeue" ON "${schemaName}"."workflow_status" ("queue_name", "status", "queue_partition_key", "priority", "created_at", "workflow_uuid") WHERE "status" IN ('ENQUEUED', 'PENDING') AND "queue_partition_key" IS NOT NULL`,
+      ],
+    },
   ];
 }

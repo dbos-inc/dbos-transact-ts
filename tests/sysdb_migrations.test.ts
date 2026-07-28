@@ -27,6 +27,14 @@ async function indexExists(client: Client, name: string): Promise<boolean> {
   return res.rows[0].exists;
 }
 
+async function indexDefinition(client: Client, name: string): Promise<string | undefined> {
+  const res = await client.query<{ indexdef: string }>(
+    `SELECT indexdef FROM pg_indexes WHERE schemaname = $1 AND indexname = $2`,
+    [TEST_SCHEMA, name],
+  );
+  return res.rows[0]?.indexdef;
+}
+
 describe('sysdb migration runner', () => {
   let client: Client;
 
@@ -67,6 +75,11 @@ describe('sysdb migration runner', () => {
     expect(await indexExists(client, 'idx_workflow_status_rate_limited')).toBe(true);
     expect(await indexExists(client, 'uq_workflow_status_dedup_id')).toBe(true);
     expect(await indexExists(client, 'idx_workflow_status_partition_dequeue')).toBe(true);
+    // The drop/recreate pair must leave the workflow_uuid tiebreaker in place, which is what makes
+    // the batched partitioned dequeue's head probe index-provided.
+    expect(await indexDefinition(client, 'idx_workflow_status_partition_dequeue')).toContain(
+      'priority, created_at, workflow_uuid',
+    );
 
     expect(await indexExists(client, 'workflow_status_status_index')).toBe(false);
     expect(await indexExists(client, 'workflow_status_executor_id_index')).toBe(false);

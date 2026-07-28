@@ -8,10 +8,11 @@ import {
   queueEntriesAreCleanedUp,
   recoverPendingWorkflows,
   reexecuteWorkflowById,
+  retryUntilSuccess,
   setWfAndChildrenToPending,
 } from './helpers';
 import { WorkflowQueue } from '../src';
-import { EnqueueOptions } from '../src/system_database';
+import { EnqueueOptions, SystemDatabase } from '../src/system_database';
 import { randomUUID } from 'node:crypto';
 import { globalParams, sleepms, INTERNAL_QUEUE_NAME } from '../src/utils';
 
@@ -36,6 +37,7 @@ import {
   DEBUG_TRIGGER_WORKFLOW_QUEUE_START,
   DEBUG_TRIGGER_BETWEEN_PARTITION_DISPATCHES,
   DEBUG_TRIGGER_FIND_AND_MARK_AFTER_SELECT,
+  DEBUG_TRIGGER_PARTITIONED_DEQUEUE_AFTER_CANDIDATES,
   // DEBUG_TRIGGER_WORKFLOW_ENQUEUE,
   setDebugTrigger,
 } from '../src/debugpoint';
@@ -2643,9 +2645,10 @@ describe('partitioned-queue-orphan-pending', () => {
 
   beforeEach(async () => {
     await DBOS.launch();
+    // concurrency=2 keeps this queue on the per-partition sweep loop; only concurrency=1 uses the batched path.
     await DBOS.registerQueue(STRESS_QUEUE_NAME, {
       partitionQueue: true,
-      concurrency: 1,
+      concurrency: 2,
       minPollingIntervalMs: 100,
       onConflict: 'always_update',
     });
@@ -3191,4 +3194,384 @@ describe('bounded-lane dispatcher', () => {
 
     expect(order).toEqual(['poll-finished', 'loop-resolved']);
   }, 15000);
+});
+
+/**
+ * The batched partitioned dequeue: with concurrency=1 and no limiter, one transaction claims every
+ * partition's head-of-line workflow. These tests drive the sweep by hand against unpolled queues
+ * (`listenQueues: []` dispatches nothing), so each sweep's exact result set is observable.
+ */
+describe('partitioned-batch-dequeue', () => {
+  let config: DBOSConfig;
+  let sysdb: SystemDatabase;
+
+  const batchWorkflow = DBOS.registerWorkflow(async (value: string) => Promise.resolve(value), {
+    name: 'partitionBatchWorkflow',
+  });
+
+  beforeAll(async () => {
+    config = generateDBOSTestConfig();
+    await setUpDBOSTestSysDb(config);
+  });
+
+  beforeEach(async () => {
+    DBOS.setConfig({ ...config, listenQueues: [] });
+    await DBOS.launch();
+    sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+  });
+
+  afterEach(async () => {
+    clearDebugTriggers();
+    await DBOS.shutdown();
+  });
+
+  function registerBatchQueue(name: string, options: QueueParameters = {}): Promise<WorkflowQueue> {
+    return DBOS.registerQueue(name, {
+      partitionQueue: true,
+      concurrency: 1,
+      onConflict: 'always_update',
+      ...options,
+    });
+  }
+
+  function sweep(queue: WorkflowQueue, executorID: string = 'local'): Promise<string[]> {
+    return sysdb.findAndMarkStartablePartitionedWorkflows(queue, executorID, globalParams.appVersion);
+  }
+
+  // Workflow IDs sort in enqueue order, so a created_at tie still ranks the rows as enqueued.
+  async function enqueuePartitionRows(
+    queueName: string,
+    prefix: string,
+    partitions: string[],
+    perPartition: number,
+  ): Promise<Record<string, string[]>> {
+    const ids: Record<string, string[]> = {};
+    for (const partition of partitions) {
+      ids[partition] = [];
+      for (let i = 0; i < perPartition; i++) {
+        const wfid = `${prefix}-${partition}-${i}`;
+        await DBOS.startWorkflow(batchWorkflow, {
+          workflowID: wfid,
+          queueName,
+          enqueueOptions: { queuePartitionKey: partition },
+        })(wfid);
+        ids[partition].push(wfid);
+      }
+    }
+    return ids;
+  }
+
+  function pinVersion(workflowID: string, version: string | null): Promise<unknown> {
+    return sysdb.pool.query(
+      `UPDATE "${sysdb.schemaName}".workflow_status SET application_version = $1 WHERE workflow_uuid = $2`,
+      [version, workflowID],
+    );
+  }
+
+  test('admits at most the sweep cap per call, rotating onward on the next sweep', async () => {
+    const queueName = `unpolled-sweep-${randomUUID()}`;
+    const queue = await registerBatchQueue(queueName);
+    const partitions = Array.from({ length: 8 }, (_, i) => `p${i}`);
+    const ids = await enqueuePartitionRows(queueName, 'sweep', partitions, 1);
+
+    const originalCap = sysdb.partitionedDequeueSweepCap;
+    sysdb.partitionedDequeueSweepCap = 5;
+    try {
+      // Heads are admitted in partition order; the admitted partitions are then PENDING-gated.
+      expect(await sweep(queue)).toEqual(partitions.slice(0, 5).map((p) => ids[p][0]));
+      expect(await sweep(queue)).toEqual(partitions.slice(5).map((p) => ids[p][0]));
+      expect(await sweep(queue)).toEqual([]);
+    } finally {
+      sysdb.partitionedDequeueSweepCap = originalCap;
+    }
+  });
+
+  test('claims each partition head and admits nothing more until that head finishes', async () => {
+    const queueName = `unpolled-excl-${randomUUID()}`;
+    const queue = await registerBatchQueue(queueName);
+    const partitions = ['p0', 'p1', 'p2'];
+    const ids = await enqueuePartitionRows(queueName, 'excl', partitions, 3);
+
+    // Heads only, one per partition
+    expect(await sweep(queue)).toEqual(partitions.map((p) => ids[p][0]));
+    // Every partition has a PENDING head, so nothing else is admitted
+    expect(await sweep(queue)).toEqual([]);
+    // Completing one partition's head opens that partition alone
+    await sysdb.setWorkflowStatus(ids['p1'][0], StatusString.SUCCESS, false);
+    expect(await sweep(queue)).toEqual([ids['p1'][1]]);
+  });
+
+  test('breaks (priority, created_at) ties by workflow_uuid', async () => {
+    const queueName = `unpolled-tie-${randomUUID()}`;
+    const queue = await registerBatchQueue(queueName);
+    const ids = await enqueuePartitionRows(queueName, 'tie', ['p0'], 3);
+    // Force an exact created_at tie across all three rows
+    await sysdb.pool.query(
+      `UPDATE "${sysdb.schemaName}".workflow_status SET created_at = $1 WHERE workflow_uuid = ANY($2)`,
+      [1234567890, ids['p0']],
+    );
+
+    // Ties resolve by workflow_uuid ascending: "...-0" < "...-1" < "...-2"
+    expect(await sweep(queue)).toEqual([ids['p0'][0]]);
+    await sysdb.setWorkflowStatus(ids['p0'][0], StatusString.SUCCESS, false);
+    expect(await sweep(queue)).toEqual([ids['p0'][1]]);
+  });
+
+  test('drops a candidate that is moved to another queue mid-sweep', async () => {
+    const queueName = `unpolled-requeue-${randomUUID()}`;
+    const queue = await registerBatchQueue(queueName);
+    const ids = await enqueuePartitionRows(queueName, 'requeue', ['p0'], 2);
+    const headID = ids['p0'][0];
+    const resumeTarget = `unpolled-resume-${randomUUID()}`;
+
+    // Fire between the candidate snapshot and the lock select, so the sweep still holds `headID` as its candidate but the claim guard no longer matches the row.
+    let moved = false;
+    setDebugTrigger(DEBUG_TRIGGER_PARTITIONED_DEQUEUE_AFTER_CANDIDATES, {
+      asyncCallback: async () => {
+        if (moved) return;
+        moved = true;
+        await sysdb.resumeWorkflows([headID], resumeTarget);
+      },
+    });
+
+    // The moved head was the sole candidate and must not have been claimed
+    expect(await sweep(queue)).toEqual([]);
+    expect(moved).toBe(true);
+    clearDebugTriggers();
+
+    const status = await sysdb.getWorkflowStatus(headID);
+    expect(status?.status).toBe(StatusString.ENQUEUED);
+    expect(status?.queueName).toBe(resumeTarget);
+
+    // The next sweep sees the remaining row as the partition's new head
+    expect(await sweep(queue)).toEqual([ids['p0'][1]]);
+  });
+
+  test('never co-admits into a partition when two workers sweep concurrently', async () => {
+    const queueName = `unpolled-race-${randomUUID()}`;
+    const queue = await registerBatchQueue(queueName);
+    const partitions = ['p0', 'p1', 'p2', 'p3'];
+    const ids = await enqueuePartitionRows(queueName, 'race', partitions, 2);
+
+    const admitted = (await Promise.all([sweep(queue, 'executor-0'), sweep(queue, 'executor-1')])).flat();
+
+    // Whichever racer wins each head, every head is claimed exactly once and no follower is
+    expect(admitted.sort()).toEqual(partitions.map((p) => ids[p][0]).sort());
+    const { rows } = await sysdb.pool.query<{ queue_partition_key: string; count: string }>(
+      `SELECT queue_partition_key, COUNT(*) AS count
+       FROM "${sysdb.schemaName}".workflow_status
+       WHERE queue_name = $1 AND status = $2
+       GROUP BY queue_partition_key`,
+      [queueName, StatusString.PENDING],
+    );
+    // The returned IDs match the rows actually flipped: one PENDING per partition
+    expect(Object.fromEntries(rows.map((row) => [row.queue_partition_key, Number(row.count)]))).toEqual({
+      p0: 1,
+      p1: 1,
+      p2: 1,
+      p3: 1,
+    });
+  });
+
+  test('dequeues only rows eligible for this worker app version', async () => {
+    const queueName = `unpolled-ver-${randomUUID()}`;
+    const queue = await registerBatchQueue(queueName);
+    const ids = await enqueuePartitionRows(queueName, 'ver', ['p0', 'p1'], 3);
+    const newerVersion = `newer-than-this-worker-${randomUUID()}`;
+
+    await pinVersion(ids['p0'][0], 'some-other-version');
+    await pinVersion(ids['p0'][1], globalParams.appVersion);
+    await pinVersion(ids['p0'][2], null);
+    // p1 is entirely ineligible: its head probe yields nothing, so the partition never appears below.
+    for (const wfid of ids['p1']) {
+      await pinVersion(wfid, 'some-other-version');
+    }
+
+    try {
+      // The other-version row is invisible, so the head is row 1; version-less row 2 follows once it completes (this worker is latest).
+      expect(await sweep(queue)).toEqual([ids['p0'][1]]);
+      await sysdb.setWorkflowStatus(ids['p0'][1], StatusString.SUCCESS, false);
+      expect(await sweep(queue)).toEqual([ids['p0'][2]]);
+
+      // Registering a newer version demotes this worker: version-less rows now belong to the newer one.
+      await sysdb.setWorkflowStatus(ids['p0'][2], StatusString.ENQUEUED, false);
+      await pinVersion(ids['p0'][2], null); // dequeueing it above stamped this worker's version on
+      await sysdb.createApplicationVersion(newerVersion);
+      await sysdb.updateApplicationVersionTimestamp(newerVersion, Date.now() + 3_600_000);
+      expect(await sweep(queue)).toEqual([]);
+    } finally {
+      await sysdb.pool.query(`DELETE FROM "${sysdb.schemaName}".application_versions WHERE version_name = $1`, [
+        newerVersion,
+      ]);
+    }
+  });
+});
+
+/**
+ * Dispatch-level behavior of the batched partitioned path: which queue configurations reach it,
+ * and the end-to-end guarantee it provides.
+ */
+describe('partitioned-batch-dequeue-dispatch', () => {
+  let config: DBOSConfig;
+
+  const routedWorkflow = DBOS.registerWorkflow(async (tag: string) => Promise.resolve(tag), {
+    name: 'partitionRoutedWorkflow',
+  });
+
+  const exclusiveOrderLock: string[] = [];
+  const exclusiveBlockingEvent = new Event();
+  const exclusiveWaitingEvent = new Event();
+  const exclusiveHeadWorkflow = DBOS.registerWorkflow(
+    async () => {
+      exclusiveOrderLock.push('head');
+      exclusiveWaitingEvent.set();
+      await exclusiveBlockingEvent.wait();
+      return DBOS.workflowID!;
+    },
+    { name: 'partitionExclusiveHeadWorkflow' },
+  );
+  const exclusiveTaggedWorkflow = DBOS.registerWorkflow(
+    async (tag: string) => {
+      exclusiveOrderLock.push(tag);
+      return Promise.resolve(tag);
+    },
+    { name: 'partitionExclusiveTaggedWorkflow' },
+  );
+
+  beforeAll(async () => {
+    config = generateDBOSTestConfig();
+    await setUpDBOSTestSysDb(config);
+  });
+
+  beforeEach(async () => {
+    DBOS.setConfig(config);
+    await DBOS.launch();
+  });
+
+  afterEach(async () => {
+    exclusiveBlockingEvent.set();
+    await DBOS.shutdown();
+    jest.restoreAllMocks();
+  });
+
+  // Both are concurrency=1 partitioned queues, so only the limiter / the pause excludes them.
+  test('routes unsupported partitioned configurations to the per-partition sweep', async () => {
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    const batchedQueues: string[] = [];
+    const sweptQueues: string[] = [];
+    const realBatched = sysdb.findAndMarkStartablePartitionedWorkflows.bind(sysdb);
+    const realSingle = sysdb.findAndMarkStartableWorkflows.bind(sysdb);
+    jest.spyOn(sysdb, 'findAndMarkStartablePartitionedWorkflows').mockImplementation((queue, ...rest) => {
+      batchedQueues.push(queue.name);
+      return realBatched(queue, ...rest);
+    });
+    jest.spyOn(sysdb, 'findAndMarkStartableWorkflows').mockImplementation((queue, ...rest) => {
+      sweptQueues.push(queue.name);
+      return realSingle(queue, ...rest);
+    });
+
+    const limiterQueueName = `limiter_fallback_${randomUUID()}`;
+    const pausedQueueName = `paused_fallback_${randomUUID()}`;
+    await DBOS.registerQueue(limiterQueueName, {
+      partitionQueue: true,
+      concurrency: 1,
+      rateLimit: { limitPerPeriod: 10, periodSec: 60 },
+      minPollingIntervalMs: 100,
+      onConflict: 'always_update',
+    });
+    await DBOS.registerQueue(pausedQueueName, {
+      partitionQueue: true,
+      concurrency: 1,
+      workerConcurrency: 0,
+      minPollingIntervalMs: 100,
+      onConflict: 'always_update',
+    });
+
+    const handles = [];
+    for (const partition of ['p0', 'p1']) {
+      handles.push(
+        await DBOS.startWorkflow(routedWorkflow, {
+          queueName: limiterQueueName,
+          enqueueOptions: { queuePartitionKey: partition },
+        })(`limited-${partition}`),
+      );
+    }
+    const pausedHandle = await DBOS.startWorkflow(routedWorkflow, {
+      queueName: pausedQueueName,
+      enqueueOptions: { queuePartitionKey: 'p0' },
+    })('paused');
+
+    // The limiter queue drains through the sweep; the paused queue is swept but admits nothing.
+    for (const handle of handles) {
+      expect(await handle.getResult()).toBeTruthy();
+    }
+    await retryUntilSuccess(() => {
+      expect(sweptQueues).toContain(pausedQueueName);
+    });
+    expect(batchedQueues).not.toContain(limiterQueueName);
+    expect(batchedQueues).not.toContain(pausedQueueName);
+    expect((await pausedHandle.getStatus())?.status).toBe(StatusString.ENQUEUED);
+
+    // The paused workflow never runs, so retire it rather than leave it queued for later tests.
+    await DBOS.cancelWorkflow(pausedHandle.workflowID);
+  }, 30000);
+
+  // Every other batched-path test calls the sweep directly, so this is what pins the dispatch itself.
+  test('runs one workflow at a time per partition, in FIFO order', async () => {
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    const batchedQueues: string[] = [];
+    const realBatched = sysdb.findAndMarkStartablePartitionedWorkflows.bind(sysdb);
+    jest.spyOn(sysdb, 'findAndMarkStartablePartitionedWorkflows').mockImplementation((queue, ...rest) => {
+      batchedQueues.push(queue.name);
+      return realBatched(queue, ...rest);
+    });
+
+    exclusiveOrderLock.length = 0;
+    exclusiveBlockingEvent.clear();
+    exclusiveWaitingEvent.clear();
+
+    const queueName = `exclusive_${randomUUID()}`;
+    await DBOS.registerQueue(queueName, {
+      partitionQueue: true,
+      concurrency: 1,
+      minPollingIntervalMs: 100,
+      onConflict: 'always_update',
+    });
+
+    // Sortable workflow IDs so a created_at tie still ranks partition a as head, a1, a2.
+    const prefix = randomUUID();
+    const headHandle = await DBOS.startWorkflow(exclusiveHeadWorkflow, {
+      workflowID: `${prefix}-0`,
+      queueName,
+      enqueueOptions: { queuePartitionKey: 'a' },
+    })();
+    const follower1 = await DBOS.startWorkflow(exclusiveTaggedWorkflow, {
+      workflowID: `${prefix}-1`,
+      queueName,
+      enqueueOptions: { queuePartitionKey: 'a' },
+    })('a1');
+    const follower2 = await DBOS.startWorkflow(exclusiveTaggedWorkflow, {
+      workflowID: `${prefix}-2`,
+      queueName,
+      enqueueOptions: { queuePartitionKey: 'a' },
+    })('a2');
+    const otherHandle = await DBOS.startWorkflow(exclusiveTaggedWorkflow, {
+      queueName,
+      enqueueOptions: { queuePartitionKey: 'b' },
+    })('b1');
+
+    await exclusiveWaitingEvent.wait();
+    // Partition b drains while a's head blocks; its completion proves a full sweep ran, making the follower assertions meaningful.
+    expect(await otherHandle.getResult()).toBe('b1');
+    expect((await follower1.getStatus())?.status).toBe(StatusString.ENQUEUED);
+    expect((await follower2.getStatus())?.status).toBe(StatusString.ENQUEUED);
+
+    exclusiveBlockingEvent.set();
+    expect(await headHandle.getResult()).toBeTruthy();
+    expect(await follower1.getResult()).toBe('a1');
+    expect(await follower2.getResult()).toBe('a2');
+    expect(exclusiveOrderLock.filter((tag) => tag !== 'b1')).toEqual(['head', 'a1', 'a2']);
+    expect(batchedQueues).toContain(queueName);
+    expect(await queueEntriesAreCleanedUp()).toBe(true);
+  }, 30000);
 });
