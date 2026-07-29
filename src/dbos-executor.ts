@@ -742,13 +742,17 @@ export class DBOSExecutor {
     async function handleWorkflowError(err: Error, exec: DBOSExecutor): Promise<{ recorded: boolean; error: Error }> {
       // Record the error.
       const e = err as Error & { dbos_already_logged?: boolean };
-      exec.logger.error(e);
-      e.dbos_already_logged = true;
       const sererr = await serializeResErrorWithSerializer(e, eserializer, ires.serialization ?? null);
       internalStatus.error = sererr.serializedValue;
       internalStatus.status = StatusString.ERROR;
       releaseRunningWorkflow();
       const recorded = await exec.systemDatabase.recordWorkflowError(workflowID, internalStatus);
+      if (recorded) {
+        exec.logger.error(e);
+        e.dbos_already_logged = true;
+      } else {
+        exec.logger.debug(e);
+      }
       span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
       return {
         recorded,
@@ -797,7 +801,7 @@ export class DBOSExecutor {
     const notRecordedWarning = `Workflow ${workflowID} outcome was not recorded: the workflow is no longer owned by this execution. Waiting for the recorded outcome`;
 
     const runWorkflow = async () => {
-      let result!: R;
+      let result: R;
       // Set when the SUCCESS write is refused: the park runs after the
       // try/catch below, so an error rethrown while adopting the recorded
       // outcome propagates to the handle instead of re-entering the workflow
@@ -858,6 +862,7 @@ export class DBOSExecutor {
         } else if (err instanceof DBOSWorkflowCancelledError) {
           if (err.workflowID === workflowID) {
             // The run observed its own cancellation. Park the execution.
+            // Of course this relies on the user not abusing DBOSWorkflowCancelledError to not hang.
             releaseRunningWorkflow();
             result = await adoptRecordedOutcome(
               `Workflow ${workflowID} was cancelled during execution. Waiting for the recorded outcome`,
