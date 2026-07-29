@@ -649,10 +649,23 @@ class WFQueueRunner {
         }
       }
     };
-    // Dequeue workflows for this queue. If the queue is partitioned, successively dequeue and start
-    // workflows from each active partition.
+    // Dequeue workflows for this queue, either in one batched sweep across partitions or one partition at a time.
     try {
-      if (queue.partitionQueue) {
+      if (
+        queue.partitionQueue &&
+        queue.concurrency === 1 &&
+        queue.rateLimit === undefined &&
+        queue.workerConcurrency !== 0
+      ) {
+        // Batched path: one transaction claims every partition's head (valid only for concurrency=1, see findAndMarkStartablePartitionedWorkflows).
+        const wfids = await exec.systemDatabase.findAndMarkStartablePartitionedWorkflows(
+          queue,
+          exec.executorID,
+          globalParams.appVersion,
+        );
+        await dispatch(wfids);
+      } else if (queue.partitionQueue) {
+        // Every other partitioned config sweeps one partition at a time.
         const partitionKeys = await exec.systemDatabase.getQueuePartitions(queue.name);
         for (const partitionKey of partitionKeys) {
           const partitionWfids = await exec.systemDatabase.findAndMarkStartableWorkflows(

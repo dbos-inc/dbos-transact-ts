@@ -77,3 +77,5 @@ export const DEBUG_TRIGGER_BETWEEN_PARTITION_DISPATCHES = 'DEBUG_TRIGGER_BETWEEN
 // synthetic 55P03 here to simulate a concurrent executor winning the lock race,
 // which is the exact condition that triggers the orphan-PENDING bug.
 export const DEBUG_TRIGGER_FIND_AND_MARK_AFTER_SELECT = 'DEBUG_TRIGGER_FIND_AND_MARK_AFTER_SELECT';
+// Fires inside findAndMarkStartablePartitionedWorkflows between the candidate-head snapshot and the lock select, where a test can move a candidate to another queue to exercise the claim guard.
+export const DEBUG_TRIGGER_PARTITIONED_DEQUEUE_AFTER_CANDIDATES = 'DEBUG_TRIGGER_PARTITIONED_DEQUEUE_AFTER_CANDIDATES';
