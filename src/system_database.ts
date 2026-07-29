@@ -3836,8 +3836,9 @@ export class SystemDatabase {
     });
   }
 
-  async garbageCollect(cutoffEpochTimestampMs?: number, rowsThreshold?: number): Promise<void> {
-    if (rowsThreshold !== undefined) {
+  // Conductor sends cleared retention thresholds as JSON null, so both params must be treated as nullish
+  async garbageCollect(cutoffEpochTimestampMs?: number | null, rowsThreshold?: number | null): Promise<void> {
+    if (rowsThreshold !== undefined && rowsThreshold !== null) {
       // Get the created_at timestamp of the rows_threshold newest row
       const result = await this.pool.query<{ created_at: number }>(
         `SELECT created_at
@@ -3850,13 +3851,17 @@ export class SystemDatabase {
       if (result.rows.length > 0) {
         const rowsBasedCutoff = result.rows[0].created_at;
         // Use the more restrictive cutoff (higher timestamp = more recent = more deletion)
-        if (cutoffEpochTimestampMs === undefined || rowsBasedCutoff > cutoffEpochTimestampMs) {
+        if (
+          cutoffEpochTimestampMs === undefined ||
+          cutoffEpochTimestampMs === null ||
+          rowsBasedCutoff > cutoffEpochTimestampMs
+        ) {
           cutoffEpochTimestampMs = rowsBasedCutoff;
         }
       }
     }
 
-    if (cutoffEpochTimestampMs === undefined) {
+    if (cutoffEpochTimestampMs === undefined || cutoffEpochTimestampMs === null) {
       return;
     }
 
