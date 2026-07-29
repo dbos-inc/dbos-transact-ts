@@ -797,7 +797,13 @@ export class DBOSExecutor {
     const notRecordedWarning = `Workflow ${workflowID} outcome was not recorded: the workflow is no longer owned by this execution. Waiting for the recorded outcome`;
 
     const runWorkflow = async () => {
-      let result: R;
+      let result!: R;
+      // Set when the SUCCESS write is refused: the park runs after the
+      // try/catch below, so an error rethrown while adopting the recorded
+      // outcome propagates to the handle instead of re-entering the workflow
+      // error-handling path (which would attempt a second, doomed outcome
+      // write and park again).
+      let adoptOutcomeOfRefusedSuccess = false;
 
       // Execute the workflow.
       try {
@@ -839,9 +845,10 @@ export class DBOSExecutor {
         releaseRunningWorkflow();
         const recorded = await this.systemDatabase.recordWorkflowOutput(workflowID, internalStatus);
         if (!recorded) {
-          result = await adoptRecordedOutcome(notRecordedWarning);
+          adoptOutcomeOfRefusedSuccess = true;
+        } else {
+          span.setStatus({ code: SpanStatusCode.OK });
         }
-        span.setStatus({ code: SpanStatusCode.OK });
       } catch (err) {
         if (err instanceof DBOSWorkflowConflictError) {
           // Another execution owns this workflow's step checkpoints. Release
@@ -878,7 +885,18 @@ export class DBOSExecutor {
           }
         }
       } finally {
-        this.tracer.endSpan(span);
+        // The refused-success park below still needs the span (it stamps the
+        // adopted outcome on it), so it ends the span itself.
+        if (!adoptOutcomeOfRefusedSuccess) {
+          this.tracer.endSpan(span);
+        }
+      }
+      if (adoptOutcomeOfRefusedSuccess) {
+        try {
+          result = await adoptRecordedOutcome(notRecordedWarning);
+        } finally {
+          this.tracer.endSpan(span);
+        }
       }
       return result;
     };
