@@ -763,9 +763,19 @@ export class DBOSExecutor {
     // final status overrides anything a caller stamped before parking.
     const adoptRecordedOutcome = async (warning: string): Promise<R> => {
       this.logger.warn(warning);
-      const recordedResult = (await this.systemDatabase.awaitWorkflowResult(workflowID))!;
-      span.setAttribute('cached', true);
       try {
+        // The workflow's row is known to have existed (this run was dispatched
+        // from it), so fail fast if it is missing: a missing row means it was
+        // deleted, not that it has yet to be inserted.
+        const recordedResult = (await this.systemDatabase.awaitWorkflowResult(
+          workflowID,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          /* failIfMissing */ true,
+        ))!;
+        span.setAttribute('cached', true);
         if (recordedResult.cancelled) {
           // awaitWorkflowResult reports a CANCELLED row from an awaiter's point
           // of view, but this outcome is delivered to the workflow's own handle:

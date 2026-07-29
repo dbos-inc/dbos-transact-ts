@@ -1107,9 +1107,9 @@ export class SystemDatabase {
   // both executions should be deterministic and idempotent.)
   //
   // Returning false means the row was CANCELLED, dead-lettered, already
-  // terminal, or handed to another execution (ENQUEUED/DELAYED, e.g. by a
-  // concurrent resume). If the row does not exist at all, a
-  // DBOSNonExistentWorkflowError is thrown.
+  // terminal, handed to another execution (ENQUEUED/DELAYED, e.g. by a
+  // concurrent resume), or deleted; the caller resolves which by awaiting the
+  // recorded outcome.
   async #recordWorkflowOutcome(
     client: PoolClient,
     workflowID: string,
@@ -1121,16 +1121,7 @@ export class SystemDatabase {
       where: { status: StatusString.PENDING },
       throwOnFailure: false,
     });
-    if (rowCount > 0) {
-      return true;
-    }
-    // The guarded UPDATE matched no rows. Re-read (only on this rare no-op path)
-    // to distinguish a row this run no longer owns from a row that is gone.
-    const currentStatus = await this.getWorkflowStatusValue(client, workflowID);
-    if (currentStatus === undefined) {
-      throw new DBOSNonExistentWorkflowError(`Workflow ${workflowID} does not exist`);
-    }
-    return false;
+    return rowCount > 0;
   }
 
   async getPendingWorkflows(executorID: string, appVersion: string): Promise<GetPendingWorkflowsOutput[]> {
@@ -2151,12 +2142,18 @@ export class SystemDatabase {
   }
 
   @dbRetry()
+  // A missing row normally means the workflow has not been inserted yet, so
+  // polling for it is correct. Callers that know the row must already exist
+  // (e.g. a run parking on an outcome it just failed to write) pass
+  // `failIfMissing` to fail fast with DBOSNonExistentWorkflowError instead of
+  // polling forever.
   async awaitWorkflowResult(
     workflowID: string,
     timeoutSeconds?: number,
     callerID?: string,
     timerFuncID?: number,
     pollingIntervalMs?: number,
+    failIfMissing?: boolean,
   ): Promise<SystemDatabaseStoredResult | undefined> {
     const timeoutms = timeoutSeconds !== undefined ? timeoutSeconds * 1000 : undefined;
     let finishTime = timeoutms !== undefined ? Date.now() + timeoutms : undefined;
@@ -2170,32 +2167,35 @@ export class SystemDatabase {
 
     while (true) {
       if (callerID) await this.#checkIfCanceledLimited(callerID);
+      let rows: workflow_status[];
       try {
-        const { rows } = await this.#pollWithLimiter(() =>
+        ({ rows } = await this.#pollWithLimiter(() =>
           this.pool.query<workflow_status>(
             `SELECT status, output, error, serialization FROM "${this.schemaName}".workflow_status
              WHERE workflow_uuid=$1`,
             [workflowID],
           ),
-        );
-        if (rows.length > 0) {
-          const status = rows[0].status;
-          if (status === StatusString.SUCCESS) {
-            return { output: rows[0].output, serialization: rows[0].serialization };
-          } else if (status === StatusString.ERROR) {
-            return { error: rows[0].error, serialization: rows[0].serialization };
-          } else if (status === StatusString.CANCELLED) {
-            return { cancelled: true };
-          } else if (status === StatusString.MAX_RECOVERY_ATTEMPTS_EXCEEDED) {
-            return { maxRecoveryAttemptsExceeded: true };
-          } else {
-            // Status is not actionable
-          }
-        }
+        ));
       } catch (e) {
         const err = e as Error;
         this.logger.error(`Exception from system database: ${err}`, err);
         throw err;
+      }
+      if (rows.length > 0) {
+        const status = rows[0].status;
+        if (status === StatusString.SUCCESS) {
+          return { output: rows[0].output, serialization: rows[0].serialization };
+        } else if (status === StatusString.ERROR) {
+          return { error: rows[0].error, serialization: rows[0].serialization };
+        } else if (status === StatusString.CANCELLED) {
+          return { cancelled: true };
+        } else if (status === StatusString.MAX_RECOVERY_ATTEMPTS_EXCEEDED) {
+          return { maxRecoveryAttemptsExceeded: true };
+        } else {
+          // Status is not actionable
+        }
+      } else if (failIfMissing) {
+        throw new DBOSNonExistentWorkflowError(`Workflow ${workflowID} does not exist`);
       }
 
       const ct = Date.now();
