@@ -7,6 +7,7 @@ import { context, SpanStatusCode, trace } from '@opentelemetry/api';
 import { DBOS, StatusString } from '../src';
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import {
+  DBOSAwaitedWorkflowCancelledError,
   DBOSMaxRecoveryAttemptsExceededError,
   DBOSNonExistentWorkflowError,
   DBOSWorkflowCancelledError,
@@ -18,15 +19,25 @@ import { NodeTracerProvider } from './nodetraceprovider';
 
 // Each run blocks until the test has rewritten its row, then returns a
 // result the test can tell apart from anything recorded out-of-band.
-const controls = new Map<string, { started: Event; release: Event }>();
+// `workflowID`/`stepID` are published by the run itself, for the cases where
+// the test has to address a workflow (or a step checkpoint) whose identity it
+// does not choose.
+type Control = { started: Event; release: Event; workflowID?: string; stepID?: number };
+const controls = new Map<string, Control>();
+
+function control(id: string): Control {
+  const ctrl = controls.get(id);
+  if (!ctrl) {
+    throw new Error(`no control registered for workflow ${id}`);
+  }
+  return ctrl;
+}
 
 class OutcomeOwnership {
   @DBOS.workflow()
   static async blockedWorkflow(id: string): Promise<string> {
-    const ctrl = controls.get(id);
-    if (!ctrl) {
-      throw new Error(`no control registered for workflow ${id}`);
-    }
+    const ctrl = control(id);
+    ctrl.workflowID = DBOS.workflowID;
     ctrl.started.set();
     await ctrl.release.wait();
     return 'own-result';
@@ -36,21 +47,60 @@ class OutcomeOwnership {
   // cancellation is thrown only after the test has rewritten the row.
   @DBOS.workflow()
   static async selfCancellingWorkflow(id: string): Promise<string> {
-    const ctrl = controls.get(id);
-    if (!ctrl) {
-      throw new Error(`no control registered for workflow ${id}`);
-    }
+    const ctrl = control(id);
+    ctrl.workflowID = DBOS.workflowID;
     ctrl.started.set();
     await ctrl.release.wait();
     throw new DBOSWorkflowCancelledError(id);
   }
+
+  // A run that fails on its own terms: it computes an error, not a result.
+  @DBOS.workflow()
+  static async throwingWorkflow(id: string): Promise<string> {
+    const ctrl = control(id);
+    ctrl.workflowID = DBOS.workflowID;
+    ctrl.started.set();
+    await ctrl.release.wait();
+    throw new Error('own failure');
+  }
+
+  // Blocks inside a step, after the step's function ID is knowable but before
+  // its checkpoint is written, so the test can plant a conflicting checkpoint.
+  @DBOS.workflow()
+  static async blockedStepWorkflow(id: string): Promise<string> {
+    const ctrl = control(id);
+    ctrl.workflowID = DBOS.workflowID;
+    return await DBOS.runStep(
+      async () => {
+        ctrl.stepID = DBOS.stepID;
+        ctrl.started.set();
+        await ctrl.release.wait();
+        return 'own-result';
+      },
+      { name: 'blockedStep' },
+    );
+  }
+
+  // Awaits a child workflow directly, so the child's own cancellation error
+  // propagates into this run unwrapped.
+  @DBOS.workflow()
+  static async parentOfBlockedWorkflow(id: string): Promise<string> {
+    return await OutcomeOwnership.blockedWorkflow(id);
+  }
 }
+
+type BlockingWorkflow =
+  | 'blockedWorkflow'
+  | 'selfCancellingWorkflow'
+  | 'throwingWorkflow'
+  | 'blockedStepWorkflow'
+  | 'parentOfBlockedWorkflow';
 
 // Start a run and return once it is blocked inside the workflow function,
 // with its row PENDING.
-async function startBlockedRun(workflow: 'blockedWorkflow' | 'selfCancellingWorkflow' = 'blockedWorkflow') {
+async function startBlockedRun(workflow: BlockingWorkflow = 'blockedWorkflow') {
   const id = `outcome-ownership-${randomUUID()}`;
-  const ctrl = { started: new Event(), release: new Event() };
+  const ctrl: Control = { started: new Event(), release: new Event() };
   controls.set(id, ctrl);
   const handle = await DBOS.startWorkflow(OutcomeOwnership, { workflowID: id })[workflow](id);
   await ctrl.started.wait();
@@ -78,6 +128,19 @@ async function rewriteRowWith(
      SET status=$1, output=$2, error=$3, serialization=COALESCE($4, serialization)
      WHERE workflow_uuid=$5`,
     [status, fields.output ?? null, fields.error ?? null, fields.serialization ?? null, workflowID],
+  );
+}
+
+// Plant the checkpoint the blocked step is about to write, with a different
+// completion time so the step's own write is refused as a conflict. Stands in
+// for the concurrent execution that would have written it in production.
+async function plantConflictingCheckpoint(client: Client, workflowID: string, stepID: number | undefined) {
+  expect(stepID).toBeDefined();
+  await client.query(
+    `INSERT INTO dbos.operation_outputs
+       (workflow_uuid, function_id, function_name, started_at_epoch_ms, completed_at_epoch_ms)
+     VALUES ($1, $2, 'blockedStep', 1, 1)`,
+    [workflowID, stepID],
   );
 }
 
@@ -239,6 +302,127 @@ describe('workflow-outcome-ownership', () => {
 
     await expect(handle.getResult()).rejects.toThrow(DBOSWorkflowCancelledError);
   });
+
+  test('failed-run-adopts-the-recorded-outcome-instead-of-its-own-error', async () => {
+    // The ownership rule applies to a run that fails as much as to one that
+    // succeeds: a run whose error write is refused must deliver the recorded
+    // outcome, not the error it computed locally.
+    const { handle, ctrl } = await startBlockedRun('throwingWorkflow');
+    const recorded = await encodeOutput('recorded-elsewhere');
+    await rewriteRow(handle.workflowID, StatusString.SUCCESS, {
+      output: recorded.serializedValue,
+      serialization: recorded.serialization,
+    });
+    ctrl.release.set();
+
+    // The run's own failure must not surface, and must not be recorded.
+    await expect(handle.getResult()).resolves.toBe('recorded-elsewhere');
+    const { rows } = await systemDBClient.query<{ status: string; output: string; error: string | null }>(
+      `SELECT status, output, error FROM dbos.workflow_status WHERE workflow_uuid=$1`,
+      [handle.workflowID],
+    );
+    expect(rows[0].status).toBe(StatusString.SUCCESS);
+    expect(rows[0].output).toBe(recorded.serializedValue);
+    expect(rows[0].error).toBeNull();
+  });
+
+  test('duplicate-execution-releases-the-running-entry-before-parking', async () => {
+    // A conflicting step checkpoint means another execution owns this
+    // workflow's progress. The run must release its running-workflow entry
+    // before parking, so a resume re-dispatched to this executor is not
+    // blocked by the parked run, and then adopt the recorded outcome.
+    const { handle, ctrl } = await startBlockedRun('blockedStepWorkflow');
+    await plantConflictingCheckpoint(systemDBClient, handle.workflowID, ctrl.stepID);
+    // ENQUEUED with no queue name: nothing dequeues it, so the run stays
+    // parked until this test records the outcome itself.
+    await rewriteRow(handle.workflowID, StatusString.ENQUEUED);
+    ctrl.release.set();
+
+    const resultPromise: Promise<{ result?: string; error?: Error }> = handle.getResult().then(
+      (result) => ({ result }),
+      (error: Error) => ({ error }),
+    );
+
+    // The parked run must not hold the running-workflow entry.
+    await retryUntilSuccess(() => {
+      expect(DBOSExecutor.globalInstance!.systemDatabase.checkForRunningWorkflow(handle.workflowID)).toBe(false);
+    }, 30000);
+    const parked = await Promise.race([resultPromise.then(() => false), sleepms(2000).then(() => true)]);
+    expect(parked).toBe(true);
+
+    const recorded = await encodeOutput('recorded-by-owner');
+    await rewriteRow(handle.workflowID, StatusString.SUCCESS, {
+      output: recorded.serializedValue,
+      serialization: recorded.serialization,
+    });
+    await expect(resultPromise).resolves.toEqual({ result: 'recorded-by-owner' });
+  }, 60000);
+
+  test('awaited-cancellation-adopts-the-recorded-outcome', async () => {
+    // The parent fails because its child was cancelled, but its row was taken
+    // away while it waited: the recorded outcome wins over the awaited-
+    // cancellation error the parent computed.
+    const { handle, ctrl } = await startBlockedRun('parentOfBlockedWorkflow');
+    const childID = ctrl.workflowID!;
+    expect(childID).not.toBe(handle.workflowID);
+
+    const recorded = await encodeOutput('recorded-elsewhere');
+    await rewriteRow(handle.workflowID, StatusString.SUCCESS, {
+      output: recorded.serializedValue,
+      serialization: recorded.serialization,
+    });
+    // Cancel only the child: the parent's outcome comes from its rewritten row.
+    await DBOS.cancelWorkflow(childID);
+    ctrl.release.set();
+
+    await expect(handle.getResult()).resolves.toBe('recorded-elsewhere');
+    const { rows } = await systemDBClient.query<{ status: string; error: string | null }>(
+      `SELECT status, error FROM dbos.workflow_status WHERE workflow_uuid=$1`,
+      [handle.workflowID],
+    );
+    expect(rows[0].status).toBe(StatusString.SUCCESS);
+    expect(rows[0].error).toBeNull();
+  });
+
+  test('failed-run-fails-fast-when-its-row-is-deleted', async () => {
+    // Same fail-fast as the success path, reached through the error path: the
+    // refused error write leaves the run parking on a row it knows existed, so
+    // a missing row must not be read as "not inserted yet" and polled forever.
+    const { handle, ctrl } = await startBlockedRun('throwingWorkflow');
+    await systemDBClient.query(`DELETE FROM dbos.workflow_status WHERE workflow_uuid=$1`, [handle.workflowID]);
+    ctrl.release.set();
+
+    await expect(handle.getResult()).rejects.toThrow(DBOSNonExistentWorkflowError);
+  });
+
+  test('duplicate-execution-reports-the-workflows-own-cancellation', async () => {
+    // The duplicate-execution outcome is delivered to the workflow's own
+    // handle, so a CANCELLED row must surface as the workflow's cancellation —
+    // not as DBOSAwaitedWorkflowCancelledError, which is what an awaiter of
+    // some other workflow would see.
+    const { handle, ctrl } = await startBlockedRun('blockedStepWorkflow');
+    await plantConflictingCheckpoint(systemDBClient, handle.workflowID, ctrl.stepID);
+    await rewriteRow(handle.workflowID, StatusString.CANCELLED);
+    ctrl.release.set();
+
+    const error = await handle.getResult().then(
+      () => undefined,
+      (e: Error) => e,
+    );
+    expect(error).toBeInstanceOf(DBOSWorkflowCancelledError);
+    expect(error).not.toBeInstanceOf(DBOSAwaitedWorkflowCancelledError);
+  });
+
+  test('duplicate-execution-reports-the-dead-letter-error', async () => {
+    // Same perspective for a dead-lettered row: the duplicate execution must
+    // report the dead-letter error rather than a completion.
+    const { handle, ctrl } = await startBlockedRun('blockedStepWorkflow');
+    await plantConflictingCheckpoint(systemDBClient, handle.workflowID, ctrl.stepID);
+    await rewriteRow(handle.workflowID, StatusString.MAX_RECOVERY_ATTEMPTS_EXCEEDED);
+    ctrl.release.set();
+
+    await expect(handle.getResult()).rejects.toThrow(DBOSMaxRecoveryAttemptsExceededError);
+  });
 });
 
 // The workflow span reflects the adopted outcome: `cached` marks a result
@@ -250,13 +434,15 @@ describe('workflow-outcome-ownership-spans', () => {
   let systemDBClient: Client;
   const memoryExporter = new InMemorySpanExporter();
 
-  beforeAll(async () => {
+  beforeAll(() => {
     const provider = new NodeTracerProvider({
       spanProcessors: [new SimpleSpanProcessor(memoryExporter)],
     });
     provider.register();
+    // Same system database as the suite above, already migrated by its
+    // beforeAll. Re-running setUpDBOSTestSysDb here would drop it, which races
+    // with connections that suite has not finished closing.
     config = { ...generateDBOSTestConfig(), tracingEnabled: true };
-    await setUpDBOSTestSysDb(config);
     DBOS.setConfig(config);
   });
 
@@ -327,5 +513,26 @@ describe('workflow-outcome-ownership-spans', () => {
     expect(span).toBeDefined();
     expect(span!.attributes['cached']).toBe(true);
     expect(span!.status.code).toBe(SpanStatusCode.OK);
+  });
+
+  test('adopted-error-on-the-duplicate-execution-path-sets-span-error-and-cached', async () => {
+    // The duplicate-execution path stamps no status up front, so the adopted
+    // error is what must set it: an adopted failure here previously left the
+    // span status unset.
+    const { handle, ctrl } = await startBlockedRun('blockedStepWorkflow');
+    await plantConflictingCheckpoint(systemDBClient, handle.workflowID, ctrl.stepID);
+    const recorded = await encodeError('recorded failure');
+    await rewriteRowWith(systemDBClient, handle.workflowID, StatusString.ERROR, {
+      error: recorded.serializedValue,
+      serialization: recorded.serialization,
+    });
+    ctrl.release.set();
+    await expect(handle.getResult()).rejects.toThrow('recorded failure');
+
+    const span = workflowSpan(handle.workflowID);
+    expect(span).toBeDefined();
+    expect(span!.attributes['cached']).toBe(true);
+    expect(span!.status.code).toBe(SpanStatusCode.ERROR);
+    expect(span!.status.message).toContain('recorded failure');
   });
 });
