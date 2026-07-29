@@ -64,6 +64,18 @@ class OutcomeOwnership {
     throw new Error('own failure');
   }
 
+  // Same as throwingWorkflow, but portable-serialized: reviving a portable
+  // error throws the revived PortableWorkflowError rather than returning it, so
+  // this run's error must not be revived before the ownership decision.
+  @DBOS.workflow({ serialization: 'portable' })
+  static async throwingPortableWorkflow(id: string): Promise<string> {
+    const ctrl = control(id);
+    ctrl.workflowID = DBOS.workflowID;
+    ctrl.started.set();
+    await ctrl.release.wait();
+    throw new Error('portable own failure');
+  }
+
   // Blocks inside a step, after the step's function ID is knowable but before
   // its checkpoint is written, so the test can plant a conflicting checkpoint.
   @DBOS.workflow()
@@ -93,6 +105,7 @@ type BlockingWorkflow =
   | 'blockedWorkflow'
   | 'selfCancellingWorkflow'
   | 'throwingWorkflow'
+  | 'throwingPortableWorkflow'
   | 'blockedStepWorkflow'
   | 'parentOfBlockedWorkflow';
 
@@ -381,6 +394,29 @@ describe('workflow-outcome-ownership', () => {
       [handle.workflowID],
     );
     expect(rows[0].status).toBe(StatusString.SUCCESS);
+    expect(rows[0].error).toBeNull();
+  });
+
+  test('portable-failed-run-adopts-the-recorded-outcome', async () => {
+    // A portable-serialized run reaches the same ownership decision as any
+    // other. Its error is revived only where the revived error is used, because
+    // reviving a portable error throws it: reviving before the decision would
+    // deliver this run's own failure while the row says the workflow succeeded.
+    const { handle, ctrl } = await startBlockedRun('throwingPortableWorkflow');
+    const recorded = await encodeOutput('recorded-elsewhere');
+    await rewriteRow(handle.workflowID, StatusString.SUCCESS, {
+      output: recorded.serializedValue,
+      serialization: recorded.serialization,
+    });
+    ctrl.release.set();
+
+    await expect(handle.getResult()).resolves.toBe('recorded-elsewhere');
+    const { rows } = await systemDBClient.query<{ status: string; output: string; error: string | null }>(
+      `SELECT status, output, error FROM dbos.workflow_status WHERE workflow_uuid=$1`,
+      [handle.workflowID],
+    );
+    expect(rows[0].status).toBe(StatusString.SUCCESS);
+    expect(rows[0].output).toBe(recorded.serializedValue);
     expect(rows[0].error).toBeNull();
   });
 

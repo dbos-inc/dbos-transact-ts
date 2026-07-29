@@ -739,7 +739,10 @@ export class DBOSExecutor {
     };
 
     const eserializer = this.serializer;
-    async function handleWorkflowError(err: Error, exec: DBOSExecutor): Promise<{ recorded: boolean; error: Error }> {
+    async function handleWorkflowError(
+      err: Error,
+      exec: DBOSExecutor,
+    ): Promise<{ recorded: boolean; reviveError: () => Promise<Error> }> {
       // Record the error.
       const e = err as Error & { dbos_already_logged?: boolean };
       const sererr = await serializeResErrorWithSerializer(e, eserializer, ires.serialization ?? null);
@@ -756,7 +759,9 @@ export class DBOSExecutor {
       span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
       return {
         recorded,
-        error: await deserializeResError(sererr.serializedValue, sererr.serialization, eserializer),
+        // deserializeResError can throw directly if the serialized error represents a portable workflow error.
+        // Defer this until we check whether the error has been recorded.
+        reviveError: () => deserializeResError(sererr.serializedValue, sererr.serialization, eserializer),
       };
     }
 
@@ -872,12 +877,15 @@ export class DBOSExecutor {
               pendingAdopt = notRecordedWarning;
             }
           } else {
-            const { recorded, error } = await handleWorkflowError(err as Error, this);
+            const { recorded, reviveError } = await handleWorkflowError(err as Error, this);
             if (recorded) {
               // If we want to be consistent about what is thrown (stored result vs live)
               //  we would have to do this.  It is a breaking change in the sense that it
               //  is a behavior change, but it would "break" things that are already broken
-              throw serializationType === 'portable' ? error : err;
+              if (serializationType === 'portable') {
+                throw await reviveError();
+              }
+              throw err;
             }
             pendingAdopt = notRecordedWarning;
           }
