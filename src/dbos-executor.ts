@@ -801,109 +801,93 @@ export class DBOSExecutor {
     const notRecordedWarning = `Workflow ${workflowID} outcome was not recorded: the workflow is no longer owned by this execution. Waiting for the recorded outcome`;
 
     const runWorkflow = async () => {
-      let result: R;
-      // Set when the SUCCESS write is refused: the park runs after the
-      // try/catch below, so an error rethrown while adopting the recorded
-      // outcome propagates to the handle instead of re-entering the workflow
-      // error-handling path (which would attempt a second, doomed outcome
-      // write and park again).
-      let adoptOutcomeOfRefusedSuccess = false;
-
-      // Execute the workflow.
       try {
-        const callResult = await runWithTrace(span, async () => {
-          return await runWithParentContext(
-            pctx,
-            {
-              presetID,
-              workflowTimeoutMS: undefined, // Becomes deadline
-              deadlineEpochMS,
-              workflowId: workflowID,
-              logger: this.ctxLogger,
-              curWFFunctionId: undefined,
-              serializationType,
-            },
-            () => {
-              const callPromise = wf.call(params.configuredInstance, ...args);
+        let result: R;
+        // The warning to park under, set by whichever site found that this run
+        // does not own the workflow's outcome.
+        let pendingAdopt: string;
 
-              if ($deadlineEpochMS === undefined) {
-                return callPromise;
-              } else {
-                return callPromiseWithTimeout(callPromise, $deadlineEpochMS, this.systemDatabase);
-              }
-            },
-          );
-        });
-
-        result = callResult!;
-
-        const funcResult = await serializeFunctionInputOutputWithSerializer(
-          result,
-          [wfname, '<result>'],
-          this.serializer,
-          ires.serialization,
-        );
-        result = funcResult.deserialized;
-        internalStatus.output = funcResult.stringified;
-        internalStatus.status = StatusString.SUCCESS;
-        releaseRunningWorkflow();
-        const recorded = await this.systemDatabase.recordWorkflowOutput(workflowID, internalStatus);
-        if (!recorded) {
-          adoptOutcomeOfRefusedSuccess = true;
-        } else {
-          span.setStatus({ code: SpanStatusCode.OK });
-        }
-      } catch (err) {
-        if (err instanceof DBOSWorkflowConflictError) {
-          // Another execution owns this workflow's step checkpoints. Release
-          // before parking so a resume re-dispatched here is not blocked.
-          releaseRunningWorkflow();
-          result = await adoptRecordedOutcome(`Aborting duplicate execution of workflow ${workflowID}.`);
-        } else if (err instanceof DBOSWorkflowCancelledError) {
-          if (err.workflowID === workflowID) {
-            // The run observed its own cancellation. Park the execution.
-            // Of course this relies on the user not abusing DBOSWorkflowCancelledError to not hang.
-            releaseRunningWorkflow();
-            result = await adoptRecordedOutcome(
-              `Workflow ${workflowID} was cancelled during execution. Waiting for the recorded outcome`,
-            );
-          } else {
-            const e = new DBOSAwaitedWorkflowCancelledError(err.workflowID);
-            const { recorded } = await handleWorkflowError(e as Error, this);
-            if (!recorded) {
-              result = await adoptRecordedOutcome(notRecordedWarning);
-            } else {
-              throw e;
-            }
-          }
-        } else {
-          const { recorded, error } = await handleWorkflowError(err as Error, this);
-          if (!recorded) {
-            result = await adoptRecordedOutcome(notRecordedWarning);
-          } else if (serializationType === 'portable') {
-            // If we want to be consistent about what is thrown (stored result vs live)
-            //  we would have to do this.  It is a breaking change in the sense that it
-            //  is a behavior change, but it would "break" things that are already broken
-            throw error;
-          } else {
-            throw err;
-          }
-        }
-      } finally {
-        // The refused-success park below still needs the span (it stamps the
-        // adopted outcome on it), so it ends the span itself.
-        if (!adoptOutcomeOfRefusedSuccess) {
-          this.tracer.endSpan(span);
-        }
-      }
-      if (adoptOutcomeOfRefusedSuccess) {
+        // Execute the workflow.
         try {
-          result = await adoptRecordedOutcome(notRecordedWarning);
-        } finally {
-          this.tracer.endSpan(span);
+          const callResult = await runWithTrace(span, async () => {
+            return await runWithParentContext(
+              pctx,
+              {
+                presetID,
+                workflowTimeoutMS: undefined, // Becomes deadline
+                deadlineEpochMS,
+                workflowId: workflowID,
+                logger: this.ctxLogger,
+                curWFFunctionId: undefined,
+                serializationType,
+              },
+              () => {
+                const callPromise = wf.call(params.configuredInstance, ...args);
+
+                if ($deadlineEpochMS === undefined) {
+                  return callPromise;
+                } else {
+                  return callPromiseWithTimeout(callPromise, $deadlineEpochMS, this.systemDatabase);
+                }
+              },
+            );
+          });
+
+          result = callResult!;
+
+          const funcResult = await serializeFunctionInputOutputWithSerializer(
+            result,
+            [wfname, '<result>'],
+            this.serializer,
+            ires.serialization,
+          );
+          result = funcResult.deserialized;
+          internalStatus.output = funcResult.stringified;
+          internalStatus.status = StatusString.SUCCESS;
+          releaseRunningWorkflow();
+          const recorded = await this.systemDatabase.recordWorkflowOutput(workflowID, internalStatus);
+          if (recorded) {
+            span.setStatus({ code: SpanStatusCode.OK });
+            return result;
+          }
+          pendingAdopt = notRecordedWarning;
+        } catch (err) {
+          if (err instanceof DBOSWorkflowConflictError) {
+            // Another execution owns this workflow's step checkpoints. Release
+            // before parking so a resume re-dispatched here is not blocked.
+            releaseRunningWorkflow();
+            pendingAdopt = `Aborting duplicate execution of workflow ${workflowID}.`;
+          } else if (err instanceof DBOSWorkflowCancelledError) {
+            if (err.workflowID === workflowID) {
+              // The run observed its own cancellation. Park the execution.
+              // Of course this relies on the user not abusing DBOSWorkflowCancelledError to not hang.
+              releaseRunningWorkflow();
+              pendingAdopt = `Workflow ${workflowID} was cancelled during execution. Waiting for the recorded outcome`;
+            } else {
+              const e = new DBOSAwaitedWorkflowCancelledError(err.workflowID);
+              const { recorded } = await handleWorkflowError(e as Error, this);
+              if (recorded) {
+                throw e;
+              }
+              pendingAdopt = notRecordedWarning;
+            }
+          } else {
+            const { recorded, error } = await handleWorkflowError(err as Error, this);
+            if (recorded) {
+              // If we want to be consistent about what is thrown (stored result vs live)
+              //  we would have to do this.  It is a breaking change in the sense that it
+              //  is a behavior change, but it would "break" things that are already broken
+              throw serializationType === 'portable' ? error : err;
+            }
+            pendingAdopt = notRecordedWarning;
+          }
         }
+
+        // Reached only when a refusal above set pendingAdopt.
+        return await adoptRecordedOutcome(pendingAdopt);
+      } finally {
+        this.tracer.endSpan(span);
       }
-      return result;
     };
 
     if (
