@@ -955,6 +955,11 @@ describe('test-list-queues', () => {
     // Clean up so they don't interfere with the rest of the test
     await DBOS.cancelWorkflow(enqueuedHandle.workflowID);
     await DBOS.cancelWorkflow(delayedHandle.workflowID);
+
+    // Conductor sends a disabled threshold as JSON null, not undefined
+    await DBOSExecutor.globalInstance!.systemDatabase.garbageCollect(Date.now(), null);
+    await DBOSExecutor.globalInstance!.systemDatabase.garbageCollect(null, 1);
+    await DBOSExecutor.globalInstance!.systemDatabase.garbageCollect(null, null);
   });
 
   class TestGlobalTimeout {
