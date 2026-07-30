@@ -1080,53 +1080,48 @@ export class SystemDatabase {
   }
 
   @dbRetry()
-  async recordWorkflowOutput(workflowID: string, status: WorkflowStatusInternal): Promise<void> {
+  async recordWorkflowOutput(workflowID: string, status: WorkflowStatusInternal): Promise<boolean> {
     const client = await this.pool.connect();
     try {
-      await this.#recordWorkflowOutcome(client, workflowID, StatusString.SUCCESS, { output: status.output });
+      return await this.#recordWorkflowOutcome(client, workflowID, StatusString.SUCCESS, { output: status.output });
     } finally {
       client.release();
     }
   }
 
   @dbRetry()
-  async recordWorkflowError(workflowID: string, status: WorkflowStatusInternal): Promise<void> {
+  async recordWorkflowError(workflowID: string, status: WorkflowStatusInternal): Promise<boolean> {
     const client = await this.pool.connect();
     try {
-      await this.#recordWorkflowOutcome(client, workflowID, StatusString.ERROR, { error: status.error });
+      return await this.#recordWorkflowOutcome(client, workflowID, StatusString.ERROR, { error: status.error });
     } finally {
       client.release();
     }
   }
 
-  // Record a workflow's terminal outcome (SUCCESS or ERROR), but never overwrite
-  // the terminal CANCELLED status: a workflow can be cancelled during its final
-  // step, and if so it must not be able to subsequently complete. If the
-  // workflow is cancelled, abort the function so it does not complete. This
-  // mirrors the cancellation check done before each step.
+  // Record a workflow's terminal outcome (SUCCESS or ERROR), reporting whether
+  // the write landed. The write applies only to a PENDING row: a run owns its
+  // workflow's outcome exactly as long as the row says that run is what the
+  // workflow is doing. (Note: this does not prevent a write when another
+  // concurrent execution is already running and the status is PENDING. However,
+  // both executions should be deterministic and idempotent.)
+  //
+  // Returning false means the row was CANCELLED, dead-lettered, already
+  // terminal, handed to another execution (ENQUEUED/DELAYED, e.g. by a
+  // concurrent resume), or deleted; the caller resolves which by awaiting the
+  // recorded outcome.
   async #recordWorkflowOutcome(
     client: PoolClient,
     workflowID: string,
     status: (typeof StatusString)[keyof typeof StatusString],
     outcome: { output?: string | null; error?: string | null },
-  ): Promise<void> {
-    let cancelled = false;
-    try {
-      await client.query('BEGIN');
-      await this.updateWorkflowStatus(client, workflowID, status, {
-        update: { ...outcome, resetDeduplicationID: true, setCompletedAt: true },
-        where: { notStatus: StatusString.CANCELLED },
-        throwOnFailure: false,
-      });
-      cancelled = (await this.getWorkflowStatusValue(client, workflowID)) === StatusString.CANCELLED;
-      await client.query('COMMIT');
-    } catch (e) {
-      await client.query('ROLLBACK');
-      throw e;
-    }
-    if (cancelled) {
-      throw new DBOSWorkflowCancelledError(workflowID);
-    }
+  ): Promise<boolean> {
+    const rowCount = await this.updateWorkflowStatus(client, workflowID, status, {
+      update: { ...outcome, resetDeduplicationID: true, setCompletedAt: true },
+      where: { status: StatusString.PENDING },
+      throwOnFailure: false,
+    });
+    return rowCount > 0;
   }
 
   async getPendingWorkflows(executorID: string, appVersion: string): Promise<GetPendingWorkflowsOutput[]> {
@@ -2147,12 +2142,18 @@ export class SystemDatabase {
   }
 
   @dbRetry()
+  // A missing row normally means the workflow has not been inserted yet, so
+  // polling for it is correct. Callers that know the row must already exist
+  // (e.g. a run parking on an outcome it just failed to write) pass
+  // `failIfMissing` to fail fast with DBOSNonExistentWorkflowError instead of
+  // polling forever.
   async awaitWorkflowResult(
     workflowID: string,
     timeoutSeconds?: number,
     callerID?: string,
     timerFuncID?: number,
     pollingIntervalMs?: number,
+    failIfMissing?: boolean,
   ): Promise<SystemDatabaseStoredResult | undefined> {
     const timeoutms = timeoutSeconds !== undefined ? timeoutSeconds * 1000 : undefined;
     let finishTime = timeoutms !== undefined ? Date.now() + timeoutms : undefined;
@@ -2166,32 +2167,35 @@ export class SystemDatabase {
 
     while (true) {
       if (callerID) await this.#checkIfCanceledLimited(callerID);
+      let rows: workflow_status[];
       try {
-        const { rows } = await this.#pollWithLimiter(() =>
+        ({ rows } = await this.#pollWithLimiter(() =>
           this.pool.query<workflow_status>(
             `SELECT status, output, error, serialization FROM "${this.schemaName}".workflow_status
              WHERE workflow_uuid=$1`,
             [workflowID],
           ),
-        );
-        if (rows.length > 0) {
-          const status = rows[0].status;
-          if (status === StatusString.SUCCESS) {
-            return { output: rows[0].output, serialization: rows[0].serialization };
-          } else if (status === StatusString.ERROR) {
-            return { error: rows[0].error, serialization: rows[0].serialization };
-          } else if (status === StatusString.CANCELLED) {
-            return { cancelled: true };
-          } else if (status === StatusString.MAX_RECOVERY_ATTEMPTS_EXCEEDED) {
-            return { maxRecoveryAttemptsExceeded: true };
-          } else {
-            // Status is not actionable
-          }
-        }
+        ));
       } catch (e) {
         const err = e as Error;
         this.logger.error(`Exception from system database: ${err}`, err);
         throw err;
+      }
+      if (rows.length > 0) {
+        const status = rows[0].status;
+        if (status === StatusString.SUCCESS) {
+          return { output: rows[0].output, serialization: rows[0].serialization };
+        } else if (status === StatusString.ERROR) {
+          return { error: rows[0].error, serialization: rows[0].serialization };
+        } else if (status === StatusString.CANCELLED) {
+          return { cancelled: true };
+        } else if (status === StatusString.MAX_RECOVERY_ATTEMPTS_EXCEEDED) {
+          return { maxRecoveryAttemptsExceeded: true };
+        } else {
+          // Status is not actionable
+        }
+      } else if (failIfMissing) {
+        throw new DBOSNonExistentWorkflowError(`Workflow ${workflowID} does not exist`);
       }
 
       const ct = Date.now();
@@ -4433,7 +4437,7 @@ export class SystemDatabase {
       };
       throwOnFailure?: boolean;
     } = {},
-  ): Promise<void> {
+  ): Promise<number> {
     // Use SQL now() so updated_at and completed_at (when set together) are
     // computed in the same statement against the same clock.
     const nowMsExpr = `(EXTRACT(EPOCH FROM now()) * 1000)::bigint`;
@@ -4508,6 +4512,7 @@ export class SystemDatabase {
     if (throwOnFailure && result.rowCount !== 1) {
       throw new DBOSWorkflowConflictError(`Attempt to record transition of nonexistent workflow ${workflowID}`);
     }
+    return result.rowCount ?? 0;
   }
 
   private async recordOperationResultInternal(
