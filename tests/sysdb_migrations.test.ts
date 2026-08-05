@@ -128,6 +128,41 @@ describe('sysdb migration runner', () => {
     expect(fn.rows[0].args.split(',').length).toBe(17);
   });
 
+  // Their contents moved onto workflow_status columns (and workflow_schedules) long ago;
+  // dropping them is what leaves the schema identical to every other SDK's at the shared base.
+  test('the consolidated tables are gone, on a fresh database and on an upgrade', async () => {
+    const migrations = allMigrations(TEST_SCHEMA, { useListenNotify: false });
+    const gone = ['workflow_inputs', 'workflow_queue', 'scheduler_state'];
+    const survivingTables = async () => {
+      const res = await client.query<{ tablename: string }>(
+        `SELECT tablename FROM pg_tables WHERE schemaname = $1 AND tablename = ANY($2)`,
+        [TEST_SCHEMA, gone],
+      );
+      return res.rows.map((r) => r.tablename);
+    };
+
+    // A fresh database never ends up with them.
+    await runSysMigrationsPg(client, migrations, TEST_SCHEMA, { onWarn: () => {} });
+    expect(await survivingTables()).toEqual([]);
+
+    // An upgrade from a database that predates the drop removes them, sparing real data.
+    await resetSchema(client);
+    const beforeDrop = migrations.slice(0, 69);
+    await runSysMigrationsPg(client, beforeDrop, TEST_SCHEMA, { onWarn: () => {} });
+    expect((await survivingTables()).sort()).toEqual([...gone].sort());
+    await client.query(
+      `INSERT INTO "${TEST_SCHEMA}".workflow_status (workflow_uuid, status, name, executor_id, application_id, created_at, updated_at, recovery_attempts, priority)
+       VALUES ('kept-wf', 'SUCCESS', 'keptWorkflow', 'local', '', 1, 1, 0, 0)`,
+    );
+
+    await runSysMigrationsPg(client, migrations, TEST_SCHEMA, { onWarn: () => {} });
+    expect(await survivingTables()).toEqual([]);
+    const kept = await client.query<{ workflow_uuid: string }>(
+      `SELECT workflow_uuid FROM "${TEST_SCHEMA}".workflow_status`,
+    );
+    expect(kept.rows.map((r) => r.workflow_uuid)).toEqual(['kept-wf']);
+  });
+
   // Renumbering onto the shared base leaves long runs of empty migrations.
   test('padding to the shared base still lands on the true migration count', async () => {
     const migrations = allMigrations(TEST_SCHEMA, { useListenNotify: false });

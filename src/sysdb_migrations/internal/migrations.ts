@@ -742,6 +742,19 @@ export function allMigrations(
       online: true,
       pg: [`DROP INDEX ${c} IF EXISTS "${schemaName}"."idx_workflow_status_partition_dequeue"`],
     },
+    // Abandoned in place when their contents moved onto workflow_status columns: inputs by
+    // 20252523000000_consolidate_inputs, queue state by 20252528000000_consolidate_queues, and
+    // scheduler_state by the workflow_schedules table. Nothing has read them since, and no other
+    // object references them, so they drop without CASCADE. Last of this SDK's own migrations,
+    // which is what leaves the schema identical to every other SDK's at the shared base.
+    {
+      name: '20250725_drop_consolidated_tables',
+      pg: [
+        `DROP TABLE IF EXISTS "${schemaName}"."workflow_inputs"`,
+        `DROP TABLE IF EXISTS "${schemaName}"."workflow_queue"`,
+        `DROP TABLE IF EXISTS "${schemaName}"."scheduler_state"`,
+      ],
+    },
   ];
 
   return [...padToSharedBase(history), ...sharedMigrations(schemaName, isCockroach)];
