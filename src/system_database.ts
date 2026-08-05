@@ -3363,7 +3363,7 @@ export class SystemDatabase {
                application_version = $3,
                started_at_epoch_ms = $4,
                rate_limited = $5,
-               application_name = $8,
+               application_name = COALESCE(application_name, $8),
                workflow_deadline_epoch_ms = CASE
                  WHEN workflow_timeout_ms IS NOT NULL AND workflow_deadline_epoch_ms IS NULL
                  THEN (EXTRACT(epoch FROM now()) * 1000)::bigint + workflow_timeout_ms
@@ -3378,7 +3378,7 @@ export class SystemDatabase {
             queue.rateLimit !== undefined,
             id,
             StatusString.ENQUEUED,
-            // Claim it, so the unclaimed partition drains as workflows run.
+            // Claim an unclaimed row for this application; a nameless dequeuer leaves ownership untouched.
             this.appName ?? null,
           ],
         );
@@ -3528,7 +3528,7 @@ export class SystemDatabase {
              application_version = $6,
              started_at_epoch_ms = $7,
              rate_limited = FALSE,
-             application_name = $8,
+             application_name = COALESCE(application_name, $8),
              workflow_deadline_epoch_ms = CASE
                WHEN workflow_timeout_ms IS NOT NULL AND workflow_deadline_epoch_ms IS NULL
                THEN (EXTRACT(epoch FROM now()) * 1000)::bigint + workflow_timeout_ms

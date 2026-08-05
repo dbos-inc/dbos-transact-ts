@@ -1866,6 +1866,7 @@ export class DBOS {
         'priority',
         'queuePartitionKey',
         'delaySeconds',
+        'applicationName',
       ];
       const setOptions = enqueueOnlyOptions.filter((name) => params.enqueueOptions?.[name] !== undefined);
       if (setOptions.length > 0) {
