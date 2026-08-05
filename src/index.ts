@@ -58,4 +58,6 @@ export { DLogger, ContextualMetadata, StackTrace } from './telemetry/logs';
 
 export { DBOSSpan } from './telemetry/traces';
 
-export { VersionInfo } from './system_database';
+export { VersionInfo, ApplicationRowCounts, DEFAULT_RENAME_BATCH_SIZE } from './system_database';
+
+export { EnqueueWorkflowOptions } from './enqueue_options';

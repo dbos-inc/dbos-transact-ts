@@ -129,6 +129,8 @@ import {
 } from './scheduler/scheduler';
 import { validateCrontab, validateTimezone } from './scheduler/crontab';
 import { logQueue, RegisterQueueOptions, WorkflowQueue, wfQueueRunner } from './wfqueue';
+import { enqueueWorkflowWithOptions } from './enqueue_workflow';
+import type { EnqueueWorkflowOptions } from './enqueue_options';
 import { registerAuthChecker } from './authdecorators';
 import assert from 'node:assert';
 
@@ -442,8 +444,9 @@ export class DBOS {
     finalizeClassRegistrations();
     insertAllMiddleware();
 
-    // Globally set the application version and executor ID.
+    // Globally set the application name, version and executor ID.
     // In DBOS Cloud, instead use the value supplied through environment variables.
+    globalParams.appName = internalConfig.name;
     if (process.env.DBOS__CLOUD !== 'true') {
       if (DBOS.#dbosConfig?.applicationVersion) {
         globalParams.appVersion = DBOS.#dbosConfig.applicationVersion;
@@ -600,11 +603,13 @@ export class DBOS {
       await ds.destroy();
     }
 
-    // Reset the global app version and executor ID
+    // Reset the global app name, version and executor ID
     globalParams.appVersion = process.env.DBOS__APPVERSION || '';
     globalParams.wasComputed = false;
     globalParams.appID = process.env.DBOS__APPID || '';
     globalParams.executorID = process.env.DBOS__VMID || 'local';
+    // Set at launch from the config, so a relaunch under another name must not inherit this one.
+    globalParams.appName = undefined;
 
     recordDBOSShutdown();
 
@@ -2435,6 +2440,7 @@ export class DBOS {
       automaticBackfill: options.options?.automaticBackfill ?? false,
       cronTimezone: options.options?.cronTimezone ?? null,
       queueName: options.options?.queueName ?? null,
+      applicationName: globalParams.appName,
     };
 
     await runTransactionalInternalStep(
@@ -2443,7 +2449,12 @@ export class DBOS {
     );
   }
 
+  /**
+   * Return registered workflow schedules, optionally filtered. An unset
+   * `applicationName` lists every application's, as on `listWorkflows`.
+   */
   static async listSchedules(filters?: {
+    applicationName?: string | string[];
     status?: string | string[];
     workflowName?: string | string[];
     scheduleNamePrefix?: string | string[];
@@ -2561,6 +2572,7 @@ export class DBOS {
         status: 'ACTIVE',
         context: await serializer.stringify(sched.context),
         lastFiredAt: null,
+        applicationName: globalParams.appName,
         automaticBackfill: sched.automaticBackfill ?? false,
         cronTimezone: sched.cronTimezone ?? null,
         queueName: sched.queueName ?? null,
@@ -2613,9 +2625,13 @@ export class DBOS {
    * Set a version as the latest by updating its version_timestamp to now.
    * @param versionName - The version name to promote to latest
    */
-  static async setLatestApplicationVersion(versionName: string): Promise<void> {
+  static async setLatestApplicationVersion(versionName: string, options?: { applicationName?: string }): Promise<void> {
     ensureDBOSIsLaunched('setLatestApplicationVersion');
-    await DBOSExecutor.globalInstance!.systemDatabase.updateApplicationVersionTimestamp(versionName, Date.now());
+    await DBOSExecutor.globalInstance!.systemDatabase.updateApplicationVersionTimestamp(
+      versionName,
+      Date.now(),
+      options?.applicationName,
+    );
   }
 
   /**
@@ -2629,6 +2645,9 @@ export class DBOS {
    *   Defaults to `update_if_latest_version`, which only overwrites when the
    *   running application version matches the latest registered version —
    *   safe for rolling deploys.
+   *
+   *   A queue already registered by a different application throws in every mode:
+   *   the name is its address, so a collision is not ours to resolve.
    */
   static async registerQueue(name: string, options: RegisterQueueOptions = {}): Promise<WorkflowQueue> {
     ensureDBOSIsLaunched('registerQueue');
@@ -2659,6 +2678,47 @@ export class DBOS {
       logQueue(DBOSExecutor.globalInstance!.logger, queue);
     }
     return queue;
+  }
+
+  /**
+   * Enqueue a workflow by name, without a reference to its function.
+   *
+   * Takes the same options as `DBOSClient.enqueue` and builds the same row, so the
+   * workflow may be implemented by another process — or in another language — as long
+   * as it shares this system database. Safe to call from inside a workflow: the
+   * enqueued workflow is recorded as a child.
+   *
+   * Unlike `DBOS.startWorkflow`, options are deliberately not validated against the
+   * local registry, and `appVersion` is left unset unless given. An unset `appVersion`
+   * is only dequeued by an executor running the latest registered application version.
+   *
+   * The enqueued workflow is owned by this application unless `applicationName` names
+   * another one.
+   */
+  static async enqueueWorkflowWithOptions<T = unknown>(
+    options: EnqueueWorkflowOptions,
+    ...args: unknown[]
+  ): Promise<WorkflowHandle<T>> {
+    ensureDBOSIsLaunched('enqueueWorkflowWithOptions');
+    return await enqueueWorkflowWithOptions<T>(options, args);
+  }
+
+  /**
+   * Enqueue a workflow by name with portable arguments, for targets that take named
+   * arguments — a Python workflow with keyword arguments, say. The counterpart of
+   * `DBOSClient.enqueuePortable`; see `enqueueWorkflowWithOptions` for the semantics.
+   */
+  static async enqueueWorkflowWithOptionsPortable<T = unknown>(
+    options: EnqueueWorkflowOptions,
+    positionalArgs: unknown[],
+    namedArgs?: Record<string, unknown>,
+  ): Promise<WorkflowHandle<T>> {
+    ensureDBOSIsLaunched('enqueueWorkflowWithOptionsPortable');
+    return await enqueueWorkflowWithOptions<T>(
+      { serializationType: 'portable', ...options },
+      positionalArgs,
+      namedArgs,
+    );
   }
 
   /** Retrieve a database-backed queue by name, or `null` if no row exists. */

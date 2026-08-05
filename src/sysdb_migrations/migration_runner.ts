@@ -170,18 +170,16 @@ export async function runSysMigrationsPg(
       continue;
     }
 
+    // Renumbering onto the shared base leaves long runs of empty migrations; skip them without a round trip.
+    const stmts = m.pg ?? [];
+    if (stmts.length === 0) {
+      skipped++;
+      continue;
+    }
+
     if (!loggedInfo) {
       onWarn(`Running DBOS system database migrations...`);
       loggedInfo = true;
-    }
-
-    const stmts = m.pg ?? [];
-    if (stmts.length === 0) {
-      onWarn(`Migration "${m.name}" has no Postgres statements; skipping.`);
-      await bumpMigrationVersion(client, schemaName, v);
-      skipped++;
-      lastAppliedVersion = v;
-      continue;
     }
 
     // Run migrations in autocommit
@@ -200,6 +198,12 @@ export async function runSysMigrationsPg(
     await bumpMigrationVersion(client, schemaName, v);
     applied++;
     lastAppliedVersion = v;
+  }
+
+  // Empty migrations at the end still count as applied, so record them in one write.
+  if (maxKnown > lastAppliedVersion) {
+    await bumpMigrationVersion(client, schemaName, maxKnown);
+    lastAppliedVersion = maxKnown;
   }
 
   return {

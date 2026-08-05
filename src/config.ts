@@ -85,6 +85,11 @@ export function writeConfigFile(configFile: ConfigFile, configFilePath: string) 
   }
 }
 
+/** Names an application may register under: 3-30 lowercase alphanumerics, dashes, and underscores. */
+export function isValidApplicationName(appName: string): boolean {
+  return /^[a-z0-9-_]{3,30}$/.test(appName);
+}
+
 export function isValidDatabaseName(dbName: string): boolean {
   if (dbName.length < 1 || dbName.length > 63) {
     return false;

@@ -355,6 +355,7 @@ export class DBOSExecutor {
         this.config.useListenNotify,
         this.config.systemDatabasePollingConcurrency,
         this.config.notificationCoalesceMs,
+        this.appName,
       );
     }
 
@@ -513,6 +514,8 @@ export class DBOSExecutor {
       priority: 0,
       queuePartitionKey: options.queuePartitionKey,
       serialization: funcArgs.sername,
+      // This application owns what it starts; reaching another one requires naming it.
+      applicationName: globalParams.appName,
     };
   }
 
@@ -597,6 +600,8 @@ export class DBOSExecutor {
     ) {
       delayUntilEpochMS = debounceDeadlineEpochMS;
     }
+    // This application owns what it starts; only a debounce acting for another names one here.
+    const ownerAppName = params.enqueueOptions?.applicationName ?? globalParams.appName;
     const internalStatus: WorkflowStatusInternal = {
       workflowUUID: workflowID,
       status:
@@ -616,7 +621,10 @@ export class DBOSExecutor {
       authenticatedRoles: pctx?.authenticatedRoles || [],
       request: pctx?.request || {},
       executorId: globalParams.executorID,
-      applicationVersion: params.enqueueOptions?.applicationVersion ?? globalParams.appVersion,
+      applicationVersion:
+        params.enqueueOptions?.applicationVersion ??
+        // Left unset for another application, whose own latest version must run it.
+        (ownerAppName === globalParams.appName ? globalParams.appVersion : undefined),
       applicationID: globalParams.appID,
       createdAt: Date.now(), // Remember the start time of this workflow,
       timeoutMS: timeoutMS,
@@ -631,6 +639,7 @@ export class DBOSExecutor {
       attributes: params.workflowAttributes,
       debounceDeadlineEpochMS,
       isDebounced: params.enqueueOptions?.isDebounced ?? false,
+      applicationName: ownerAppName,
     };
 
     if (isTempWorkflow) {
@@ -1515,6 +1524,7 @@ export class DBOSExecutor {
     and because it iterates through the workflows in sorted order.
     This way, if the app's workflows are updated (which would break recovery), its version changes.
     App version can be manually set through the DBOS__APPVERSION environment variable.
+    The application name is hashed in too, so peers built from one source do not collide.
    */
   computeAppVersion(): string {
     const hasher = crypto.createHash('md5');
@@ -1524,6 +1534,7 @@ export class DBOSExecutor {
       .sort();
     // Different DBOS versions should produce different hashes.
     sortedWorkflowSource.push(globalParams.dbosVersion);
+    sortedWorkflowSource.push(globalParams.appName ?? '');
     for (const sourceCode of sortedWorkflowSource) {
       hasher.update(sourceCode);
     }

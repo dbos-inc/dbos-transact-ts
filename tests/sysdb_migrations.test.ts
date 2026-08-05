@@ -1,6 +1,6 @@
 import { Client } from 'pg';
 import { DBMigration, getCurrentSysDBVersion, runSysMigrationsPg } from '../src/sysdb_migrations/migration_runner';
-import { allMigrations } from '../src/sysdb_migrations/internal/migrations';
+import { allMigrations, SHARED_MIGRATION_BASE } from '../src/sysdb_migrations/internal/migrations';
 import { generateDBOSTestConfig } from './helpers';
 
 const TEST_SCHEMA = 'dbos_migration_test';
@@ -85,6 +85,58 @@ describe('sysdb migration runner', () => {
     expect(await indexExists(client, 'idx_workflow_status_queue_status_started')).toBe(false);
     // Superseded by v2, so the original name must be gone.
     expect(await indexExists(client, 'idx_workflow_status_partition_dequeue')).toBe(false);
+  });
+
+  // application_name is nullable everywhere it appears — NULL is what SDKs predating it
+  // write — and every name that addresses a row stays globally unique.
+  test('shared migrations add nullable application_name and the ownership keys', async () => {
+    const migrations = allMigrations(TEST_SCHEMA, { useListenNotify: false });
+    await runSysMigrationsPg(client, migrations, TEST_SCHEMA, { onWarn: () => {} });
+
+    const tables = ['workflow_status', 'queues', 'workflow_schedules', 'application_versions', 'operation_outputs'];
+    for (const table of tables) {
+      const res = await client.query<{ data_type: string; is_nullable: string }>(
+        `SELECT data_type, is_nullable FROM information_schema.columns
+          WHERE table_schema = $1 AND table_name = $2 AND column_name = 'application_name'`,
+        [TEST_SCHEMA, table],
+      );
+      expect(res.rows[0]).toEqual({ data_type: 'text', is_nullable: 'YES' });
+    }
+
+    // Names stay global addresses; version_name only until the contract migration,
+    // whose replacement key migration 106 already carries.
+    for (const index of [
+      'uq_workflow_status_dedup_id',
+      'queues_name_key',
+      'workflow_schedules_schedule_name_key',
+      'application_versions_version_name_key',
+      'uq_application_versions_owner_version',
+      'uq_application_versions_unclaimed_version',
+    ]) {
+      expect(await indexExists(client, index)).toBe(true);
+    }
+
+    // enqueue_workflow gained a trailing application_name parameter.
+    const fn = await client.query<{ args: string }>(
+      `SELECT pg_get_function_identity_arguments(p.oid) AS args
+         FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+        WHERE n.nspname = $1 AND p.proname = 'enqueue_workflow'`,
+      [TEST_SCHEMA],
+    );
+    expect(fn.rows).toHaveLength(1);
+    expect(fn.rows[0].args.endsWith('text')).toBe(true);
+    expect(fn.rows[0].args.split(',').length).toBe(17);
+  });
+
+  // Renumbering onto the shared base leaves long runs of empty migrations.
+  test('padding to the shared base still lands on the true migration count', async () => {
+    const migrations = allMigrations(TEST_SCHEMA, { useListenNotify: false });
+    expect(migrations.length).toBeGreaterThan(SHARED_MIGRATION_BASE);
+    expect(migrations.filter((m) => (m.pg ?? []).length === 0).length).toBeGreaterThan(0);
+
+    const result = await runSysMigrationsPg(client, migrations, TEST_SCHEMA, { onWarn: () => {} });
+    expect(result.toVersion).toBe(migrations.length);
+    expect(await getCurrentSysDBVersion(client, TEST_SCHEMA)).toBe(migrations.length);
   });
 
   test('per-version bump on partial failure resumes on retry', async () => {

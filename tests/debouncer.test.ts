@@ -35,6 +35,13 @@ describe('debouncer-tests', () => {
     { name: 'debouncerWorkflow' },
   );
 
+  const targetedWorkflow = DBOS.registerWorkflow(
+    async (x: number) => {
+      return Promise.resolve(x);
+    },
+    { name: 'targetedWorkflow' },
+  );
+
   const queue = { name: 'test-queue' };
 
   // The dedup ID a debounce computes for `workflow` and a given key.
@@ -767,6 +774,86 @@ describe('debouncer-tests', () => {
       expect(handleA2.workflowID).toBe(handleA.workflowID);
 
       await DBOS.cancelWorkflow(handleA.workflowID);
+    } finally {
+      await client.destroy();
+    }
+  });
+
+  test('test-debounce-ownership-across-applications', async () => {
+    // A debounce key held by another application is a conflict, not a race to retry:
+    // that holder never leaves DELAYED on our account, so retrying would spin.
+    const holder = await DBOSClient.create({
+      systemDatabaseUrl: config.systemDatabaseUrl!,
+      applicationName: 'debounce-app-one',
+    });
+    const other = await DBOSClient.create({
+      systemDatabaseUrl: config.systemDatabaseUrl!,
+      applicationName: 'debounce-app-two',
+    });
+    try {
+      const debouncerOne = new DebouncerClient(holder, { workflowName: 'crossapp' });
+      const debouncerTwo = new DebouncerClient(other, { workflowName: 'crossapp' });
+
+      const handleOne = await debouncerOne.debounce('key', 1000000000, 1);
+      let status = await getSysDB().getWorkflowStatus(handleOne.workflowID);
+      expect(status?.status).toBe(StatusString.DELAYED);
+      expect(status?.applicationName).toBe('debounce-app-one');
+
+      // The peer cannot extend it, and must not spin waiting for it to move.
+      await expect(debouncerTwo.debounce('key', 1000, 2)).rejects.toThrow(DBOSQueueDuplicatedError);
+
+      // The holder's workflow is untouched, and its own bounce still coalesces.
+      const handleOneAgain = await debouncerOne.debounce('key', 1000000000, 3);
+      expect(handleOneAgain.workflowID).toBe(handleOne.workflowID);
+      status = await getSysDB().getWorkflowStatus(handleOne.workflowID);
+      expect(status?.applicationName).toBe('debounce-app-one');
+
+      await DBOS.cancelWorkflow(handleOne.workflowID);
+    } finally {
+      await holder.destroy();
+      await other.destroy();
+    }
+  });
+
+  test('test-debounce-targets-another-application', async () => {
+    // Both debouncers can act for a named application: the fresh enqueue stamps it, later
+    // bounces from any caller naming the same target coalesce onto the holder, and a caller
+    // resolving to a different target collides.
+    const client = await DBOSClient.create({
+      systemDatabaseUrl: config.systemDatabaseUrl!,
+      applicationName: 'app-a',
+    });
+    try {
+      const ownerOf = async (workflowID: string) => {
+        const status = await getSysDB().getWorkflowStatus(workflowID);
+        expect(status?.status).toBe(StatusString.DELAYED);
+        return status?.applicationName;
+      };
+
+      // A runtime debouncer acting for another application; a huge period keeps the holder DELAYED.
+      const debouncer = new Debouncer({ workflow: targetedWorkflow, applicationName: 'other-app' });
+      const first = await debouncer.debounce('k', 1000000000, 1);
+      expect(await ownerOf(first.workflowID)).toBe('other-app');
+      expect((await debouncer.debounce('k', 1000000000, 2)).workflowID).toBe(first.workflowID);
+
+      // Cross-application rows carry no version, so the target's latest version runs them.
+      const status = await getSysDB().getWorkflowStatus(first.workflowID);
+      expect(status?.applicationVersion ?? null).toBeNull();
+
+      // A client with its own identity coalesces onto the same holder when it names the target.
+      const targeted = new DebouncerClient(client, {
+        workflowName: 'targetedWorkflow',
+        applicationName: 'other-app',
+      });
+      expect((await targeted.debounce('k', 1000000000, 3)).workflowID).toBe(first.workflowID);
+      expect(await ownerOf(first.workflowID)).toBe('other-app');
+
+      // Without naming the target, the client acts as itself and collides.
+      const asItself = new DebouncerClient(client, { workflowName: 'targetedWorkflow' });
+      await expect(asItself.debounce('k', 1000, 4)).rejects.toThrow(DBOSQueueDuplicatedError);
+      expect(await ownerOf(first.workflowID)).toBe('other-app');
+
+      await DBOS.cancelWorkflow(first.workflowID);
     } finally {
       await client.destroy();
     }

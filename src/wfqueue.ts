@@ -452,7 +452,7 @@ class WFQueueRunner {
   private async refreshDbQueues(exec: DBOSExecutor, now: number): Promise<void> {
     let records: QueueRecord[];
     try {
-      records = await exec.systemDatabase.listQueues();
+      records = await exec.systemDatabase.listQueues(exec.systemDatabase.appName);
     } catch (e) {
       exec.logger.warn(`Error listing database-backed queues: ${(e as Error).message}`);
       return;

@@ -22,12 +22,16 @@ interface DebouncerParams {
   workflowClassName: string;
   startWorkflowParams?: StartWorkflowParams;
   debounceTimeoutMs?: number;
+  // The application the debounce acts for; undefined means the caller's own.
+  applicationName?: string;
 }
 
 interface DebouncerConfig<Args extends unknown[], Return> {
   workflow: (...args: Args) => Promise<Return>;
   startWorkflowParams?: StartWorkflowParams;
   debounceTimeoutMs?: number;
+  /** The application this debounce acts for. Defaults to the caller's own. */
+  applicationName?: string;
 }
 
 interface DebouncerClientConfig {
@@ -37,6 +41,8 @@ interface DebouncerClientConfig {
   debounceTimeoutMs?: number;
   // Serialization format for the workflow's inputs, e.g. 'portable' for a workflow registered with portable serialization.
   serializationType?: WorkflowSerializationFormat;
+  /** The application this debounce acts for. Defaults to the client's own. */
+  applicationName?: string;
 }
 
 /**
@@ -89,11 +95,16 @@ type BounceAction = 'return' | 'enqueue' | 'raise' | 'retry';
  * Decide what a debounce caller should do after a bounce attempt.
  * - 'return': an existing debounced workflow was extended; return a handle to it.
  * - 'enqueue': the key is unheld; enqueue a fresh debounced workflow.
- * - 'raise': the key is held by a non-debounced workflow or by a different workflow
- *   whose debounce key collides; surface the deduplication conflict.
+ * - 'raise': the key is held by a non-debounced workflow, by a different workflow
+ *   whose debounce key collides, or by an application other than the target; surface the conflict.
  * - 'retry': a same-name debounced holder flipped out of DELAYED mid-bounce (a rare race); retry.
  */
-function classifyBounce(result: DebounceResult, workflowName: string, workflowClassName: string): BounceAction {
+function classifyBounce(
+  result: DebounceResult,
+  workflowName: string,
+  workflowClassName: string,
+  targetApplicationName?: string,
+): BounceAction {
   if (result.bouncedWorkflowID !== null) {
     return 'return';
   }
@@ -104,6 +115,14 @@ function classifyBounce(result: DebounceResult, workflowName: string, workflowCl
     return 'raise';
   }
   if (result.holderWorkflowName !== workflowName || (result.holderWorkflowClassName ?? '') !== workflowClassName) {
+    return 'raise';
+  }
+  // A foreign holder never leaves DELAYED on the target's account, so retrying would spin.
+  if (
+    targetApplicationName !== undefined &&
+    result.holderApplicationName !== null &&
+    result.holderApplicationName !== targetApplicationName
+  ) {
     return 'raise';
   }
   return 'retry';
@@ -118,6 +137,7 @@ export class Debouncer<Args extends unknown[], Return> {
       workflowClassName: getRegisteredFunctionClassName(params.workflow),
       startWorkflowParams: params.startWorkflowParams,
       debounceTimeoutMs: params.debounceTimeoutMs,
+      applicationName: params.applicationName,
     };
   }
 
@@ -143,6 +163,8 @@ export class Debouncer<Args extends unknown[], Return> {
     }
     const func = methReg.registeredFunction as UntypedAsyncFunction;
     const serializationType = methReg.workflowConfig?.serialization;
+    // One owner for the whole operation: the bounce scope, the conflict check, and the fresh enqueue must agree.
+    const targetApp = this.cfg.applicationName ?? exec.systemDatabase.appName;
 
     while (true) {
       // Try to extend an existing debounced workflow for this key first (the sole coalescing mechanism).
@@ -162,13 +184,14 @@ export class Debouncer<Args extends unknown[], Return> {
         delayUntilEpochMS: Date.now() + debouncePeriodMs,
         input: funcArgs.stringified,
         serialization: funcArgs.sername,
+        applicationName: targetApp,
       };
       const result = await runTransactionalInternalStep<DebounceResult>(
         (client) => exec.systemDatabase.debounceDelayedWorkflow(bounceParams, client),
         'DBOS.debounceDelayedWorkflow',
       );
 
-      const action = classifyBounce(result, this.cfg.workflowName, this.cfg.workflowClassName);
+      const action = classifyBounce(result, this.cfg.workflowName, this.cfg.workflowClassName, targetApp);
       if (action === 'return') {
         return DBOS.retrieveWorkflow<Return>(result.bouncedWorkflowID!);
       }
@@ -195,6 +218,7 @@ export class Debouncer<Args extends unknown[], Return> {
             delaySeconds: debouncePeriodMs / 1000,
             debounceDeadlineEpochMS,
             isDebounced: true,
+            applicationName: this.cfg.applicationName,
           },
         })(...args);
         return handle as WorkflowHandle<Return>;
@@ -221,6 +245,7 @@ export class DebouncerClient {
       workflowClassName: params.workflowClassName || '',
       startWorkflowParams: params.startWorkflowParams,
       debounceTimeoutMs: params.debounceTimeoutMs,
+      applicationName: params.applicationName,
     };
     this.serializationType = params.serializationType;
   }
@@ -233,6 +258,8 @@ export class DebouncerClient {
 
     const queueName = this.cfg.startWorkflowParams?.queueName ?? INTERNAL_QUEUE_NAME;
     const deduplicationID = `${this.cfg.workflowClassName}.${this.cfg.workflowName}-${debounceKey}`;
+    // Same one-owner rule as Debouncer.debounce; the debouncer's target wins, then the client's identity.
+    const targetApp = this.cfg.applicationName ?? this.client.applicationName;
 
     while (true) {
       // Try to extend an existing debounced workflow for this key first (the sole coalescing mechanism).
@@ -245,9 +272,10 @@ export class DebouncerClient {
         delayUntilEpochMS: Date.now() + debouncePeriodMs,
         input: serparam.serializedValue,
         serialization: serparam.serialization,
+        applicationName: targetApp,
       });
 
-      const action = classifyBounce(result, this.cfg.workflowName, this.cfg.workflowClassName);
+      const action = classifyBounce(result, this.cfg.workflowName, this.cfg.workflowClassName, targetApp);
       if (action === 'return') {
         return this.client.retrieveWorkflow(result.bouncedWorkflowID!);
       }
@@ -273,6 +301,7 @@ export class DebouncerClient {
             deduplicationID,
             delaySeconds: debouncePeriodMs / 1000,
             serializationType: this.serializationType,
+            applicationName: targetApp,
           },
           debounceDeadlineEpochMS,
           args,

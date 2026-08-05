@@ -17,7 +17,7 @@ import { TelemetryExporter } from '../telemetry/exporters';
 import * as readline from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 import { DBOSClient, GetWorkflowsInput, StatusString } from '..';
-import { ensureSystemDatabase, grantDbosSchemaPermissions } from '../system_database';
+import { DEFAULT_RENAME_BATCH_SIZE, ensureSystemDatabase, grantDbosSchemaPermissions } from '../system_database';
 import { exit } from 'node:process';
 import { inspect } from 'node:util';
 import { runCommand } from './commands';
@@ -220,6 +220,70 @@ program
     }
   });
 
+program
+  .command('rename-application')
+  .description("Re-own a system database's rows after an application is renamed")
+  .option('-y, --yes', 'Skip confirmation prompt', false)
+  .option('-s, --sys-db-url <string>', 'Your DBOS system database URL')
+  .option('-f, --from <string>', "The application's previous name. Omit to only adopt unclaimed rows.")
+  .requiredOption('-t, --to <string>', 'The application that ends up owning the rows')
+  .option('--adopt-unclaimed-rows', 'Also take rows no application owns', false)
+  .option('--batch-size <number>', 'Workflows and steps re-owned per transaction', String(DEFAULT_RENAME_BATCH_SIZE))
+  .option('--schema <string>', 'The schema name for DBOS system tables (default: dbos)')
+  .action(
+    async (options: {
+      yes: boolean;
+      sysDbUrl?: string;
+      from?: string;
+      to: string;
+      adoptUnclaimedRows: boolean;
+      batchSize?: string;
+      schema?: string;
+    }) => {
+      const sources: string[] = [];
+      if (options.from) sources.push(`'${options.from}'s rows`);
+      if (options.adoptUnclaimedRows) sources.push('rows no application owns');
+      if (sources.length === 0) {
+        console.error('Nothing to re-own: pass --from, --adopt-unclaimed-rows, or both.');
+        exit(1);
+      }
+
+      if (!options.yes) {
+        const rl = readline.createInterface({ input, output });
+        try {
+          const answer = await rl.question(
+            `This command re-owns ${sources.join(' and ')} in your DBOS system database as '${options.to}'. ` +
+              'Stop the application being renamed before running this. Are you sure you want to proceed? (y/N) ',
+          );
+          if (!['y', 'yes'].includes(answer.toLowerCase())) {
+            console.log('Operation cancelled.');
+            process.exit(0);
+          }
+        } finally {
+          rl.close();
+        }
+      }
+
+      const urls = await getDatabaseURLs(options.sysDbUrl);
+      const client = await DBOSClient.create({
+        systemDatabaseUrl: urls.systemDatabaseURL,
+        systemDatabaseSchemaName: options.schema,
+      });
+      try {
+        const moved = await client.renameApplication(options.from, options.to, {
+          batchSize: Number(options.batchSize),
+          adoptUnclaimedRows: options.adoptUnclaimedRows,
+        });
+        console.log(JSON.stringify(moved, null, 2));
+      } catch (e) {
+        console.error(`Error renaming application: ${(e as Error).message}`);
+        exit(1);
+      } finally {
+        await client.destroy();
+      }
+    },
+  );
+
 /////////////////////////
 /* WORKFLOW MANAGEMENT */
 /////////////////////////
@@ -243,6 +307,7 @@ workflowCommands
     'Retrieve workflows with this status (PENDING, SUCCESS, ERROR, ENQUEUED, DELAYED, CANCELLED, or MAX_RECOVERY_ATTEMPTS_EXCEEDED)',
   )
   .option('-v, --application-version <string>', 'Retrieve workflows with this application version')
+  .option('-a, --application-name <string>', 'Retrieve workflows owned by this application')
   .option('-s, --sys-db-url <string>', 'Your DBOS system database URL')
   .action(
     async (options: {
@@ -253,6 +318,7 @@ workflowCommands
       endTime?: string;
       status?: string;
       applicationVersion?: string;
+      applicationName?: string;
       sysDbUrl?: string;
     }) => {
       const validStatuses = Object.values(StatusString) as readonly string[];
@@ -270,6 +336,7 @@ workflowCommands
         endTime: options.endTime,
         status: options.status as GetWorkflowsInput['status'],
         applicationVersion: options.applicationVersion,
+        applicationName: options.applicationName,
       };
       const urls = await getDatabaseURLs(options.sysDbUrl);
       const client = await DBOSClient.create({
@@ -395,6 +462,7 @@ queueCommands
   )
   .option('-l, --limit <number>', 'Limit the results returned')
   .option('-q, --queue <string>', 'Retrieve functions run on this queue')
+  .option('-a, --application-name <string>', 'Retrieve functions owned by this application')
   .option('-s, --sys-db-url <string>', 'Your DBOS system database URL')
   .action(
     async (options: {
@@ -404,6 +472,7 @@ queueCommands
       status?: string;
       limit?: string;
       queue?: string;
+      applicationName?: string;
       sysDbUrl?: string;
     }) => {
       const validStatuses = Object.values(StatusString) as readonly string[];
@@ -419,6 +488,7 @@ queueCommands
         status: options.status as GetWorkflowsInput['status'],
         workflowName: options.name,
         queueName: options.queue,
+        applicationName: options.applicationName,
       };
       const urls = await getDatabaseURLs(options.sysDbUrl);
       const client = await DBOSClient.create({
