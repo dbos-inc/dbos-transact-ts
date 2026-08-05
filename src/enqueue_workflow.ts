@@ -16,7 +16,7 @@ import { buildEnqueueStatus, type EnqueueWorkflowOptions } from './enqueue_optio
 import { RetrievedHandle } from './workflow';
 import type { WorkflowHandle } from './workflow';
 import type { WorkflowStatusInternal } from './system_database';
-import { DBOSInvalidWorkflowTransitionError, DBOSQueueDuplicatedError } from './error';
+import { DBOSError, DBOSInvalidWorkflowTransitionError, DBOSQueueDuplicatedError } from './error';
 import { deserializeResError, serializeResError } from './serialization';
 import { globalParams } from './utils';
 
@@ -42,7 +42,6 @@ function resolveOptions(
   return {
     ...options,
     workflowID: assignedID ?? derivedID,
-    workflowTimeoutMS: options.workflowTimeoutMS ?? pctx?.workflowTimeoutMS ?? undefined,
     authenticatedUser: options.authenticatedUser ?? pctx?.authenticatedUser,
     authenticatedRoles: options.authenticatedRoles ?? pctx?.authenticatedRoles,
     // No explicit target, so this application owns it.
@@ -86,6 +85,9 @@ export async function enqueueWorkflowWithOptions<T = unknown>(
   }
 
   const resolved = resolveOptions(options, assignedID, callerID, callerFunctionID);
+  if (resolved.queuePartitionKey !== undefined && resolved.deduplicationID !== undefined) {
+    throw new DBOSError('Deduplication is not supported for partitioned queues');
+  }
   const internalStatus: WorkflowStatusInternal = await buildEnqueueStatus(
     resolved,
     exec.serializer,
@@ -95,6 +97,15 @@ export async function enqueueWorkflowWithOptions<T = unknown>(
   // Fields DBOS internals own, which buildEnqueueStatus leaves for its caller to stamp.
   internalStatus.parentWorkflowID = callerID;
   internalStatus.applicationID = globalParams.appID;
+  // Without an explicit timeout, inherit an ambient withWorkflowTimeout, else the parent's propagated deadline.
+  if (resolved.workflowTimeoutMS === undefined) {
+    if (pctx?.workflowTimeoutMS) {
+      internalStatus.timeoutMS = pctx.workflowTimeoutMS;
+    } else if (pctx?.workflowTimeoutMS !== null) {
+      // A null ambient timeout explicitly detaches the parent's deadline.
+      internalStatus.deadlineEpochMS = pctx?.deadlineEpochMS;
+    }
+  }
 
   const childStartTime = Date.now();
   try {

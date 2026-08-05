@@ -469,6 +469,13 @@ export class DBOS {
 
     const executor: DBOSExecutor = DBOSExecutor.globalInstance;
 
+    if (globalParams.appName === undefined) {
+      executor.logger.warn(
+        'No application name is configured. This process will match, claim, and run workflows belonging to ' +
+          'every application sharing its system database. Set `name` in the DBOS configuration to scope it to its own.',
+      );
+    }
+
     // Initialize data sources before executor.init() dispatches recovery, so recovered
     // workflows can run their transactions immediately instead of racing initialization.
     for (const [_n, ds] of transactionalDataSources) {

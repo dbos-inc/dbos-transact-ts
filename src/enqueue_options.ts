@@ -9,6 +9,8 @@ import { randomUUID } from 'node:crypto';
 import type { WorkflowStatusInternal } from './system_database';
 import { StatusString, validateWorkflowAttributes, type WorkflowSerializationFormat } from './workflow';
 import { type DBOSSerializer, serializeArgs } from './serialization';
+import { DBOSError, DBOSInvalidQueuePriorityError } from './error';
+import { DBOS_QUEUE_MIN_PRIORITY, DBOS_QUEUE_MAX_PRIORITY } from './dbos-executor';
 
 /**
  * Options describing a workflow to enqueue by name, without a reference to its
@@ -70,6 +72,17 @@ export async function buildEnqueueStatus(
   defaultSerialization?: WorkflowSerializationFormat,
 ): Promise<WorkflowStatusInternal> {
   validateWorkflowAttributes(options.attributes);
+  if (
+    options.priority !== undefined &&
+    (options.priority < DBOS_QUEUE_MIN_PRIORITY || options.priority > DBOS_QUEUE_MAX_PRIORITY)
+  ) {
+    throw new DBOSInvalidQueuePriorityError(options.priority, DBOS_QUEUE_MIN_PRIORITY, DBOS_QUEUE_MAX_PRIORITY);
+  }
+  if (options.workflowID !== undefined && options.workflowID.trim() === '') {
+    throw new DBOSError(
+      `Invalid workflow ID '${options.workflowID}': workflow IDs must be non-empty and cannot be only whitespace.`,
+    );
+  }
   const workflowUUID = options.workflowID ?? randomUUID();
   const serparam = await serializeArgs(
     positionalArgs,
