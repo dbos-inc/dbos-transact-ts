@@ -247,6 +247,12 @@ program
         console.error('Nothing to re-own: pass --from, --adopt-unclaimed-rows, or both.');
         exit(1);
       }
+      // Reject here rather than let a NaN reach SQL after the first transaction commits.
+      const batchSize = Number(options.batchSize);
+      if (!Number.isInteger(batchSize) || batchSize < 1) {
+        console.error(`Invalid --batch-size '${options.batchSize}': expected a positive integer.`);
+        exit(1);
+      }
 
       if (!options.yes) {
         const rl = readline.createInterface({ input, output });
@@ -271,7 +277,7 @@ program
       });
       try {
         const moved = await client.renameApplication(options.from, options.to, {
-          batchSize: Number(options.batchSize),
+          batchSize,
           adoptUnclaimedRows: options.adoptUnclaimedRows,
         });
         console.log(JSON.stringify(moved, null, 2));

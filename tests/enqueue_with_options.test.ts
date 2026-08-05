@@ -137,6 +137,18 @@ describe('enqueue-workflow-with-options', () => {
     const childID = await handle.getResult();
     expect(parentRuns).toBe(1);
 
+    // The ID derives from the caller and its function ID, so a replay rebuilds the same
+    // one and collides on workflow_uuid instead of enqueueing a second workflow.
+    const childStepID = Number(childID.slice(handle.workflowID.length + 1));
+    expect(childID.startsWith(`${handle.workflowID}-`)).toBe(true);
+    expect(Number.isInteger(childStepID)).toBe(true);
+
+    // The child is linked to its parent, so it is reachable as a child workflow.
+    const childStatus = await DBOS.getWorkflowStatus(childID);
+    expect(childStatus?.parentWorkflowID).toBe(handle.workflowID);
+    const children = await DBOS.listWorkflows({ parentWorkflowID: handle.workflowID });
+    expect(children.map((w) => w.workflowID)).toContain(childID);
+
     // The enqueue is checkpointed as a child step of the parent.
     const steps = await DBOS.listWorkflowSteps(handle.workflowID);
     const childStep = steps?.find((s) => s.childWorkflowID === childID);

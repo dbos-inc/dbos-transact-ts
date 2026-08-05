@@ -848,6 +848,15 @@ describe('debouncer-tests', () => {
       expect((await targeted.debounce('k', 1000000000, 3)).workflowID).toBe(first.workflowID);
       expect(await ownerOf(first.workflowID)).toBe('other-app');
 
+      // The target can also come from the workflow options, between the debouncer's own
+      // setting and the client's identity.
+      const viaWorkflowOptions = new DebouncerClient(client, {
+        workflowName: 'targetedWorkflow',
+        startWorkflowParams: { enqueueOptions: { applicationName: 'other-app' } },
+      });
+      expect((await viaWorkflowOptions.debounce('k', 1000000000, 5)).workflowID).toBe(first.workflowID);
+      expect(await ownerOf(first.workflowID)).toBe('other-app');
+
       // Without naming the target, the client acts as itself and collides.
       const asItself = new DebouncerClient(client, { workflowName: 'targetedWorkflow' });
       await expect(asItself.debounce('k', 1000, 4)).rejects.toThrow(DBOSQueueDuplicatedError);

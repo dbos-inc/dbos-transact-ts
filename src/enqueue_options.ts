@@ -1,14 +1,12 @@
 /**
- * Status-row construction for enqueueing a workflow from options alone.
- *
- * Shared by `DBOSClient.enqueue`, which enqueues from outside an application, and
- * `DBOS.enqueueWorkflowWithOptions`, which enqueues from inside one. Both build the
- * same ENQUEUED row from the same options, so a workflow enqueued either way is
- * indistinguishable to the executor that eventually runs it.
+ * Status-row construction for enqueueing a workflow from options alone, backing
+ * `DBOS.enqueueWorkflowWithOptions`. It builds the same ENQUEUED row a
+ * `DBOSClient.enqueue` would, so a workflow enqueued either way is indistinguishable
+ * to the executor that eventually runs it.
  */
 
 import { randomUUID } from 'node:crypto';
-import type { DuplicationPolicy, WorkflowStatusInternal } from './system_database';
+import type { WorkflowStatusInternal } from './system_database';
 import { StatusString, validateWorkflowAttributes, type WorkflowSerializationFormat } from './workflow';
 import { type DBOSSerializer, serializeArgs } from './serialization';
 
@@ -45,8 +43,6 @@ export interface EnqueueWorkflowOptions {
   queuePartitionKey?: string;
   /** Seconds to delay before the workflow becomes eligible to run. */
   delaySeconds?: number;
-  /** How to handle a collision with another workflow holding the same deduplication ID. */
-  duplicationPolicy?: DuplicationPolicy;
   /** Custom key-value attributes to attach to the workflow at creation. */
   attributes?: Record<string, unknown>;
   /**

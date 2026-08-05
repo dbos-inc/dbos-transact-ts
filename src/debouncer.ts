@@ -258,8 +258,12 @@ export class DebouncerClient {
 
     const queueName = this.cfg.startWorkflowParams?.queueName ?? INTERNAL_QUEUE_NAME;
     const deduplicationID = `${this.cfg.workflowClassName}.${this.cfg.workflowName}-${debounceKey}`;
-    // Same one-owner rule as Debouncer.debounce; the debouncer's target wins, then the client's identity.
-    const targetApp = this.cfg.applicationName ?? this.client.applicationName;
+    // Same one-owner rule as Debouncer.debounce; the debouncer's target wins, then the
+    // workflow options', then the client's identity.
+    const targetApp =
+      this.cfg.applicationName ??
+      this.cfg.startWorkflowParams?.enqueueOptions?.applicationName ??
+      this.client.applicationName;
 
     while (true) {
       // Try to extend an existing debounced workflow for this key first (the sole coalescing mechanism).

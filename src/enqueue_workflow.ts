@@ -19,12 +19,22 @@ import { globalParams } from './utils';
  * workflow honours `withNextWorkflowID`, `withAuthedContext` and friends. `appVersion`
  * is the deliberate exception: the target may belong to another executor, so stamping
  * the caller's version would strand the row.
+ *
+ * Inside a workflow the ID derives from the caller and its function ID, so a replay
+ * after a crash between the enqueue and its checkpoint rebuilds the same ID and
+ * collides on workflow_uuid instead of enqueueing the workflow a second time.
  */
-function resolveOptions(options: EnqueueWorkflowOptions): EnqueueWorkflowOptions {
+function resolveOptions(
+  options: EnqueueWorkflowOptions,
+  callerID: string | undefined,
+  callerFunctionID: number | undefined,
+): EnqueueWorkflowOptions {
   const pctx = getCurrentContextStore();
+  const derivedID =
+    callerID !== undefined && callerFunctionID !== undefined ? `${callerID}-${callerFunctionID}` : undefined;
   return {
     ...options,
-    workflowID: getNextWFID(options.workflowID),
+    workflowID: getNextWFID(options.workflowID) ?? derivedID,
     workflowTimeoutMS: options.workflowTimeoutMS ?? pctx?.workflowTimeoutMS ?? undefined,
     // No explicit target, so this application owns it.
     applicationName: options.applicationName ?? globalParams.appName,
@@ -59,13 +69,16 @@ export async function enqueueWorkflowWithOptions<T = unknown>(
     }
   }
 
-  const resolved = resolveOptions(options);
+  const resolved = resolveOptions(options, callerID, callerFunctionID);
   const internalStatus: WorkflowStatusInternal = await buildEnqueueStatus(
     resolved,
     exec.serializer,
     positionalArgs,
     namedArgs,
   );
+  // Fields DBOS internals own, which buildEnqueueStatus leaves for its caller to stamp.
+  internalStatus.parentWorkflowID = callerID;
+  internalStatus.applicationID = globalParams.appID;
 
   const childStartTime = Date.now();
   try {

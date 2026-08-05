@@ -4774,7 +4774,9 @@ export class SystemDatabase {
     if (oldName === newName) {
       throw new DBOSError(`Application '${newName}' already holds that name; nothing to rename.`);
     }
-    if (batchSize !== undefined && batchSize < 1) {
+    // Reject before the first transaction commits: a NaN survives a bare `< 1` test and
+    // would only fail once it reached SQL, leaving the rename half-applied.
+    if (batchSize !== undefined && (!Number.isInteger(batchSize) || batchSize < 1)) {
       throw new DBOSError(`batchSize must be a positive integer, got ${batchSize}`);
     }
 
