@@ -5,12 +5,18 @@
  */
 
 import { DBOSExecutor } from './dbos-executor';
-import { getCurrentContextStore, getNextWFID, functionIDGetIncrement, isInWorkflowCtx } from './context';
+import {
+  getCurrentContextStore,
+  getNextWFID,
+  functionIDGetIncrement,
+  isInWorkflowCtx,
+  isWithinWorkflowCtx,
+} from './context';
 import { buildEnqueueStatus, type EnqueueWorkflowOptions } from './enqueue_options';
 import { RetrievedHandle } from './workflow';
 import type { WorkflowHandle } from './workflow';
 import type { WorkflowStatusInternal } from './system_database';
-import { DBOSQueueDuplicatedError } from './error';
+import { DBOSInvalidWorkflowTransitionError, DBOSQueueDuplicatedError } from './error';
 import { deserializeResError, serializeResError } from './serialization';
 import { globalParams } from './utils';
 
@@ -26,6 +32,7 @@ import { globalParams } from './utils';
  */
 function resolveOptions(
   options: EnqueueWorkflowOptions,
+  assignedID: string | undefined,
   callerID: string | undefined,
   callerFunctionID: number | undefined,
 ): EnqueueWorkflowOptions {
@@ -34,8 +41,10 @@ function resolveOptions(
     callerID !== undefined && callerFunctionID !== undefined ? `${callerID}-${callerFunctionID}` : undefined;
   return {
     ...options,
-    workflowID: getNextWFID(options.workflowID) ?? derivedID,
+    workflowID: assignedID ?? derivedID,
     workflowTimeoutMS: options.workflowTimeoutMS ?? pctx?.workflowTimeoutMS ?? undefined,
+    authenticatedUser: options.authenticatedUser ?? pctx?.authenticatedUser,
+    authenticatedRoles: options.authenticatedRoles ?? pctx?.authenticatedRoles,
     // No explicit target, so this application owns it.
     applicationName: options.applicationName ?? globalParams.appName,
   };
@@ -56,8 +65,15 @@ export async function enqueueWorkflowWithOptions<T = unknown>(
 
   const pctx = getCurrentContextStore();
   const inWorkflow = pctx !== undefined && isInWorkflowCtx(pctx);
+  if (pctx !== undefined && isWithinWorkflowCtx(pctx) && !inWorkflow) {
+    throw new DBOSInvalidWorkflowTransitionError(
+      'Invalid call to `enqueueWorkflowWithOptions` from within a `step` or `transaction`',
+    );
+  }
   const callerID = inWorkflow ? pctx.workflowId : undefined;
   const callerFunctionID = inWorkflow ? functionIDGetIncrement() : undefined;
+  // Consume an ambient withNextWorkflowID assignment even on a replay, so it cannot leak to a later workflow start.
+  const assignedID = getNextWFID(options.workflowID);
 
   if (callerID !== undefined && callerFunctionID !== undefined) {
     const recorded = await sysdb.getOperationResultAndThrowIfCancelled(callerID, callerFunctionID);
@@ -69,7 +85,7 @@ export async function enqueueWorkflowWithOptions<T = unknown>(
     }
   }
 
-  const resolved = resolveOptions(options, callerID, callerFunctionID);
+  const resolved = resolveOptions(options, assignedID, callerID, callerFunctionID);
   const internalStatus: WorkflowStatusInternal = await buildEnqueueStatus(
     resolved,
     exec.serializer,

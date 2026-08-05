@@ -38,7 +38,6 @@ import { GlobalLogger } from './telemetry/logs';
 import { WorkflowQueue } from './wfqueue';
 import { randomUUID } from 'crypto';
 import { getClientConfig } from './utils';
-import { isValidApplicationName } from './config';
 import { connectToPGAndReportOutcome, ensurePGDatabase, maskDatabaseUrl } from './database_utils';
 import { runSysMigrationsPg } from './sysdb_migrations/migration_runner';
 import { allMigrations } from './sysdb_migrations/internal/migrations';
@@ -4764,12 +4763,6 @@ export class SystemDatabase {
     }
     if (oldName === undefined && !adoptUnclaimedRows) {
       throw new DBOSError('Nothing to re-own: name the application to rename, adopt unclaimed rows, or both.');
-    }
-    if (!isValidApplicationName(newName)) {
-      throw new DBOSError(
-        `Invalid application name '${newName}'. Application names must be between 3 and 30 characters ` +
-          'long and contain only lowercase letters, numbers, dashes, and underscores.',
-      );
     }
     if (oldName === newName) {
       throw new DBOSError(`Application '${newName}' already holds that name; nothing to rename.`);

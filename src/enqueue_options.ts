@@ -45,6 +45,10 @@ export interface EnqueueWorkflowOptions {
   delaySeconds?: number;
   /** Custom key-value attributes to attach to the workflow at creation. */
   attributes?: Record<string, unknown>;
+  /** The authenticated user recorded on the workflow. Defaults to the caller's ambient authenticated user, if any. */
+  authenticatedUser?: string;
+  /** The authenticated roles recorded on the workflow. Defaults to the caller's ambient authenticated roles, if any. */
+  authenticatedRoles?: string[];
   /**
    * The application that owns and runs this workflow. Defaults to the enqueuer's own
    * application. Leaving both unset enqueues an unclaimed workflow, which any
@@ -85,11 +89,11 @@ export async function buildEnqueueStatus(
     workflowClassName: options.workflowClassName ?? '',
     workflowConfigName: options.workflowConfigName ?? '',
     queueName: options.queueName,
-    authenticatedUser: '',
+    authenticatedUser: options.authenticatedUser ?? '',
     output: null,
     error: null,
     assumedRole: '',
-    authenticatedRoles: [],
+    authenticatedRoles: options.authenticatedRoles ?? [],
     request: {},
     executorId: '',
     applicationVersion: options.appVersion,
