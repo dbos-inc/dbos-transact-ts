@@ -1,7 +1,6 @@
-import type { DBMigration } from '../migration_runner';
+import { SHARED_MIGRATION_BASE, type DBMigration } from '../migration_runner';
 
-// From this index on, every SDK defines the same migration at the same index.
-export const SHARED_MIGRATION_BASE = 100;
+export { SHARED_MIGRATION_BASE };
 
 /**
  * Pad a language's own history out to SHARED_MIGRATION_BASE - 1. Earlier indices

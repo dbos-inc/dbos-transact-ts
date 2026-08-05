@@ -27,6 +27,31 @@ async function indexExists(client: Client, name: string): Promise<boolean> {
   return res.rows[0].exists;
 }
 
+async function tableExists(client: Client, name: string): Promise<boolean> {
+  const res = await client.query<{ exists: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1 FROM pg_tables
+       WHERE schemaname = $1 AND tablename = $2
+     ) AS exists`,
+    [TEST_SCHEMA, name],
+  );
+  return res.rows[0].exists;
+}
+
+/** A migration list whose only real work sits at `index`, with empty pads before it. */
+function listWithMigrationAt(index: number, migration: DBMigration): DBMigration[] {
+  const head: DBMigration[] = [
+    { pg: [`CREATE SCHEMA IF NOT EXISTS "${TEST_SCHEMA}"`] },
+    {
+      pg: [
+        `CREATE TABLE "${TEST_SCHEMA}"."dbos_migrations" ("version" bigint not null, constraint "dbos_migrations_pkey_t" primary key ("version"))`,
+      ],
+    },
+  ];
+  const pads: DBMigration[] = Array.from({ length: index - head.length - 1 }, () => ({ pg: [] }));
+  return [...head, ...pads, migration];
+}
+
 async function indexDefinition(client: Client, name: string): Promise<string | undefined> {
   const res = await client.query<{ indexdef: string }>(
     `SELECT indexdef FROM pg_indexes WHERE schemaname = $1 AND indexname = $2`,
@@ -172,6 +197,42 @@ describe('sysdb migration runner', () => {
     const result = await runSysMigrationsPg(client, migrations, TEST_SCHEMA, { onWarn: () => {} });
     expect(result.toVersion).toBe(migrations.length);
     expect(await getCurrentSysDBVersion(client, TEST_SCHEMA)).toBe(migrations.length);
+  });
+
+  // Every SDK runs the shared migrations against a database they may share, so a peer must
+  // never observe one half-applied — migration 105 replaces a stored function in place.
+  test('a failing shared migration rolls back whole, and its version with it', async () => {
+    const failing = listWithMigrationAt(SHARED_MIGRATION_BASE, {
+      pg: [`CREATE TABLE "${TEST_SCHEMA}"."t_shared" (id int)`, `SELECT 1/0`],
+    });
+
+    await expect(runSysMigrationsPg(client, failing, TEST_SCHEMA, { onWarn: () => {} })).rejects.toBeDefined();
+    expect(await tableExists(client, 't_shared')).toBe(false);
+    expect(await getCurrentSysDBVersion(client, TEST_SCHEMA)).toBe(2);
+  });
+
+  // Statements keep their individual "already applied" tolerance via savepoints; a bare
+  // transaction would abort on the first ignorable error instead.
+  test('a shared migration tolerates an already-applied statement and still commits', async () => {
+    const tolerant = listWithMigrationAt(SHARED_MIGRATION_BASE, {
+      pg: [`CREATE TABLE "${TEST_SCHEMA}"."t_ok" (id int)`, `CREATE TABLE "${TEST_SCHEMA}"."t_ok" (id int)`],
+    });
+
+    const result = await runSysMigrationsPg(client, tolerant, TEST_SCHEMA, { onWarn: () => {} });
+    expect(result.toVersion).toBe(SHARED_MIGRATION_BASE);
+    expect(await tableExists(client, 't_ok')).toBe(true);
+    expect(await getCurrentSysDBVersion(client, TEST_SCHEMA)).toBe(SHARED_MIGRATION_BASE);
+  });
+
+  // The guarantee starts exactly at the shared base; below it the long-standing
+  // statement-at-a-time behaviour is unchanged.
+  test('a failing migration below the shared base still applies its earlier statements', async () => {
+    const failing = listWithMigrationAt(3, {
+      pg: [`CREATE TABLE "${TEST_SCHEMA}"."t_legacy" (id int)`, `SELECT 1/0`],
+    });
+
+    await expect(runSysMigrationsPg(client, failing, TEST_SCHEMA, { onWarn: () => {} })).rejects.toBeDefined();
+    expect(await tableExists(client, 't_legacy')).toBe(true);
   });
 
   test('per-version bump on partial failure resumes on retry', async () => {

@@ -1,5 +1,12 @@
 import type { ClientBase } from 'pg';
 
+/**
+ * From this index on, every SDK defines the same migration at the same index. Migrations
+ * at or above it run in one transaction, so a peer in another language never observes a
+ * half-applied shared migration.
+ */
+export const SHARED_MIGRATION_BASE = 100;
+
 export type DBMigration = {
   name?: string;
   pg?: ReadonlyArray<string>;
@@ -79,6 +86,48 @@ async function runStatementsIgnoring(
       }
       throw err;
     }
+  }
+}
+
+/**
+ * Run a migration's statements and record its version in a single transaction, so a peer
+ * process never observes the migration half-applied. Each statement keeps its individual
+ * "already applied" tolerance via a savepoint, which a bare transaction could not: the
+ * first ignorable error would otherwise abort the whole transaction.
+ */
+async function runStatementsTransactionally(
+  client: ClientBase,
+  stmts: ReadonlyArray<string>,
+  schemaName: string,
+  version: number,
+  ignoreCodes: ReadonlySet<string>,
+  warn: (m: string, e?: unknown) => void,
+): Promise<void> {
+  await client.query('BEGIN');
+  try {
+    for (const s of stmts) {
+      await client.query('SAVEPOINT dbos_migration_stmt');
+      try {
+        await client.query(s, []);
+      } catch (err) {
+        if (!isDDLAlreadyAppliedPgError(err, ignoreCodes)) {
+          throw err;
+        }
+        await client.query('ROLLBACK TO SAVEPOINT dbos_migration_stmt');
+        warn(`Ignoring migration error; migration was likely already applied.  Occurred while executing: ${s}`, err);
+      }
+      await client.query('RELEASE SAVEPOINT dbos_migration_stmt');
+    }
+    // Recorded inside the transaction, so an interrupt cannot leave the migration applied but unrecorded.
+    await bumpMigrationVersion(client, schemaName, version);
+    await client.query('COMMIT');
+  } catch (err) {
+    try {
+      await client.query('ROLLBACK');
+    } catch {
+      // Preserve the original failure; the rollback only matters if the connection survived.
+    }
+    throw err;
   }
 }
 
@@ -182,6 +231,9 @@ export async function runSysMigrationsPg(
       loggedInfo = true;
     }
 
+    const warnWithCause = (msg: string, e?: unknown) =>
+      onWarn(`${msg}${e ? `\n  → ${String((e as { message?: string }).message ?? '')}` : ''}`);
+
     // Run migrations in autocommit
     if (m.online && !isCockroach) {
       // Drop any indexes left INVALID by a prior interrupted run before
@@ -190,12 +242,16 @@ export async function runSysMigrationsPg(
       for (const s of stmts) {
         await client.query(s, []);
       }
+      await bumpMigrationVersion(client, schemaName, v);
+    } else if (v >= SHARED_MIGRATION_BASE) {
+      // Shared migrations are run by every SDK against a database they may share, so
+      // they commit all-or-nothing: migration 105 replaces a stored function, and a peer
+      // must never find it missing between the DROP and the CREATE.
+      await runStatementsTransactionally(client, stmts, schemaName, v, ignoreErrorCodes, warnWithCause);
     } else {
-      await runStatementsIgnoring(client, stmts, ignoreErrorCodes, (msg, e) =>
-        onWarn(`${msg}${e ? `\n  → ${String((e as { message?: string }).message ?? '')}` : ''}`),
-      );
+      await runStatementsIgnoring(client, stmts, ignoreErrorCodes, warnWithCause);
+      await bumpMigrationVersion(client, schemaName, v);
     }
-    await bumpMigrationVersion(client, schemaName, v);
     applied++;
     lastAppliedVersion = v;
   }
