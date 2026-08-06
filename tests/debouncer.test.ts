@@ -671,6 +671,13 @@ describe('debouncer-tests', () => {
     });
     await expect(debouncer.debounce('k', 1000, 1)).rejects.toThrow('partition key');
 
+    // Local: a caller-set applicationName is rejected; only the debouncer's own option names the target.
+    debouncer = new Debouncer({
+      workflow,
+      startWorkflowParams: { enqueueOptions: { applicationName: 'other-app' } },
+    });
+    await expect(debouncer.debounce('k', 1000, 1)).rejects.toThrow('applicationName');
+
     // No conflicting option left a workflow behind.
     expect((await DBOS.listWorkflows({ workflowName: 'debouncerWorkflow' })).length).toBe(0);
 

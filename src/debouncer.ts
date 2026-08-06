@@ -59,10 +59,17 @@ function isQueueDeduplicatedError(e: unknown): boolean {
 /**
  * A debounce owns the workflow's deduplication ID (the debounce key) and its delay
  * (the debounce period), so a caller must not also set them. Priority and partition
- * keys are rejected because they cannot apply to a debounced enqueue.
+ * keys are rejected because they cannot apply to a debounced enqueue. A server-side
+ * debounce also rejects a caller-set applicationName: only the debouncer's own option
+ * names the target there, while the client additionally accepts it as a fallback.
  */
-function rejectConflictingOptions(params: StartWorkflowParams | undefined): void {
+function rejectConflictingOptions(params: StartWorkflowParams | undefined, rejectApplicationName = false): void {
   const enqueueOptions = params?.enqueueOptions;
+  if (rejectApplicationName && enqueueOptions?.applicationName !== undefined) {
+    throw new DBOSError(
+      "Cannot debounce a workflow with an applicationName set: the debouncer's own applicationName option names the target application.",
+    );
+  }
   if (enqueueOptions?.deduplicationID !== undefined) {
     throw new DBOSError(
       'Cannot debounce a workflow with a deduplicationID set: the debounce key is used as the workflow deduplication ID.',
@@ -146,7 +153,7 @@ export class Debouncer<Args extends unknown[], Return> {
       throw Error(`debouncePeriodMs must be positive, not ${debouncePeriodMs}`);
     }
     ensureDBOSIsLaunched('debounce');
-    rejectConflictingOptions(this.cfg.startWorkflowParams);
+    rejectConflictingOptions(this.cfg.startWorkflowParams, true);
 
     const exec = DBOSExecutor.globalInstance!;
     const queueName = this.cfg.startWorkflowParams?.queueName ?? INTERNAL_QUEUE_NAME;
