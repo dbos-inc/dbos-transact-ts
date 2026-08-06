@@ -137,8 +137,7 @@ describe('enqueue-workflow-with-options', () => {
     const childID = await handle.getResult();
     expect(parentRuns).toBe(1);
 
-    // The ID derives from the caller and its function ID, so a replay rebuilds the same
-    // one and collides on workflow_uuid instead of enqueueing a second workflow.
+    // The ID derives from the caller and its function ID, so a replay collides instead of enqueueing a second workflow.
     const childStepID = Number(childID.slice(handle.workflowID.length + 1));
     expect(childID.startsWith(`${handle.workflowID}-`)).toBe(true);
     expect(Number.isInteger(childStepID)).toBe(true);

@@ -787,8 +787,7 @@ describe('debouncer-tests', () => {
   });
 
   test('test-debounce-ownership-across-applications', async () => {
-    // A debounce key held by another application is a conflict, not a race to retry:
-    // that holder never leaves DELAYED on our account, so retrying would spin.
+    // A debounce key held by another application is a conflict, not a race to retry, which would spin.
     const holder = await DBOSClient.create({
       systemDatabaseUrl: config.systemDatabaseUrl!,
       applicationName: 'debounce-app-one',
@@ -823,9 +822,7 @@ describe('debouncer-tests', () => {
   });
 
   test('test-debounce-targets-another-application', async () => {
-    // Both debouncers can act for a named application: the fresh enqueue stamps it, later
-    // bounces from any caller naming the same target coalesce onto the holder, and a caller
-    // resolving to a different target collides.
+    // Both debouncers can act for a named application: same-target bounces coalesce, a different target collides.
     const client = await DBOSClient.create({
       systemDatabaseUrl: config.systemDatabaseUrl!,
       applicationName: 'app-a',
@@ -855,8 +852,7 @@ describe('debouncer-tests', () => {
       expect((await targeted.debounce('k', 1000000000, 3)).workflowID).toBe(first.workflowID);
       expect(await ownerOf(first.workflowID)).toBe('other-app');
 
-      // The target can also come from the workflow options, between the debouncer's own
-      // setting and the client's identity.
+      // The target can also come from the workflow options, between the debouncer's own setting and the client's identity.
       const viaWorkflowOptions = new DebouncerClient(client, {
         workflowName: 'targetedWorkflow',
         startWorkflowParams: { enqueueOptions: { applicationName: 'other-app' } },

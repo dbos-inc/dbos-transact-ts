@@ -838,9 +838,8 @@ export class SystemDatabase {
   // ==================== Application Ownership ====================
 
   /**
-   * A predicate matching rows owned by these applications plus unclaimed ones, which
-   * belong to every application. Unset, or empty, matches every application.
-   * Appends its bind parameter to `params`.
+   * A predicate matching rows owned by these applications plus unclaimed ones, which belong to
+   * every application; unset or empty matches everything. Appends its bind parameter to `params`.
    */
   #appNameFilter(column: string, value: string | string[] | undefined, params: unknown[]): string {
     const names = value === undefined ? [] : Array.isArray(value) ? value : [value];
@@ -1582,10 +1581,9 @@ export class SystemDatabase {
    * Extend an existing debounced DELAYED workflow's delay and update its inputs, atomically.
    * The new delay is capped at the workflow's debounce_deadline_epoch_ms, if one is set.
    * Matching on workflow name and class ensures a debounce-key collision between different
-   * workflows never overwrites another workflow's inputs. The bounce acts for
-   * `params.applicationName`: it extends only that application's holders plus unclaimed
-   * ones, claiming those for it. If nothing matched, returns the
-   * current holder (or that the key is unheld) so the caller can start fresh or surface a conflict.
+   * workflows never overwrites another workflow's inputs. The bounce acts for `params.applicationName`:
+   * it extends only that application's holders plus unclaimed ones, claiming those. If nothing matched,
+   * returns the current holder (or that the key is unheld) so the caller can start fresh or surface a conflict.
    * Runs on `client` if given, joining its transaction (e.g. a transactional step's);
    * otherwise in its own retried transaction.
    */
@@ -4767,8 +4765,7 @@ export class SystemDatabase {
     if (oldName === newName) {
       throw new DBOSError(`Application '${newName}' already holds that name; nothing to rename.`);
     }
-    // Reject before the first transaction commits: a NaN survives a bare `< 1` test and
-    // would only fail once it reached SQL, leaving the rename half-applied.
+    // A NaN survives a bare `< 1` test and would only fail once it reached SQL, leaving the rename half-applied.
     if (batchSize !== undefined && (!Number.isInteger(batchSize) || batchSize < 1)) {
       throw new DBOSError(`batchSize must be a positive integer, got ${batchSize}`);
     }

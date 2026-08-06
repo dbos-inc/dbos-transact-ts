@@ -1,8 +1,6 @@
 /**
- * Status-row construction for enqueueing a workflow from options alone, backing
- * `DBOS.enqueueWorkflowWithOptions`. It builds the same ENQUEUED row a
- * `DBOSClient.enqueue` would, so a workflow enqueued either way is indistinguishable
- * to the executor that eventually runs it.
+ * Status-row construction for enqueueing a workflow from options alone, backing `DBOS.enqueueWorkflowWithOptions`.
+ * It builds the same ENQUEUED row a `DBOSClient.enqueue` would, indistinguishable to the executor that runs it.
  */
 
 import { randomUUID } from 'node:crypto';
@@ -60,9 +58,8 @@ export interface EnqueueWorkflowOptions {
 }
 
 /**
- * Build (without persisting) the ENQUEUED row these options describe. Fields DBOS
- * internals own (parent linkage, executor, application ID) are left unset here and
- * stamped by the caller.
+ * Build (without persisting) the ENQUEUED row these options describe. Fields DBOS internals
+ * own (parent linkage, executor, application ID) are left unset here and stamped by the caller.
  */
 export async function buildEnqueueStatus(
   options: EnqueueWorkflowOptions,

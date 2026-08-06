@@ -60,8 +60,7 @@ function isQueueDeduplicatedError(e: unknown): boolean {
  * A debounce owns the workflow's deduplication ID (the debounce key) and its delay
  * (the debounce period), so a caller must not also set them. Priority and partition
  * keys are rejected because they cannot apply to a debounced enqueue. A server-side
- * debounce also rejects a caller-set applicationName: only the debouncer's own option
- * names the target there, while the client additionally accepts it as a fallback.
+ * debounce also rejects a caller-set applicationName; the client accepts it as a fallback.
  */
 function rejectConflictingOptions(params: StartWorkflowParams | undefined, rejectApplicationName = false): void {
   const enqueueOptions = params?.enqueueOptions;
@@ -265,8 +264,7 @@ export class DebouncerClient {
 
     const queueName = this.cfg.startWorkflowParams?.queueName ?? INTERNAL_QUEUE_NAME;
     const deduplicationID = `${this.cfg.workflowClassName}.${this.cfg.workflowName}-${debounceKey}`;
-    // Same one-owner rule as Debouncer.debounce; the debouncer's target wins, then the
-    // workflow options', then the client's identity.
+    // One owner for the whole operation: the debouncer's target wins, then the workflow options', then the client's.
     const targetApp =
       this.cfg.applicationName ??
       this.cfg.startWorkflowParams?.enqueueOptions?.applicationName ??

@@ -349,8 +349,7 @@ describe('application-name', () => {
       await expect(admin.renameApplication(APP, APP)).rejects.toThrow(/already holds that name/);
       await expect(admin.renameApplication(undefined, 'renamed-app')).rejects.toThrow(/Nothing to re-own/);
 
-      // A non-integer batch size is rejected before the first transaction commits, so
-      // nothing moves; a NaN would otherwise survive the guard and fail once it hit SQL.
+      // A non-integer batch size (including NaN) is rejected before the first transaction commits, so nothing moves.
       await expect(admin.renameApplication(APP, 'renamed-app', { batchSize: Number('ten') })).rejects.toThrow(
         /batchSize must be a positive integer/,
       );

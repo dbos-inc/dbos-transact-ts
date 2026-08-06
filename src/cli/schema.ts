@@ -25,9 +25,7 @@ function migrationSections(schemaName: string, startMigration: number): PrintedS
   let versionRowExists = tableExists;
   let lastEmitted = startMigration - 1;
 
-  // Version bookkeeping mirroring the runner: an interrupted apply can be resumed from
-  // the next migration number. The runner records nothing until a migration has created
-  // the dbos_migrations table.
+  // Version bookkeeping mirroring the runner, which records nothing until a migration creates dbos_migrations.
   const versionStatement = (version: number): string | undefined => {
     if (!tableExists) return undefined;
     lastEmitted = version;

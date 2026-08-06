@@ -1,9 +1,8 @@
 import type { ClientBase } from 'pg';
 
 /**
- * From this index on, every SDK defines the same migration at the same index. Migrations
- * at or above it run in one transaction, so a peer in another language never observes a
- * half-applied shared migration.
+ * From this index on, every SDK defines the same migration at the same index and runs it
+ * in one transaction, so a peer in another language never observes it half-applied.
  */
 export const SHARED_MIGRATION_BASE = 100;
 
@@ -90,10 +89,8 @@ async function runStatementsIgnoring(
 }
 
 /**
- * Run a migration's statements and record its version in a single transaction, so a peer
- * process never observes the migration half-applied. No "already applied" tolerance:
- * every SDK sharing the database must reach the same verdict on a shared migration, so a
- * failure halts with the version un-advanced rather than committing a divergent schema.
+ * Run a migration's statements and record its version in one transaction, with no "already applied"
+ * tolerance: every SDK must reach the same verdict, so a failure halts with the version un-advanced.
  */
 async function runStatementsTransactionally(
   client: ClientBase,
@@ -232,9 +229,7 @@ export async function runSysMigrationsPg(
       }
       await bumpMigrationVersion(client, schemaName, v);
     } else if (v >= SHARED_MIGRATION_BASE) {
-      // Shared migrations are run by every SDK against a database they may share, so
-      // they commit all-or-nothing: migration 105 replaces a stored function, and a peer
-      // must never find it missing between the DROP and the CREATE.
+      // Shared migrations commit all-or-nothing: a peer must never find the function 105 replaces missing mid-migration.
       await runStatementsTransactionally(client, stmts, schemaName, v);
     } else {
       await runStatementsIgnoring(client, stmts, ignoreErrorCodes, warnWithCause);

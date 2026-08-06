@@ -1,7 +1,6 @@
 /**
- * Enqueue a workflow from inside an application using options alone, without a
- * reference to its function. The target may live in another process or another
- * language, so nothing here is validated against the local registry.
+ * Enqueue a workflow from inside an application using options alone, without a reference to its
+ * function. The target may live in another process or language, so nothing checks the local registry.
  */
 
 import { DBOSExecutor } from './dbos-executor';
@@ -21,14 +20,8 @@ import { deserializeResError, serializeResError } from './serialization';
 import { globalParams } from './utils';
 
 /**
- * Resolve the options against the ambient DBOS context, so an enqueue from inside a
- * workflow honours `withNextWorkflowID`, `withAuthedContext` and friends. `appVersion`
- * is the deliberate exception: the target may belong to another executor, so stamping
- * the caller's version would strand the row.
- *
- * Inside a workflow the ID derives from the caller and its function ID, so a replay
- * after a crash between the enqueue and its checkpoint rebuilds the same ID and
- * collides on workflow_uuid instead of enqueueing the workflow a second time.
+ * Resolve options against the ambient context, except `appVersion`, which would strand a row aimed at another
+ * executor. In a workflow the derived ID makes a crash-replay collide instead of enqueueing a second workflow.
  */
 function resolveOptions(
   options: EnqueueWorkflowOptions,
@@ -50,9 +43,8 @@ function resolveOptions(
 }
 
 /**
- * Enqueue the row, recording it as a child of the calling workflow when there is one.
- * Replay-safe: a recorded enqueue returns its original child ID rather than enqueueing
- * a second workflow, and rethrows a recorded failure.
+ * Enqueue the row, recording it as a child of the calling workflow when there is one. Replay-safe:
+ * a recorded enqueue returns its original child ID or rethrows its recorded failure.
  */
 export async function enqueueWorkflowWithOptions<T = unknown>(
   options: EnqueueWorkflowOptions,

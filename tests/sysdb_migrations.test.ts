@@ -112,8 +112,7 @@ describe('sysdb migration runner', () => {
     expect(await indexExists(client, 'idx_workflow_status_partition_dequeue')).toBe(false);
   });
 
-  // application_name is nullable everywhere it appears — NULL is what SDKs predating it
-  // write — and every name that addresses a row stays globally unique.
+  // application_name stays nullable everywhere (NULL is what SDKs predating it write); addressing names stay globally unique.
   test('shared migrations add nullable application_name and the ownership keys', async () => {
     const migrations = allMigrations(TEST_SCHEMA, { useListenNotify: false });
     await runSysMigrationsPg(client, migrations, TEST_SCHEMA, { onWarn: () => {} });
@@ -128,8 +127,7 @@ describe('sysdb migration runner', () => {
       expect(res.rows[0]).toEqual({ data_type: 'text', is_nullable: 'YES' });
     }
 
-    // Names stay global addresses; version_name only until the contract migration,
-    // whose replacement key migration 106 already carries.
+    // Names stay global addresses; version_name only until the contract migration, whose replacement key 106 carries.
     for (const index of [
       'uq_workflow_status_dedup_id',
       'queues_name_key',
@@ -153,8 +151,7 @@ describe('sysdb migration runner', () => {
     expect(fn.rows[0].args.split(',').length).toBe(17);
   });
 
-  // Their contents moved onto workflow_status columns (and workflow_schedules) long ago;
-  // dropping them is what leaves the schema identical to every other SDK's at the shared base.
+  // Long-abandoned tables; dropping them leaves the schema identical to every other SDK's at the shared base.
   test('the consolidated tables are gone, on a fresh database and on an upgrade', async () => {
     const migrations = allMigrations(TEST_SCHEMA, { useListenNotify: false });
     const gone = ['workflow_inputs', 'workflow_queue', 'scheduler_state'];
@@ -199,8 +196,7 @@ describe('sysdb migration runner', () => {
     expect(await getCurrentSysDBVersion(client, TEST_SCHEMA)).toBe(migrations.length);
   });
 
-  // Every SDK runs the shared migrations against a database they may share, so a peer must
-  // never observe one half-applied — migration 105 replaces a stored function in place.
+  // A peer sharing the database must never observe a shared migration half-applied (105 replaces a function in place).
   test('a failing shared migration rolls back whole, and its version with it', async () => {
     const failing = listWithMigrationAt(SHARED_MIGRATION_BASE, {
       pg: [`CREATE TABLE "${TEST_SCHEMA}"."t_shared" (id int)`, `SELECT 1/0`],
@@ -222,8 +218,7 @@ describe('sysdb migration runner', () => {
     expect(await getCurrentSysDBVersion(client, TEST_SCHEMA)).toBe(2);
   });
 
-  // The guarantee starts exactly at the shared base; below it the long-standing
-  // statement-at-a-time behaviour is unchanged.
+  // The guarantee starts exactly at the shared base; below it the statement-at-a-time behaviour is unchanged.
   test('a failing migration below the shared base still applies its earlier statements', async () => {
     const failing = listWithMigrationAt(3, {
       pg: [`CREATE TABLE "${TEST_SCHEMA}"."t_legacy" (id int)`, `SELECT 1/0`],
