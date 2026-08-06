@@ -841,8 +841,8 @@ export class SystemDatabase {
    * A predicate matching rows owned by these applications plus unclaimed ones, which belong to
    * every application; unset or empty matches everything. Appends its bind parameter to `params`.
    */
-  #appNameFilter(column: string, value: string | string[] | undefined, params: unknown[]): string {
-    const names = value === undefined ? [] : Array.isArray(value) ? value : [value];
+  #appNameFilter(column: string, value: string | string[] | null | undefined, params: unknown[]): string {
+    const names = value === undefined || value === null ? [] : Array.isArray(value) ? value : [value];
     if (names.length === 0) return 'TRUE';
     params.push(names);
     return `(${column} = ANY($${params.length}) OR ${column} IS NULL)`;
