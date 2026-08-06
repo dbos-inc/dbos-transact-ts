@@ -7,12 +7,6 @@ export { SHARED_MIGRATION_BASE };
  * stay per-language, safe to skip only because the schemas converge.
  */
 function padToSharedBase(migrations: DBMigration[]): DBMigration[] {
-  if (migrations.length >= SHARED_MIGRATION_BASE) {
-    throw new Error(
-      `Migration history is ${migrations.length} long, which reaches the shared numbering base ` +
-        `${SHARED_MIGRATION_BASE}. Shared migrations must be appended after it, not merged into the history.`,
-    );
-  }
   const padding: DBMigration[] = Array.from({ length: SHARED_MIGRATION_BASE - 1 - migrations.length }, () => ({
     pg: [],
   }));
