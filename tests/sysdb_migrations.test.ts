@@ -211,17 +211,15 @@ describe('sysdb migration runner', () => {
     expect(await getCurrentSysDBVersion(client, TEST_SCHEMA)).toBe(2);
   });
 
-  // Statements keep their individual "already applied" tolerance via savepoints; a bare
-  // transaction would abort on the first ignorable error instead.
-  test('a shared migration tolerates an already-applied statement and still commits', async () => {
-    const tolerant = listWithMigrationAt(SHARED_MIGRATION_BASE, {
+  // No "already applied" tolerance above the base: every SDK must reach the same verdict on a shared migration.
+  test('a shared migration does not tolerate an already-applied statement', async () => {
+    const duplicated = listWithMigrationAt(SHARED_MIGRATION_BASE, {
       pg: [`CREATE TABLE "${TEST_SCHEMA}"."t_ok" (id int)`, `CREATE TABLE "${TEST_SCHEMA}"."t_ok" (id int)`],
     });
 
-    const result = await runSysMigrationsPg(client, tolerant, TEST_SCHEMA, { onWarn: () => {} });
-    expect(result.toVersion).toBe(SHARED_MIGRATION_BASE);
-    expect(await tableExists(client, 't_ok')).toBe(true);
-    expect(await getCurrentSysDBVersion(client, TEST_SCHEMA)).toBe(SHARED_MIGRATION_BASE);
+    await expect(runSysMigrationsPg(client, duplicated, TEST_SCHEMA, { onWarn: () => {} })).rejects.toBeDefined();
+    expect(await tableExists(client, 't_ok')).toBe(false);
+    expect(await getCurrentSysDBVersion(client, TEST_SCHEMA)).toBe(2);
   });
 
   // The guarantee starts exactly at the shared base; below it the long-standing

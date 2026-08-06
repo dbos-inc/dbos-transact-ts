@@ -91,32 +91,20 @@ async function runStatementsIgnoring(
 
 /**
  * Run a migration's statements and record its version in a single transaction, so a peer
- * process never observes the migration half-applied. Each statement keeps its individual
- * "already applied" tolerance via a savepoint, which a bare transaction could not: the
- * first ignorable error would otherwise abort the whole transaction.
+ * process never observes the migration half-applied. No "already applied" tolerance:
+ * every SDK sharing the database must reach the same verdict on a shared migration, so a
+ * failure halts with the version un-advanced rather than committing a divergent schema.
  */
 async function runStatementsTransactionally(
   client: ClientBase,
   stmts: ReadonlyArray<string>,
   schemaName: string,
   version: number,
-  ignoreCodes: ReadonlySet<string>,
-  warn: (m: string, e?: unknown) => void,
 ): Promise<void> {
   await client.query('BEGIN');
   try {
     for (const s of stmts) {
-      await client.query('SAVEPOINT dbos_migration_stmt');
-      try {
-        await client.query(s, []);
-      } catch (err) {
-        if (!isDDLAlreadyAppliedPgError(err, ignoreCodes)) {
-          throw err;
-        }
-        await client.query('ROLLBACK TO SAVEPOINT dbos_migration_stmt');
-        warn(`Ignoring migration error; migration was likely already applied.  Occurred while executing: ${s}`, err);
-      }
-      await client.query('RELEASE SAVEPOINT dbos_migration_stmt');
+      await client.query(s, []);
     }
     // Recorded inside the transaction, so an interrupt cannot leave the migration applied but unrecorded.
     await bumpMigrationVersion(client, schemaName, version);
@@ -247,7 +235,7 @@ export async function runSysMigrationsPg(
       // Shared migrations are run by every SDK against a database they may share, so
       // they commit all-or-nothing: migration 105 replaces a stored function, and a peer
       // must never find it missing between the DROP and the CREATE.
-      await runStatementsTransactionally(client, stmts, schemaName, v, ignoreErrorCodes, warnWithCause);
+      await runStatementsTransactionally(client, stmts, schemaName, v);
     } else {
       await runStatementsIgnoring(client, stmts, ignoreErrorCodes, warnWithCause);
       await bumpMigrationVersion(client, schemaName, v);
