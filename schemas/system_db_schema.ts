@@ -38,6 +38,7 @@ export interface workflow_status {
   schedule_name?: string | null; // If enqueued by a named schedule, that schedule's name.
   debounce_deadline_epoch_ms?: number | null; // Absolute cap (epoch ms) beyond which bounces may not extend the delay.
   is_debounced?: boolean; // True if the deduplication ID is a debounce key cleared on the DELAYED->ENQUEUED transition.
+  application_name?: string | null; // Owning application. NULL means unclaimed: any application may read and claim the row.
 }
 
 export interface notifications {
@@ -65,6 +66,7 @@ export interface operation_outputs {
   started_at_epoch_ms?: number;
   completed_at_epoch_ms?: number;
   serialization: SysDBSerializationFormat | null; // Relevant only to getEvent / recv / etc.
+  application_name?: string | null; // Denormalized from the parent so step observability filters without a join.
 }
 
 export interface event_dispatch_kv {
@@ -108,6 +110,7 @@ export interface workflow_schedules {
   automatic_backfill: boolean;
   cron_timezone: string | null;
   queue_name: string | null;
+  application_name?: string | null; // Owning application. NULL means unclaimed; schedule_name stays globally unique.
 }
 
 export interface application_versions {
@@ -115,6 +118,7 @@ export interface application_versions {
   version_name: string;
   version_timestamp: number;
   created_at: number;
+  application_name?: string | null; // Owning application. NULL means unclaimed.
 }
 
 export interface queues {
@@ -129,6 +133,7 @@ export interface queues {
   polling_interval_sec: number;
   created_at: number;
   updated_at: number;
+  application_name?: string | null; // Owning application. NULL means unclaimed; name stays globally unique.
 }
 
 // This is the deserialized version of operation_outputs

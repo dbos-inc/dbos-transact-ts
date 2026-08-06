@@ -1,4 +1,17 @@
-import type { DBMigration } from '../migration_runner';
+import { SHARED_MIGRATION_BASE, type DBMigration } from '../migration_runner';
+
+export { SHARED_MIGRATION_BASE };
+
+/**
+ * Pad a language's own history out to SHARED_MIGRATION_BASE - 1. Earlier indices
+ * stay per-language, safe to skip only because the schemas converge.
+ */
+function padToSharedBase(migrations: DBMigration[]): DBMigration[] {
+  const padding: DBMigration[] = Array.from({ length: SHARED_MIGRATION_BASE - 1 - migrations.length }, () => ({
+    pg: [],
+  }));
+  return [...migrations, ...padding];
+}
 
 export function allMigrations(
   schemaName: string = 'dbos',
@@ -7,7 +20,7 @@ export function allMigrations(
   const useListenNotify = opts?.useListenNotify ?? true;
   const isCockroach = opts?.isCockroach ?? false;
   const c = isCockroach ? '' : 'CONCURRENTLY';
-  return [
+  const history: DBMigration[] = [
     {
       name: '20240123182943_schema',
       pg: [`CREATE SCHEMA IF NOT EXISTS "${schemaName}"`],
@@ -721,6 +734,173 @@ export function allMigrations(
       name: '20250723_drop_workflow_status_partition_dequeue_index',
       online: true,
       pg: [`DROP INDEX ${c} IF EXISTS "${schemaName}"."idx_workflow_status_partition_dequeue"`],
+    },
+    // Long-abandoned tables whose contents moved onto workflow_status; dropping them leaves the schema identical to every other SDK's at the shared base.
+    {
+      name: '20250725_drop_consolidated_tables',
+      pg: [
+        `DROP TABLE IF EXISTS "${schemaName}"."workflow_inputs"`,
+        `DROP TABLE IF EXISTS "${schemaName}"."workflow_queue"`,
+        `DROP TABLE IF EXISTS "${schemaName}"."scheduler_state"`,
+      ],
+    },
+  ];
+
+  return [...padToSharedBase(history), ...sharedMigrations(schemaName, isCockroach)];
+}
+
+/**
+ * Migrations from SHARED_MIGRATION_BASE on, defined identically by every SDK at the
+ * same index so applications in different languages can share a system database.
+ */
+function sharedMigrations(schemaName: string, isCockroach: boolean): DBMigration[] {
+  return [
+    // NULL means unclaimed: any application may read and claim the row. One table per migration, so a blocked table does not hold the others' locks.
+    {
+      name: '100_workflow_status_application_name',
+      pg: [
+        `ALTER TABLE "${schemaName}"."workflow_status" ADD COLUMN IF NOT EXISTS "application_name" TEXT DEFAULT NULL`,
+      ],
+    },
+    {
+      name: '101_queues_application_name',
+      pg: [`ALTER TABLE "${schemaName}"."queues" ADD COLUMN IF NOT EXISTS "application_name" TEXT DEFAULT NULL`],
+    },
+    {
+      name: '102_workflow_schedules_application_name',
+      pg: [
+        `ALTER TABLE "${schemaName}"."workflow_schedules" ADD COLUMN IF NOT EXISTS "application_name" TEXT DEFAULT NULL`,
+      ],
+    },
+    {
+      name: '103_application_versions_application_name',
+      pg: [
+        `ALTER TABLE "${schemaName}"."application_versions" ADD COLUMN IF NOT EXISTS "application_name" TEXT DEFAULT NULL`,
+      ],
+    },
+    {
+      name: '104_operation_outputs_application_name',
+      pg: [
+        `ALTER TABLE "${schemaName}"."operation_outputs" ADD COLUMN IF NOT EXISTS "application_name" TEXT DEFAULT NULL`,
+      ],
+    },
+    // Callers omitting the trailing application_name enqueue an unclaimed workflow.
+    {
+      name: '105_enqueue_workflow_application_name',
+      pg: [
+        `DROP FUNCTION IF EXISTS "${schemaName}".enqueue_workflow(
+    TEXT, TEXT, JSON[], JSON, TEXT, TEXT, TEXT, TEXT, BIGINT, BIGINT, TEXT, INT4, TEXT, TEXT, TEXT, BIGINT
+)`,
+        `CREATE OR REPLACE FUNCTION "${schemaName}".enqueue_workflow(
+    workflow_name TEXT,
+    queue_name TEXT,
+    positional_args JSON[] DEFAULT ARRAY[]::JSON[],
+    named_args JSON DEFAULT '{}'::JSON,
+    class_name TEXT DEFAULT NULL,
+    config_name TEXT DEFAULT NULL,
+    workflow_id TEXT DEFAULT NULL,
+    app_version TEXT DEFAULT NULL,
+    timeout_ms BIGINT DEFAULT NULL,
+    deadline_epoch_ms BIGINT DEFAULT NULL,
+    deduplication_id TEXT DEFAULT NULL,
+    priority INT4 DEFAULT NULL,
+    queue_partition_key TEXT DEFAULT NULL,
+    authenticated_user TEXT DEFAULT NULL,
+    authenticated_roles TEXT DEFAULT NULL,
+    delay_until_epoch_ms BIGINT DEFAULT NULL,
+    application_name TEXT DEFAULT NULL
+) RETURNS TEXT AS $$
+DECLARE
+    v_workflow_id TEXT;
+    v_serialized_inputs TEXT;
+    v_owner_xid TEXT;
+    v_now BIGINT;
+    v_recovery_attempts INT4 := 0;
+    v_priority INT4;
+    v_status TEXT;
+BEGIN
+
+    -- Validate required parameters
+    IF workflow_name IS NULL OR workflow_name = '' THEN
+        RAISE EXCEPTION 'Workflow name cannot be null or empty';
+    END IF;
+    IF queue_name IS NULL OR queue_name = '' THEN
+        RAISE EXCEPTION 'Queue name cannot be null or empty';
+    END IF;
+    IF named_args IS NOT NULL AND jsonb_typeof(named_args::jsonb) != 'object' THEN
+        RAISE EXCEPTION 'Named args must be a JSON object';
+    END IF;
+    IF workflow_id IS NOT NULL AND workflow_id = '' THEN
+        RAISE EXCEPTION 'Workflow ID cannot be an empty string if provided.';
+    END IF;
+    IF delay_until_epoch_ms IS NOT NULL AND delay_until_epoch_ms < 0 THEN
+        RAISE EXCEPTION 'delay_until_epoch_ms must be >= 0';
+    END IF;
+
+    v_workflow_id := COALESCE(workflow_id, gen_random_uuid()::TEXT);
+    v_owner_xid := gen_random_uuid()::TEXT;
+    v_priority := COALESCE(priority, 0);
+    v_serialized_inputs := json_build_object(
+        'positionalArgs', positional_args,
+        'namedArgs', named_args
+    )::TEXT;
+    v_now := EXTRACT(epoch FROM now()) * 1000;
+    v_status := CASE WHEN delay_until_epoch_ms IS NULL THEN 'ENQUEUED' ELSE 'DELAYED' END;
+
+    INSERT INTO "${schemaName}".workflow_status (
+        workflow_uuid, status, inputs,
+        name, class_name, config_name,
+        queue_name, deduplication_id, priority, queue_partition_key,
+        application_version,
+        created_at, updated_at, recovery_attempts,
+        workflow_timeout_ms, workflow_deadline_epoch_ms,
+        parent_workflow_id, owner_xid, serialization,
+        authenticated_user, authenticated_roles,
+        delay_until_epoch_ms, application_name
+    ) VALUES (
+        v_workflow_id, v_status, v_serialized_inputs,
+        workflow_name, class_name, config_name,
+        queue_name, deduplication_id, v_priority, queue_partition_key,
+        app_version,
+        v_now, v_now, v_recovery_attempts,
+        timeout_ms, deadline_epoch_ms,
+        NULL, v_owner_xid, 'portable_json',
+        authenticated_user, authenticated_roles,
+        delay_until_epoch_ms, application_name
+    )
+    ON CONFLICT (workflow_uuid)
+    DO UPDATE SET
+        updated_at = EXCLUDED.updated_at;
+
+    RETURN v_workflow_id;
+
+EXCEPTION
+    WHEN unique_violation THEN
+        RAISE EXCEPTION 'DBOS queue duplicated'
+            USING DETAIL = format('Workflow %s with queue %s and deduplication ID %s already exists', v_workflow_id, queue_name, deduplication_id),
+                ERRCODE = 'unique_violation';
+END;
+$$ LANGUAGE plpgsql;`,
+        ...(isCockroach
+          ? []
+          : [
+              `ALTER FUNCTION "${schemaName}".enqueue_workflow(
+    TEXT, TEXT, JSON[], JSON, TEXT, TEXT, TEXT, TEXT, BIGINT, BIGINT, TEXT, INT4, TEXT, TEXT, TEXT, BIGINT, TEXT
+) SET search_path = pg_catalog, pg_temp`,
+            ]),
+      ],
+    },
+    // Expand half of retiring version_name's global uniqueness: the ownership-scoped key that replaces it, unclaimed counting as its own owner. The constraint may not be dropped until every SDK reaching this database is past this migration.
+    {
+      name: '106_application_versions_owner_keys',
+      pg: [
+        `CREATE UNIQUE INDEX IF NOT EXISTS "uq_application_versions_owner_version"
+    ON "${schemaName}"."application_versions" ("application_name", "version_name")
+    WHERE "application_name" IS NOT NULL`,
+        `CREATE UNIQUE INDEX IF NOT EXISTS "uq_application_versions_unclaimed_version"
+    ON "${schemaName}"."application_versions" ("version_name")
+    WHERE "application_name" IS NULL`,
+      ],
     },
   ];
 }

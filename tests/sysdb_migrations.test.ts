@@ -1,6 +1,6 @@
 import { Client } from 'pg';
 import { DBMigration, getCurrentSysDBVersion, runSysMigrationsPg } from '../src/sysdb_migrations/migration_runner';
-import { allMigrations } from '../src/sysdb_migrations/internal/migrations';
+import { allMigrations, SHARED_MIGRATION_BASE } from '../src/sysdb_migrations/internal/migrations';
 import { generateDBOSTestConfig } from './helpers';
 
 const TEST_SCHEMA = 'dbos_migration_test';
@@ -25,6 +25,31 @@ async function indexExists(client: Client, name: string): Promise<boolean> {
     [TEST_SCHEMA, name],
   );
   return res.rows[0].exists;
+}
+
+async function tableExists(client: Client, name: string): Promise<boolean> {
+  const res = await client.query<{ exists: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1 FROM pg_tables
+       WHERE schemaname = $1 AND tablename = $2
+     ) AS exists`,
+    [TEST_SCHEMA, name],
+  );
+  return res.rows[0].exists;
+}
+
+/** A migration list whose only real work sits at `index`, with empty pads before it. */
+function listWithMigrationAt(index: number, migration: DBMigration): DBMigration[] {
+  const head: DBMigration[] = [
+    { pg: [`CREATE SCHEMA IF NOT EXISTS "${TEST_SCHEMA}"`] },
+    {
+      pg: [
+        `CREATE TABLE "${TEST_SCHEMA}"."dbos_migrations" ("version" bigint not null, constraint "dbos_migrations_pkey_t" primary key ("version"))`,
+      ],
+    },
+  ];
+  const pads: DBMigration[] = Array.from({ length: index - head.length - 1 }, () => ({ pg: [] }));
+  return [...head, ...pads, migration];
 }
 
 async function indexDefinition(client: Client, name: string): Promise<string | undefined> {
@@ -85,6 +110,122 @@ describe('sysdb migration runner', () => {
     expect(await indexExists(client, 'idx_workflow_status_queue_status_started')).toBe(false);
     // Superseded by v2, so the original name must be gone.
     expect(await indexExists(client, 'idx_workflow_status_partition_dequeue')).toBe(false);
+  });
+
+  // application_name stays nullable everywhere (NULL is what SDKs predating it write); addressing names stay globally unique.
+  test('shared migrations add nullable application_name and the ownership keys', async () => {
+    const migrations = allMigrations(TEST_SCHEMA, { useListenNotify: false });
+    await runSysMigrationsPg(client, migrations, TEST_SCHEMA, { onWarn: () => {} });
+
+    const tables = ['workflow_status', 'queues', 'workflow_schedules', 'application_versions', 'operation_outputs'];
+    for (const table of tables) {
+      const res = await client.query<{ data_type: string; is_nullable: string }>(
+        `SELECT data_type, is_nullable FROM information_schema.columns
+          WHERE table_schema = $1 AND table_name = $2 AND column_name = 'application_name'`,
+        [TEST_SCHEMA, table],
+      );
+      expect(res.rows[0]).toEqual({ data_type: 'text', is_nullable: 'YES' });
+    }
+
+    // Names stay global addresses; version_name only until the contract migration, whose replacement key 106 carries.
+    for (const index of [
+      'uq_workflow_status_dedup_id',
+      'queues_name_key',
+      'workflow_schedules_schedule_name_key',
+      'application_versions_version_name_key',
+      'uq_application_versions_owner_version',
+      'uq_application_versions_unclaimed_version',
+    ]) {
+      expect(await indexExists(client, index)).toBe(true);
+    }
+
+    // enqueue_workflow gained a trailing application_name parameter.
+    const fn = await client.query<{ args: string }>(
+      `SELECT pg_get_function_identity_arguments(p.oid) AS args
+         FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+        WHERE n.nspname = $1 AND p.proname = 'enqueue_workflow'`,
+      [TEST_SCHEMA],
+    );
+    expect(fn.rows).toHaveLength(1);
+    expect(fn.rows[0].args.endsWith('text')).toBe(true);
+    expect(fn.rows[0].args.split(',').length).toBe(17);
+  });
+
+  // Long-abandoned tables; dropping them leaves the schema identical to every other SDK's at the shared base.
+  test('the consolidated tables are gone, on a fresh database and on an upgrade', async () => {
+    const migrations = allMigrations(TEST_SCHEMA, { useListenNotify: false });
+    const gone = ['workflow_inputs', 'workflow_queue', 'scheduler_state'];
+    const survivingTables = async () => {
+      const res = await client.query<{ tablename: string }>(
+        `SELECT tablename FROM pg_tables WHERE schemaname = $1 AND tablename = ANY($2)`,
+        [TEST_SCHEMA, gone],
+      );
+      return res.rows.map((r) => r.tablename);
+    };
+
+    // A fresh database never ends up with them.
+    await runSysMigrationsPg(client, migrations, TEST_SCHEMA, { onWarn: () => {} });
+    expect(await survivingTables()).toEqual([]);
+
+    // An upgrade from a database that predates the drop removes them, sparing real data.
+    await resetSchema(client);
+    const beforeDrop = migrations.slice(0, 69);
+    await runSysMigrationsPg(client, beforeDrop, TEST_SCHEMA, { onWarn: () => {} });
+    expect((await survivingTables()).sort()).toEqual([...gone].sort());
+    await client.query(
+      `INSERT INTO "${TEST_SCHEMA}".workflow_status (workflow_uuid, status, name, executor_id, application_id, created_at, updated_at, recovery_attempts, priority)
+       VALUES ('kept-wf', 'SUCCESS', 'keptWorkflow', 'local', '', 1, 1, 0, 0)`,
+    );
+
+    await runSysMigrationsPg(client, migrations, TEST_SCHEMA, { onWarn: () => {} });
+    expect(await survivingTables()).toEqual([]);
+    const kept = await client.query<{ workflow_uuid: string }>(
+      `SELECT workflow_uuid FROM "${TEST_SCHEMA}".workflow_status`,
+    );
+    expect(kept.rows.map((r) => r.workflow_uuid)).toEqual(['kept-wf']);
+  });
+
+  // Renumbering onto the shared base leaves long runs of empty migrations.
+  test('padding to the shared base still lands on the true migration count', async () => {
+    const migrations = allMigrations(TEST_SCHEMA, { useListenNotify: false });
+    expect(migrations.length).toBeGreaterThan(SHARED_MIGRATION_BASE);
+    expect(migrations.filter((m) => (m.pg ?? []).length === 0).length).toBeGreaterThan(0);
+
+    const result = await runSysMigrationsPg(client, migrations, TEST_SCHEMA, { onWarn: () => {} });
+    expect(result.toVersion).toBe(migrations.length);
+    expect(await getCurrentSysDBVersion(client, TEST_SCHEMA)).toBe(migrations.length);
+  });
+
+  // A peer sharing the database must never observe a shared migration half-applied (105 replaces a function in place).
+  test('a failing shared migration rolls back whole, and its version with it', async () => {
+    const failing = listWithMigrationAt(SHARED_MIGRATION_BASE, {
+      pg: [`CREATE TABLE "${TEST_SCHEMA}"."t_shared" (id int)`, `SELECT 1/0`],
+    });
+
+    await expect(runSysMigrationsPg(client, failing, TEST_SCHEMA, { onWarn: () => {} })).rejects.toBeDefined();
+    expect(await tableExists(client, 't_shared')).toBe(false);
+    expect(await getCurrentSysDBVersion(client, TEST_SCHEMA)).toBe(2);
+  });
+
+  // No "already applied" tolerance above the base: every SDK must reach the same verdict on a shared migration.
+  test('a shared migration does not tolerate an already-applied statement', async () => {
+    const duplicated = listWithMigrationAt(SHARED_MIGRATION_BASE, {
+      pg: [`CREATE TABLE "${TEST_SCHEMA}"."t_ok" (id int)`, `CREATE TABLE "${TEST_SCHEMA}"."t_ok" (id int)`],
+    });
+
+    await expect(runSysMigrationsPg(client, duplicated, TEST_SCHEMA, { onWarn: () => {} })).rejects.toBeDefined();
+    expect(await tableExists(client, 't_ok')).toBe(false);
+    expect(await getCurrentSysDBVersion(client, TEST_SCHEMA)).toBe(2);
+  });
+
+  // The guarantee starts exactly at the shared base; below it the statement-at-a-time behaviour is unchanged.
+  test('a failing migration below the shared base still applies its earlier statements', async () => {
+    const failing = listWithMigrationAt(3, {
+      pg: [`CREATE TABLE "${TEST_SCHEMA}"."t_legacy" (id int)`, `SELECT 1/0`],
+    });
+
+    await expect(runSysMigrationsPg(client, failing, TEST_SCHEMA, { onWarn: () => {} })).rejects.toBeDefined();
+    expect(await tableExists(client, 't_legacy')).toBe(true);
   });
 
   test('per-version bump on partial failure resumes on retry', async () => {
