@@ -3653,8 +3653,15 @@ export class SystemDatabase {
     addFilter('queue_name', input.queueName);
     addFilter('schedule_name', input.scheduleName);
 
-    // Unset scopes to this application, as on every other observability query.
-    whereClauses.push(this.#observabilityFilter('application_name', input.applicationName, params));
+    // A workflow ID is a global address, so an ID-keyed read is an identity read: it takes an
+    // explicit filter but is never defaulted to this one. Otherwise unset scopes to this
+    // application, as on every other observability query.
+    const idKeyed = input.workflowIDs !== undefined && input.workflowIDs.length > 0;
+    whereClauses.push(
+      idKeyed
+        ? this.#appNameFilter('application_name', input.applicationName, params)
+        : this.#observabilityFilter('application_name', input.applicationName, params),
+    );
     paramCounter = params.length + 1;
 
     if (input.workflow_id_prefix) {

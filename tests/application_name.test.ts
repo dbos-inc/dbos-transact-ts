@@ -176,6 +176,18 @@ describe('application-name', () => {
     await insertPeerWorkflow(client, 'appname-peer-wf');
     const peerStatus = await DBOS.getWorkflowStatus('appname-peer-wf');
     expect(peerStatus?.applicationName).toBe(PEER);
+
+    // Every public identity read reaches a peer's row too: these go through
+    // listWorkflows, whose unset filter otherwise scopes to this application.
+    const byID = await DBOS.listWorkflows({ workflowIDs: ['appname-peer-wf'] });
+    expect(byID.map((w) => w.workflowID)).toEqual(['appname-peer-wf']);
+    expect(byID[0].applicationName).toBe(PEER);
+    expect(await DBOS.retrieveWorkflow('appname-peer-wf').getStatus()).toMatchObject({
+      applicationName: PEER,
+    });
+
+    // An explicit filter still narrows, even for an ID-keyed read.
+    expect(await DBOS.listWorkflows({ workflowIDs: ['appname-peer-wf'], applicationName: APP })).toEqual([]);
   });
 
   test('observability filters scope to this application and include unclaimed rows', async () => {
