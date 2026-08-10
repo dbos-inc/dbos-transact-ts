@@ -925,8 +925,11 @@ export class SystemDatabase {
   }
 
   async destroy() {
+    // Set synchronously, before any await, so no reconnect is scheduled or published after this point.
+    this.#notificationsStopped = true;
     if (this.reconnectTimeout) {
       clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
     }
     // Stop the notifier and await its final flush before the pool closes.
     this.#notifierActive = false;
@@ -935,12 +938,9 @@ export class SystemDatabase {
       await this.#notifierLoop;
       this.#notifierLoop = undefined;
     }
-    if (this.notificationsClient) {
-      try {
-        this.notificationsClient.release(true);
-      } catch (e) {
-        this.logger.warn(`Error ending notifications client: ${String(e)}`);
-      }
+    const notificationsClient = this.notificationsClient;
+    if (notificationsClient && this.#takeNotificationsClient(notificationsClient)) {
+      this.#releaseNotificationsClient(notificationsClient);
     }
     await this.pool.end();
   }
@@ -5236,22 +5236,52 @@ export class SystemDatabase {
    * workflow listener by resolving its promise.
    */
   reconnectTimeout: NodeJS.Timeout | null = null;
+  #notificationsStopped: boolean = false;
+
+  /**
+   * Take ownership of `client` so exactly one caller retires it: whoever clears the field releases.
+   * Returns false if shutdown or an earlier socket error already claimed it.
+   */
+  #takeNotificationsClient(client: PoolClient): boolean {
+    if (this.notificationsClient !== client) {
+      return false;
+    }
+    this.notificationsClient = null;
+    return true;
+  }
+
+  /** Detach every listener and release the client exactly once. */
+  #releaseNotificationsClient(client: PoolClient) {
+    client.removeAllListeners();
+    // Errors can still arrive while release() tears the connection down; a bare emit would crash the process.
+    client.on('error', () => {});
+    try {
+      client.release(true);
+    } catch (e) {
+      this.logger.warn(`Error releasing notifications client: ${String(e)}`);
+    }
+  }
 
   async #listenForNotifications() {
     const connect = async () => {
       const reconnect = () => {
-        if (this.reconnectTimeout) {
+        if (this.reconnectTimeout || this.#notificationsStopped) {
           return;
         }
-        this.reconnectTimeout = setTimeout(async () => {
+        this.reconnectTimeout = setTimeout(() => {
           this.reconnectTimeout = null;
-          await connect();
+          void connect();
         }, 1000);
       };
 
-      let client: PoolClient | null = null;
+      if (this.#notificationsStopped) {
+        return;
+      }
+
+      let acquired: PoolClient | null = null;
       try {
-        client = await this.pool.connect();
+        const client = await this.pool.connect();
+        acquired = client;
         await client.query(`LISTEN ${DBOS_NOTIFICATIONS_CHANNEL};`);
         await client.query(`LISTEN ${DBOS_WORKFLOW_EVENTS_CHANNEL};`);
         await client.query(`LISTEN ${DBOS_STREAMS_CHANNEL};`);
@@ -5281,6 +5311,13 @@ export class SystemDatabase {
           );
         }
 
+        // Shutdown may have begun during the acquisition or setup above. Release the client rather
+        // than publishing it, so pool.end() is not left waiting on a checked-out connection.
+        if (this.#notificationsStopped) {
+          this.#releaseNotificationsClient(client);
+          return;
+        }
+
         const handler = (msg: Notification) => {
           if (!this.shouldUseDBNotifications) return;
           if (msg.channel === DBOS_NOTIFICATIONS_CHANNEL && msg.payload) {
@@ -5295,24 +5332,18 @@ export class SystemDatabase {
         client.on('notification', handler);
         client.on('error', (err: Error) => {
           this.logger.warn(`Error in notifications client: ${err}`);
-          if (this.notificationsClient === client) {
-            this.notificationsClient = null;
+          // A late error on a client already retired by shutdown must not release it twice.
+          if (!this.#takeNotificationsClient(client)) {
+            return;
           }
-          if (client) {
-            client.removeAllListeners();
-            // Errors can still arrive while release() tears the connection down; a bare emit would crash the process.
-            client.on('error', () => {});
-            client.release(true);
-          }
+          this.#releaseNotificationsClient(client);
           reconnect();
         });
         this.notificationsClient = client;
       } catch (error) {
         this.logger.warn(`Error in notifications listener: ${String(error)}`);
-        if (client) {
-          client.removeAllListeners();
-          client.on('error', () => {});
-          client.release(true);
+        if (acquired) {
+          this.#releaseNotificationsClient(acquired);
         }
         reconnect();
       }

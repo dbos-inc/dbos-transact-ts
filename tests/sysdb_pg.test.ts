@@ -553,3 +553,47 @@ describe('sysdb-no-listen-notify', () => {
     }
   });
 });
+
+describe('sysdb-notifications-lifecycle', () => {
+  let config: DBOSConfig;
+
+  beforeAll(async () => {
+    config = generateDBOSTestConfig();
+    await setUpDBOSTestSysDb(config);
+    DBOS.setConfig(config);
+  });
+
+  afterEach(async () => {
+    await DBOS.shutdown();
+  });
+
+  test('late-client-error-after-shutdown', async () => {
+    await DBOS.launch();
+    const systemDatabase = sysDB();
+    const client = systemDatabase.notificationsClient;
+    expect(client).not.toBeNull();
+
+    await DBOS.shutdown();
+
+    // A socket error arriving after shutdown must not release the client a second time.
+    expect(() => client!.emit('error', new Error('synthetic late server error'))).not.toThrow();
+    expect(systemDatabase.notificationsClient).toBeNull();
+    expect(client!.listenerCount('notification')).toBe(0);
+  });
+
+  test('no-reconnect-after-shutdown', async () => {
+    await DBOS.launch();
+    const systemDatabase = sysDB();
+    const client = systemDatabase.notificationsClient;
+    expect(client).not.toBeNull();
+
+    // Fail the client so a reconnect is pending, then shut down before it fires.
+    client!.emit('error', new Error('synthetic connection error'));
+    await DBOS.shutdown();
+
+    expect(systemDatabase.reconnectTimeout).toBeNull();
+    await sleepms(1500);
+    expect(systemDatabase.notificationsClient).toBeNull();
+    expect(systemDatabase.reconnectTimeout).toBeNull();
+  });
+});
