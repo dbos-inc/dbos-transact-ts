@@ -584,14 +584,23 @@ describe('sysdb-notifications-lifecycle', () => {
     expect(systemDatabase.reconnectTimeout).toBeNull();
   });
 
-  test('no-reconnect-after-shutdown', async () => {
+  test('reconnects-after-error-but-not-after-shutdown', async () => {
     await DBOS.launch();
     const systemDatabase = sysDB();
     const client = systemDatabase.notificationsClient;
     expect(client).not.toBeNull();
 
-    // Fail the client so a reconnect is pending, then shut down before it fires.
-    client!.emit('error', new Error('synthetic connection error'));
+    // A transient error retires the client, and notifications recover on a fresh one.
+    client!.emit('error', new Error('synthetic transient error'));
+    expect(systemDatabase.notificationsClient).toBeNull();
+    for (let i = 0; i < 50 && systemDatabase.notificationsClient === null; i++) {
+      await sleepms(100);
+    }
+    expect(systemDatabase.notificationsClient).not.toBeNull();
+    expect(systemDatabase.notificationsClient).not.toBe(client);
+
+    // Fail the new client so a reconnect is pending, then shut down before it fires.
+    systemDatabase.notificationsClient!.emit('error', new Error('synthetic connection error'));
     await DBOS.shutdown();
 
     expect(systemDatabase.reconnectTimeout).toBeNull();

@@ -5252,6 +5252,16 @@ export class SystemDatabase {
     }
   }
 
+  // Shutdown can begin during any await in the setup below; releasing the client instead of carrying on
+  // keeps pool.end() from waiting on a connection that will never be published.
+  #abandonIfStopped(client: PoolClient): boolean {
+    if (!this.#notificationsStopped) {
+      return false;
+    }
+    this.#retireNotificationsClient(client);
+    return true;
+  }
+
   async #listenForNotifications() {
     const connect = async () => {
       const reconnect = () => {
@@ -5268,9 +5278,13 @@ export class SystemDatabase {
       try {
         const client = await this.pool.connect();
         acquired = client;
+        if (this.#abandonIfStopped(client)) return;
         await client.query(`LISTEN ${DBOS_NOTIFICATIONS_CHANNEL};`);
         await client.query(`LISTEN ${DBOS_WORKFLOW_EVENTS_CHANNEL};`);
         await client.query(`LISTEN ${DBOS_STREAMS_CHANNEL};`);
+
+        // The self-test's NOTIFY needs a second client, which can queue forever on an ending pool.
+        if (this.#abandonIfStopped(client)) return;
 
         // Self-test: verify LISTEN actually works by sending a NOTIFY and checking it arrives.
         // If a transaction-mode pooler (e.g. PgBouncer pool_mode=transaction) is in the path,
@@ -5283,10 +5297,13 @@ export class SystemDatabase {
         };
         client.on('notification', onSelfTest);
         await this.pool.query("NOTIFY dbos_notifications_channel, 'dbos_listen_selftest'");
-        for (let i = 0; i < 30 && !selfTestReceived; i++) {
+        for (let i = 0; i < 30 && !selfTestReceived && !this.#notificationsStopped; i++) {
           await new Promise((r) => setTimeout(r, 100));
         }
         client.removeListener('notification', onSelfTest);
+
+        // Checked before the warning below so an abandoned self-test is not reported as a pooler problem.
+        if (this.#abandonIfStopped(client)) return;
 
         if (!selfTestReceived) {
           this.logger.warn(
@@ -5295,13 +5312,6 @@ export class SystemDatabase {
               '(e.g. PgBouncer with pool_mode=transaction), which silently breaks LISTEN/NOTIFY. ' +
               'Workflow notifications will fall back to polling, which may increase latency.',
           );
-        }
-
-        // Shutdown may have begun during the awaits above: releasing rather than publishing this client
-        // keeps pool.end() from waiting forever on a checked-out connection.
-        if (this.#notificationsStopped) {
-          this.#retireNotificationsClient(client);
-          return;
         }
 
         const handler = (msg: Notification) => {
