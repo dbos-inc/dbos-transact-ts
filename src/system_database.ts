@@ -925,8 +925,11 @@ export class SystemDatabase {
   }
 
   async destroy() {
+    // Set synchronously, before any await, so no reconnect is scheduled or published after this point.
+    this.#notificationsStopped = true;
     if (this.reconnectTimeout) {
       clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
     }
     // Stop the notifier and await its final flush before the pool closes.
     this.#notifierActive = false;
@@ -936,11 +939,7 @@ export class SystemDatabase {
       this.#notifierLoop = undefined;
     }
     if (this.notificationsClient) {
-      try {
-        this.notificationsClient.release(true);
-      } catch (e) {
-        this.logger.warn(`Error ending notifications client: ${String(e)}`);
-      }
+      this.#retireNotificationsClient(this.notificationsClient);
     }
     await this.pool.end();
   }
@@ -5236,11 +5235,37 @@ export class SystemDatabase {
    * workflow listener by resolving its promise.
    */
   reconnectTimeout: NodeJS.Timeout | null = null;
+  #notificationsStopped: boolean = false;
+
+  // Disown the client and release it once; a late socket error must not re-enter this path and release again.
+  #retireNotificationsClient(client: PoolClient) {
+    if (this.notificationsClient === client) {
+      this.notificationsClient = null;
+    }
+    client.removeAllListeners();
+    // Errors can still arrive while release() tears the connection down; a bare emit would crash the process.
+    client.on('error', () => {});
+    try {
+      client.release(true);
+    } catch (e) {
+      this.logger.warn(`Error releasing notifications client: ${String(e)}`);
+    }
+  }
+
+  // Shutdown can begin during any await in the setup below; releasing the client instead of carrying on
+  // keeps pool.end() from waiting on a connection that will never be published.
+  #abandonIfStopped(client: PoolClient): boolean {
+    if (!this.#notificationsStopped) {
+      return false;
+    }
+    this.#retireNotificationsClient(client);
+    return true;
+  }
 
   async #listenForNotifications() {
     const connect = async () => {
       const reconnect = () => {
-        if (this.reconnectTimeout) {
+        if (this.reconnectTimeout || this.#notificationsStopped) {
           return;
         }
         this.reconnectTimeout = setTimeout(async () => {
@@ -5249,12 +5274,25 @@ export class SystemDatabase {
         }, 1000);
       };
 
-      let client: PoolClient | null = null;
+      let acquired: PoolClient | null = null;
       try {
-        client = await this.pool.connect();
+        const client = await this.pool.connect();
+        acquired = client;
+        if (this.#abandonIfStopped(client)) return;
+
+        // Catch errors during setup
+        const setup: { error: Error | null } = { error: null };
+        const onSetupError = (err: Error) => {
+          setup.error = err;
+        };
+        client.on('error', onSetupError);
+
         await client.query(`LISTEN ${DBOS_NOTIFICATIONS_CHANNEL};`);
         await client.query(`LISTEN ${DBOS_WORKFLOW_EVENTS_CHANNEL};`);
         await client.query(`LISTEN ${DBOS_STREAMS_CHANNEL};`);
+
+        // The self-test's NOTIFY needs a second client, which can queue forever on an ending pool.
+        if (this.#abandonIfStopped(client)) return;
 
         // Self-test: verify LISTEN actually works by sending a NOTIFY and checking it arrives.
         // If a transaction-mode pooler (e.g. PgBouncer pool_mode=transaction) is in the path,
@@ -5267,10 +5305,16 @@ export class SystemDatabase {
         };
         client.on('notification', onSelfTest);
         await this.pool.query("NOTIFY dbos_notifications_channel, 'dbos_listen_selftest'");
-        for (let i = 0; i < 30 && !selfTestReceived; i++) {
+        for (let i = 0; i < 30 && !selfTestReceived && !setup.error && !this.#notificationsStopped; i++) {
           await new Promise((r) => setTimeout(r, 100));
         }
         client.removeListener('notification', onSelfTest);
+
+        // Both checked before the warning below, so an abandoned self-test is not reported as a pooler problem.
+        if (this.#abandonIfStopped(client)) return;
+        if (setup.error) {
+          throw setup.error;
+        }
 
         if (!selfTestReceived) {
           this.logger.warn(
@@ -5292,27 +5336,18 @@ export class SystemDatabase {
           }
         };
 
+        client.removeListener('error', onSetupError);
         client.on('notification', handler);
         client.on('error', (err: Error) => {
           this.logger.warn(`Error in notifications client: ${err}`);
-          if (this.notificationsClient === client) {
-            this.notificationsClient = null;
-          }
-          if (client) {
-            client.removeAllListeners();
-            // Errors can still arrive while release() tears the connection down; a bare emit would crash the process.
-            client.on('error', () => {});
-            client.release(true);
-          }
+          this.#retireNotificationsClient(client);
           reconnect();
         });
         this.notificationsClient = client;
       } catch (error) {
         this.logger.warn(`Error in notifications listener: ${String(error)}`);
-        if (client) {
-          client.removeAllListeners();
-          client.on('error', () => {});
-          client.release(true);
+        if (acquired) {
+          this.#retireNotificationsClient(acquired);
         }
         reconnect();
       }

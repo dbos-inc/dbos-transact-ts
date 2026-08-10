@@ -553,3 +553,61 @@ describe('sysdb-no-listen-notify', () => {
     }
   });
 });
+
+describe('sysdb-notifications-lifecycle', () => {
+  let config: DBOSConfig;
+
+  beforeAll(async () => {
+    config = generateDBOSTestConfig();
+    await setUpDBOSTestSysDb(config);
+    DBOS.setConfig(config);
+  });
+
+  afterEach(async () => {
+    await DBOS.shutdown();
+  });
+
+  test('late-client-error-after-shutdown', async () => {
+    await DBOS.launch();
+    const systemDatabase = sysDB();
+    const client = systemDatabase.notificationsClient;
+    expect(client).not.toBeNull();
+
+    await DBOS.shutdown();
+
+    // Shutdown disowns the client and disarms it, so its error handler can no longer run.
+    expect(systemDatabase.notificationsClient).toBeNull();
+    expect(client!.listenerCount('notification')).toBe(0);
+
+    // A socket error arriving after shutdown must not release the client a second time or reconnect.
+    expect(() => client!.emit('error', new Error('synthetic late server error'))).not.toThrow();
+    expect(systemDatabase.reconnectTimeout).toBeNull();
+  });
+
+  test('reconnects-after-error-but-not-after-shutdown', async () => {
+    await DBOS.launch();
+    const systemDatabase = sysDB();
+    const client = systemDatabase.notificationsClient;
+    expect(client).not.toBeNull();
+
+    // A transient error retires the client, and notifications recover on a fresh one.
+    client!.emit('error', new Error('synthetic transient error'));
+    expect(systemDatabase.notificationsClient).toBeNull();
+    // Ample budget: reconnect takes the 1s retry delay plus setup, which includes a 3s self-test timeout.
+    for (let i = 0; i < 100 && systemDatabase.notificationsClient === null; i++) {
+      await sleepms(100);
+    }
+    expect(systemDatabase.notificationsClient).not.toBeNull();
+    expect(systemDatabase.notificationsClient).not.toBe(client);
+    expect(systemDatabase.notificationsClient!.listenerCount('notification')).toBe(1);
+
+    // Fail the new client so a reconnect is pending, then shut down before it fires.
+    systemDatabase.notificationsClient!.emit('error', new Error('synthetic connection error'));
+    await DBOS.shutdown();
+
+    expect(systemDatabase.reconnectTimeout).toBeNull();
+    await sleepms(1500);
+    expect(systemDatabase.notificationsClient).toBeNull();
+    expect(systemDatabase.reconnectTimeout).toBeNull();
+  });
+});
