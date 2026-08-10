@@ -4,6 +4,7 @@ import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import { globalTimeout } from '../src/workflow_management';
 import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
 import { globalParams } from '../src/utils';
+import type { GetWorkflowsInput } from '../src/workflow';
 
 type NoArgWorkflow = () => Promise<unknown>;
 
@@ -188,6 +189,13 @@ describe('application-name', () => {
 
     // An explicit filter still narrows, even for an ID-keyed read.
     expect(await DBOS.listWorkflows({ workflowIDs: ['appname-peer-wf'], applicationName: APP })).toEqual([]);
+
+    // A Conductor request carries an omitted filter as JSON null, which the types do not
+    // admit but the wire does: it must read as absent, not as an ID-keyed read.
+    const fromTheWire = JSON.parse('{"workflowIDs": null, "applicationName": null}') as GetWorkflowsInput;
+    const unfiltered = await DBOS.listWorkflows(fromTheWire);
+    expect(unfiltered.map((w) => w.workflowID)).toContain(handle.workflowID);
+    expect(unfiltered.map((w) => w.workflowID)).not.toContain('appname-peer-wf');
   });
 
   test('observability filters scope to this application and include unclaimed rows', async () => {

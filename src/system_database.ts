@@ -3656,7 +3656,8 @@ export class SystemDatabase {
     // A workflow ID is a global address, so an ID-keyed read is an identity read: it takes an
     // explicit filter but is never defaulted to this one. Otherwise unset scopes to this
     // application, as on every other observability query.
-    const idKeyed = input.workflowIDs !== undefined && input.workflowIDs.length > 0;
+    // Falsy, not just undefined: a Conductor request carries an omitted list as JSON null.
+    const idKeyed = (input.workflowIDs?.length ?? 0) > 0;
     whereClauses.push(
       idKeyed
         ? this.#appNameFilter('application_name', input.applicationName, params)
