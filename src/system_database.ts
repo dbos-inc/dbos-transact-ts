@@ -1876,6 +1876,14 @@ export class SystemDatabase {
       if (options.timeoutMS !== undefined) {
         insertCols.push('workflow_timeout_ms');
       }
+      // One owner per fork, shared by its status row and its copied steps: the source's, or this application claiming an unclaimed one.
+      const forkOwners = new Map<string, string | null>(
+        originalWorkflowIDs.map((origID, i) => [
+          forkedWorkflowIDs[i],
+          statusByID.get(origID)!.application_name ?? this.appName ?? null,
+        ]),
+      );
+
       const valuesPlaceholders: string[] = [];
       const params: unknown[] = [];
       let paramIdx = 1;
@@ -1903,8 +1911,7 @@ export class SystemDatabase {
           origID,
           ws.serialization,
           ws.attributes ? JSON.stringify(ws.attributes) : null,
-          // Inherit the source's owner so the fork runs on the same application; claim an unclaimed one, as dequeue does.
-          ws.application_name ?? this.appName ?? null,
+          forkOwners.get(forkID) ?? null,
         );
         if (options.timeoutMS !== undefined) {
           params.push(options.timeoutMS);
@@ -1933,11 +1940,12 @@ export class SystemDatabase {
         const mappingParams: unknown[] = [];
         let mIdx = 1;
         for (const m of forkMappings) {
-          mappingValues.push(`($${mIdx}::text, $${mIdx + 1}::text, $${mIdx + 2}::int)`);
-          mappingParams.push(m.origID, m.forkID, m.startStep);
-          mIdx += 3;
+          // Cast: an unclaimed fork makes owner a bare NULL the VALUES list cannot type.
+          mappingValues.push(`($${mIdx}::text, $${mIdx + 1}::text, $${mIdx + 2}::int, $${mIdx + 3}::text)`);
+          mappingParams.push(m.origID, m.forkID, m.startStep, forkOwners.get(m.forkID) ?? null);
+          mIdx += 4;
         }
-        const mappingCTE = `WITH mapping(orig_id, fork_id, start_step) AS (VALUES ${mappingValues.join(', ')})`;
+        const mappingCTE = `WITH mapping(orig_id, fork_id, start_step, owner) AS (VALUES ${mappingValues.join(', ')})`;
 
         // Build the child_workflow_id expression, applying replacements if provided.
         let childWfExpr = 'oo.child_workflow_id';
@@ -1952,19 +1960,12 @@ export class SystemDatabase {
           childWfExpr = `CASE ${whenClauses.join(' ')} ELSE oo.child_workflow_id END`;
         }
 
-        // Copied steps carry the owner the fork itself resolved to.
-        let ownerExpr = 'oo.application_name';
-        if (this.appName !== undefined) {
-          ooParams.push(this.appName);
-          ownerExpr = `COALESCE(oo.application_name, $${ooParams.length})`;
-        }
-
         // Copy operation outputs
         await client.query(
           `${mappingCTE}
            INSERT INTO "${this.schemaName}".operation_outputs
              (workflow_uuid, function_id, output, error, serialization, function_name, child_workflow_id, started_at_epoch_ms, completed_at_epoch_ms, application_name)
-           SELECT m.fork_id, oo.function_id, oo.output, oo.error, oo.serialization, oo.function_name, ${childWfExpr}, oo.started_at_epoch_ms, oo.completed_at_epoch_ms, ${ownerExpr}
+           SELECT m.fork_id, oo.function_id, oo.output, oo.error, oo.serialization, oo.function_name, ${childWfExpr}, oo.started_at_epoch_ms, oo.completed_at_epoch_ms, m.owner
            FROM mapping m
            JOIN "${this.schemaName}".operation_outputs oo
              ON oo.workflow_uuid = m.orig_id AND oo.function_id < m.start_step`,
@@ -3354,6 +3355,19 @@ export class SystemDatabase {
         // Start the functions by marking them as pending and updating their executor IDs.
         // Only claim the workflow if the UPDATE actually transitioned an ENQUEUED row —
         // otherwise another worker won the race and we must not re-dispatch it.
+        const updateParams: unknown[] = [
+          StatusString.PENDING,
+          executorID,
+          appVersion,
+          startTimeMs,
+          queue.rateLimit !== undefined,
+          id,
+          StatusString.ENQUEUED,
+          // Claim an unclaimed row for this application; a nameless dequeuer leaves ownership untouched.
+          this.appName ?? null,
+        ];
+        // Re-check ownership alongside status, as the partitioned claim guard does.
+        const claimScope = this.#appNameFilter('application_name', this.appName, updateParams);
         const updateRes = await client.query(
           `UPDATE "${this.schemaName}".workflow_status
            SET status = $1,
@@ -3367,18 +3381,8 @@ export class SystemDatabase {
                  THEN (EXTRACT(epoch FROM now()) * 1000)::bigint + workflow_timeout_ms
                  ELSE workflow_deadline_epoch_ms
                END
-           WHERE workflow_uuid = $6 AND status = $7`,
-          [
-            StatusString.PENDING,
-            executorID,
-            appVersion,
-            startTimeMs,
-            queue.rateLimit !== undefined,
-            id,
-            StatusString.ENQUEUED,
-            // Claim an unclaimed row for this application; a nameless dequeuer leaves ownership untouched.
-            this.appName ?? null,
-          ],
+           WHERE workflow_uuid = $6 AND status = $7 AND ${claimScope}`,
+          updateParams,
         );
         if ((updateRes.rowCount ?? 0) > 0) {
           claimedIDs.push(id);

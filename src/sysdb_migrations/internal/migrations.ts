@@ -890,14 +890,21 @@ $$ LANGUAGE plpgsql;`,
             ]),
       ],
     },
-    // Expand half of retiring version_name's global uniqueness: the ownership-scoped key that replaces it, unclaimed counting as its own owner. The constraint may not be dropped until every SDK reaching this database is past this migration.
+    // Half of the key replacing version_name's global uniqueness, which will be dropped in a future version.
     {
-      name: '106_application_versions_owner_keys',
+      name: '106_application_versions_owner_key',
       pg: [
         `CREATE UNIQUE INDEX IF NOT EXISTS "uq_application_versions_owner_version"
     ON "${schemaName}"."application_versions" ("application_name", "version_name")
     WHERE "application_name" IS NOT NULL`,
-        `CREATE UNIQUE INDEX IF NOT EXISTS "uq_application_versions_unclaimed_version"
+      ],
+    },
+    // The other half, unclaimed rows counting as one owner. Online because every pre-upgrade row is unclaimed, so this one indexes them all.
+    {
+      name: '107_application_versions_unclaimed_key',
+      online: true,
+      pg: [
+        `CREATE UNIQUE INDEX ${isCockroach ? '' : 'CONCURRENTLY'} IF NOT EXISTS "uq_application_versions_unclaimed_version"
     ON "${schemaName}"."application_versions" ("version_name")
     WHERE "application_name" IS NULL`,
       ],

@@ -124,10 +124,12 @@ function classifyBounce(
     return 'raise';
   }
   // A foreign holder never leaves DELAYED on the target's account, so retrying would spin.
+  // Missing on a checkpoint recorded before holders carried an owner, which reads as unclaimed.
+  const holderApplicationName = result.holderApplicationName ?? null;
   if (
     targetApplicationName !== undefined &&
-    result.holderApplicationName !== null &&
-    result.holderApplicationName !== targetApplicationName
+    holderApplicationName !== null &&
+    holderApplicationName !== targetApplicationName
   ) {
     return 'raise';
   }
