@@ -5279,6 +5279,14 @@ export class SystemDatabase {
         const client = await this.pool.connect();
         acquired = client;
         if (this.#abandonIfStopped(client)) return;
+
+        // Catch errors during setup
+        const setup: { error: Error | null } = { error: null };
+        const onSetupError = (err: Error) => {
+          setup.error = err;
+        };
+        client.on('error', onSetupError);
+
         await client.query(`LISTEN ${DBOS_NOTIFICATIONS_CHANNEL};`);
         await client.query(`LISTEN ${DBOS_WORKFLOW_EVENTS_CHANNEL};`);
         await client.query(`LISTEN ${DBOS_STREAMS_CHANNEL};`);
@@ -5297,13 +5305,16 @@ export class SystemDatabase {
         };
         client.on('notification', onSelfTest);
         await this.pool.query("NOTIFY dbos_notifications_channel, 'dbos_listen_selftest'");
-        for (let i = 0; i < 30 && !selfTestReceived && !this.#notificationsStopped; i++) {
+        for (let i = 0; i < 30 && !selfTestReceived && !setup.error && !this.#notificationsStopped; i++) {
           await new Promise((r) => setTimeout(r, 100));
         }
         client.removeListener('notification', onSelfTest);
 
-        // Checked before the warning below so an abandoned self-test is not reported as a pooler problem.
+        // Both checked before the warning below, so an abandoned self-test is not reported as a pooler problem.
         if (this.#abandonIfStopped(client)) return;
+        if (setup.error) {
+          throw setup.error;
+        }
 
         if (!selfTestReceived) {
           this.logger.warn(
@@ -5325,6 +5336,7 @@ export class SystemDatabase {
           }
         };
 
+        client.removeListener('error', onSetupError);
         client.on('notification', handler);
         client.on('error', (err: Error) => {
           this.logger.warn(`Error in notifications client: ${err}`);
