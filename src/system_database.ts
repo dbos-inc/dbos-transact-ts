@@ -938,9 +938,8 @@ export class SystemDatabase {
       await this.#notifierLoop;
       this.#notifierLoop = undefined;
     }
-    const notificationsClient = this.notificationsClient;
-    if (notificationsClient && this.#takeNotificationsClient(notificationsClient)) {
-      this.#releaseNotificationsClient(notificationsClient);
+    if (this.notificationsClient) {
+      this.#retireNotificationsClient(this.notificationsClient);
     }
     await this.pool.end();
   }
@@ -5238,20 +5237,11 @@ export class SystemDatabase {
   reconnectTimeout: NodeJS.Timeout | null = null;
   #notificationsStopped: boolean = false;
 
-  /**
-   * Take ownership of `client` so exactly one caller retires it: whoever clears the field releases.
-   * Returns false if shutdown or an earlier socket error already claimed it.
-   */
-  #takeNotificationsClient(client: PoolClient): boolean {
-    if (this.notificationsClient !== client) {
-      return false;
+  // Disown the client and release it once; a late socket error must not re-enter this path and release again.
+  #retireNotificationsClient(client: PoolClient) {
+    if (this.notificationsClient === client) {
+      this.notificationsClient = null;
     }
-    this.notificationsClient = null;
-    return true;
-  }
-
-  /** Detach every listener and release the client exactly once. */
-  #releaseNotificationsClient(client: PoolClient) {
     client.removeAllListeners();
     // Errors can still arrive while release() tears the connection down; a bare emit would crash the process.
     client.on('error', () => {});
@@ -5268,15 +5258,11 @@ export class SystemDatabase {
         if (this.reconnectTimeout || this.#notificationsStopped) {
           return;
         }
-        this.reconnectTimeout = setTimeout(() => {
+        this.reconnectTimeout = setTimeout(async () => {
           this.reconnectTimeout = null;
-          void connect();
+          await connect();
         }, 1000);
       };
-
-      if (this.#notificationsStopped) {
-        return;
-      }
 
       let acquired: PoolClient | null = null;
       try {
@@ -5311,10 +5297,10 @@ export class SystemDatabase {
           );
         }
 
-        // Shutdown may have begun during the acquisition or setup above. Release the client rather
-        // than publishing it, so pool.end() is not left waiting on a checked-out connection.
+        // Shutdown may have begun during the awaits above: releasing rather than publishing this client
+        // keeps pool.end() from waiting forever on a checked-out connection.
         if (this.#notificationsStopped) {
-          this.#releaseNotificationsClient(client);
+          this.#retireNotificationsClient(client);
           return;
         }
 
@@ -5332,18 +5318,14 @@ export class SystemDatabase {
         client.on('notification', handler);
         client.on('error', (err: Error) => {
           this.logger.warn(`Error in notifications client: ${err}`);
-          // A late error on a client already retired by shutdown must not release it twice.
-          if (!this.#takeNotificationsClient(client)) {
-            return;
-          }
-          this.#releaseNotificationsClient(client);
+          this.#retireNotificationsClient(client);
           reconnect();
         });
         this.notificationsClient = client;
       } catch (error) {
         this.logger.warn(`Error in notifications listener: ${String(error)}`);
         if (acquired) {
-          this.#releaseNotificationsClient(acquired);
+          this.#retireNotificationsClient(acquired);
         }
         reconnect();
       }
