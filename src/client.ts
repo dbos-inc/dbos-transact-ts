@@ -558,6 +558,16 @@ export class DBOSClient {
   }
 
   /**
+   * List all database-backed queues registered in the system database. `applicationName`
+   * lists only queues owned by these applications. By default, only lists this
+   * application's queues.
+   */
+  async listQueues(applicationName?: string | string[]): Promise<WorkflowQueue[]> {
+    const records = await this.systemDatabase.listQueues(applicationName);
+    return records.map((record) => WorkflowQueue._fromRecord(record, this.systemDatabase));
+  }
+
+  /**
    * Sends a message to a workflow, identified by destinationID.
    * @param destinationID - The ID of the destination workflow.
    * @param message - The message to send. This can be any serializable object.
@@ -801,7 +811,8 @@ export class DBOSClient {
 
   /**
    * Return registered workflow schedules, optionally filtered. `applicationName`
-   * lists only those applications'; by default, only this application's.
+   * lists only schedules owned by these applications. By default, only lists this
+   * application's schedules.
    */
   async listSchedules(filters?: {
     status?: string | string[];

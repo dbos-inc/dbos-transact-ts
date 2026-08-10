@@ -2459,7 +2459,8 @@ export class DBOS {
 
   /**
    * Return registered workflow schedules, optionally filtered. `applicationName`
-   * lists only those applications'; by default, only this application's.
+   * lists only schedules owned by these applications. By default, only lists this
+   * application's schedules.
    */
   static async listSchedules(filters?: {
     applicationName?: string | string[];
@@ -2740,5 +2741,16 @@ export class DBOS {
   static async deleteQueue(name: string): Promise<void> {
     ensureDBOSIsLaunched('deleteQueue');
     await DBOSExecutor.globalInstance!.systemDatabase.deleteQueue(name);
+  }
+
+  /**
+   * List database-backed queues registered in the system database. `applicationName`
+   * lists only queues owned by these applications. By default, only lists this
+   * application's queues.
+   */
+  static async listQueues(applicationName?: string | string[]): Promise<WorkflowQueue[]> {
+    ensureDBOSIsLaunched('listQueues');
+    const records = await DBOSExecutor.globalInstance!.systemDatabase.listQueues(applicationName);
+    return records.map((record) => WorkflowQueue._fromRecord(record));
   }
 }

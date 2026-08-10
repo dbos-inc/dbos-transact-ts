@@ -304,7 +304,7 @@ describe('application-name', () => {
     const scheduleNames = async (applicationName?: string) =>
       new Set((await DBOS.listSchedules(applicationName ? { applicationName } : undefined)).map((s) => s.scheduleName));
     const queueNames = async (applicationName?: string) =>
-      new Set((await sysdb.listQueues(applicationName)).map((q) => q.name));
+      new Set((await DBOS.listQueues(applicationName)).map((q) => q.name));
 
     // Unset is this application's scope: its own rows plus unclaimed, never a peer's.
     expect(await scheduleNames()).toEqual(new Set(['appname-mine', 'appname-unclaimed']));
@@ -315,10 +315,20 @@ describe('application-name', () => {
     expect(await queueNames(APP)).toEqual(new Set(['appname-mine-queue', 'appname-unclaimed-queue']));
     expect(await scheduleNames(PEER)).toEqual(new Set(['appname-theirs', 'appname-unclaimed']));
 
-    // The listing is attributable: a queue record carries its owner.
-    const theirs = await sysdb.listQueues(PEER);
+    // The listing is attributable: a queue carries its owner.
+    const theirs = await DBOS.listQueues(PEER);
     expect(new Set(theirs.map((q) => q.name))).toEqual(new Set(['appname-theirs-queue', 'appname-unclaimed-queue']));
     expect(new Set(theirs.map((q) => q.applicationName ?? null))).toEqual(new Set([PEER, null]));
+
+    // The client runs the same query, so it takes the same filter.
+    const peerClient = await DBOSClient.create({ systemDatabaseUrl: config.systemDatabaseUrl! });
+    try {
+      expect(new Set((await peerClient.listQueues(PEER)).map((q) => q.name))).toEqual(
+        new Set(['appname-theirs-queue', 'appname-unclaimed-queue']),
+      );
+    } finally {
+      await peerClient.destroy();
+    }
 
     // Name-addressed lookups stay global: a globally unique name is an identity.
     expect(await sysdb.getQueue('appname-theirs-queue')).not.toBeNull();
