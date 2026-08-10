@@ -593,11 +593,13 @@ describe('sysdb-notifications-lifecycle', () => {
     // A transient error retires the client, and notifications recover on a fresh one.
     client!.emit('error', new Error('synthetic transient error'));
     expect(systemDatabase.notificationsClient).toBeNull();
-    for (let i = 0; i < 50 && systemDatabase.notificationsClient === null; i++) {
+    // Ample budget: reconnect takes the 1s retry delay plus setup, which includes a 3s self-test timeout.
+    for (let i = 0; i < 100 && systemDatabase.notificationsClient === null; i++) {
       await sleepms(100);
     }
     expect(systemDatabase.notificationsClient).not.toBeNull();
     expect(systemDatabase.notificationsClient).not.toBe(client);
+    expect(systemDatabase.notificationsClient!.listenerCount('notification')).toBe(1);
 
     // Fail the new client so a reconnect is pending, then shut down before it fires.
     systemDatabase.notificationsClient!.emit('error', new Error('synthetic connection error'));
