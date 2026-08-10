@@ -575,10 +575,13 @@ describe('sysdb-notifications-lifecycle', () => {
 
     await DBOS.shutdown();
 
-    // A socket error arriving after shutdown must not release the client a second time.
-    expect(() => client!.emit('error', new Error('synthetic late server error'))).not.toThrow();
+    // Shutdown disowns the client and disarms it, so its error handler can no longer run.
     expect(systemDatabase.notificationsClient).toBeNull();
     expect(client!.listenerCount('notification')).toBe(0);
+
+    // A socket error arriving after shutdown must not release the client a second time or reconnect.
+    expect(() => client!.emit('error', new Error('synthetic late server error'))).not.toThrow();
+    expect(systemDatabase.reconnectTimeout).toBeNull();
   });
 
   test('no-reconnect-after-shutdown', async () => {
