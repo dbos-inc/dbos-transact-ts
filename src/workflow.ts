@@ -191,7 +191,7 @@ export interface GetWorkflowsInput {
   hasParent?: boolean; // Filter workflows that have (or do not have) a parent workflow.
   attributes?: Record<string, unknown>; // Retrieve workflows whose custom attributes contain all of these key-value pairs.
   scheduleName?: string | string[]; // Retrieve workflows enqueued by this named schedule (or any of these schedules).
-  applicationName?: string | string[]; // Retrieve workflows owned by these applications, plus unclaimed ones. Unset retrieves every application's.
+  applicationName?: string | string[]; // Retrieve workflows owned by these applications, plus unclaimed ones. Unset retrieves this application's.
   limit?: number; // Return up to this many workflows IDs. IDs are ordered by workflow creation time.
   offset?: number; // Skip this many workflows IDs. IDs are ordered by workflow creation time.
   sortDesc?: boolean; // Sort the workflows in descending order by creation time (default ascending order).

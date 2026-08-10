@@ -24,6 +24,22 @@ async function ownerOf(client: Client, table: string, keyColumn: string, key: st
   return rows[0]?.application_name ?? null;
 }
 
+/** Insert a step row as though a peer application had recorded it. */
+async function insertPeerStep(
+  client: Client,
+  workflowID: string,
+  functionName: string,
+  options: { applicationName?: string | null } = {},
+): Promise<void> {
+  const owner = 'applicationName' in options ? options.applicationName : PEER;
+  await client.query(
+    `INSERT INTO dbos.operation_outputs
+       (workflow_uuid, function_id, function_name, output, serialization, completed_at_epoch_ms, application_name)
+     VALUES ($1, 0, $2, '1', 'portable_json', $3, $4)`,
+    [workflowID, functionName, Date.now(), owner],
+  );
+}
+
 /** Insert a workflow row as though a peer application had enqueued it. */
 async function insertPeerWorkflow(
   client: Client,
@@ -162,11 +178,16 @@ describe('application-name', () => {
     expect(peerStatus?.applicationName).toBe(PEER);
   });
 
-  test('observability filters include unclaimed rows and can span applications', async () => {
+  test('observability filters scope to this application and include unclaimed rows', async () => {
     class FilterTest {
+      @DBOS.step()
+      static async aStep(): Promise<number> {
+        return Promise.resolve(11);
+      }
+
       @DBOS.workflow()
-      static async aWorkflow(): Promise<string> {
-        return Promise.resolve('ok');
+      static async aWorkflow(): Promise<number> {
+        return await FilterTest.aStep();
       }
     }
 
@@ -174,26 +195,145 @@ describe('application-name', () => {
     const mine = await DBOS.startWorkflow(FilterTest).aWorkflow();
     await mine.getResult();
 
-    await insertPeerWorkflow(client, 'appname-filter-peer');
-    await insertPeerWorkflow(client, 'appname-filter-unclaimed', { applicationName: null });
+    await insertPeerWorkflow(client, 'appname-filter-peer', { status: StatusString.SUCCESS });
+    await insertPeerStep(client, 'appname-filter-peer', 'theirStep');
+    await insertPeerWorkflow(client, 'appname-filter-unclaimed', {
+      status: StatusString.SUCCESS,
+      applicationName: null,
+    });
 
-    // Unset: every application's workflows.
+    // Unset is this application's scope, so naming it changes nothing.
     const all = await DBOS.listWorkflows({});
     const allIDs = all.map((w) => w.workflowID);
     expect(allIDs).toContain(mine.workflowID);
-    expect(allIDs).toContain('appname-filter-peer');
     expect(allIDs).toContain('appname-filter-unclaimed');
+    expect(allIDs).not.toContain('appname-filter-peer');
 
-    // Scoped: this application's rows plus unclaimed ones, never the peer's.
     const ours = await DBOS.listWorkflows({ applicationName: APP });
     const ourIDs = ours.map((w) => w.workflowID);
     expect(ourIDs).toContain(mine.workflowID);
     expect(ourIDs).toContain('appname-filter-unclaimed');
     expect(ourIDs).not.toContain('appname-filter-peer');
 
-    // A peer's rows are reachable by naming it.
+    // A peer's rows are reachable by naming it, alongside the unclaimed ones.
     const theirs = await DBOS.listWorkflows({ applicationName: PEER });
-    expect(theirs.map((w) => w.workflowID)).toContain('appname-filter-peer');
+    const theirIDs = theirs.map((w) => w.workflowID);
+    expect(theirIDs).toContain('appname-filter-peer');
+    expect(theirIDs).toContain('appname-filter-unclaimed');
+    expect(theirIDs).not.toContain(mine.workflowID);
+
+    // A client with no application of its own has no scope to default to.
+    const anon = await DBOSClient.create({ systemDatabaseUrl: config.systemDatabaseUrl! });
+    try {
+      const anonIDs = (await anon.listWorkflows({})).map((w) => w.workflowID);
+      expect(anonIDs).toEqual(
+        expect.arrayContaining([mine.workflowID, 'appname-filter-peer', 'appname-filter-unclaimed']),
+      );
+    } finally {
+      await anon.destroy();
+    }
+
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    const aggregates = await sysdb.getWorkflowAggregates({
+      groupByName: true,
+      selectCount: true,
+      applicationName: [PEER],
+    });
+    expect(aggregates.map((r) => r.group.name)).toEqual(['peerWorkflow']);
+
+    // Grouping partitions where the filter deliberately overlaps.
+    const grouped = await sysdb.getWorkflowAggregates({
+      groupByApplicationName: true,
+      selectCount: true,
+      applicationName: [APP, PEER],
+    });
+    expect(new Set(grouped.map((r) => r.group.application_name))).toEqual(new Set([APP, PEER, null]));
+
+    // Unset would have dropped the peer's group entirely.
+    const ungrouped = await sysdb.getWorkflowAggregates({ groupByApplicationName: true, selectCount: true });
+    expect(new Set(ungrouped.map((r) => r.group.application_name))).toEqual(new Set([APP, null]));
+
+    const steps = await sysdb.getStepAggregates({
+      groupByFunctionName: true,
+      selectCount: true,
+      applicationName: [PEER],
+    });
+    expect(steps.map((r) => r.group.function_name)).toEqual(['theirStep']);
+
+    const windowStart = new Date(0).toISOString();
+    const windowEnd = new Date(Date.now() + 3600_000).toISOString();
+    const metrics = await sysdb.getMetrics(windowStart, windowEnd, [PEER]);
+    const stepNames = metrics.filter((m) => m.metricType === 'step_count').map((m) => m.metricName);
+    expect(new Set(stepNames)).toEqual(new Set(['theirStep']));
+  });
+
+  test('unclaimed schedules and queues belong to every application', async () => {
+    class ScheduleTest {
+      @DBOS.workflow()
+      static async scheduled(_scheduledAt: Date, _startedAt: Date): Promise<void> {
+        return Promise.resolve();
+      }
+    }
+
+    await DBOS.launch();
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    await DBOS.createSchedule({
+      scheduleName: 'appname-mine',
+      workflowFn: ScheduleTest.scheduled,
+      schedule: '0 0 1 1 *',
+    });
+    await DBOS.registerQueue('appname-mine-queue');
+
+    for (const [scheduleID, name, owner] of [
+      ['appname-peer-schedule-id', 'appname-theirs', PEER],
+      ['appname-legacy-schedule-id', 'appname-unclaimed', null],
+    ] as const) {
+      await client.query(
+        `INSERT INTO dbos.workflow_schedules (schedule_id, schedule_name, workflow_name, schedule, status, context, application_name)
+         VALUES ($1, $2, 'scheduled', '0 0 1 1 *', 'ACTIVE', 'null', $3)`,
+        [scheduleID, name, owner],
+      );
+    }
+    for (const [name, owner] of [
+      ['appname-theirs-queue', PEER],
+      ['appname-unclaimed-queue', null],
+    ] as const) {
+      await client.query(`INSERT INTO dbos.queues (name, application_name) VALUES ($1, $2)`, [name, owner]);
+    }
+
+    const scheduleNames = async (applicationName?: string) =>
+      new Set((await DBOS.listSchedules(applicationName ? { applicationName } : undefined)).map((s) => s.scheduleName));
+    const queueNames = async (applicationName?: string) =>
+      new Set((await sysdb.listQueues(applicationName)).map((q) => q.name));
+
+    // Unset is this application's scope: its own rows plus unclaimed, never a peer's.
+    expect(await scheduleNames()).toEqual(new Set(['appname-mine', 'appname-unclaimed']));
+    expect(await queueNames()).toEqual(new Set(['appname-mine-queue', 'appname-unclaimed-queue']));
+
+    // Naming an application adds the unclaimed rows, as the unset scope itself does.
+    expect(await scheduleNames(APP)).toEqual(new Set(['appname-mine', 'appname-unclaimed']));
+    expect(await queueNames(APP)).toEqual(new Set(['appname-mine-queue', 'appname-unclaimed-queue']));
+    expect(await scheduleNames(PEER)).toEqual(new Set(['appname-theirs', 'appname-unclaimed']));
+
+    // The listing is attributable: a queue record carries its owner.
+    const theirs = await sysdb.listQueues(PEER);
+    expect(new Set(theirs.map((q) => q.name))).toEqual(new Set(['appname-theirs-queue', 'appname-unclaimed-queue']));
+    expect(new Set(theirs.map((q) => q.applicationName ?? null))).toEqual(new Set([PEER, null]));
+
+    // Name-addressed lookups stay global: a globally unique name is an identity.
+    expect(await sysdb.getQueue('appname-theirs-queue')).not.toBeNull();
+
+    // Re-registering an unclaimed row claims it, without recreating it.
+    await DBOS.registerQueue('appname-unclaimed-queue');
+    await DBOS.applySchedules([
+      { scheduleName: 'appname-unclaimed', workflowFn: ScheduleTest.scheduled, schedule: '0 0 1 1 *' },
+    ]);
+    expect(await ownerOf(client, 'queues', 'name', 'appname-unclaimed-queue')).toBe(APP);
+    expect(await ownerOf(client, 'workflow_schedules', 'schedule_name', 'appname-unclaimed')).toBe(APP);
+    const { rows: scheduleRows } = await client.query<{ schedule_id: string }>(
+      `SELECT schedule_id FROM dbos.workflow_schedules WHERE schedule_name = 'appname-unclaimed'`,
+    );
+    expect(scheduleRows.map((r) => r.schedule_id)).toEqual(['appname-legacy-schedule-id']);
   });
 
   test('dequeue skips another application and claims unclaimed workflows', async () => {

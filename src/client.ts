@@ -264,7 +264,7 @@ export class DBOSClient {
    * @param systemDatabasePoolSize - An optional maximum size for the system database connection pool. Defaults to {@link DEFAULT_POOL_SIZE}.
    * @param systemDatabasePollingConcurrency - An optional maximum number of concurrent polling operations. Defaults to half the pool size (minimum 1).
    * @param logger - An optional custom logger to which the client directs all its logging, replacing the built-in console logger.
-   * @param applicationName - The application this client acts on behalf of. Defaults to undefined, meaning no application identity: the client writes unclaimed rows, which any application may run. Set it when several applications share this system database, so the client's writes are owned by that application.
+   * @param applicationName - The application this client acts on behalf of. Always set this when several applications share this system database, so workflows, schedules, and queues created by this client are owned by that application.
    * @returns A Promise that resolves with the DBOSClient instance.
    */
   static async create({
@@ -800,8 +800,8 @@ export class DBOSClient {
   }
 
   /**
-   * Return registered workflow schedules, optionally filtered. An unset
-   * `applicationName` lists every application's, as on `listWorkflows`.
+   * Return registered workflow schedules, optionally filtered. `applicationName`
+   * lists only those applications'; by default, only this application's.
    */
   async listSchedules(filters?: {
     status?: string | string[];

@@ -226,7 +226,7 @@ export interface GetWorkflowAggregatesInput {
   queuesOnly?: boolean;
   attributes?: Record<string, unknown>;
   scheduleName?: string[];
-  // Restrict to these owning applications. Unset counts every application's.
+  // Count only these owning applications'. By default, only this application's.
   applicationName?: string[];
 }
 
@@ -241,7 +241,7 @@ export interface GetStepAggregatesInput {
   workflowIdPrefix?: string[];
   completedAfter?: string;
   completedBefore?: string;
-  // Restrict to these owning applications. Unset counts every application's.
+  // Count only these owning applications'. By default, only this application's.
   applicationName?: string[];
 }
 
@@ -846,6 +846,15 @@ export class SystemDatabase {
     if (names.length === 0) return 'TRUE';
     params.push(names);
     return `(${column} = ANY($${params.length}) OR ${column} IS NULL)`;
+  }
+
+  /**
+   * The filter above defaulted to this handle's own application: an unset filter scopes to what
+   * this application owns, not to every application's rows. A handle with no application of its
+   * own still matches every one.
+   */
+  #observabilityFilter(column: string, value: string | string[] | null | undefined, params: unknown[]): string {
+    return this.#appNameFilter(column, value ?? this.appName, params);
   }
 
   /**
@@ -3643,17 +3652,9 @@ export class SystemDatabase {
     addFilter('queue_name', input.queueName);
     addFilter('schedule_name', input.scheduleName);
 
-    // An ordinary filter, not the claiming scope: unset means every application.
-    const applicationNames = input.applicationName
-      ? Array.isArray(input.applicationName)
-        ? input.applicationName
-        : [input.applicationName]
-      : [];
-    if (applicationNames.length > 0) {
-      whereClauses.push(`(application_name = ANY($${paramCounter}) OR application_name IS NULL)`);
-      params.push(applicationNames);
-      paramCounter++;
-    }
+    // Unset scopes to this application, as on every other observability query.
+    whereClauses.push(this.#observabilityFilter('application_name', input.applicationName, params));
+    paramCounter = params.length + 1;
 
     if (input.workflow_id_prefix) {
       if (Array.isArray(input.workflow_id_prefix)) {
@@ -3847,12 +3848,9 @@ export class SystemDatabase {
     addFilter('parent_workflow_id', input.parentWorkflowID);
     addFilter('schedule_name', input.scheduleName);
 
-    // An ordinary filter, not the claiming scope: unset counts every application.
-    if (input.applicationName && input.applicationName.length > 0) {
-      whereClauses.push(`(application_name = ANY($${paramIdx}) OR application_name IS NULL)`);
-      params.push(input.applicationName);
-      paramIdx++;
-    }
+    // Unset scopes to this application, as on every other observability query.
+    whereClauses.push(this.#observabilityFilter('application_name', input.applicationName, params));
+    paramIdx = params.length + 1;
 
     // Only workflows that are actively enqueued.
     if (input.queuesOnly) {
@@ -4035,12 +4033,9 @@ export class SystemDatabase {
       params.push(new Date(input.completedBefore).getTime());
       paramIdx++;
     }
-    // An ordinary filter, not the claiming scope: unset counts every application.
-    if (input.applicationName && input.applicationName.length > 0) {
-      whereClauses.push(`(application_name = ANY($${paramIdx}) OR application_name IS NULL)`);
-      params.push(input.applicationName);
-      paramIdx++;
-    }
+    // Unset scopes to this application, as on every other observability query.
+    whereClauses.push(this.#observabilityFilter('application_name', input.applicationName, params));
+    paramIdx = params.length + 1;
 
     const whereClause = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
     const groupByClause = groupColumns.join(', ');
@@ -4156,7 +4151,7 @@ export class SystemDatabase {
 
     // Query workflow metrics
     const workflowParams: unknown[] = [startEpochMs, endEpochMs];
-    const workflowScope = this.#appNameFilter('application_name', applicationName, workflowParams);
+    const workflowScope = this.#observabilityFilter('application_name', applicationName, workflowParams);
     const workflowResult = await this.pool.query<{ name: string; count: string }>(
       `SELECT name, COUNT(workflow_uuid) as count
        FROM "${this.schemaName}".workflow_status
@@ -4175,7 +4170,7 @@ export class SystemDatabase {
 
     // Query step metrics
     const stepParams: unknown[] = [startEpochMs, endEpochMs];
-    const stepScope = this.#appNameFilter('application_name', applicationName, stepParams);
+    const stepScope = this.#observabilityFilter('application_name', applicationName, stepParams);
     const stepResult = await this.pool.query<{ function_name: string; count: string }>(
       `SELECT function_name, COUNT(*) as count
        FROM "${this.schemaName}".operation_outputs
@@ -4236,8 +4231,8 @@ export class SystemDatabase {
   }
 
   /**
-   * Schedules owned by these applications, plus unclaimed ones. An unset
-   * applicationName lists every application's, as on listWorkflows.
+   * List only schedules owned by these applications, plus unclaimed ones.
+   * By default, only list this application's schedules.
    */
   async listSchedules(
     filters?: {
@@ -4279,13 +4274,9 @@ export class SystemDatabase {
       });
       conditions.push(`(${likeClauses.join(' OR ')})`);
     }
-    if (filters?.applicationName) {
-      const names = Array.isArray(filters.applicationName) ? filters.applicationName : [filters.applicationName];
-      if (names.length > 0) {
-        params.push(names);
-        conditions.push(`(application_name = ANY($${paramIdx++}) OR application_name IS NULL)`);
-      }
-    }
+    // Unset scopes to this application, as on every other observability query.
+    conditions.push(this.#observabilityFilter('application_name', filters?.applicationName, params));
+    paramIdx = params.length + 1;
 
     const where = conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
     const result = await q.query(
@@ -4567,12 +4558,12 @@ export class SystemDatabase {
   }
 
   /**
-   * Queues owned by these applications, plus unclaimed ones. An unset
-   * applicationName lists every application's, as on listWorkflows.
+   * List only queues owned by these applications, plus unclaimed ones.
+   * By default, only list this application's queues.
    */
   async listQueues(applicationName?: string | string[]): Promise<QueueRecord[]> {
     const params: unknown[] = [];
-    const scope = this.#appNameFilter('application_name', applicationName, params);
+    const scope = this.#observabilityFilter('application_name', applicationName, params);
     const { rows } = await this.pool.query<queues>(
       `SELECT ${QUEUE_COLUMNS}
          FROM "${this.schemaName}".queues

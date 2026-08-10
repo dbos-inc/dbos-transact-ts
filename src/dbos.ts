@@ -2458,8 +2458,8 @@ export class DBOS {
   }
 
   /**
-   * Return registered workflow schedules, optionally filtered. An unset
-   * `applicationName` lists every application's, as on `listWorkflows`.
+   * Return registered workflow schedules, optionally filtered. `applicationName`
+   * lists only those applications'; by default, only this application's.
    */
   static async listSchedules(filters?: {
     applicationName?: string | string[];
