@@ -32,6 +32,8 @@ export interface WorkflowSchedule {
   automaticBackfill: boolean;
   cronTimezone: string | null;
   queueName: string | null;
+  // The application that owns this schedule and runs its workflows; undefined if unclaimed.
+  applicationName?: string;
 }
 
 export async function toWorkflowSchedule(
@@ -52,6 +54,7 @@ export async function toWorkflowSchedule(
     automaticBackfill: internal.automaticBackfill,
     cronTimezone: internal.cronTimezone,
     queueName: internal.queueName,
+    applicationName: internal.applicationName,
   };
 }
 
@@ -126,7 +129,9 @@ export class DynamicSchedulerLoop implements DBOSLifecycleCallback {
       let schedules: WorkflowScheduleInternal[];
       try {
         const executor = DBOSExecutor.globalInstance!;
-        schedules = await executor.systemDatabase.listSchedules();
+        schedules = await executor.systemDatabase.listSchedules({
+          applicationName: executor.systemDatabase.appName,
+        });
       } catch (e) {
         DBOS.logger.warn(`Dynamic scheduler: error listing schedules: ${(e as Error).message}`);
         await interruptibleSleep(pollTimeout(), signal);
@@ -197,6 +202,7 @@ export class DynamicSchedulerLoop implements DBOSLifecycleCallback {
               controller.signal,
               sched.cronTimezone ?? undefined,
               sched.queueName ?? undefined,
+              sched.applicationName,
             );
             this.#scheduleLoops.set(sched.scheduleName, { controller, promise, signature });
           }
@@ -217,6 +223,7 @@ export class DynamicSchedulerLoop implements DBOSLifecycleCallback {
     signal: AbortSignal,
     cronTimezone?: string,
     queueName?: string,
+    applicationName?: string,
   ): Promise<void> {
     const timeMatcher = new TimeMatcher(cronExpression, cronTimezone);
 
@@ -232,6 +239,7 @@ export class DynamicSchedulerLoop implements DBOSLifecycleCallback {
       automaticBackfill: false,
       cronTimezone: cronTimezone ?? null,
       queueName: queueName ?? null,
+      applicationName,
     };
 
     let lastExec = new Date().setMilliseconds(0);
@@ -295,8 +303,10 @@ async function enqueueScheduledWorkflow(
   context: unknown,
 ): Promise<void> {
   const serparam = await serializeArgs([scheduledDate, context], undefined, serializer, undefined);
-  // Always enqueue scheduled workflows to the latest application version
-  const latestVersion = await DBOS.getLatestApplicationVersion();
+  // The schedule's owner routes its runs, whoever fires them; an unclaimed one falls back to the firing handle, which may have no identity itself.
+  const owner = sched.applicationName ?? systemDatabase.appName;
+  // Scheduled workflows are always enqueued to their owner's latest application version
+  const latestVersion = await systemDatabase.getLatestApplicationVersion(owner);
   const internalStatus: WorkflowStatusInternal = {
     workflowUUID: workflowID,
     status: StatusString.ENQUEUED,
@@ -320,6 +330,8 @@ async function enqueueScheduledWorkflow(
     queuePartitionKey: undefined,
     serialization: serparam.serialization,
     scheduleName: sched.scheduleName,
+    // Owned where possible: the internal queue's shared name cannot route an unclaimed row.
+    applicationName: owner,
   };
   await systemDatabase.initWorkflowStatus(internalStatus, null);
   return;

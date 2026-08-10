@@ -45,7 +45,7 @@ export interface DBOSLocalCtx extends DBOSContextOptions {
   koaContext?: Koa.Context;
 }
 
-function isWithinWorkflowCtx(ctx: DBOSLocalCtx) {
+export function isWithinWorkflowCtx(ctx: DBOSLocalCtx) {
   if (ctx.workflowId === undefined) return false;
   return true;
 }

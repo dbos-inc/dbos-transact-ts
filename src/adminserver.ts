@@ -248,7 +248,7 @@ export class DBOSAdminServer {
         // its actual configuration even if a stale row exists in the DB.
         const merged = new Map<string, QueueMetadataResponse>();
         try {
-          const records = await dbosExec.systemDatabase.listQueues();
+          const records = await dbosExec.systemDatabase.listQueues(dbosExec.systemDatabase.appName);
           for (const record of records) {
             if (record.name === INTERNAL_QUEUE_NAME) continue;
             const q = WorkflowQueue._fromRecord(record);
