@@ -296,6 +296,18 @@ export interface PGTransactionConfig {
   readOnly?: boolean;
 }
 
+/**
+ * Internal signal that a concurrent duplicate execution recorded this step's outcome first.
+ * Data sources throw this from their completion insert so the user transaction rolls back
+ * and the recorded outcome is replayed instead; it is never surfaced to user code.
+ */
+export class DBOSStepAlreadyRecordedError extends Error {
+  constructor(workflowID: string, stepID: number) {
+    super(`Step ${stepID} of workflow ${workflowID} was already recorded by a concurrent execution`);
+    this.name = 'DBOSStepAlreadyRecordedError';
+  }
+}
+
 export interface CheckSchemaInstallationReturn {
   schema_exists: number;
   table_exists: number;
@@ -336,7 +348,14 @@ export function createTransactionCompletionTablePG(schemaName: string = 'dbos'):
 }
 
 function getPGErrorCode(error: unknown): string | undefined {
-  return error && typeof error === 'object' && 'code' in error ? (error.code as string) : undefined;
+  // Some clients wrap the driver's error, so follow the cause chain to find the code.
+  for (let depth = 0, e = error; e && typeof e === 'object' && depth < 10; depth++) {
+    if ('code' in e) {
+      return e.code as string;
+    }
+    e = (e as { cause?: unknown }).cause;
+  }
+  return undefined;
 }
 
 export function isPGRetriableTransactionError(error: unknown): boolean {

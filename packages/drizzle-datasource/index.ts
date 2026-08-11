@@ -1,10 +1,11 @@
 import { Client, ClientConfig, Pool, PoolClient, PoolConfig } from 'pg';
-import { DBOS, DBOSWorkflowConflictError, FunctionName } from '@dbos-inc/dbos-sdk';
+import { DBOS, FunctionName } from '@dbos-inc/dbos-sdk';
 import {
   type DataSourceTransactionHandler,
   createTransactionCompletionSchemaPG,
   createTransactionCompletionTablePG,
   isPGRetriableTransactionError,
+  DBOSStepAlreadyRecordedError,
   isPGKeyConflictError,
   registerTransaction,
   runTransaction,
@@ -139,7 +140,7 @@ class DrizzleTransactionHandler implements DataSourceTransactionHandler {
       await client.execute(statement);
     } catch (error) {
       if (isPGKeyConflictError(error)) {
-        throw new DBOSWorkflowConflictError(workflowID);
+        throw new DBOSStepAlreadyRecordedError(workflowID, stepID);
       } else {
         throw error;
       }
@@ -154,7 +155,7 @@ class DrizzleTransactionHandler implements DataSourceTransactionHandler {
       await this.#drizzle.execute(statement);
     } catch (error) {
       if (isPGKeyConflictError(error)) {
-        throw new DBOSWorkflowConflictError(workflowID);
+        throw new DBOSStepAlreadyRecordedError(workflowID, stepID);
       } else {
         throw error;
       }
@@ -220,6 +221,10 @@ class DrizzleTransactionHandler implements DataSourceTransactionHandler {
 
         return result;
       } catch (error) {
+        if (error instanceof DBOSStepAlreadyRecordedError) {
+          // A duplicate execution recorded this step first; loop around to replay its outcome.
+          continue;
+        }
         if (isPGRetriableTransactionError(error)) {
           DBOS.span?.addEvent('TXN SERIALIZATION FAILURE', { retryWaitMillis: retryWaitMS }, performance.now());
           // Retry serialization failures.
@@ -229,7 +234,14 @@ class DrizzleTransactionHandler implements DataSourceTransactionHandler {
         } else {
           if (saveResults) {
             const message = SuperJSON.stringify(error);
-            await this.#recordError(workflowID, stepID!, message);
+            try {
+              await this.#recordError(workflowID, stepID!, message);
+            } catch (recordError) {
+              if (recordError instanceof DBOSStepAlreadyRecordedError) {
+                continue;
+              }
+              throw recordError;
+            }
           }
 
           throw error;

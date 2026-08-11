@@ -298,6 +298,39 @@ describe('KyselyDataSource', () => {
     ]);
     expect(txResults.rows.length).toBe(0);
   });
+
+  test('duplicate execution replays the winner result', async () => {
+    await userDB.query('DELETE FROM race_side_effects');
+    raceState.callCount = 0;
+
+    // A loser whose body succeeds: the collision happens on the result-recording insert.
+    raceState.plantWinner = true;
+    raceState.fail = false;
+    const wfid1 = randomUUID();
+    await expect(DBOS.withNextWorkflowID(wfid1, () => regRaceWorkflow())).resolves.toBe('winner-result');
+    expect(raceState.callCount).toBe(1); // the loser did run its body
+
+    // A loser whose body fails: the collision moves to the error-recording insert,
+    // and the winner's result still wins over the loser's own error.
+    raceState.plantWinner = true;
+    raceState.fail = true;
+    const wfid2 = randomUUID();
+    await expect(DBOS.withNextWorkflowID(wfid2, () => regRaceWorkflow())).resolves.toBe('winner-result');
+    expect(raceState.callCount).toBe(2);
+
+    // Both losers' writes were discarded and the winners' records still stand.
+    const { rows: tags } = await userDB.query<{ tag: string }>('SELECT tag FROM race_side_effects');
+    expect(tags).toHaveLength(0);
+    const { rows: txOutput } = await userDB.query<transaction_completion>(
+      'SELECT * FROM dbos.transaction_completion WHERE workflow_id = ANY($1)',
+      [[wfid1, wfid2]],
+    );
+    expect(txOutput).toHaveLength(2);
+    for (const row of txOutput) {
+      expect(row.error).toBeNull(); // no loser error was ever recorded
+      expect(SuperJSON.parse(row.output!)).toBe('winner-result');
+    }
+  });
 });
 
 export interface greetings {
@@ -325,6 +358,7 @@ async function createDatabases(userDB: Pool, createTxCompletion: boolean) {
       await client.query(
         'CREATE TABLE greetings(name text NOT NULL, greet_count integer DEFAULT 0, PRIMARY KEY(name))',
       );
+      await client.query('CREATE TABLE race_side_effects(tag text NOT NULL)');
     } finally {
       client.release();
     }
@@ -350,6 +384,44 @@ async function errorFunction(user: string) {
   await insertFunction(user);
   throw new Error(`test error ${Date.now()}`);
 }
+
+const raceState = { callCount: 0, plantWinner: false, fail: false };
+
+async function raceFunction() {
+  raceState.callCount += 1;
+  await sql`INSERT INTO race_side_effects(tag) VALUES (${`run-${raceState.callCount}`})`.execute(dataSource.client);
+  if (raceState.plantWinner) {
+    raceState.plantWinner = false;
+    await plantWinnerCompletion();
+  }
+  if (raceState.fail) {
+    throw new Error("loser's own failure");
+  }
+  return `result-${raceState.callCount}`;
+}
+
+// A duplicate execution commits its result while this transaction is still open, so this
+// execution's pre-check missed it but its completion insert will collide with it.
+async function plantWinnerCompletion() {
+  const winner = new Client(config.connection);
+  try {
+    await winner.connect();
+    await winner.query(
+      'INSERT INTO dbos.transaction_completion (workflow_id, function_num, output) VALUES ($1, $2, $3)',
+      [DBOS.workflowID, DBOS.stepID, SuperJSON.stringify('winner-result')],
+    );
+  } finally {
+    await winner.end();
+  }
+}
+
+const regRaceFunction = dataSource.registerTransaction(raceFunction);
+
+async function raceWorkflow() {
+  return await regRaceFunction();
+}
+
+const regRaceWorkflow = DBOS.registerWorkflow(raceWorkflow);
 
 async function readFunction(user: string) {
   const row = await dataSource.client

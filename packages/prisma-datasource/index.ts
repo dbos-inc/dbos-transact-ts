@@ -1,7 +1,8 @@
-import { DBOS, DBOSWorkflowConflictError, FunctionName } from '@dbos-inc/dbos-sdk';
+import { DBOS, FunctionName } from '@dbos-inc/dbos-sdk';
 import {
   type DataSourceTransactionHandler,
   isPGRetriableTransactionError,
+  DBOSStepAlreadyRecordedError,
   isPGKeyConflictError,
   registerTransaction,
   runTransaction,
@@ -14,6 +15,12 @@ import {
 } from '@dbos-inc/dbos-sdk/datasource';
 import { AsyncLocalStorage } from 'async_hooks';
 import { SuperJSON } from 'superjson';
+
+// Prisma reports a failed raw query's SQLSTATE in `meta` rather than on the error itself.
+function unwrapPrismaError(error: unknown): unknown {
+  const meta = (error as { meta?: unknown } | null)?.meta;
+  return meta && typeof meta === 'object' && 'code' in meta ? meta : error;
+}
 
 type PrismaLike = {
   $connect: () => Promise<void>;
@@ -129,8 +136,8 @@ class PrismaTransactionHandler implements DataSourceTransactionHandler {
         error,
       );
     } catch (error) {
-      if (isPGKeyConflictError(error)) {
-        throw new DBOSWorkflowConflictError(workflowID);
+      if (isPGKeyConflictError(unwrapPrismaError(error))) {
+        throw new DBOSStepAlreadyRecordedError(workflowID, stepID);
       } else {
         throw error;
       }
@@ -153,8 +160,8 @@ class PrismaTransactionHandler implements DataSourceTransactionHandler {
         output,
       );
     } catch (error) {
-      if (isPGKeyConflictError(error)) {
-        throw new DBOSWorkflowConflictError(workflowID);
+      if (isPGKeyConflictError(unwrapPrismaError(error))) {
+        throw new DBOSStepAlreadyRecordedError(workflowID, stepID);
       } else {
         throw error;
       }
@@ -219,7 +226,11 @@ class PrismaTransactionHandler implements DataSourceTransactionHandler {
 
         return result;
       } catch (error) {
-        if (isPGRetriableTransactionError(error)) {
+        if (error instanceof DBOSStepAlreadyRecordedError) {
+          // A duplicate execution recorded this step first; loop around to replay its outcome.
+          continue;
+        }
+        if (isPGRetriableTransactionError(unwrapPrismaError(error))) {
           DBOS.span?.addEvent('TXN SERIALIZATION FAILURE', { retryWaitMillis: retryWaitMS }, performance.now());
           await new Promise((resolve) => setTimeout(resolve, retryWaitMS));
           retryWaitMS = Math.min(retryWaitMS * backoffFactor, maxRetryWaitMS);
@@ -227,7 +238,14 @@ class PrismaTransactionHandler implements DataSourceTransactionHandler {
         } else {
           if (saveResults) {
             const message = SuperJSON.stringify(error);
-            await this.#recordError(workflowID, stepID!, message);
+            try {
+              await this.#recordError(workflowID, stepID!, message);
+            } catch (recordError) {
+              if (recordError instanceof DBOSStepAlreadyRecordedError) {
+                continue;
+              }
+              throw recordError;
+            }
           }
 
           throw error;
