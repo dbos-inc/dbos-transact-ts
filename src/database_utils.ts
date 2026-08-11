@@ -1,13 +1,23 @@
 import { Client } from 'pg';
 
+import { DBOSError } from './error';
 import { getClientConfig } from './utils';
+
+/** Both helpers address the database by name, so a URL without one is a caller error, not a runtime failure. */
+function requireDatabaseName(databaseUrl: string): string {
+  const dbName = getDatabaseNameFromUrl(databaseUrl);
+  if (!dbName) {
+    throw new DBOSError(`No database name in ${maskDatabaseUrl(databaseUrl)}; expected a path such as /mydb`);
+  }
+  return dbName;
+}
 
 /**
  * Drop `databaseUrl`'s database, via the admin (`/postgres`) database on the same server.
  * Throws if the database still exists afterwards.
  */
 export async function dropPGDatabase(databaseUrl: string, log: (msg: string) => void): Promise<void> {
-  const quoted = quotePGIdentifier(getDatabaseNameFromUrl(databaseUrl));
+  const quoted = quotePGIdentifier(requireDatabaseName(databaseUrl));
   const client = new Client(getClientConfig(deriveDatabaseUrl(databaseUrl, 'postgres')));
   // An 'error' event with no listener would take down the process.
   client.on('error', (err: Error) => log(`Unexpected error in admin client: ${err}`));
@@ -28,13 +38,14 @@ export async function dropPGDatabase(databaseUrl: string, log: (msg: string) => 
 /**
  * Create `databaseUrl`'s database if it does not already exist, via the admin (`/postgres`)
  * database on the same server. Best-effort: a database we cannot provision may still be one
- * we can connect to and use, so every failure is logged and swallowed rather than thrown.
+ * we can connect to and use, so connection and creation failures are logged rather than thrown.
+ * A URL carrying no database name is a caller error and does throw.
  */
 export async function ensurePGDatabase(
   databaseUrl: string,
   logger: { info: (msg: string) => void; warn: (msg: string) => void },
 ): Promise<void> {
-  const dbName = getDatabaseNameFromUrl(databaseUrl);
+  const dbName = requireDatabaseName(databaseUrl);
   const client = new Client(getClientConfig(deriveDatabaseUrl(databaseUrl, 'postgres')));
   // An 'error' event with no listener would take down the process.
   client.on('error', (err: Error) => logger.warn(`Unexpected error in startup client: ${err}`));

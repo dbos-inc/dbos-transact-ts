@@ -96,12 +96,14 @@ function makePGConnStr(
 
 async function databaseExists(adminUrl: string, dbName: string): Promise<boolean> {
   const client = new Client({ connectionString: adminUrl });
-  await client.connect();
+  // An 'error' event with no listener would take down the jest worker.
+  client.on('error', () => {});
   try {
+    await client.connect();
     const { rowCount } = await client.query('SELECT 1 FROM pg_database WHERE datname = $1', [dbName]);
     return rowCount === 1;
   } finally {
-    await client.end();
+    await client.end().catch(() => {});
   }
 }
 
@@ -194,12 +196,17 @@ describe('PG16 drop/create e2e', () => {
     try {
       const adminUri = container.getConnectionUri();
 
-      // Creation is idempotent
+      // Creation is idempotent: the second call must find the database and not attempt another CREATE
       const dbName = 'idle_db1';
-      await ensurePGDatabase(deriveDatabaseUrl(adminUri, dbName), silentLogger);
+      const firstRun = collectingLogger();
+      await ensurePGDatabase(deriveDatabaseUrl(adminUri, dbName), firstRun);
       expect(await databaseExists(adminUri, dbName)).toBe(true);
-      await ensurePGDatabase(deriveDatabaseUrl(adminUri, dbName), silentLogger);
+      expect(firstRun.lines).toEqual([`Creating system database ${dbName}`]);
+
+      const secondRun = collectingLogger();
+      await ensurePGDatabase(deriveDatabaseUrl(adminUri, dbName), secondRun);
       expect(await databaseExists(adminUri, dbName)).toBe(true);
+      expect(secondRun.lines).toEqual([]);
 
       // Dropping is idempotent
       await dropPGDatabase(deriveDatabaseUrl(adminUri, dbName), () => {});
