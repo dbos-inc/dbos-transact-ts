@@ -1,12 +1,14 @@
 import { Client } from 'pg';
 
+import { getClientConfig } from './utils';
+
 /**
  * Drop `databaseUrl`'s database, via the admin (`/postgres`) database on the same server.
  * Throws if the database still exists afterwards.
  */
 export async function dropPGDatabase(databaseUrl: string, log: (msg: string) => void): Promise<void> {
   const quoted = quotePGIdentifier(getDatabaseNameFromUrl(databaseUrl));
-  const client = new Client(getPGClientConfig(deriveDatabaseUrl(databaseUrl, 'postgres')));
+  const client = new Client(getClientConfig(deriveDatabaseUrl(databaseUrl, 'postgres')));
   // An 'error' event with no listener would take down the process.
   client.on('error', (err: Error) => log(`Unexpected error in admin client: ${err}`));
   try {
@@ -30,7 +32,7 @@ export async function dropPGDatabase(databaseUrl: string, log: (msg: string) => 
  */
 export async function ensurePGDatabase(databaseUrl: string, log: (msg: string) => void): Promise<void> {
   const dbName = getDatabaseNameFromUrl(databaseUrl);
-  const client = new Client(getPGClientConfig(deriveDatabaseUrl(databaseUrl, 'postgres')));
+  const client = new Client(getClientConfig(deriveDatabaseUrl(databaseUrl, 'postgres')));
   // An 'error' event with no listener would take down the process.
   client.on('error', (err: Error) => log(`Unexpected error in startup client: ${err}`));
   try {
@@ -54,26 +56,6 @@ export function deriveDatabaseUrl(urlStr: string, otherDbName: string): string {
     return u.toString();
   } catch {
     return urlStr; // best effort; connect will fail with clear message
-  }
-}
-
-// The `pg` package we use does not parse the connect_timeout parameter, so we need to handle it ourselves.
-export function getPGClientConfig(databaseUrl: string | URL) {
-  const connectionString = typeof databaseUrl === 'string' ? databaseUrl : databaseUrl.toString();
-  const timeout = getTimeout(typeof databaseUrl === 'string' ? new URL(databaseUrl) : databaseUrl);
-  return {
-    connectionString,
-    connectionTimeoutMillis: timeout ? timeout * 1000 : 10000,
-  };
-
-  function getTimeout(url: URL) {
-    try {
-      const $timeout = url.searchParams.get('connect_timeout');
-      return $timeout ? parseInt($timeout, 10) : undefined;
-    } catch {
-      // Ignore errors in parsing the connect_timeout parameter
-      return undefined;
-    }
   }
 }
 

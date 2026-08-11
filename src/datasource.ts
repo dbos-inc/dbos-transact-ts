@@ -355,7 +355,6 @@ export {
   maskDatabaseUrl,
   getDatabaseNameFromUrl,
   deriveDatabaseUrl,
-  getPGClientConfig,
   dropPGDatabase,
   ensurePGDatabase,
 } from './database_utils';
