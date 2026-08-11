@@ -38,7 +38,7 @@ import { GlobalLogger } from './telemetry/logs';
 import { WorkflowQueue } from './wfqueue';
 import { randomUUID } from 'crypto';
 import { getClientConfig } from './utils';
-import { connectToPGAndReportOutcome, ensurePGDatabase, maskDatabaseUrl } from './database_utils';
+import { ensurePGDatabase, maskDatabaseUrl } from './database_utils';
 import { runSysMigrationsPg } from './sysdb_migrations/migration_runner';
 import { allMigrations } from './sysdb_migrations/internal/migrations';
 import {
@@ -410,24 +410,20 @@ export async function ensureSystemDatabase(
     client = await customPool.connect();
   } else {
     // Otherwise, create the system database if it does not exist.
-    const res = await ensurePGDatabase({
-      urlToEnsure: sysDbUrl,
-      logger: (msg: string) => logger.debug(msg),
-    });
-    if (res.status === 'failed') {
-      logger.warn(
-        `Database could not be verified / created: ${maskDatabaseUrl(sysDbUrl)}: ${res.message} ${res.hint ?? ''}\n  ${res.notes.join('\n')}`,
+    await ensurePGDatabase(sysDbUrl, logger);
+    const sysClient = new Client(getClientConfig(sysDbUrl));
+    // An 'error' event with no listener would take down the process.
+    sysClient.on('error', (err: Error) => logger.warn(`Unexpected error in system database client: ${err}`));
+    try {
+      await sysClient.connect();
+    } catch (e) {
+      await sysClient.end().catch(() => {});
+      throw new DBOSInitializationError(
+        `Unable to connect to system database at ${maskDatabaseUrl(sysDbUrl)}: ${(e as Error).message}`,
+        e instanceof Error ? e : undefined,
       );
     }
-    const cconnect = await connectToPGAndReportOutcome(sysDbUrl, () => {}, 'System Database');
-    if (cconnect.result !== 'ok') {
-      logger.warn(
-        `Unable to connect to system database at ${maskDatabaseUrl(sysDbUrl)}
-        ${cconnect.message}: (${cconnect.code ? cconnect.code : 'connectivity problem'})`,
-      );
-      throw new DBOSInitializationError(`Unable to connect to system database at ${maskDatabaseUrl(sysDbUrl)}`);
-    }
-    client = cconnect.client;
+    client = sysClient;
   }
 
   try {

@@ -1,11 +1,14 @@
 import { DBOS } from '../src/';
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
-import { dropPGDatabase, ensurePGDatabase } from '../src/datasource';
+import { dropPGDatabase } from '../src/database_utils';
+import { ensureTestDatabase } from './helpers';
 import { randomUUID } from 'node:crypto';
 import { Client } from 'pg';
 
 const cockroachdbUrl = process.env.DBOS_COCKROACHDB_URL;
 const describeIf = cockroachdbUrl ? describe : describe.skip;
+
+const silentDropLogger = { warn: () => {} };
 
 const testQueueName = 'crdb-test-queue';
 
@@ -51,14 +54,8 @@ describeIf('cockroachdb', () => {
     url.pathname = '/dbos_test';
     const systemDatabaseUrl = url.toString();
 
-    const dropResult = await dropPGDatabase({ urlToDrop: systemDatabaseUrl, logger: () => {} });
-    if (dropResult.status !== 'dropped' && dropResult.status !== 'did_not_exist') {
-      throw new Error(`Failed to drop dbos_test: ${dropResult.message}`);
-    }
-    const ensureResult = await ensurePGDatabase({ urlToEnsure: systemDatabaseUrl, logger: () => {} });
-    if (ensureResult.status !== 'created' && ensureResult.status !== 'already_exists') {
-      throw new Error(`Failed to create dbos_test: ${ensureResult.message}`);
-    }
+    await dropPGDatabase(systemDatabaseUrl, silentDropLogger);
+    await ensureTestDatabase(systemDatabaseUrl);
     config = {
       name: 'cockroachdb-test',
       systemDatabaseUrl,

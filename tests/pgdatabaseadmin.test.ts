@@ -2,7 +2,7 @@ import { Client } from 'pg';
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import net from 'net';
 
-import { deriveDatabaseUrl, dropPGDatabase, ensurePGDatabase, maskDatabaseUrl } from '../src/datasource';
+import { deriveDatabaseUrl, dropPGDatabase, ensurePGDatabase, maskDatabaseUrl } from '../src/database_utils';
 import { spawn } from 'child_process';
 import { DBOS } from '../src';
 
@@ -94,6 +94,32 @@ function makePGConnStr(
   return `postgresql://${username}:${password}@${host}:${port}/${database}?connect_timeout=${timeout}`;
 }
 
+async function databaseExists(adminUrl: string, dbName: string): Promise<boolean> {
+  const client = new Client({ connectionString: adminUrl });
+  // An 'error' event with no listener would take down the jest worker.
+  client.on('error', () => {});
+  try {
+    await client.connect();
+    const { rowCount } = await client.query('SELECT 1 FROM pg_database WHERE datname = $1', [dbName]);
+    return rowCount === 1;
+  } finally {
+    await client.end().catch(() => {});
+  }
+}
+
+// A logger that discards everything, for calls whose output no assertion depends on.
+const silentLogger = { info: () => {}, warn: () => {} };
+const silentDropLogger = { warn: () => {} };
+
+// ensurePGDatabase reports failures only through its logger, so negative tests assert on what it logged.
+function collectingLogger() {
+  const lines: string[] = [];
+  const record = (m: string) => {
+    lines.push(m);
+  };
+  return { lines, info: record, warn: record };
+}
+
 describe('PG16 drop/create e2e', () => {
   let testShouldRun = false;
 
@@ -169,34 +195,32 @@ describe('PG16 drop/create e2e', () => {
       .start();
 
     try {
-      // Creation via the admin URL
+      const adminUri = container.getConnectionUri();
+
+      // Creation is idempotent: the second call must find the database and not attempt another CREATE
       const dbName = 'idle_db1';
-      expect(
-        (await ensurePGDatabase({ adminUrl: container.getConnectionUri(), dbToEnsure: dbName, logger: () => {} }))
-          .status,
-      ).toBe('created');
-      expect(
-        (await ensurePGDatabase({ adminUrl: container.getConnectionUri(), dbToEnsure: dbName, logger: () => {} }))
-          .status,
-      ).toBe('already_exists');
+      const firstRun = collectingLogger();
+      await ensurePGDatabase(deriveDatabaseUrl(adminUri, dbName), firstRun);
+      expect(await databaseExists(adminUri, dbName)).toBe(true);
+      expect(firstRun.lines).toEqual([`Created database ${dbName}`]);
 
-      // Drop via the admin URL
-      expect(
-        (await dropPGDatabase({ adminUrl: container.getConnectionUri(), dbToDrop: dbName, logger: () => {} })).status,
-      ).toBe('dropped');
-      expect(
-        (await dropPGDatabase({ adminUrl: container.getConnectionUri(), dbToDrop: dbName, logger: () => {} })).status,
-      ).toBe('did_not_exist');
+      const secondRun = collectingLogger();
+      await ensurePGDatabase(deriveDatabaseUrl(adminUri, dbName), secondRun);
+      expect(await databaseExists(adminUri, dbName)).toBe(true);
+      expect(secondRun.lines).toEqual([]);
 
+      // Dropping is idempotent
+      await dropPGDatabase(deriveDatabaseUrl(adminUri, dbName), silentDropLogger);
+      expect(await databaseExists(adminUri, dbName)).toBe(false);
+      await dropPGDatabase(deriveDatabaseUrl(adminUri, dbName), silentDropLogger);
+      expect(await databaseExists(adminUri, dbName)).toBe(false);
+
+      // A name needing percent-encoding in the URL must round-trip back to the literal name
       const dbNameYuck = `do"not;name-your$db.this!'`;
-      expect(
-        (await ensurePGDatabase({ adminUrl: container.getConnectionUri(), dbToEnsure: dbNameYuck, logger: () => {} }))
-          .status,
-      ).toBe('created');
-      expect(
-        (await dropPGDatabase({ adminUrl: container.getConnectionUri(), dbToDrop: dbNameYuck, logger: () => {} }))
-          .status,
-      ).toBe('dropped');
+      await ensurePGDatabase(deriveDatabaseUrl(adminUri, dbNameYuck), silentLogger);
+      expect(await databaseExists(adminUri, dbNameYuck)).toBe(true);
+      await dropPGDatabase(deriveDatabaseUrl(adminUri, dbNameYuck), silentDropLogger);
+      expect(await databaseExists(adminUri, dbNameYuck)).toBe(false);
     } finally {
       await container.stop();
     }
@@ -212,15 +236,19 @@ describe('PG16 drop/create e2e', () => {
       .start();
 
     try {
-      // Creation via the target URL (falls back on 'postgres')
+      // Creation via the target URL (derives 'postgres' as the admin database)
       const dbName = 'idle_db2';
       const target = deriveDatabaseUrl(container.getConnectionUri(), dbName);
-      expect((await ensurePGDatabase({ urlToEnsure: target, logger: () => {} })).status).toBe('created');
-      expect((await ensurePGDatabase({ urlToEnsure: target, logger: () => {} })).status).toBe('already_exists');
+      await ensurePGDatabase(target, silentLogger);
+      expect(await databaseExists(container.getConnectionUri(), dbName)).toBe(true);
+      await ensurePGDatabase(target, silentLogger);
+      expect(await databaseExists(container.getConnectionUri(), dbName)).toBe(true);
 
-      // Drop via the URL (falls back on 'postgres')
-      expect((await dropPGDatabase({ urlToDrop: target, logger: () => {} })).status).toBe('dropped');
-      expect((await dropPGDatabase({ urlToDrop: target, logger: () => {} })).status).toBe('did_not_exist');
+      // Drop via the target URL (derives 'postgres' as the admin database)
+      await dropPGDatabase(target, silentDropLogger);
+      expect(await databaseExists(container.getConnectionUri(), dbName)).toBe(false);
+      await dropPGDatabase(target, silentDropLogger);
+      expect(await databaseExists(container.getConnectionUri(), dbName)).toBe(false);
     } finally {
       await container.stop();
     }
@@ -246,69 +274,26 @@ describe('PG16 drop/create e2e', () => {
         1000,
       );
       const target = deriveDatabaseUrl(targetWithPerms, 'never_existed');
-      const res1 = await dropPGDatabase({ urlToDrop: target, logger: () => {} });
-      if (res1.status === 'failed') {
-        expect(res1.hint?.toLowerCase()?.includes('invalid password')).toBeTruthy();
-        expect(res1.message.toLowerCase().includes('could not establish any admin connection')).toBeTruthy();
-      } else {
-        expect(res1.status).toBe('failed');
-      }
+      await expect(dropPGDatabase(target, silentDropLogger)).rejects.toThrow(/password authentication failed/i);
 
-      const res1c = await ensurePGDatabase({ urlToEnsure: target, logger: () => {} });
-      if (res1c.status === 'failed') {
-        expect(res1c.hint?.toLowerCase()?.includes('invalid password')).toBeTruthy();
-        expect(res1c.message.toLowerCase().includes('could not establish any admin connection')).toBeTruthy();
-      } else {
-        expect(res1c.status).toBe('failed');
-      }
+      const ensure1 = collectingLogger();
+      await ensurePGDatabase(target, ensure1);
+      expect(ensure1.lines.some((s) => s.includes('Could not verify the existence of database never_existed'))).toBe(
+        true,
+      );
+      expect(ensure1.lines.some((s) => s.toLowerCase().includes('password authentication failed'))).toBe(true);
 
-      // Same, but with incorrect admin + db name
-      const res2 = await dropPGDatabase({ dbToDrop: 'never_existed', adminUrl: targetWithPerms, logger: () => {} });
-      expect(res2.status).toBe('failed');
-      if (res2.status === 'failed') {
-        expect(res2.hint?.toLowerCase()?.includes('invalid password')).toBeTruthy();
-        expect(res2.message.toLowerCase().includes('could not establish any admin connection')).toBeTruthy();
-      } else {
-        expect(res2.status).toBe('failed');
-      }
-      const res2c = await ensurePGDatabase({
-        dbToEnsure: 'never_existed',
-        adminUrl: targetWithPerms,
-        logger: () => {},
-      });
-      expect(res2c.status).toBe('failed');
-      if (res2c.status === 'failed') {
-        expect(res2c.hint?.toLowerCase()?.includes('invalid password')).toBeTruthy();
-        expect(res2c.message.toLowerCase().includes('could not establish any admin connection')).toBeTruthy();
-      } else {
-        expect(res2c.status).toBe('failed');
-      }
-
-      // Same, but with incorrect admin + db name
+      // An unreachable server surfaces the connection error
       const bogusServer = makePGConnStr('myuser', 'mypassword', container.getHost(), 59999, 'mydatabase', 1000);
-      const res3 = await dropPGDatabase({ urlToDrop: bogusServer, logger: () => {} });
-      expect(res3.status).toBe('failed');
-      expect(res3.message.includes('connect failed'));
-      const res3c = await ensurePGDatabase({ urlToEnsure: bogusServer, logger: () => {} });
-      expect(res3c.status).toBe('failed');
-      expect(res3c.message.includes('connect failed'));
+      await expect(dropPGDatabase(bogusServer, silentDropLogger)).rejects.toThrow(/ECONNREFUSED/);
+      const ensure3 = collectingLogger();
+      await ensurePGDatabase(bogusServer, ensure3);
+      expect(ensure3.lines.some((s) => s.includes('Could not verify the existence of database mydatabase'))).toBe(true);
 
-      // Same, but with incorrect admin + db name; target is not existent
-      const bogusAdminServer = makePGConnStr('myuser', 'mypassword', container.getHost(), 59999, 'mydatabase', 1000);
-      const res4 = await dropPGDatabase({
-        urlToDrop: deriveDatabaseUrl(container.getConnectionUri(), 'never_existed'),
-        adminUrl: bogusAdminServer,
-        logger: () => {},
-      });
-      expect(res4.status).toBe('did_not_exist');
-
-      // Bogus admin
-      const res4c = await ensurePGDatabase({
-        urlToEnsure: container.getConnectionUri(),
-        adminUrl: bogusAdminServer,
-        logger: () => {},
-      });
-      expect(res4c.status).toBe('already_exists');
+      // Dropping a database that never existed is a no-op, not an error
+      await expect(
+        dropPGDatabase(deriveDatabaseUrl(container.getConnectionUri(), 'never_existed'), silentDropLogger),
+      ).resolves.toBeUndefined();
     } finally {
       await container.stop();
     }
@@ -325,10 +310,8 @@ describe('PG16 drop/create e2e', () => {
 
     try {
       const dbName = 'busy_db';
-      expect(
-        (await ensurePGDatabase({ adminUrl: container.getConnectionUri(), dbToEnsure: dbName, logger: () => {} }))
-          .status,
-      ).toBe('created');
+      await ensurePGDatabase(deriveDatabaseUrl(container.getConnectionUri(), dbName), silentLogger);
+      expect(await databaseExists(container.getConnectionUri(), dbName)).toBe(true);
 
       // open a blocker connection
       const busy = new Client({ connectionString: deriveDatabaseUrl(container.getConnectionUri(), dbName) });
@@ -340,13 +323,8 @@ describe('PG16 drop/create e2e', () => {
       });
       await busy.query('BEGIN'); // keep a transaction open
 
-      const res = await dropPGDatabase({
-        urlToDrop: deriveDatabaseUrl(container.getConnectionUri(), dbName),
-        logger: () => {},
-      });
-
       // the dropper should terminate our backend and succeed
-      expect(res.status).toBe('dropped');
+      await dropPGDatabase(deriveDatabaseUrl(container.getConnectionUri(), dbName), silentDropLogger);
 
       // cleanup if still connected (should be terminated by drop)
       try {
@@ -392,42 +370,31 @@ describe('PG16 drop/create e2e', () => {
       // Try creating (2 ways to fail, OK if already exists)
       const userDb = makePGConnStr('appuser', 's3cret', container.getHost(), container.getPort(), noAdminDb, 1000);
       const createUserDb = deriveDatabaseUrl(userDb, 'cant_create');
-      const res1c = await ensurePGDatabase({ urlToEnsure: createUserDb, logger: () => {} });
-      expect(res1c.status).toBe('failed');
-      expect(res1c.message.includes('permission denied')).toBeTruthy();
-      expect(res1c.notes.find((s) => s.includes('permission denied for database "postgres"'))).toBeDefined(); // Tried connecting to 'postgres'
+      const ensure1 = collectingLogger();
+      await ensurePGDatabase(createUserDb, ensure1);
+      expect(ensure1.lines.some((s) => s.includes('permission denied for database "postgres"'))).toBe(true);
+      expect(await databaseExists(container.getConnectionUri(), 'cant_create')).toBe(false);
 
-      const res3c = await ensurePGDatabase({ dbToEnsure: 'cant_create', adminUrl: userDb, logger: () => {} });
-      expect(res3c.status).toBe('failed');
-      expect(res3c.message.includes('permission denied')).toBeTruthy();
-      expect(res3c.notes.find((s) => s.includes('permission denied for database "postgres"'))).toBeUndefined(); // admin given, do not try 'postgres'
+      // A restricted role whose database already exists: warn, never throw, and leave the database alone
+      const ensure2 = collectingLogger();
+      await expect(ensurePGDatabase(userDb, ensure2)).resolves.toBeUndefined();
+      expect(ensure2.lines.some((s) => s.includes('permission denied for database "postgres"'))).toBe(true);
+      expect(await databaseExists(container.getConnectionUri(), noAdminDb)).toBe(true);
 
-      const res2c = await ensurePGDatabase({ urlToEnsure: userDb, logger: () => {} });
-      expect(res2c.status).toBe('already_exists');
+      // Dropping needs the same admin connection, so it fails the same way
+      await expect(dropPGDatabase(createUserDb, silentDropLogger)).rejects.toThrow(
+        /permission denied for database "postgres"/,
+      );
 
-      // Try dropping (doesn't exist, vs cannot drop)
-      const res1d = await dropPGDatabase({ urlToDrop: createUserDb, logger: () => {} });
-      expect(res1d.status).toBe('did_not_exist');
-      const res2d = await dropPGDatabase({ dbToDrop: 'cant_create', adminUrl: userDb, logger: () => {} });
-      expect(res2d.status).toBe('did_not_exist');
-
-      // Create it and find it cannot be dropped
+      // Create a database appuser does not own
       const dropUserDb = deriveDatabaseUrl(userDb, 'cant_drop');
-      const resc = await ensurePGDatabase({
-        dbToEnsure: 'cant_drop',
-        adminUrl: container.getConnectionUri(),
-        logger: () => {},
-      });
-      expect(resc.status).toBe('created');
+      await ensurePGDatabase(deriveDatabaseUrl(container.getConnectionUri(), 'cant_drop'), silentLogger);
+      expect(await databaseExists(container.getConnectionUri(), 'cant_drop')).toBe(true);
 
-      const res3d = await dropPGDatabase({ urlToDrop: dropUserDb, logger: () => {} });
-      expect(res3d.status).toBe('failed');
-      expect(res3d.message.includes('must be owner')).toBeTruthy();
-      expect(res3d.notes.find((s) => s.includes('permission denied for database "postgres"'))).toBeDefined(); // Tried connecting to 'postgres'
-      const res4d = await dropPGDatabase({ dbToDrop: 'cant_drop', adminUrl: userDb, logger: () => {} });
-      expect(res4d.status).toBe('failed');
-      expect(res4d.message.includes('must be owner')).toBeTruthy();
-      expect(res4d.notes.find((s) => s.includes('permission denied for database "postgres"'))).toBeUndefined(); // admin given, do not try 'postgres'
+      // With admin access restored, the DROP itself reports the privilege failure
+      await adminClient.query(`GRANT CONNECT ON DATABASE postgres TO appuser`);
+      await expect(dropPGDatabase(dropUserDb, silentDropLogger)).rejects.toThrow(/must be owner/);
+      expect(await databaseExists(container.getConnectionUri(), 'cant_drop')).toBe(true);
 
       try {
         await adminClient.end();
@@ -448,22 +415,20 @@ describe('PG16 drop/create e2e', () => {
 
     try {
       const dbName = `"db".'v1'-a$6`;
-      expect(
-        (await ensurePGDatabase({ adminUrl: container.getConnectionUri(), dbToEnsure: dbName, logger: () => {} }))
-          .status,
-      ).toBe('created');
+      const sysDbUrl = makePGConnStr(
+        container.getUsername(),
+        container.getPassword(),
+        container.getHost(),
+        container.getPort(),
+        dbName,
+        3000,
+      );
 
-      DBOS.setConfig({
-        name: 'weird-sysdb-test',
-        systemDatabaseUrl: makePGConnStr(
-          container.getUsername(),
-          container.getPassword(),
-          container.getHost(),
-          container.getPort(),
-          dbName,
-          3000,
-        ),
-      });
+      // The name is percent-encoded in the URL; it must be created under the literal name
+      await ensurePGDatabase(sysDbUrl, silentLogger);
+      expect(await databaseExists(container.getConnectionUri(), dbName)).toBe(true);
+
+      DBOS.setConfig({ name: 'weird-sysdb-test', systemDatabaseUrl: sysDbUrl });
 
       const testWorkflow = DBOS.registerWorkflow(
         async (testValue: string) => {
@@ -485,8 +450,8 @@ describe('PG16 drop/create e2e', () => {
       } finally {
         await DBOS.shutdown();
       }
-      const dres = await dropPGDatabase({ adminUrl: container.getConnectionUri(), dbToDrop: dbName, logger: () => {} });
-      expect(dres.status).toBe('dropped');
+      await dropPGDatabase(sysDbUrl, silentDropLogger);
+      expect(await databaseExists(container.getConnectionUri(), dbName)).toBe(false);
     } finally {
       await container.stop();
     }

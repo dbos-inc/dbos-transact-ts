@@ -10,6 +10,8 @@ import { DBOSClient } from '../dist/src';
 import { dropPGDatabase, ensurePGDatabase } from '../src/database_utils';
 import { sleepConfig } from '../src/utils';
 
+const silentDropLogger = { warn: () => {} };
+
 describe('dbos-tests', () => {
   let username: string;
   let config: DBOSConfig;
@@ -1061,7 +1063,7 @@ describe('custom-pool-test', () => {
   test('custom-pool-test', async () => {
     const baseConfig = generateDBOSTestConfig();
     // Destroy the system database
-    await dropPGDatabase({ urlToDrop: baseConfig.systemDatabaseUrl, logger: () => {} });
+    await dropPGDatabase(baseConfig.systemDatabaseUrl!, silentDropLogger);
     const systemDatabaseURL = baseConfig.systemDatabaseUrl;
     assert(systemDatabaseURL);
     let pool = new Pool({ connectionString: systemDatabaseURL });
@@ -1081,7 +1083,7 @@ describe('custom-pool-test', () => {
     await expect(DBOS.launch()).rejects.toThrow(DBOSInitializationError);
     await DBOS.shutdown();
     // Create the system database, launch should succeed with a custom pool but fake URL
-    await ensurePGDatabase({ urlToEnsure: baseConfig.systemDatabaseUrl, logger: () => {} });
+    await ensurePGDatabase(baseConfig.systemDatabaseUrl!, { info: () => {}, warn: () => {} });
     pool = new Pool({ connectionString: systemDatabaseURL });
     config = {
       systemDatabaseUrl: 'postgres://fake:nonsense@badhost:1111/no_database',

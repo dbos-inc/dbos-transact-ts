@@ -7,6 +7,7 @@ import { DataSource } from 'typeorm';
 import { TypeOrmDataSource } from '..';
 
 import { DBOS } from '@dbos-inc/dbos-sdk';
+import { Client } from 'pg';
 import { ensurePGDatabase } from '../../../dist/src/database_utils';
 
 const config = { user: process.env.PGUSER || 'postgres', database: 'typeorm_ds_test_datasource' };
@@ -51,12 +52,31 @@ const workflow = DBOS.registerWorkflow(
   { name: 'testTypeOrm' },
 );
 
+// ensurePGDatabase swallows every failure, so verify the postcondition and fail with the reason.
+async function ensureTestDatabase(databaseUrl: string) {
+  const notes: string[] = [];
+  const record = (msg: string) => {
+    notes.push(msg);
+  };
+  await ensurePGDatabase(databaseUrl, { info: record, warn: record });
+  const client = new Client({ connectionString: databaseUrl });
+  try {
+    await client.connect();
+    // CockroachDB connects to a nonexistent database, so hit a catalog that requires it to exist.
+    await client.query('SELECT 1 FROM information_schema.schemata LIMIT 1');
+  } catch (e) {
+    const why = notes.length ? ` [${notes.join('; ')}]` : '';
+    throw new Error(`Could not provision the test database: ${(e as Error).message}${why}`);
+  } finally {
+    await client.end().catch(() => {});
+  }
+}
+
 describe('TypeOrmDataSourceDemo', () => {
   beforeEach(async () => {
-    await ensurePGDatabase({
-      dbToEnsure: 'typeorm_demo_ds',
-      adminUrl: `postgresql://${config.user}:${process.env['PGPASSWORD'] || 'dbos'}@${process.env['PGHOST'] || 'localhost'}:${process.env['PGPORT'] || '5432'}/postgres`,
-    });
+    await ensureTestDatabase(
+      `postgresql://${config.user}:${process.env['PGPASSWORD'] || 'dbos'}@${process.env['PGHOST'] || 'localhost'}:${process.env['PGPORT'] || '5432'}/typeorm_demo_ds`,
+    );
     await TypeOrmDataSource.initializeDBOSSchema(config);
     await AppDataSource.initialize();
 
