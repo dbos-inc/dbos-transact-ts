@@ -1,10 +1,9 @@
 import { DBOS, DBOSClient, DBOSConfig } from '../src';
 import { randomUUID } from 'node:crypto';
 import { sleepms } from '../src/utils';
-import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
+import { ensureTestDatabase, generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
 import { KnexDataSource } from '../packages/knex-datasource';
 import { StepInfo } from '../src/workflow';
-import { ensurePGDatabase } from '../src/database_utils';
 
 const dbBackedQueueName = 'concDbBackedQueue';
 
@@ -425,9 +424,8 @@ const runALotOfTransactionsAtOnce = DBOS.registerWorkflow(
 
 describe('concurrency-tests', () => {
   beforeAll(async () => {
-    await ensurePGDatabase(
+    await ensureTestDatabase(
       `postgresql://${dbConfig.user}:${process.env['PGPASSWORD'] || 'dbos'}@${process.env['PGHOST'] || 'localhost'}:${process.env['PGPORT'] || '5432'}/${dbname}`,
-      () => {},
     );
 
     await setUpDBOSTestSysDb(config);

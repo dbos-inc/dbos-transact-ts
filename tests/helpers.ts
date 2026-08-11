@@ -1,13 +1,32 @@
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import { DBOS, StatusString } from '../src';
-import { sleepms } from '../src/utils';
+import { getClientConfig, sleepms } from '../src/utils';
 import { isValidDatabaseName, translateDbosConfig } from '../src/config';
 import { ensureSystemDatabase, SystemDatabase } from '../src/system_database';
 import { GlobalLogger } from '../src/telemetry/logs';
-import { deriveDatabaseUrl, dropPGDatabase, maskDatabaseUrl } from '../src/datasource';
+import { deriveDatabaseUrl, dropPGDatabase, ensurePGDatabase, maskDatabaseUrl } from '../src/datasource';
 import { Client } from 'pg';
 
 /* DB management helpers */
+
+/**
+ * Provision a database for a test. `ensurePGDatabase` swallows every failure, so verify the
+ * postcondition here and fail with the reason rather than several frames later.
+ */
+export async function ensureTestDatabase(databaseUrl: string) {
+  const notes: string[] = [];
+  await ensurePGDatabase(databaseUrl, (msg) => notes.push(msg));
+  const client = new Client(getClientConfig(databaseUrl));
+  try {
+    await client.connect();
+  } catch (e) {
+    const why = notes.length ? ` [${notes.join('; ')}]` : '';
+    throw new Error(`Could not provision ${maskDatabaseUrl(databaseUrl)}: ${(e as Error).message}${why}`);
+  } finally {
+    await client.end().catch(() => {});
+  }
+}
+
 function getSysDatabaseUrlFromUserDb(userDB: string) {
   const url = new URL(userDB);
   const dbName = url.pathname.slice(1);

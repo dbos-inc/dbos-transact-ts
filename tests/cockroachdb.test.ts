@@ -1,6 +1,7 @@
 import { DBOS } from '../src/';
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
-import { dropPGDatabase, ensurePGDatabase } from '../src/datasource';
+import { dropPGDatabase } from '../src/datasource';
+import { ensureTestDatabase } from './helpers';
 import { randomUUID } from 'node:crypto';
 import { Client } from 'pg';
 
@@ -52,7 +53,7 @@ describeIf('cockroachdb', () => {
     const systemDatabaseUrl = url.toString();
 
     await dropPGDatabase(systemDatabaseUrl, () => {});
-    await ensurePGDatabase(systemDatabaseUrl, () => {});
+    await ensureTestDatabase(systemDatabaseUrl);
     config = {
       name: 'cockroachdb-test',
       systemDatabaseUrl,
