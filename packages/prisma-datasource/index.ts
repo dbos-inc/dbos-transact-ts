@@ -2,8 +2,8 @@ import { DBOS, FunctionName } from '@dbos-inc/dbos-sdk';
 import {
   type DataSourceTransactionHandler,
   isPGRetriableTransactionError,
+  DBOSError,
   DBOSStepAlreadyRecordedError,
-  isPGKeyConflictError,
   registerTransaction,
   runTransaction,
   DBOSDataSource,
@@ -127,21 +127,33 @@ class PrismaTransactionHandler implements DataSourceTransactionHandler {
   }
 
   async #recordError(workflowID: string, stepID: number, error: string): Promise<void> {
-    try {
-      await this.#prismaDB.$executeRawUnsafe(
-        `INSERT INTO "${this.schemaName}".transaction_completion (workflow_id, function_num, error) 
-        VALUES ($1, $2, $3)`,
-        workflowID,
-        stepID,
-        error,
-      );
-    } catch (error) {
-      if (isPGKeyConflictError(unwrapPrismaError(error))) {
-        throw new DBOSStepAlreadyRecordedError(workflowID, stepID);
-      } else {
-        throw error;
-      }
+    // $executeRawUnsafe reports affected rows, so DO NOTHING yields 0 when a duplicate won.
+    const inserted = await this.#prismaDB.$executeRawUnsafe(
+      `INSERT INTO "${this.schemaName}".transaction_completion (workflow_id, function_num, error)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (workflow_id, function_num) DO NOTHING`,
+      workflowID,
+      stepID,
+      error,
+    );
+    if (inserted === 0) {
+      throw new DBOSStepAlreadyRecordedError(workflowID, stepID);
     }
+  }
+
+  // A duplicate execution won the race, so its recorded outcome is the durable one.
+  async #replayConflictingStep<Return>(workflowID: string, stepID: number): Promise<Return> {
+    const recorded = await this.#checkExecution(this.#prismaDB, workflowID, stepID);
+    if (recorded === undefined) {
+      throw new DBOSError(
+        `Step ${stepID} of workflow ${workflowID} conflicted with a concurrent execution, but no recorded outcome was found`,
+      );
+    }
+    DBOS.span?.setAttribute('cached', true);
+    if ('error' in recorded) {
+      throw SuperJSON.parse(recorded.error);
+    }
+    return (recorded.output ? SuperJSON.parse(recorded.output) : null) as Return;
   }
 
   static async #recordOutput(
@@ -151,20 +163,16 @@ class PrismaTransactionHandler implements DataSourceTransactionHandler {
     output: string | null,
     schemaName: string,
   ): Promise<void> {
-    try {
-      await client.$executeRawUnsafe(
-        `INSERT INTO "${schemaName}".transaction_completion (workflow_id, function_num, output) 
-         VALUES ($1, $2, $3)`,
-        workflowID,
-        stepID,
-        output,
-      );
-    } catch (error) {
-      if (isPGKeyConflictError(unwrapPrismaError(error))) {
-        throw new DBOSStepAlreadyRecordedError(workflowID, stepID);
-      } else {
-        throw error;
-      }
+    const inserted = await client.$executeRawUnsafe(
+      `INSERT INTO "${schemaName}".transaction_completion (workflow_id, function_num, output)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (workflow_id, function_num) DO NOTHING`,
+      workflowID,
+      stepID,
+      output,
+    );
+    if (inserted === 0) {
+      throw new DBOSStepAlreadyRecordedError(workflowID, stepID);
     }
   }
 
@@ -227,8 +235,7 @@ class PrismaTransactionHandler implements DataSourceTransactionHandler {
         return result;
       } catch (error) {
         if (error instanceof DBOSStepAlreadyRecordedError) {
-          // A duplicate execution recorded this step first; loop around to replay its outcome.
-          continue;
+          return await this.#replayConflictingStep<Return>(workflowID!, stepID!);
         }
         if (isPGRetriableTransactionError(unwrapPrismaError(error))) {
           DBOS.span?.addEvent('TXN SERIALIZATION FAILURE', { retryWaitMillis: retryWaitMS }, performance.now());
@@ -242,7 +249,7 @@ class PrismaTransactionHandler implements DataSourceTransactionHandler {
               await this.#recordError(workflowID, stepID!, message);
             } catch (recordError) {
               if (recordError instanceof DBOSStepAlreadyRecordedError) {
-                continue;
+                return await this.#replayConflictingStep<Return>(workflowID, stepID!);
               }
               throw recordError;
             }

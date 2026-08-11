@@ -9,7 +9,7 @@ import {
   registerTransactionalDataSource,
   wrapDBOSFunctionAndRegister,
 } from './decorators';
-import { DBOSInvalidWorkflowTransitionError } from './error';
+import { DBOSError, DBOSInvalidWorkflowTransitionError } from './error';
 import { runWithTrace, SpanStatusCode } from './telemetry/traces';
 
 /**
@@ -295,6 +295,9 @@ export interface PGTransactionConfig {
   /** If set, request read-only transaction from underlying app database */
   readOnly?: boolean;
 }
+
+/** Base error type, re-exported so data sources can raise DBOS-typed failures. */
+export { DBOSError };
 
 /**
  * Internal signal that a concurrent duplicate execution recorded this step's outcome first.

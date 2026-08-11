@@ -5,8 +5,8 @@ import {
   createTransactionCompletionSchemaPG,
   createTransactionCompletionTablePG,
   isPGRetriableTransactionError,
+  DBOSError,
   DBOSStepAlreadyRecordedError,
-  isPGKeyConflictError,
   registerTransaction,
   runTransaction,
   DBOSDataSource,
@@ -133,33 +133,42 @@ class DrizzleTransactionHandler implements DataSourceTransactionHandler {
     output: string,
     schemaName: string,
   ): Promise<void> {
-    try {
-      const statement = sql`
-        INSERT INTO ${sql.identifier(schemaName)}.transaction_completion (workflow_id, function_num, output) 
-        VALUES (${workflowID}, ${stepID}, ${output})`;
-      await client.execute(statement);
-    } catch (error) {
-      if (isPGKeyConflictError(error)) {
-        throw new DBOSStepAlreadyRecordedError(workflowID, stepID);
-      } else {
-        throw error;
-      }
+    const statement = sql`
+      INSERT INTO ${sql.identifier(schemaName)}.transaction_completion (workflow_id, function_num, output)
+      VALUES (${workflowID}, ${stepID}, ${output})
+      ON CONFLICT (workflow_id, function_num) DO NOTHING
+      RETURNING workflow_id`;
+    const { rows } = await client.execute(statement);
+    if (rows.length === 0) {
+      throw new DBOSStepAlreadyRecordedError(workflowID, stepID);
     }
   }
 
   async #recordError(workflowID: string, stepID: number, error: string): Promise<void> {
-    try {
-      const statement = sql`
-        INSERT INTO ${sql.identifier(this.schemaName)}.transaction_completion (workflow_id, function_num, error) 
-        VALUES (${workflowID}, ${stepID}, ${error})`;
-      await this.#drizzle.execute(statement);
-    } catch (error) {
-      if (isPGKeyConflictError(error)) {
-        throw new DBOSStepAlreadyRecordedError(workflowID, stepID);
-      } else {
-        throw error;
-      }
+    const statement = sql`
+      INSERT INTO ${sql.identifier(this.schemaName)}.transaction_completion (workflow_id, function_num, error)
+      VALUES (${workflowID}, ${stepID}, ${error})
+      ON CONFLICT (workflow_id, function_num) DO NOTHING
+      RETURNING workflow_id`;
+    const { rows } = await this.#drizzle.execute(statement);
+    if (rows.length === 0) {
+      throw new DBOSStepAlreadyRecordedError(workflowID, stepID);
     }
+  }
+
+  // A duplicate execution won the race, so its recorded outcome is the durable one.
+  async #replayConflictingStep<Return>(workflowID: string, stepID: number): Promise<Return> {
+    const recorded = await this.#checkExecution(workflowID, stepID);
+    if (recorded === undefined) {
+      throw new DBOSError(
+        `Step ${stepID} of workflow ${workflowID} conflicted with a concurrent execution, but no recorded outcome was found`,
+      );
+    }
+    DBOS.span?.setAttribute('cached', true);
+    if ('error' in recorded) {
+      throw SuperJSON.parse(recorded.error);
+    }
+    return (recorded.output ? SuperJSON.parse(recorded.output) : null) as Return;
   }
 
   /* Invoke a transaction function, called by the framework */
@@ -222,8 +231,7 @@ class DrizzleTransactionHandler implements DataSourceTransactionHandler {
         return result;
       } catch (error) {
         if (error instanceof DBOSStepAlreadyRecordedError) {
-          // A duplicate execution recorded this step first; loop around to replay its outcome.
-          continue;
+          return await this.#replayConflictingStep<Return>(workflowID!, stepID!);
         }
         if (isPGRetriableTransactionError(error)) {
           DBOS.span?.addEvent('TXN SERIALIZATION FAILURE', { retryWaitMillis: retryWaitMS }, performance.now());
@@ -238,7 +246,7 @@ class DrizzleTransactionHandler implements DataSourceTransactionHandler {
               await this.#recordError(workflowID, stepID!, message);
             } catch (recordError) {
               if (recordError instanceof DBOSStepAlreadyRecordedError) {
-                continue;
+                return await this.#replayConflictingStep<Return>(workflowID, stepID!);
               }
               throw recordError;
             }

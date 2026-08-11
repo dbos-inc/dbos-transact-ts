@@ -4,8 +4,8 @@ import { DBOS, FunctionName } from '@dbos-inc/dbos-sdk';
 import {
   type DataSourceTransactionHandler,
   isPGRetriableTransactionError,
+  DBOSError,
   DBOSStepAlreadyRecordedError,
-  isPGKeyConflictError,
   registerTransaction,
   runTransaction,
   DBOSDataSource,
@@ -137,23 +137,35 @@ class KyselyTransactionHandler implements DataSourceTransactionHandler {
   }
 
   async #recordError(workflowID: string, stepID: number, error: string): Promise<void> {
-    try {
-      await this.#kyselyDB
-        .insertInto('dbos.transaction_completion')
-        .values({
-          workflow_id: workflowID,
-          function_num: stepID,
-          error,
-          output: null,
-        })
-        .execute();
-    } catch (error) {
-      if (isPGKeyConflictError(error)) {
-        throw new DBOSStepAlreadyRecordedError(workflowID, stepID);
-      } else {
-        throw error;
-      }
+    const inserted = await this.#kyselyDB
+      .insertInto('dbos.transaction_completion')
+      .values({
+        workflow_id: workflowID,
+        function_num: stepID,
+        error,
+        output: null,
+      })
+      .onConflict((oc) => oc.columns(['workflow_id', 'function_num']).doNothing())
+      .returning('workflow_id')
+      .executeTakeFirst();
+    if (inserted === undefined) {
+      throw new DBOSStepAlreadyRecordedError(workflowID, stepID);
     }
+  }
+
+  // A duplicate execution won the race, so its recorded outcome is the durable one.
+  async #replayConflictingStep<Return>(workflowID: string, stepID: number): Promise<Return> {
+    const recorded = await this.#checkExecution(workflowID, stepID);
+    if (recorded === undefined) {
+      throw new DBOSError(
+        `Step ${stepID} of workflow ${workflowID} conflicted with a concurrent execution, but no recorded outcome was found`,
+      );
+    }
+    DBOS.span?.setAttribute('cached', true);
+    if ('error' in recorded) {
+      throw SuperJSON.parse(recorded.error);
+    }
+    return (recorded.output ? SuperJSON.parse(recorded.output) : null) as Return;
   }
 
   static async #recordOutput(
@@ -162,22 +174,19 @@ class KyselyTransactionHandler implements DataSourceTransactionHandler {
     stepID: number,
     output: string | null,
   ): Promise<void> {
-    try {
-      await client
-        .insertInto('dbos.transaction_completion')
-        .values({
-          workflow_id: workflowID,
-          function_num: stepID,
-          output,
-          error: null,
-        })
-        .execute();
-    } catch (error) {
-      if (isPGKeyConflictError(error)) {
-        throw new DBOSStepAlreadyRecordedError(workflowID, stepID);
-      } else {
-        throw error;
-      }
+    const inserted = await client
+      .insertInto('dbos.transaction_completion')
+      .values({
+        workflow_id: workflowID,
+        function_num: stepID,
+        output,
+        error: null,
+      })
+      .onConflict((oc) => oc.columns(['workflow_id', 'function_num']).doNothing())
+      .returning('workflow_id')
+      .executeTakeFirst();
+    if (inserted === undefined) {
+      throw new DBOSStepAlreadyRecordedError(workflowID, stepID);
     }
   }
 
@@ -238,8 +247,7 @@ class KyselyTransactionHandler implements DataSourceTransactionHandler {
         return result;
       } catch (error) {
         if (error instanceof DBOSStepAlreadyRecordedError) {
-          // A duplicate execution recorded this step first; loop around to replay its outcome.
-          continue;
+          return await this.#replayConflictingStep<Return>(workflowID!, stepID!);
         }
         if (isPGRetriableTransactionError(error)) {
           DBOS.span?.addEvent('TXN SERIALIZATION FAILURE', { retryWaitMillis: retryWaitMS }, performance.now());
@@ -253,7 +261,7 @@ class KyselyTransactionHandler implements DataSourceTransactionHandler {
               await this.#recordError(workflowID, stepID!, message);
             } catch (recordError) {
               if (recordError instanceof DBOSStepAlreadyRecordedError) {
-                continue;
+                return await this.#replayConflictingStep<Return>(workflowID, stepID!);
               }
               throw recordError;
             }

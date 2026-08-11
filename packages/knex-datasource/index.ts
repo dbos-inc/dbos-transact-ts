@@ -4,8 +4,8 @@ import { DBOS, FunctionName } from '@dbos-inc/dbos-sdk';
 import {
   type DataSourceTransactionHandler,
   isPGRetriableTransactionError,
+  DBOSError,
   DBOSStepAlreadyRecordedError,
-  isPGKeyConflictError,
   registerTransaction,
   runTransaction,
   DBOSDataSource,
@@ -115,19 +115,34 @@ class KnexTransactionHandler implements DataSourceTransactionHandler {
   }
 
   async #recordError(workflowID: string, stepID: number, error: string): Promise<void> {
-    try {
-      await this.#knexDB<transaction_completion>('transaction_completion').withSchema('dbos').insert({
+    const rows = await this.#knexDB<transaction_completion>('transaction_completion')
+      .withSchema('dbos')
+      .insert({
         workflow_id: workflowID,
         function_num: stepID,
         error,
-      });
-    } catch (error) {
-      if (isPGKeyConflictError(error)) {
-        throw new DBOSStepAlreadyRecordedError(workflowID, stepID);
-      } else {
-        throw error;
-      }
+      })
+      .onConflict(['workflow_id', 'function_num'])
+      .ignore()
+      .returning('workflow_id');
+    if (rows.length === 0) {
+      throw new DBOSStepAlreadyRecordedError(workflowID, stepID);
     }
+  }
+
+  // A duplicate execution won the race, so its recorded outcome is the durable one.
+  async #replayConflictingStep<Return>(workflowID: string, stepID: number): Promise<Return> {
+    const recorded = await this.#checkExecution(workflowID, stepID);
+    if (recorded === undefined) {
+      throw new DBOSError(
+        `Step ${stepID} of workflow ${workflowID} conflicted with a concurrent execution, but no recorded outcome was found`,
+      );
+    }
+    DBOS.span?.setAttribute('cached', true);
+    if ('error' in recorded) {
+      throw SuperJSON.parse(recorded.error);
+    }
+    return (recorded.output ? SuperJSON.parse(recorded.output) : null) as Return;
   }
 
   static async #recordOutput(
@@ -136,18 +151,18 @@ class KnexTransactionHandler implements DataSourceTransactionHandler {
     stepID: number,
     output: string | null,
   ): Promise<void> {
-    try {
-      await client<transaction_completion>('transaction_completion').withSchema('dbos').insert({
+    const rows = await client<transaction_completion>('transaction_completion')
+      .withSchema('dbos')
+      .insert({
         workflow_id: workflowID,
         function_num: stepID,
         output,
-      });
-    } catch (error) {
-      if (isPGKeyConflictError(error)) {
-        throw new DBOSStepAlreadyRecordedError(workflowID, stepID);
-      } else {
-        throw error;
-      }
+      })
+      .onConflict(['workflow_id', 'function_num'])
+      .ignore()
+      .returning('workflow_id');
+    if (rows.length === 0) {
+      throw new DBOSStepAlreadyRecordedError(workflowID, stepID);
     }
   }
 
@@ -204,8 +219,7 @@ class KnexTransactionHandler implements DataSourceTransactionHandler {
         return result;
       } catch (error) {
         if (error instanceof DBOSStepAlreadyRecordedError) {
-          // A duplicate execution recorded this step first; loop around to replay its outcome.
-          continue;
+          return await this.#replayConflictingStep<Return>(workflowID!, stepID!);
         }
         if (isPGRetriableTransactionError(error)) {
           DBOS.span?.addEvent('TXN SERIALIZATION FAILURE', { retryWaitMillis: retryWaitMS }, performance.now());
@@ -219,7 +233,7 @@ class KnexTransactionHandler implements DataSourceTransactionHandler {
               await this.#recordError(workflowID, stepID!, message);
             } catch (recordError) {
               if (recordError instanceof DBOSStepAlreadyRecordedError) {
-                continue;
+                return await this.#replayConflictingStep<Return>(workflowID, stepID!);
               }
               throw recordError;
             }

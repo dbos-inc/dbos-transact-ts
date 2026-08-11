@@ -7,8 +7,8 @@ import {
   createTransactionCompletionTablePG,
   type DataSourceTransactionHandler,
   isPGRetriableTransactionError,
+  DBOSError,
   DBOSStepAlreadyRecordedError,
-  isPGKeyConflictError,
   registerTransaction,
   runTransaction,
   PGIsolationLevel as IsolationLevel,
@@ -116,31 +116,40 @@ class PostgresTransactionHandler implements DataSourceTransactionHandler {
     output: string | null,
     schemaName: string,
   ): Promise<void> {
-    try {
-      await client/*sql*/ `
-        INSERT INTO ${client(schemaName)}.transaction_completion (workflow_id, function_num, output)
-        VALUES (${workflowID}, ${stepID}, ${output})`;
-    } catch (error) {
-      if (isPGKeyConflictError(error)) {
-        throw new DBOSStepAlreadyRecordedError(workflowID, stepID);
-      } else {
-        throw error;
-      }
+    const rows = await client/*sql*/ `
+      INSERT INTO ${client(schemaName)}.transaction_completion (workflow_id, function_num, output)
+      VALUES (${workflowID}, ${stepID}, ${output})
+      ON CONFLICT (workflow_id, function_num) DO NOTHING
+      RETURNING workflow_id`;
+    if (rows.length === 0) {
+      throw new DBOSStepAlreadyRecordedError(workflowID, stepID);
     }
   }
 
   async #recordError(workflowID: string, stepID: number, error: string): Promise<void> {
-    try {
-      await this.#db/*sql*/ `
-        INSERT INTO ${this.#db(this.schemaName)}.transaction_completion (workflow_id, function_num, error)
-        VALUES (${workflowID}, ${stepID}, ${error})`;
-    } catch (error) {
-      if (isPGKeyConflictError(error)) {
-        throw new DBOSStepAlreadyRecordedError(workflowID, stepID);
-      } else {
-        throw error;
-      }
+    const rows = await this.#db/*sql*/ `
+      INSERT INTO ${this.#db(this.schemaName)}.transaction_completion (workflow_id, function_num, error)
+      VALUES (${workflowID}, ${stepID}, ${error})
+      ON CONFLICT (workflow_id, function_num) DO NOTHING
+      RETURNING workflow_id`;
+    if (rows.length === 0) {
+      throw new DBOSStepAlreadyRecordedError(workflowID, stepID);
     }
+  }
+
+  // A duplicate execution won the race, so its recorded outcome is the durable one.
+  async #replayConflictingStep<Return>(workflowID: string, stepID: number): Promise<Return> {
+    const recorded = await this.#checkExecution(workflowID, stepID);
+    if (recorded === undefined) {
+      throw new DBOSError(
+        `Step ${stepID} of workflow ${workflowID} conflicted with a concurrent execution, but no recorded outcome was found`,
+      );
+    }
+    DBOS.span?.setAttribute('cached', true);
+    if ('error' in recorded) {
+      throw SuperJSON.parse(recorded.error);
+    }
+    return (recorded.output ? SuperJSON.parse(recorded.output) : null) as Return;
   }
 
   async invokeTransactionFunction<This, Args extends unknown[], Return>(
@@ -200,8 +209,7 @@ class PostgresTransactionHandler implements DataSourceTransactionHandler {
         return result as Return;
       } catch (error) {
         if (error instanceof DBOSStepAlreadyRecordedError) {
-          // A duplicate execution recorded this step first; loop around to replay its outcome.
-          continue;
+          return await this.#replayConflictingStep<Return>(workflowID!, stepID!);
         }
         if (isPGRetriableTransactionError(error)) {
           // 400001 is a serialization failure in PostgreSQL
@@ -216,7 +224,7 @@ class PostgresTransactionHandler implements DataSourceTransactionHandler {
               await this.#recordError(workflowID, stepID!, message);
             } catch (recordError) {
               if (recordError instanceof DBOSStepAlreadyRecordedError) {
-                continue;
+                return await this.#replayConflictingStep<Return>(workflowID, stepID!);
               }
               throw recordError;
             }

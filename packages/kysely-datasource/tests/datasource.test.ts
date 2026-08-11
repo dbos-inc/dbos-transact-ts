@@ -305,6 +305,7 @@ describe('KyselyDataSource', () => {
 
     // A loser whose body succeeds: the collision happens on the result-recording insert.
     raceState.plantWinner = true;
+    raceState.plantWinnerError = false;
     raceState.fail = false;
     const wfid1 = randomUUID();
     await expect(DBOS.withNextWorkflowID(wfid1, () => regRaceWorkflow())).resolves.toBe('winner-result');
@@ -313,12 +314,22 @@ describe('KyselyDataSource', () => {
     // A loser whose body fails: the collision moves to the error-recording insert,
     // and the winner's result still wins over the loser's own error.
     raceState.plantWinner = true;
+    raceState.plantWinnerError = false;
     raceState.fail = true;
     const wfid2 = randomUUID();
     await expect(DBOS.withNextWorkflowID(wfid2, () => regRaceWorkflow())).resolves.toBe('winner-result');
     expect(raceState.callCount).toBe(2);
 
-    // Both losers' writes were discarded and the winners' records still stand.
+    // A winner that recorded an error: the loser replays that throw instead of its own result.
+    raceState.plantWinner = true;
+    raceState.plantWinnerError = true;
+    raceState.fail = false;
+    const wfid3 = randomUUID();
+    const winnerError = await throws(() => DBOS.withNextWorkflowID(wfid3, () => regRaceWorkflow()));
+    expect((winnerError as Error).message).toBe('winner-error');
+    expect(raceState.callCount).toBe(3);
+
+    // Every loser's writes were discarded and the winners' records still stand.
     const { rows: tags } = await userDB.query<{ tag: string }>('SELECT tag FROM race_side_effects');
     expect(tags).toHaveLength(0);
     const { rows: txOutput } = await userDB.query<transaction_completion>(
@@ -330,6 +341,13 @@ describe('KyselyDataSource', () => {
       expect(row.error).toBeNull(); // no loser error was ever recorded
       expect(SuperJSON.parse(row.output!)).toBe('winner-result');
     }
+    const { rows: txError } = await userDB.query<transaction_completion>(
+      'SELECT * FROM dbos.transaction_completion WHERE workflow_id = $1',
+      [wfid3],
+    );
+    expect(txError).toHaveLength(1);
+    expect(txError[0].output).toBeNull(); // the loser never overwrote the winner's error with its own result
+    expect(SuperJSON.parse<Error>(txError[0].error!).message).toBe('winner-error');
   });
 });
 
@@ -385,7 +403,7 @@ async function errorFunction(user: string) {
   throw new Error(`test error ${Date.now()}`);
 }
 
-const raceState = { callCount: 0, plantWinner: false, fail: false };
+const raceState = { callCount: 0, plantWinner: false, plantWinnerError: false, fail: false };
 
 async function raceFunction() {
   raceState.callCount += 1;
@@ -406,9 +424,12 @@ async function plantWinnerCompletion() {
   const winner = new Client(config.connection);
   try {
     await winner.connect();
+    const [column, value] = raceState.plantWinnerError
+      ? ['error', SuperJSON.stringify(new Error('winner-error'))]
+      : ['output', SuperJSON.stringify('winner-result')];
     await winner.query(
-      'INSERT INTO dbos.transaction_completion (workflow_id, function_num, output) VALUES ($1, $2, $3)',
-      [DBOS.workflowID, DBOS.stepID, SuperJSON.stringify('winner-result')],
+      `INSERT INTO dbos.transaction_completion (workflow_id, function_num, ${column}) VALUES ($1, $2, $3)`,
+      [DBOS.workflowID, DBOS.stepID, value],
     );
   } finally {
     await winner.end();
