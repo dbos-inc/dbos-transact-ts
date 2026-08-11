@@ -38,7 +38,7 @@ import { GlobalLogger } from './telemetry/logs';
 import { WorkflowQueue } from './wfqueue';
 import { randomUUID } from 'crypto';
 import { getClientConfig } from './utils';
-import { connectToPGAndReportOutcome, ensurePGDatabase, maskDatabaseUrl } from './database_utils';
+import { ensurePGDatabase, maskDatabaseUrl } from './database_utils';
 import { runSysMigrationsPg } from './sysdb_migrations/migration_runner';
 import { allMigrations } from './sysdb_migrations/internal/migrations';
 import {
@@ -411,15 +411,18 @@ export async function ensureSystemDatabase(
   } else {
     // Otherwise, create the system database if it does not exist.
     await ensurePGDatabase(sysDbUrl, (msg: string) => logger.warn(msg));
-    const cconnect = await connectToPGAndReportOutcome(sysDbUrl, () => {}, 'System Database');
-    if (cconnect.result !== 'ok') {
-      logger.warn(
-        `Unable to connect to system database at ${maskDatabaseUrl(sysDbUrl)}
-        ${cconnect.message}: (${cconnect.code ? cconnect.code : 'connectivity problem'})`,
+    const sysClient = new Client(getClientConfig(sysDbUrl));
+    // An 'error' event with no listener would take down the process.
+    sysClient.on('error', (err: Error) => logger.warn(`Unexpected error in system database client: ${err}`));
+    try {
+      await sysClient.connect();
+    } catch (e) {
+      await sysClient.end().catch(() => {});
+      throw new DBOSInitializationError(
+        `Unable to connect to system database at ${maskDatabaseUrl(sysDbUrl)}: ${(e as Error).message}`,
       );
-      throw new DBOSInitializationError(`Unable to connect to system database at ${maskDatabaseUrl(sysDbUrl)}`);
     }
-    client = cconnect.client;
+    client = sysClient;
   }
 
   try {

@@ -95,28 +95,6 @@ export function maskDatabaseUrl(urlStr: string): string {
   }
 }
 
-export async function connectToPGAndReportOutcome(
-  url: string,
-  log: (m: string) => void,
-  label: string,
-): Promise<{ result: 'ok'; client: Client } | { result: 'error'; code?: string; message: string }> {
-  log(`Connecting to ${label}: ${maskDatabaseUrl(url)}`);
-  const client = new Client(getPGClientConfig(url));
-  client.on('error', (err: Error) => {
-    log(`Unexpected error in startup client: ${err}`);
-  });
-  try {
-    await client.connect();
-    return { result: 'ok', client };
-  } catch (err) {
-    const e = err as Error & { code?: string };
-    try {
-      await client.end();
-    } catch {}
-    return { result: 'error', code: e?.code, message: e?.message ?? String(e) };
-  }
-}
-
 function quotePGIdentifier(name: string): string {
   return `"${name.replace(/"/g, '""')}"`;
 }

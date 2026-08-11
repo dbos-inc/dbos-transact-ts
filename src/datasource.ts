@@ -356,7 +356,6 @@ export {
   getDatabaseNameFromUrl,
   deriveDatabaseUrl,
   getPGClientConfig,
-  connectToPGAndReportOutcome,
   dropPGDatabase,
   ensurePGDatabase,
 } from './database_utils';
