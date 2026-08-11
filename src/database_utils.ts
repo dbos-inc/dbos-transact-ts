@@ -177,95 +177,26 @@ export async function dropPGDatabase(opts: DropDatabaseOptions = {}): Promise<Dr
 }
 
 /**
- * Result of a `ensurePGDatabase` call.
- * Status of `created` or `already_exists` is a "success": the DB is there at the end.
- * Status of `failed` means we could not provision the DB from the admin database.
- *  The target may still exist and be reachable; callers that can connect to it directly
- *  should treat this as a warning rather than a fatal error.
+ * Create `databaseUrl`'s database if it does not already exist, via the admin (`/postgres`)
+ * database on the same server. Best-effort: a database we cannot provision may still be one
+ * we can connect to and use, so every failure is logged and swallowed rather than thrown.
  */
-
-export type EnsureDatabaseResult =
-  | { status: 'created' | 'already_exists'; message: string; notes: string[] }
-  | { status: 'failed'; notes: string[]; message: string; hint?: string };
-
-/**
- * The logical thing to provide is the name of the DB to ensure (`dbToEnsure`) and a connection string with permission (`adminUrl`)
- * However, you can specify `urlToEnsure` and we will derive the admin URL from it.
- */
-export interface EnsureDatabaseOptions {
-  /** Name of the database to ensure */
-  dbToEnsure?: string;
-  /** URL of the database to ensure */
-  urlToEnsure?: string;
-  /** Admin DB URL on the same server. If omitted, we'll use `<urlToEnsure but with /postgres>` */
-  adminUrl?: string;
-  /** Optional logger (default: console.log) */
-  logger?: (msg: string) => void;
-}
-
-/**
- * Create the target database if it does not already exist, by connecting to the admin
- * (`/postgres`) database on the same server. Every failure is reported in the result
- * instead of thrown, so a caller that only needs an already-provisioned database can
- * log a warning and carry on.
- */
-export async function ensurePGDatabase(opts: EnsureDatabaseOptions): Promise<EnsureDatabaseResult> {
-  if (!opts.urlToEnsure && !opts.dbToEnsure) {
-    throw new TypeError(`ensurePGDatabase requires a target database name or URL to check`);
-  }
-
-  const notes: string[] = [];
-  const log = (msg: string) => {
-    notes.push(msg);
-    (opts.logger ?? console.log)(msg);
-  };
-
-  function fail(msg: string, hint?: string): EnsureDatabaseResult {
-    log(`FAIL: ${msg}${hint ? ` | HINT: ${hint}` : ''}`);
-    return { status: 'failed', notes, hint, message: msg };
-  }
-
-  const targetDb = opts.dbToEnsure ?? getDatabaseNameFromUrl(opts.urlToEnsure!);
-  if (!targetDb) {
-    return fail('Target URL has no database name in the path (e.g., /mydb).', 'Fix the target URL and retry.');
-  }
-
-  const adminUrl = opts.adminUrl ?? (opts.urlToEnsure ? deriveDatabaseUrl(opts.urlToEnsure, 'postgres') : undefined);
-  if (!adminUrl) {
-    throw new TypeError(`ensurePGDatabase requires a connection string to a database with permission to CREATE`);
-  }
-
-  const admin = await connectToPGAndReportOutcome(adminUrl, log, 'admin database');
-  if (admin.result !== 'ok') {
-    return fail(
-      `Could not establish any admin connection to ${maskDatabaseUrl(adminUrl)}: ${admin.message}`,
-      networkOrAuthHint(admin.code),
-    );
-  }
-
+export async function ensurePGDatabase(databaseUrl: string, log: (msg: string) => void): Promise<void> {
+  const dbName = getDatabaseNameFromUrl(databaseUrl);
+  const client = new Client(getPGClientConfig(deriveDatabaseUrl(databaseUrl, 'postgres')));
+  // An 'error' event with no listener would take down the process.
+  client.on('error', (err: Error) => log(`Unexpected error in startup client: ${err}`));
   try {
-    const { rows } = await admin.client.query<{ exists: boolean }>(
-      `SELECT EXISTS (SELECT 1 FROM pg_database WHERE datname = $1) AS exists`,
-      [targetDb],
-    );
-    if (rows[0]?.exists) {
-      log(`Database "${targetDb}" exists.`);
-      return { status: 'already_exists', notes, message: 'Success (already existed)' };
+    await client.connect();
+    const { rowCount } = await client.query(`SELECT 1 FROM pg_database WHERE datname = $1`, [dbName]);
+    if (!rowCount) {
+      log(`Creating system database ${dbName}`);
+      await client.query(`CREATE DATABASE ${quotePGIdentifier(dbName)}`);
     }
-
-    log(`Creating database "${targetDb}".`);
-    await createDb(admin.client, targetDb);
-    return { status: 'created', notes, message: 'Success (created)' };
-  } catch (err) {
-    const e = err as Error & { code?: string };
-    // A peer starting up concurrently may have won the race to create it.
-    if (e?.code === '42P04') {
-      log(`Database "${targetDb}" was created concurrently.`);
-      return { status: 'already_exists', notes, message: 'Success (already existed)' };
-    }
-    return fail(`Create failed: ${shortenErr(e)}`, createDropHintFromSqlState(e?.code));
+  } catch (e) {
+    log(`Could not verify the existence of database ${dbName}, continuing: ${(e as Error).message}`);
   } finally {
-    await admin.client.end().catch(() => {});
+    await client.end().catch(() => {});
   }
 }
 
@@ -301,7 +232,8 @@ export function getPGClientConfig(databaseUrl: string | URL) {
 
 export function getDatabaseNameFromUrl(urlStr: string) {
   const u = new URL(urlStr);
-  return u.pathname?.replace(/^\//, '') || '';
+  // The path is percent-encoded, so a name like `"db".'v1'` arrives here as `%22db%22.'v1'`.
+  return decodeURIComponent(u.pathname?.replace(/^\//, '') || '');
 }
 
 export function maskDatabaseUrl(urlStr: string): string {
@@ -387,10 +319,6 @@ function quotePGIdentifier(name: string): string {
 
 async function dropWithForce(admin: Client, dbName: string): Promise<void> {
   await admin.query(`DROP DATABASE IF EXISTS ${quotePGIdentifier(dbName)} WITH (FORCE)`);
-}
-
-async function createDb(admin: Client, dbName: string): Promise<void> {
-  await admin.query(`CREATE DATABASE ${quotePGIdentifier(dbName)}`);
 }
 
 function isForceSyntaxError(e: { code?: string; message?: string }): boolean {

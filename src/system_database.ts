@@ -409,17 +409,8 @@ export async function ensureSystemDatabase(
     // a client to run migrations.
     client = await customPool.connect();
   } else {
-    // Otherwise, create the system database if it does not exist. This is best-effort:
-    // a database we cannot provision may still be one we can connect to and use.
-    const res = await ensurePGDatabase({
-      urlToEnsure: sysDbUrl,
-      logger: (msg: string) => logger.debug(msg),
-    });
-    if (res.status === 'failed') {
-      logger.warn(
-        `Could not create or verify system database ${maskDatabaseUrl(sysDbUrl)}: ${res.message}${res.hint ? ` (${res.hint})` : ''}`,
-      );
-    }
+    // Otherwise, create the system database if it does not exist.
+    await ensurePGDatabase(sysDbUrl, (msg: string) => logger.warn(msg));
     const cconnect = await connectToPGAndReportOutcome(sysDbUrl, () => {}, 'System Database');
     if (cconnect.result !== 'ok') {
       logger.warn(
@@ -433,12 +424,8 @@ export async function ensureSystemDatabase(
 
   try {
     if (customPool) {
-      // The database is assumed to exist; check only that the pool can reach it.
-      try {
-        await client.query('SELECT 1');
-      } catch (e) {
-        throw new DBOSInitializationError(`Unable to connect to system database: ${(e as Error).message}`);
-      }
+      // The database is assumed to exist; validate only that the pool can connect.
+      await client.query('SELECT 1');
     }
 
     const versionRes = await client.query<{ version: string }>('SELECT version() AS version');

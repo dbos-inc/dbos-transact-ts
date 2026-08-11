@@ -53,10 +53,10 @@ const workflow = DBOS.registerWorkflow(
 
 describe('TypeOrmDataSourceDemo', () => {
   beforeEach(async () => {
-    await ensurePGDatabase({
-      dbToEnsure: 'typeorm_demo_ds',
-      adminUrl: `postgresql://${config.user}:${process.env['PGPASSWORD'] || 'dbos'}@${process.env['PGHOST'] || 'localhost'}:${process.env['PGPORT'] || '5432'}/postgres`,
-    });
+    await ensurePGDatabase(
+      `postgresql://${config.user}:${process.env['PGPASSWORD'] || 'dbos'}@${process.env['PGHOST'] || 'localhost'}:${process.env['PGPORT'] || '5432'}/typeorm_demo_ds`,
+      () => {},
+    );
     await TypeOrmDataSource.initializeDBOSSchema(config);
     await AppDataSource.initialize();
 

@@ -425,10 +425,10 @@ const runALotOfTransactionsAtOnce = DBOS.registerWorkflow(
 
 describe('concurrency-tests', () => {
   beforeAll(async () => {
-    await ensurePGDatabase({
-      dbToEnsure: dbname,
-      adminUrl: `postgresql://${dbConfig.user}:${process.env['PGPASSWORD'] || 'dbos'}@${process.env['PGHOST'] || 'localhost'}:${process.env['PGPORT'] || '5432'}/postgres`,
-    });
+    await ensurePGDatabase(
+      `postgresql://${dbConfig.user}:${process.env['PGPASSWORD'] || 'dbos'}@${process.env['PGHOST'] || 'localhost'}:${process.env['PGPORT'] || '5432'}/${dbname}`,
+      () => {},
+    );
 
     await setUpDBOSTestSysDb(config);
     DBOS.setConfig(config);

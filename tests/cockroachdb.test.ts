@@ -55,10 +55,7 @@ describeIf('cockroachdb', () => {
     if (dropResult.status !== 'dropped' && dropResult.status !== 'did_not_exist') {
       throw new Error(`Failed to drop dbos_test: ${dropResult.message}`);
     }
-    const ensureResult = await ensurePGDatabase({ urlToEnsure: systemDatabaseUrl, logger: () => {} });
-    if (ensureResult.status !== 'created' && ensureResult.status !== 'already_exists') {
-      throw new Error(`Failed to create dbos_test: ${ensureResult.message}`);
-    }
+    await ensurePGDatabase(systemDatabaseUrl, () => {});
     config = {
       name: 'cockroachdb-test',
       systemDatabaseUrl,

@@ -1081,7 +1081,7 @@ describe('custom-pool-test', () => {
     await expect(DBOS.launch()).rejects.toThrow(DBOSInitializationError);
     await DBOS.shutdown();
     // Create the system database, launch should succeed with a custom pool but fake URL
-    await ensurePGDatabase({ urlToEnsure: baseConfig.systemDatabaseUrl, logger: () => {} });
+    await ensurePGDatabase(baseConfig.systemDatabaseUrl!, () => {});
     pool = new Pool({ connectionString: systemDatabaseURL });
     config = {
       systemDatabaseUrl: 'postgres://fake:nonsense@badhost:1111/no_database',

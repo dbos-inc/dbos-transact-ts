@@ -361,7 +361,5 @@ export {
   DropDatabaseOptions,
   DropDatabaseResult,
   dropPGDatabase,
-  EnsureDatabaseOptions,
-  EnsureDatabaseResult,
   ensurePGDatabase,
 } from './database_utils';
