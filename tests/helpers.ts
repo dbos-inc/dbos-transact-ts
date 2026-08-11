@@ -15,7 +15,10 @@ import { Client } from 'pg';
  */
 export async function ensureTestDatabase(databaseUrl: string) {
   const notes: string[] = [];
-  await ensurePGDatabase(databaseUrl, (msg) => notes.push(msg));
+  const record = (msg: string) => {
+    notes.push(msg);
+  };
+  await ensurePGDatabase(databaseUrl, { info: record, warn: record });
   const client = new Client(getClientConfig(databaseUrl));
   try {
     await client.connect();

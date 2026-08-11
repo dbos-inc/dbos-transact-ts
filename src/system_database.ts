@@ -410,7 +410,7 @@ export async function ensureSystemDatabase(
     client = await customPool.connect();
   } else {
     // Otherwise, create the system database if it does not exist.
-    await ensurePGDatabase(sysDbUrl, (msg: string) => logger.warn(msg));
+    await ensurePGDatabase(sysDbUrl, logger);
     const sysClient = new Client(getClientConfig(sysDbUrl));
     // An 'error' event with no listener would take down the process.
     sysClient.on('error', (err: Error) => logger.warn(`Unexpected error in system database client: ${err}`));

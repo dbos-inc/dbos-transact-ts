@@ -55,7 +55,10 @@ const workflow = DBOS.registerWorkflow(
 // ensurePGDatabase swallows every failure, so verify the postcondition and fail with the reason.
 async function ensureTestDatabase(databaseUrl: string) {
   const notes: string[] = [];
-  await ensurePGDatabase(databaseUrl, (msg: string) => notes.push(msg));
+  const record = (msg: string) => {
+    notes.push(msg);
+  };
+  await ensurePGDatabase(databaseUrl, { info: record, warn: record });
   const client = new Client({ connectionString: databaseUrl });
   try {
     await client.connect();

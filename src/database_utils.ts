@@ -30,20 +30,23 @@ export async function dropPGDatabase(databaseUrl: string, log: (msg: string) => 
  * database on the same server. Best-effort: a database we cannot provision may still be one
  * we can connect to and use, so every failure is logged and swallowed rather than thrown.
  */
-export async function ensurePGDatabase(databaseUrl: string, log: (msg: string) => void): Promise<void> {
+export async function ensurePGDatabase(
+  databaseUrl: string,
+  logger: { info: (msg: string) => void; warn: (msg: string) => void },
+): Promise<void> {
   const dbName = getDatabaseNameFromUrl(databaseUrl);
   const client = new Client(getClientConfig(deriveDatabaseUrl(databaseUrl, 'postgres')));
   // An 'error' event with no listener would take down the process.
-  client.on('error', (err: Error) => log(`Unexpected error in startup client: ${err}`));
+  client.on('error', (err: Error) => logger.warn(`Unexpected error in startup client: ${err}`));
   try {
     await client.connect();
     const { rowCount } = await client.query(`SELECT 1 FROM pg_database WHERE datname = $1`, [dbName]);
     if (!rowCount) {
-      log(`Creating system database ${dbName}`);
+      logger.info(`Creating system database ${dbName}`);
       await client.query(`CREATE DATABASE ${quotePGIdentifier(dbName)}`);
     }
   } catch (e) {
-    log(`Could not verify the existence of database ${dbName}, continuing: ${(e as Error).message}`);
+    logger.warn(`Could not verify the existence of database ${dbName}, continuing: ${(e as Error).message}`);
   } finally {
     await client.end().catch(() => {});
   }
