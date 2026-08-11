@@ -213,6 +213,17 @@ export class DBOSStepTimeoutError extends DBOSError {
   }
 }
 
+const InvalidWorkflowInput = 32;
+/** Exception raised when a workflow's arguments cannot be serialized. Blames the arguments alone. */
+export class DBOSInvalidWorkflowInputError extends DBOSError {
+  constructor(workflowName: string, cause: unknown) {
+    super(
+      `Could not serialize the arguments to workflow ${workflowName}: ${cause instanceof Error ? cause.message : String(cause)}`,
+      InvalidWorkflowInput,
+    );
+  }
+}
+
 export function getDBOSErrorCode(e: Error): number | undefined {
   if (e && typeof e === 'object' && 'dbosErrorCode' in e) {
     const code = (e as Record<string, unknown>).dbosErrorCode;

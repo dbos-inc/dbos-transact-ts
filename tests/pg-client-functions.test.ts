@@ -1,6 +1,6 @@
 import { workflow_status } from '../schemas/system_db_schema';
 import { DBOS } from '../src';
-import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
+import { generateDBOSTestConfig, setUpDBOSTestSysDb, usingSQLite } from './helpers';
 import { Client, PoolConfig } from 'pg';
 import { DBOSConfig } from '../src/dbos-executor';
 
@@ -22,7 +22,7 @@ class ClientTest {
   }
 }
 
-describe('PostgreSQL Client Functions', () => {
+(usingSQLite() ? describe.skip : describe)('PostgreSQL Client Functions', () => {
   let config: DBOSConfig;
   let poolConfig: PoolConfig;
 

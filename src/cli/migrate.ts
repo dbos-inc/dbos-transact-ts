@@ -2,7 +2,12 @@ import { execSync, SpawnSyncReturns } from 'child_process';
 import { GlobalLogger } from '../telemetry/logs';
 import { ensureSystemDatabase } from '../system_database';
 
-export async function migrate(migrationCommands: string[], systemDatabaseUrl: string, logger: GlobalLogger) {
+export async function migrate(
+  migrationCommands: string[],
+  systemDatabaseUrl: string,
+  logger: GlobalLogger,
+  schemaName: string = 'dbos',
+) {
   let status = 0;
 
   try {
@@ -18,7 +23,7 @@ export async function migrate(migrationCommands: string[], systemDatabaseUrl: st
 
   logger.info('Creating DBOS system database.');
   try {
-    await ensureSystemDatabase(systemDatabaseUrl, logger);
+    await ensureSystemDatabase(systemDatabaseUrl, logger, undefined, schemaName);
   } catch (e) {
     if (e instanceof Error) {
       logger.error(`Error creating DBOS system database: ${e.message}`);

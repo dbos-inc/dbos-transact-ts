@@ -1,11 +1,14 @@
 import { DBOS } from '../src';
-import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
+import { generateDBOSTestConfig, getPostgresTestUrl, setUpDBOSTestSysDb, usingSQLite } from './helpers';
 import { KnexDataSource } from '../packages/knex-datasource';
 
 DBOS.logger.info('This should not cause a kaboom.');
 
 const config = generateDBOSTestConfig();
-const dbConfig = { client: 'pg', connection: { user: 'postgres', database: 'dbostest_dbos_sys' } };
+const dbConfig = {
+  client: 'pg',
+  connection: usingSQLite() ? getPostgresTestUrl() : { user: 'postgres', database: 'dbostest_dbos_sys' },
+};
 const knexds = new KnexDataSource('app-db', dbConfig);
 
 class TransitionTests {

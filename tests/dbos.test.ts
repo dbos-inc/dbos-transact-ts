@@ -1,9 +1,9 @@
 import { WorkflowHandle, DBOS, DBOSSerializer } from '../src/';
-import { generateDBOSTestConfig, setUpDBOSTestSysDb, Event } from './helpers';
+import { generateDBOSTestConfig, setUpDBOSTestSysDb, Event, usingSQLite } from './helpers';
 import { randomUUID } from 'node:crypto';
 import { StatusString } from '../src/workflow';
 import { DBOSConfig } from '../src/dbos-executor';
-import { Client, Pool } from 'pg';
+import { Pool } from 'pg';
 import { DBOSWorkflowCancelledError, DBOSAwaitedWorkflowCancelledError, DBOSInitializationError } from '../src/error';
 import assert from 'node:assert';
 import { DBOSClient } from '../dist/src';
@@ -39,22 +39,10 @@ describe('dbos-tests', () => {
   });
 
   test('simple-workflow-attempts-counter', async () => {
-    const systemDBClient = new Client({
-      connectionString: config.systemDatabaseUrl,
-    });
-    try {
-      await systemDBClient.connect();
-      const handle = await DBOS.startWorkflow(DBOSTestClass).noopWorkflow();
-      for (let i = 0; i < 10; i++) {
-        await DBOS.startWorkflow(DBOSTestClass, { workflowID: handle.workflowID }).noopWorkflow();
-        const result = await systemDBClient.query<{ status: string; attempts: number }>(
-          `SELECT status, recovery_attempts as attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`,
-          [handle.workflowID],
-        );
-        expect(result.rows[0].attempts).toBe(String(1));
-      }
-    } finally {
-      await systemDBClient.end();
+    const handle = await DBOS.startWorkflow(DBOSTestClass).noopWorkflow();
+    for (let i = 0; i < 10; i++) {
+      await DBOS.startWorkflow(DBOSTestClass, { workflowID: handle.workflowID }).noopWorkflow();
+      expect((await handle.getStatus())?.recoveryAttempts).toBe(1);
     }
   });
 
@@ -166,6 +154,11 @@ describe('dbos-tests', () => {
     static async sendFromStepIdemWF(dest: string, msg: string, key: string) {
       await SendIdempotencyTestClass.sendFromStepWithKey(dest, msg, key);
     }
+
+    @DBOS.workflow()
+    static async recvOneShort() {
+      return String(await DBOS.recv<string>(undefined, { timeoutSeconds: 3 }));
+    }
   }
 
   test('send-idempotency-key', async () => {
@@ -224,6 +217,23 @@ describe('dbos-tests', () => {
     await SendIdempotencyTestClass.sendFromStepIdemWF(destUUID4, 'hello_step_dup', stepIdemKey);
     // The second recv times out (returns null), proving only one message was delivered.
     expect(await handle4.getResult()).toBe('hello_step-null');
+  });
+
+  test('send-idempotency-key-scoped-per-destination', async () => {
+    // An idempotency key is scoped per destination: the same key sent to two
+    // different workflows must deliver to both (matching Python and Go, where
+    // message_uuid is `${key}::${destinationID}`).
+    const destA = randomUUID();
+    const destB = randomUUID();
+    const handleA = await DBOS.startWorkflow(SendIdempotencyTestClass, { workflowID: destA }).recvOneShort();
+    const handleB = await DBOS.startWorkflow(SendIdempotencyTestClass, { workflowID: destB }).recvOneShort();
+
+    const key = randomUUID();
+    await DBOS.send(destA, 'to_A', undefined, key);
+    await DBOS.send(destB, 'to_B', undefined, key);
+
+    expect(await handleA.getResult()).toBe('to_A');
+    expect(await handleB.getResult()).toBe('to_B');
   });
 
   test('simple-workflow-events', async () => {
@@ -734,7 +744,8 @@ class WaitFirstTestClass {
 
   @DBOS.workflow()
   static async slowWorkflow() {
-    await DBOS.sleep(2);
+    // Sleep well past the 1s result-poll interval so waitFirst reliably observes fastWorkflow complete first.
+    await DBOS.sleep(2000);
     return 'slow';
   }
 
@@ -1035,7 +1046,7 @@ describe('custom-pool-test', () => {
     await DBOS.shutdown();
   });
 
-  test('custom-pool-test', async () => {
+  (usingSQLite() ? test.skip : test)('custom-pool-test', async () => {
     const baseConfig = generateDBOSTestConfig();
     // Destroy the system database
     await dropPGDatabase({ urlToDrop: baseConfig.systemDatabaseUrl, logger: () => {} });

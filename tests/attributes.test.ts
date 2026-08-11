@@ -2,7 +2,7 @@ import { randomUUID } from 'crypto';
 import { DBOS, DBOSClient, Debouncer } from '../src';
 import { DBOSConfig } from '../src/dbos-executor';
 import * as protocol from '../src/conductor/protocol';
-import { generateDBOSTestConfig, setUpDBOSTestSysDb, Event } from './helpers';
+import { generateDBOSTestConfig, setUpDBOSTestSysDb, Event, usingSQLite } from './helpers';
 
 // Custom workflow attributes: a JSON-serializable Record attached to a workflow at creation
 // via `StartWorkflowParams.workflowAttributes`, stored as GIN-indexed JSONB and searchable
@@ -171,7 +171,7 @@ describe('workflow-attributes', () => {
     }
   });
 
-  test('filters listWorkflows by attribute containment', async () => {
+  (usingSQLite() ? test.skip : test)('filters listWorkflows by attribute containment', async () => {
     const h1 = await DBOS.startWorkflow(noopWorkflow, {
       workflowAttributes: { customer: 'acme', tier: 1, beta: true, note: null },
     })();
@@ -198,7 +198,7 @@ describe('workflow-attributes', () => {
     expect(await matchedIds({ attributes: { missing: 'key' } })).toEqual(new Set());
   });
 
-  test('filters listQueuedWorkflows by attributes', async () => {
+  (usingSQLite() ? test.skip : test)('filters listQueuedWorkflows by attributes', async () => {
     sync.start = new Event();
     sync.block = new Event();
 
@@ -222,7 +222,7 @@ describe('workflow-attributes', () => {
     })();
     await handle.getResult();
 
-    const statuses = await DBOS.listWorkflows({ attributes: { customer: 'acme' } });
+    const statuses = await DBOS.listWorkflows({ workflowIDs: [handle.workflowID] });
     expect(statuses.map((s) => s.workflowID)).toEqual([handle.workflowID]);
 
     // Attributes are JSON on the wire and survive response serialization.

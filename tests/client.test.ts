@@ -4,10 +4,12 @@ import { globalParams, sleepms } from '../src/utils';
 import {
   generateDBOSTestConfig,
   recoverPendingWorkflows,
+  recoverWorkflow,
+  retryUntilSuccess,
   setUpDBOSTestSysDb,
   setWfAndChildrenToPending,
+  usingSQLite,
 } from './helpers';
-import { Client, PoolConfig } from 'pg';
 import { spawnSync } from 'child_process';
 import {
   DBOSQueueDuplicatedError,
@@ -122,13 +124,11 @@ function runClientSendWorker(workflowID: string, topic: string, appVersion: stri
 describe('DBOSClient', () => {
   let config: DBOSConfig;
   let systemDatabaseUrl: string;
-  let poolConfig: PoolConfig;
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
     expect(config.systemDatabaseUrl).toBeDefined();
     systemDatabaseUrl = config.systemDatabaseUrl!;
-    poolConfig = { connectionString: config.systemDatabaseUrl };
     await setUpDBOSTestSysDb(config);
   });
 
@@ -151,11 +151,11 @@ describe('DBOSClient', () => {
     });
     try {
       const sysdb = client['systemDatabase'];
-      expect(sysdb.pool.options.max).toBe(8);
+      expect(sysdb.pool.options.max).toBe(usingSQLite() ? 1 : 8);
       expect(sysdb.schemaName).toBe('custom_schema');
       // The semaphore is initialized with the requested `systemDatabasePollingConcurrency` (3),
       // not the half-the-pool default (which would be 4 for a pool size of 8).
-      expect(sysdb.pollLimiter['available']).toBe(3);
+      expect(sysdb.pollLimiter['available']).toBe(usingSQLite() ? 1 : 3);
     } finally {
       await client.destroy();
     }
@@ -165,8 +165,8 @@ describe('DBOSClient', () => {
     const defaultClient = await DBOSClient.create({ systemDatabaseUrl });
     try {
       const sysdb = defaultClient['systemDatabase'];
-      expect(sysdb.pool.options.max).toBe(DEFAULT_POOL_SIZE);
-      expect(sysdb.pollLimiter['available']).toBe(Math.floor(DEFAULT_POOL_SIZE / 2));
+      expect(sysdb.pool.options.max).toBe(usingSQLite() ? 1 : DEFAULT_POOL_SIZE);
+      expect(sysdb.pollLimiter['available']).toBe(usingSQLite() ? 1 : Math.floor(DEFAULT_POOL_SIZE / 2));
     } finally {
       await defaultClient.destroy();
     }
@@ -290,10 +290,9 @@ describe('DBOSClient', () => {
       await client.destroy();
     }
 
-    const dbClient = new Client(poolConfig);
+    const dbClient = await DBOSClient.create({ systemDatabaseUrl });
     try {
-      await dbClient.connect();
-      const resultBefore = await dbClient.query<workflow_status>(
+      const resultBefore = await dbClient['systemDatabase'].pool.query<workflow_status>(
         'SELECT * FROM dbos.workflow_status WHERE workflow_uuid = $1',
         [wfid],
       );
@@ -308,7 +307,7 @@ describe('DBOSClient', () => {
       const wfresult = await handle.getResult();
       expect(wfresult).toBe('42-test-{"first":"John","last":"Doe","age":30}');
 
-      const resultAfter = await dbClient.query<workflow_status>(
+      const resultAfter = await dbClient['systemDatabase'].pool.query<workflow_status>(
         'SELECT * FROM dbos.workflow_status WHERE workflow_uuid = $1',
         [wfid],
       );
@@ -317,7 +316,7 @@ describe('DBOSClient', () => {
       expect(resultAfter.rows[0].status).toBe('SUCCESS');
       expect(resultAfter.rows[0].application_version).toBe(globalParams.appVersion);
     } finally {
-      await dbClient.end();
+      await dbClient.destroy();
     }
   });
 
@@ -348,10 +347,9 @@ describe('DBOSClient', () => {
       await client.destroy();
     }
 
-    const dbClient = new Client(poolConfig);
+    const dbClient = await DBOSClient.create({ systemDatabaseUrl });
     try {
-      await dbClient.connect();
-      const result = await dbClient.query<workflow_status>(
+      const result = await dbClient['systemDatabase'].pool.query<workflow_status>(
         'SELECT * FROM dbos.workflow_status WHERE workflow_uuid = $1',
         [wfid],
       );
@@ -360,7 +358,7 @@ describe('DBOSClient', () => {
       expect(result.rows[0].status).toBe('SUCCESS');
       expect(result.rows[0].application_version).toBe(globalParams.appVersion);
     } finally {
-      await dbClient.end();
+      await dbClient.destroy();
     }
   });
 
@@ -397,10 +395,9 @@ describe('DBOSClient', () => {
       await client.destroy();
     }
 
-    const dbClient = new Client(poolConfig);
+    const dbClient = await DBOSClient.create({ systemDatabaseUrl });
     try {
-      await dbClient.connect();
-      const result = await dbClient.query<workflow_status>(
+      const result = await dbClient['systemDatabase'].pool.query<workflow_status>(
         'SELECT * FROM dbos.workflow_status WHERE workflow_uuid = $1',
         [wfid],
       );
@@ -409,7 +406,7 @@ describe('DBOSClient', () => {
       expect(result.rows[0].status).toBe('SUCCESS');
       expect(result.rows[0].application_version).toBe(version);
     } finally {
-      await dbClient.end();
+      await dbClient.destroy();
     }
   });
 
@@ -424,11 +421,14 @@ describe('DBOSClient', () => {
       // Force back to PENDING and recover repeatedly until it exhausts recovery attempts and lands in the DLQ.
       for (let i = 0; i < DLQ_MAX_RECOVERY_ATTEMPTS; i++) {
         await setWfAndChildrenToPending(handle.workflowID, false);
-        await (await recoverPendingWorkflows())[0].getResult();
+        await (await recoverWorkflow(handle.workflowID)).getResult();
       }
       await setWfAndChildrenToPending(handle.workflowID, false);
       await recoverPendingWorkflows();
-      expect((await handle.getStatus())?.status).toBe(StatusString.MAX_RECOVERY_ATTEMPTS_EXCEEDED);
+      // Recovery re-enqueues, so the DLQ transition happens when the queue dequeues the workflow.
+      await retryUntilSuccess(async () => {
+        expect((await handle.getStatus())?.status).toBe(StatusString.MAX_RECOVERY_ATTEMPTS_EXCEEDED);
+      });
 
       await expect(client.retrieveWorkflow(handle.workflowID).getResult()).rejects.toThrow(
         DBOSAwaitedWorkflowExceededMaxRecoveryAttempts,
@@ -472,10 +472,9 @@ describe('DBOSClient', () => {
       await client.destroy();
     }
 
-    const dbClient = new Client(poolConfig);
+    const dbClient = await DBOSClient.create({ systemDatabaseUrl });
     try {
-      await dbClient.connect();
-      const result = await dbClient.query<workflow_status>(
+      const result = await dbClient['systemDatabase'].pool.query<workflow_status>(
         'SELECT * FROM dbos.workflow_status WHERE workflow_uuid = $1',
         [wfid],
       );
@@ -484,7 +483,7 @@ describe('DBOSClient', () => {
       expect(result.rows[0].status).toBe('SUCCESS');
       expect(result.rows[0].application_version).toBe(version);
     } finally {
-      await dbClient.end();
+      await dbClient.destroy();
     }
   });
 
@@ -612,10 +611,9 @@ describe('DBOSClient', () => {
     const result = await handle.getResult();
     expect(result).toBe('42-test-{"first":"John","last":"Doe","age":30}');
 
-    const dbClient = new Client(poolConfig);
+    const dbClient = await DBOSClient.create({ systemDatabaseUrl });
     try {
-      await dbClient.connect();
-      const result = await dbClient.query<workflow_status>(
+      const result = await dbClient['systemDatabase'].pool.query<workflow_status>(
         'SELECT * FROM dbos.workflow_status WHERE workflow_uuid = $1',
         [wfid],
       );
@@ -624,7 +622,7 @@ describe('DBOSClient', () => {
       expect(result.rows[0].status).toBe('SUCCESS');
       expect(result.rows[0].application_version).toBe(globalParams.appVersion);
     } finally {
-      await dbClient.end();
+      await dbClient.destroy();
     }
   });
 
@@ -651,10 +649,9 @@ describe('DBOSClient', () => {
     await registerTestQueue();
     await sleepms(10000);
 
-    const dbClient = new Client(poolConfig);
+    const dbClient = await DBOSClient.create({ systemDatabaseUrl });
     try {
-      await dbClient.connect();
-      const result = await dbClient.query<workflow_status>(
+      const result = await dbClient['systemDatabase'].pool.query<workflow_status>(
         'SELECT * FROM dbos.workflow_status WHERE application_version = $1',
         ['1234567890ABCDEF'],
       );
@@ -662,7 +659,7 @@ describe('DBOSClient', () => {
       expect(result.rows[0].status).toBe('ENQUEUED');
       expect(result.rows[0].application_version).toBe('1234567890ABCDEF');
     } finally {
-      await dbClient.end();
+      await dbClient.destroy();
     }
   });
 
@@ -707,7 +704,7 @@ describe('DBOSClient', () => {
     expect(result).toBe(message);
   });
 
-  test('DBOSClient-send-idempotent', async () => {
+  (usingSQLite() ? test.skip : test)('DBOSClient-send-idempotent', async () => {
     const now = Date.now();
     const workflowID = `client-send-${now}`;
     const topic = `test-topic-${now}`;
@@ -726,13 +723,15 @@ describe('DBOSClient', () => {
       await client.destroy();
     }
 
-    const dbClient = new Client(poolConfig);
+    const dbClient = await DBOSClient.create({ systemDatabaseUrl });
     try {
-      await dbClient.connect();
-      const res = await dbClient.query('SELECT * FROM dbos.notifications WHERE destination_uuid = $1', [workflowID]);
+      const res = await dbClient['systemDatabase'].pool.query(
+        'SELECT * FROM dbos.notifications WHERE destination_uuid = $1',
+        [workflowID],
+      );
       expect(res.rows).toHaveLength(1);
     } finally {
-      await dbClient.end();
+      await dbClient.destroy();
     }
 
     await recoverPendingWorkflows();

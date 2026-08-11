@@ -138,12 +138,37 @@ describe('oaoo-tests', () => {
     });
     expect(Date.now() - initTime).toBeGreaterThanOrEqual(1950);
 
+    // The sleep step's recorded timing must reflect the full sleep length, not zero.
+    const sleepSteps = (await DBOS.listWorkflowSteps(workflowUUID))!;
+    expect(sleepSteps.length).toBe(1);
+    expect(sleepSteps[0].name).toBe('DBOS.sleep');
+    expect(sleepSteps[0].completedAtEpochMs! - sleepSteps[0].startedAtEpochMs!).toBeGreaterThanOrEqual(2000);
+
     // Rerunning should skip the sleep
     const startTime = Date.now();
     await DBOS.withNextWorkflowID(workflowUUID, async () => {
       await expect(WorkflowOAOO.sleepWorkflow(2)).resolves.toBeFalsy();
     });
     expect(Date.now() - startTime).toBeLessThanOrEqual(200);
+  });
+
+  // Regression: a fractional duration must not reach the BIGINT timing columns.
+  test('workflow-sleep-fractional-duration', async () => {
+    const workflowUUID = randomUUID();
+    await DBOS.withNextWorkflowID(workflowUUID, async () => {
+      await expect(WorkflowOAOO.sleepWorkflow(0.0015)).resolves.toBeFalsy(); // 1.5ms
+    });
+
+    const steps = (await DBOS.listWorkflowSteps(workflowUUID))!;
+    expect(steps.length).toBe(1);
+    expect(steps[0].name).toBe('DBOS.sleep');
+    expect(Number.isInteger(steps[0].startedAtEpochMs!)).toBe(true);
+    expect(Number.isInteger(steps[0].completedAtEpochMs!)).toBe(true);
+    expect(steps[0].completedAtEpochMs! - steps[0].startedAtEpochMs!).toBe(2); // Math.ceil(1.5)
+
+    // Non-finite durations are rejected rather than reaching the database.
+    await expect(DBOS.sleep(NaN)).rejects.toThrow('finite');
+    await expect(DBOS.sleep(Infinity)).rejects.toThrow('finite');
   });
 
   test('workflow-recv-oaoo', async () => {
@@ -153,6 +178,13 @@ describe('oaoo-tests', () => {
       await expect(WorkflowOAOO.recvWorkflow(2)).resolves.toBeFalsy();
     });
     expect(Date.now() - initTime).toBeGreaterThanOrEqual(1950);
+
+    // The recv step records the full wait; its durable timeout marker stays zero-duration.
+    const recvSteps = (await DBOS.listWorkflowSteps(workflowUUID))!;
+    const recvStep = recvSteps.find((s) => s.name === 'DBOS.recv')!;
+    const recvTimeout = recvSteps.find((s) => s.name === 'DBOS.sleep')!;
+    expect(recvStep.completedAtEpochMs! - recvStep.startedAtEpochMs!).toBeGreaterThanOrEqual(1950);
+    expect(recvTimeout.completedAtEpochMs! - recvTimeout.startedAtEpochMs!).toBeLessThan(50);
 
     // Rerunning should skip the sleep
     const startTime = Date.now();
@@ -170,6 +202,13 @@ describe('oaoo-tests', () => {
       async () => await expect(WorkflowOAOO.getEventWorkflow(2)).resolves.toBeFalsy(),
     );
     expect(Date.now() - initTime).toBeGreaterThanOrEqual(1950);
+
+    // The getEvent step records the full wait; its durable timeout marker stays zero-duration.
+    const geSteps = (await DBOS.listWorkflowSteps(workflowUUID))!;
+    const geStep = geSteps.find((s) => s.name === 'DBOS.getEvent')!;
+    const geTimeout = geSteps.find((s) => s.name === 'DBOS.sleep')!;
+    expect(geStep.completedAtEpochMs! - geStep.startedAtEpochMs!).toBeGreaterThanOrEqual(1950);
+    expect(geTimeout.completedAtEpochMs! - geTimeout.startedAtEpochMs!).toBeLessThan(50);
 
     // Rerunning should skip the sleep
     const startTime = Date.now();

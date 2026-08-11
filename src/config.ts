@@ -197,7 +197,19 @@ export function translateDbosConfig(options: DBOSConfig, forceConsole: boolean =
   if (options.systemDatabasePool && options.systemDatabaseUrl && isSQLiteSystemDatabaseUrl(options.systemDatabaseUrl)) {
     throw new Error('Custom systemDatabasePool is not supported for SQLite system databases');
   }
-
+  if (
+    options.maxConcurrentQueueDispatches !== undefined &&
+    (!Number.isInteger(options.maxConcurrentQueueDispatches) || options.maxConcurrentQueueDispatches <= 0)
+  ) {
+    throw new Error('maxConcurrentQueueDispatches must be a positive integer');
+  }
+  if (
+    options.notificationCoalesceMs !== undefined &&
+    // Reject NaN/inf too (they slip past a bare < 1 check) so the notifier's sleep can't misbehave.
+    (!Number.isFinite(options.notificationCoalesceMs) || options.notificationCoalesceMs < 1)
+  ) {
+    throw new Error('notificationCoalesceMs must be a finite number at least 1 millisecond');
+  }
   const systemDatabaseUrl = getSystemDatabaseUrl(
     {
       system_database_url: options.systemDatabaseUrl,
@@ -230,7 +242,9 @@ export function translateDbosConfig(options: DBOSConfig, forceConsole: boolean =
       otelAttributeFormat: options.otelAttributeFormat ?? 'legacy',
     },
     schedulerPollingIntervalMs: options.schedulerPollingIntervalMs,
+    maxConcurrentQueueDispatches: options.maxConcurrentQueueDispatches,
     useListenNotify: options.useListenNotify ?? true,
+    notificationCoalesceMs: options.notificationCoalesceMs,
   };
 }
 
@@ -242,7 +256,7 @@ export function translateRuntimeConfig(
   config: Partial<DBOSRuntimeConfig & DBOSConfig> /*eww*/ = {},
 ): DBOSRuntimeConfig {
   return {
-    runAdminServer: config.runAdminServer ?? true,
+    runAdminServer: config.runAdminServer ?? false,
     admin_port: config.admin_port ?? config.adminPort ?? 3001,
     start: config.start ?? [],
     setup: config.setup ?? [],

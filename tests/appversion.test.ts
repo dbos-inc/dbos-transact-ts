@@ -181,8 +181,7 @@ describe('test-app-version', () => {
     // Shutdown and launch with version v2
     const v2 = 'list-versions-v2';
     await DBOS.shutdown();
-    config = generateDBOSTestConfig();
-    config.applicationVersion = v2;
+    config = { ...config, applicationVersion: v2 };
     DBOS.setConfig(config);
     await DBOS.launch();
 
@@ -223,8 +222,7 @@ describe('test-app-version', () => {
     expect(v1Count).toBe(1);
 
     await DBOS.shutdown();
-    config = generateDBOSTestConfig();
-    config.applicationVersion = v1;
+    config = { ...config, applicationVersion: v1 };
     DBOS.setConfig(config);
     await DBOS.launch();
 
@@ -263,8 +261,7 @@ describe('test-app-version', () => {
       // Shutdown and launch with v2, then verify via client
       const v2 = 'client-version-v2';
       await DBOS.shutdown();
-      config = generateDBOSTestConfig();
-      config.applicationVersion = v2;
+      config = { ...config, applicationVersion: v2 };
       DBOS.setConfig(config);
       await DBOS.launch();
 
@@ -312,8 +309,7 @@ describe('test-app-version', () => {
 
     // Shutdown and relaunch on v2
     await DBOS.shutdown();
-    config = generateDBOSTestConfig();
-    config.applicationVersion = v2;
+    config = { ...config, applicationVersion: v2 };
     DBOS.setConfig(config);
     await DBOS.launch();
 

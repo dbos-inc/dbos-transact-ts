@@ -2,6 +2,7 @@
 import { DBOS } from '../src';
 import { DBOSConfig } from '../src/dbos-executor';
 import { causeChaos, generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
+import { dbRetryConfig } from '../src/utils';
 
 let config: DBOSConfig;
 
@@ -47,7 +48,9 @@ class DisruptiveWFs {
   @DBOS.workflow()
   static async wfPart1() {
     await causeChaos(config!.systemDatabaseUrl!);
-    const r = await DBOS.recv<string>('topic', 5);
+    // Chaos kills the LISTEN/NOTIFY listener, so a wakeup can be missed; poll often enough that
+    // falling back to polling costs milliseconds rather than a full default poll interval.
+    const r = await DBOS.recv<string>('topic', { timeoutSeconds: 5, pollingIntervalMs: 100 });
     await causeChaos(config!.systemDatabaseUrl!);
     await DBOS.setEvent('key', 'v1');
     await causeChaos(config!.systemDatabaseUrl!);
@@ -59,17 +62,28 @@ class DisruptiveWFs {
     await causeChaos(config!.systemDatabaseUrl!);
     await DBOS.send(id1, 'hello1', 'topic');
     await causeChaos(config!.systemDatabaseUrl!);
-    const v1 = await DBOS.getEvent<string>(id1, 'key', 10);
+    const v1 = await DBOS.getEvent<string>(id1, 'key', { timeoutSeconds: 10, pollingIntervalMs: 100 });
     await causeChaos(config!.systemDatabaseUrl!);
     return 'Part2' + v1;
   }
 }
 
 describe('sys-db-hiccup', () => {
+  const savedBackoff = { ...dbRetryConfig };
+
   beforeAll(async () => {
+    // This test kills every connection 10 times over. The production backoff (1s, doubling to 60s)
+    // compounds into minutes of pure sleeping under a slow CI runner, so bound it: pg_terminate_backend
+    // leaves the server up, so reconnecting succeeds almost immediately.
+    dbRetryConfig.initialBackoffSec = 0.05;
+    dbRetryConfig.maxBackoffSec = 1.0;
     config = generateDBOSTestConfig();
     await setUpDBOSTestSysDb(config);
     DBOS.setConfig(config);
+  });
+
+  afterAll(() => {
+    Object.assign(dbRetryConfig, savedBackoff);
   });
 
   beforeEach(async () => {

@@ -6,8 +6,9 @@ import {
   Event,
   recoverPendingWorkflows,
   reexecuteWorkflowById,
+  usingSQLite,
 } from './helpers';
-import { Client } from 'pg';
+import { Pool } from 'pg';
 import { WorkflowHandle, WorkflowStatus } from '../src/workflow';
 import { randomUUID } from 'node:crypto';
 import { globalParams, sleepms } from '../src/utils';
@@ -20,7 +21,7 @@ import { DBOSJSON } from '../src/serialization';
 
 describe('workflow-management-tests', () => {
   let config: DBOSConfig;
-  let systemDBClient: Client;
+  let systemDBClient: Pool;
 
   beforeAll(() => {
     config = generateDBOSTestConfig();
@@ -32,14 +33,10 @@ describe('workflow-management-tests', () => {
     await setUpDBOSTestSysDb(config);
     await DBOS.launch();
 
-    systemDBClient = new Client({
-      connectionString: config.systemDatabaseUrl,
-    });
-    await systemDBClient.connect();
+    systemDBClient = DBOSExecutor.globalInstance!.systemDatabase.pool;
   });
 
   afterEach(async () => {
-    await systemDBClient.end();
     await DBOS.shutdown();
     process.env.DBOS__APPVERSION = undefined;
   });
@@ -238,8 +235,7 @@ describe('workflow-management-tests', () => {
     };
     workflows = await DBOS.listWorkflows(wfidInput);
     expect(workflows.length).toBe(2);
-    expect(workflows[0].workflowID).toBe(workflowIDs[5]);
-    expect(workflows[1].workflowID).toBe(workflowIDs[7]);
+    expect(workflows.map((workflow) => workflow.workflowID).sort()).toEqual([workflowIDs[5], workflowIDs[7]].sort());
   });
 
   test('getworkflows-cli', async () => {
@@ -319,7 +315,7 @@ describe('workflow-management-tests', () => {
       [workflowID],
     );
     let rows = result.rows;
-    expect(rows[0].attempts).toBe(String(1));
+    expect(Number(rows[0].attempts)).toBe(1);
     expect(rows[0].status).toBe(StatusString.SUCCESS);
     await expect(handle.getStatus()).resolves.toMatchObject({
       status: StatusString.SUCCESS,
@@ -332,7 +328,7 @@ describe('workflow-management-tests', () => {
       [workflowID],
     );
     rows = result.rows;
-    expect(rows[0].attempts).toBe(String(1));
+    expect(Number(rows[0].attempts)).toBe(1);
     expect(rows[0].status).toBe(StatusString.SUCCESS);
   });
 
@@ -357,7 +353,7 @@ describe('workflow-management-tests', () => {
       `SELECT status, recovery_attempts as attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`,
       [workflowID],
     );
-    expect(result.rows[0].attempts).toBe(String(1));
+    expect(Number(result.rows[0].attempts)).toBe(1);
     expect(result.rows[0].status).toBe(StatusString.CANCELLED);
 
     // Wait for the cancelled execution to fully stop before resuming. Otherwise the stale
@@ -379,7 +375,7 @@ describe('workflow-management-tests', () => {
       `SELECT status, recovery_attempts as attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`,
       [workflowID],
     );
-    expect(result.rows[0].attempts).toBe(String(1));
+    expect(Number(result.rows[0].attempts)).toBe(1);
     expect(TestEndpoints.tries).toBe(2);
     expect(result.rows[0].status).toBe(StatusString.SUCCESS);
 
@@ -397,7 +393,7 @@ describe('workflow-management-tests', () => {
       `SELECT status, recovery_attempts as attempts FROM dbos.workflow_status WHERE workflow_uuid!=$1`,
       [wfh.workflowID],
     );
-    expect(result.rows[0].attempts).toBe(String(1));
+    expect(Number(result.rows[0].attempts)).toBe(1);
     expect(result.rows[0].status).toBe(StatusString.SUCCESS);
 
     // Validate the original workflow status hasn't changed
@@ -433,6 +429,68 @@ describe('workflow-management-tests', () => {
     await expect(handle.getResult()).resolves.toBe(input);
     await expect(DBOS.getWorkflowStatus(wfid)).resolves.toMatchObject({ status: StatusString.SUCCESS });
     expect(TestEndpoints.stepsCompleted).toBe(1); // cancelStep was already recorded, not re-run
+  });
+
+  test('test-active-id-released-before-outcome-write', async () => {
+    // The executor's running-workflow entry must be released BEFORE the
+    // terminal outcome write becomes durable. Otherwise: run 1's stale write
+    // is in flight, the workflow is cancelled and resumed, this same executor
+    // dequeues the resumed workflow, but the dispatch finds the stale entry,
+    // skips execution, and the workflow is stranded.
+    TestEndpoints.staleWriteRuns = 0;
+    TestEndpoints.staleWriteEntered.clear();
+    TestEndpoints.staleWriteReleaseRun1.clear();
+    TestEndpoints.staleWriteSecondRunDone.clear();
+
+    const wfid = randomUUID();
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+
+    const parked = new Event();
+    const releaseStaleWrite = new Event();
+    let parkedOnce = false;
+
+    const originalRecordOutput = sysdb.recordWorkflowOutput.bind(sysdb);
+    sysdb.recordWorkflowOutput = async (...fnargs: Parameters<SystemDatabase['recordWorkflowOutput']>) => {
+      if (fnargs[0] === wfid && !parkedOnce) {
+        parkedOnce = true;
+        parked.set();
+        await releaseStaleWrite.wait();
+      }
+      return originalRecordOutput(...fnargs);
+    };
+
+    try {
+      await DBOS.startWorkflow(TestEndpoints, { workflowID: wfid }).staleWriteBlockingWorkflow();
+      await TestEndpoints.staleWriteEntered.wait();
+
+      await DBOS.cancelWorkflow(wfid);
+
+      // Run 1 returns; its stale outcome write parks. The running-workflow
+      // entry must already be released at this point.
+      TestEndpoints.staleWriteReleaseRun1.set();
+      await parked.wait();
+      await expect(DBOS.getWorkflowStatus(wfid)).resolves.toMatchObject({ status: StatusString.CANCELLED });
+
+      const resumedHandle = await DBOS.resumeWorkflow<string>(wfid);
+
+      // While the stale write is still parked, the resumed workflow must be
+      // dequeued and executed by this same executor.
+      let timer: NodeJS.Timeout | undefined;
+      const blocked = await Promise.race([
+        TestEndpoints.staleWriteSecondRunDone.wait().then(() => false),
+        new Promise<boolean>((resolve) => {
+          timer = setTimeout(() => resolve(true), 15000);
+        }),
+      ]);
+      clearTimeout(timer);
+      expect(blocked).toBe(false); // resumed dispatch was blocked by a stale running-workflow entry
+
+      await expect(resumedHandle.getResult()).resolves.toBe('completed');
+      expect(TestEndpoints.staleWriteRuns).toBe(2);
+    } finally {
+      releaseStaleWrite.set();
+      sysdb.recordWorkflowOutput = originalRecordOutput;
+    }
   });
 
   test('getworkflows-with-completed-at', async () => {
@@ -503,7 +561,7 @@ describe('workflow-management-tests', () => {
     expect(cancelledHandle.workflowID).toBe(cancelID);
   });
 
-  test('systemdb-migration-backward-compatible', async () => {
+  (usingSQLite() ? test.skip : test)('systemdb-migration-backward-compatible', async () => {
     // Make sure the system DB migration failure is handled correctly.
     // If there is a migration failure, the system DB should still be able to start.
     // This happens when the old code is running with a new system DB schema.
@@ -573,6 +631,23 @@ describe('workflow-management-tests', () => {
       TestEndpoints.mainThreadEvent.set();
       await TestEndpoints.workflowEvent.wait();
       return x;
+    }
+
+    static staleWriteRuns = 0;
+    static staleWriteEntered = new Event();
+    static staleWriteReleaseRun1 = new Event();
+    static staleWriteSecondRunDone = new Event();
+
+    @DBOS.workflow()
+    static async staleWriteBlockingWorkflow() {
+      TestEndpoints.staleWriteRuns += 1;
+      if (TestEndpoints.staleWriteRuns === 1) {
+        TestEndpoints.staleWriteEntered.set();
+        await TestEndpoints.staleWriteReleaseRun1.wait();
+        return '';
+      }
+      TestEndpoints.staleWriteSecondRunDone.set();
+      return 'completed';
     }
   }
 });
@@ -876,6 +951,11 @@ describe('test-list-queues', () => {
     // Clean up so they don't interfere with the rest of the test
     await DBOS.cancelWorkflow(enqueuedHandle.workflowID);
     await DBOS.cancelWorkflow(delayedHandle.workflowID);
+
+    // Conductor sends a disabled threshold as JSON null, not undefined
+    await DBOSExecutor.globalInstance!.systemDatabase.garbageCollect(Date.now(), null);
+    await DBOSExecutor.globalInstance!.systemDatabase.garbageCollect(null, 1);
+    await DBOSExecutor.globalInstance!.systemDatabase.garbageCollect(null, null);
   });
 
   class TestGlobalTimeout {
@@ -2294,6 +2374,106 @@ describe('wf-cancel-tests', () => {
     await expect(wfh.getResult()).rejects.toThrow(DBOSWorkflowCancelledError);
   });
 
+  // A workflow cancelled while blocked awaiting other workflows must not durably
+  // record its own DBOSWorkflowCancelledError as the awaiting step's checkpoint:
+  // CANCELLED is resumable, so on resume the parent must re-execute the await and
+  // pick up the child's result instead of replaying the recorded cancellation.
+  // Affected internal steps: DBOS.getResult, DBOS.waitFirst, DBOS.waitAll — the ones
+  // built on runInternalStep whose callbacks poll the caller's own status.
+  describe('cancel-during-await', () => {
+    class CancelDuringAwait {
+      static childEvent = new Event();
+      static parentPolling = new Event();
+
+      @DBOS.workflow()
+      static async blockedChild(value: number) {
+        await CancelDuringAwait.childEvent.wait();
+        return value;
+      }
+
+      @DBOS.workflow()
+      static async getResultParent(childID: string) {
+        CancelDuringAwait.parentPolling.set();
+        return await DBOS.getResult<number>(childID, { pollingIntervalMs: 50 });
+      }
+
+      @DBOS.workflow()
+      static async waitFirstParent(childID: string) {
+        const handle = DBOS.retrieveWorkflow<number>(childID);
+        CancelDuringAwait.parentPolling.set();
+        await DBOS.waitFirst([handle], { pollingIntervalMs: 50 });
+        return await DBOS.getResult<number>(childID, { pollingIntervalMs: 50 });
+      }
+
+      @DBOS.workflow()
+      static async waitAllParent(childID: string) {
+        const handle = DBOS.retrieveWorkflow<number>(childID);
+        CancelDuringAwait.parentPolling.set();
+        await DBOS.waitAll([handle], { pollingIntervalMs: 50 });
+        return await DBOS.getResult<number>(childID, { pollingIntervalMs: 50 });
+      }
+    }
+
+    beforeEach(() => {
+      CancelDuringAwait.childEvent = new Event();
+      CancelDuringAwait.parentPolling = new Event();
+    });
+
+    afterEach(() => {
+      CancelDuringAwait.childEvent.set(); // unblock any still-pending child
+    });
+
+    const variants: { step: string; start: (childID: string) => Promise<WorkflowHandle<number | null>> }[] = [
+      { step: 'DBOS.getResult', start: (childID) => DBOS.startWorkflow(CancelDuringAwait).getResultParent(childID) },
+      { step: 'DBOS.waitFirst', start: (childID) => DBOS.startWorkflow(CancelDuringAwait).waitFirstParent(childID) },
+      { step: 'DBOS.waitAll', start: (childID) => DBOS.startWorkflow(CancelDuringAwait).waitAllParent(childID) },
+    ];
+
+    async function cancelParentDuringAwait(start: (childID: string) => Promise<WorkflowHandle<number | null>>) {
+      const childID = randomUUID();
+
+      const childHandle = await DBOS.startWorkflow(CancelDuringAwait, { workflowID: childID }).blockedChild(42);
+      const parentHandle = await start(childID);
+      const parentID = parentHandle.workflowID;
+
+      // Let the parent get past runInternalStep's entry checks and into
+      // the sysdb poll loop before cancelling it.
+      await CancelDuringAwait.parentPolling.wait();
+      await sleepms(300);
+      await DBOS.cancelWorkflow(parentID);
+
+      // The parent observes its own cancellation inside the poll loop.
+      await expect(parentHandle.getResult()).rejects.toThrow(DBOSWorkflowCancelledError);
+      await expect(DBOS.getWorkflowStatus(parentID)).resolves.toMatchObject({ status: StatusString.CANCELLED });
+
+      return { parentID, childHandle };
+    }
+
+    describe.each(variants)('cancelled during $step', ({ step, start }) => {
+      test('parent cancellation is not checkpointed as the step outcome', async () => {
+        const { parentID } = await cancelParentDuringAwait(start);
+
+        // The interrupted step must not be checkpointed, so it re-executes on resume.
+        const steps = await DBOS.listWorkflowSteps(parentID);
+        const awaitStep = steps?.find((s) => s.name === step);
+        expect(awaitStep?.error).toBeFalsy();
+      });
+
+      test('parent picks up child result after resume', async () => {
+        const { parentID, childHandle } = await cancelParentDuringAwait(start);
+
+        // The child completes successfully.
+        CancelDuringAwait.childEvent.set();
+        await expect(childHandle.getResult()).resolves.toBe(42);
+
+        // Resuming the parent should re-execute the await and return the child's result.
+        const resumed = await DBOS.resumeWorkflow<number>(parentID);
+        await expect(resumed.getResult()).resolves.toBe(42);
+        await expect(DBOS.getWorkflowStatus(parentID)).resolves.toMatchObject({ status: StatusString.SUCCESS });
+      });
+    });
+  });
+
   class WFwith2Steps {
     static stepsExecuted = 0;
     static step1Started = new Event();
@@ -3693,7 +3873,7 @@ describe('test-workflow-aggregates', () => {
     expect(empty.length).toBe(0);
   });
 
-  test('filter-by-attributes', async () => {
+  (usingSQLite() ? test.skip : test)('filter-by-attributes', async () => {
     // Two workflows tagged acme, one tagged globex.
     for (let i = 0; i < 2; i++) {
       const h = await DBOS.startWorkflow(AggWorkflows, {
@@ -3783,20 +3963,14 @@ describe('test-workflow-aggregates', () => {
 
     const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
 
-    const client = new Client({ connectionString: config.systemDatabaseUrl });
-    await client.connect();
-    try {
-      await client.query(
-        `UPDATE "${sysdb.schemaName}".workflow_status SET schedule_name = $1 WHERE workflow_uuid = ANY($2)`,
-        ['sched-a', [ids[0], ids[1]]],
-      );
-      await client.query(
-        `UPDATE "${sysdb.schemaName}".workflow_status SET schedule_name = $1 WHERE workflow_uuid = $2`,
-        ['sched-b', ids[2]],
-      );
-    } finally {
-      await client.end();
-    }
+    await sysdb.pool.query(
+      `UPDATE "${sysdb.schemaName}".workflow_status SET schedule_name = $1 WHERE workflow_uuid = ANY($2)`,
+      ['sched-a', [ids[0], ids[1]]],
+    );
+    await sysdb.pool.query(
+      `UPDATE "${sysdb.schemaName}".workflow_status SET schedule_name = $1 WHERE workflow_uuid = $2`,
+      ['sched-b', ids[2]],
+    );
 
     const a = await sysdb.getWorkflowAggregates({
       groupByStatus: true,
@@ -3897,8 +4071,8 @@ describe('test-step-aggregates', () => {
 
     @DBOS.workflow()
     static async parent() {
-      // child workflow markers and DBOS.getResult are bookkeeping rows
-      // with NULL timestamps — they should drop out of max_duration_ms.
+      // child workflow markers and DBOS.getResult produce their own bookkeeping rows; the
+      // assertions below group by function_name, so they don't affect quickStep/slowStep.
       await DurationWorkflows.child();
       await DurationWorkflows.quickStep();
       await DurationWorkflows.slowStep();
@@ -4008,6 +4182,9 @@ describe('test-step-aggregates', () => {
 
   test('completed-window-and-max', async () => {
     const beforeAll = new Date().toISOString();
+    // SQLite records millisecond timestamps. Keep the first completion strictly
+    // after the inclusive completedBefore boundary below.
+    await sleepms(2);
     await DurationWorkflows.parent();
     const afterAll = new Date().toISOString();
 

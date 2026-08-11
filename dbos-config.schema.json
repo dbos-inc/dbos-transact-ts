@@ -107,7 +107,13 @@
       "properties": {
         "admin_port": {
           "type": "number",
-          "description": "The port number of the admin server (Default: 3001)"
+          "deprecated": true,
+          "description": "The port number of the admin server (Default: 3001). Deprecated: the admin server will be removed in a future version of DBOS."
+        },
+        "runAdminServer": {
+          "type": "boolean",
+          "deprecated": true,
+          "description": "Whether to run the admin server (Default: false). Deprecated: the admin server will be removed in a future version of DBOS."
         },
         "start": {
           "type": "array",

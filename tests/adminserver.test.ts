@@ -1,10 +1,10 @@
 import { DBOS, StatusString } from '../src';
-import { DBOSConfig } from '../src/dbos-executor';
+import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import { generateDBOSTestConfig, queueEntriesAreCleanedUp, setUpDBOSTestSysDb } from './helpers';
 import { QueueMetadataResponse } from '../src/adminserver';
 import { HealthUrl, WorkflowQueuesMetadataUrl, WorkflowRecoveryUrl } from '../src/adminserver';
 import { globalParams, sleepms } from '../src/utils';
-import { Client } from 'pg';
+import { Pool } from 'pg';
 import { step_info } from '../schemas/system_db_schema';
 import http from 'http';
 import { DBOSWorkflowCancelledError } from '../src/error';
@@ -14,6 +14,9 @@ import * as protocol from '../src/conductor/protocol';
 interface ErrorResponse {
   error: string;
 }
+
+const ADMIN_PORT = 20_000 + (process.pid % 20_000);
+const ADMIN_URL = `http://localhost:${ADMIN_PORT}`;
 
 describe('not-running-admin-server', () => {
   let config: DBOSConfig;
@@ -27,22 +30,40 @@ describe('not-running-admin-server', () => {
     await setUpDBOSTestSysDb(config);
     await DBOS.launch();
 
-    await expect(async () => {
-      await fetch(`http://localhost:3001${HealthUrl}`, {
-        method: 'GET',
-      });
-    }).rejects.toThrow();
+    expect(DBOS.adminServer).toBeUndefined();
+
+    await DBOS.shutdown();
+  });
+
+  test('test-admin-server-off-by-default', async () => {
+    config = generateDBOSTestConfig();
+    DBOS.setConfig({ ...config });
+    await setUpDBOSTestSysDb(config);
+    await DBOS.launch();
+
+    expect(DBOS.adminServer).toBeUndefined();
+
+    await DBOS.shutdown();
+  });
+
+  test('test-admin-port-alone-does-not-start-server', async () => {
+    config = generateDBOSTestConfig();
+    DBOS.setConfig({ ...config, adminPort: ADMIN_PORT });
+    await setUpDBOSTestSysDb(config);
+    await DBOS.launch();
+
+    expect(DBOS.adminServer).toBeUndefined();
 
     await DBOS.shutdown();
   });
 
   test('test-admin-server-set-port', async () => {
     config = generateDBOSTestConfig();
-    DBOS.setConfig({ ...config, adminPort: 4444 });
+    DBOS.setConfig({ ...config, runAdminServer: true, adminPort: ADMIN_PORT });
     await setUpDBOSTestSysDb(config);
     await DBOS.launch();
 
-    const healthzResponse = await fetch(`http://localhost:4444${HealthUrl}`, {
+    const healthzResponse = await fetch(`${ADMIN_URL}${HealthUrl}`, {
       method: 'GET',
     });
     expect(healthzResponse.status).toBe(200);
@@ -53,10 +74,10 @@ describe('not-running-admin-server', () => {
 
   test('admin-port-already-in-use', async () => {
     // Start a dummy server on the admin port
-    const server = http.createServer().listen(3001, '127.0.0.1');
+    const server = http.createServer().listen(ADMIN_PORT, '127.0.0.1');
     try {
       config = generateDBOSTestConfig();
-      DBOS.setConfig({ ...config, runAdminServer: true });
+      DBOS.setConfig({ ...config, runAdminServer: true, adminPort: ADMIN_PORT });
       await setUpDBOSTestSysDb(config);
       await DBOS.launch();
       await DBOS.shutdown();
@@ -68,13 +89,13 @@ describe('not-running-admin-server', () => {
 
 describe('running-admin-server-tests', () => {
   let config: DBOSConfig;
-  let systemDBClient: Client;
+  let systemDBClient: Pool;
 
   beforeEach(async () => {
     process.env.DBOS__VMID = 'test-executor';
     await DBOS.shutdown();
     config = generateDBOSTestConfig();
-    DBOS.setConfig({ ...config, runAdminServer: true, adminPort: 3001 });
+    DBOS.setConfig({ ...config, runAdminServer: true, adminPort: ADMIN_PORT });
     await setUpDBOSTestSysDb(config);
     await DBOS.launch();
     await DBOS.registerQueue(testQueueOne.name, { onConflict: 'always_update' });
@@ -90,15 +111,11 @@ describe('running-admin-server-tests', () => {
       workerConcurrency: 1,
       rateLimit: { limitPerPeriod: 0, periodSec: 0 },
     });
-    systemDBClient = new Client({
-      connectionString: config.systemDatabaseUrl,
-    });
-    await systemDBClient.connect();
+    systemDBClient = DBOSExecutor.globalInstance!.systemDatabase.pool;
     TestAdminWorkflow.counter = 0;
   });
 
   afterEach(async () => {
-    await systemDBClient.end();
     await DBOS.shutdown();
   });
 
@@ -153,7 +170,7 @@ describe('running-admin-server-tests', () => {
     const handle = await DBOS.startWorkflow(TestAdminWorkflow).simpleWorkflow(42);
 
     // Cancel the workflow. Verify it was cancelled.
-    let response = await fetch(`http://localhost:3001/workflows/${handle.workflowID}/cancel`, {
+    let response = await fetch(`${ADMIN_URL}/workflows/${handle.workflowID}/cancel`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -165,7 +182,7 @@ describe('running-admin-server-tests', () => {
     });
 
     // Resume the workflow. Verify it succeeds again.
-    response = await fetch(`http://localhost:3001/workflows/${handle.workflowID}/resume`, {
+    response = await fetch(`${ADMIN_URL}/workflows/${handle.workflowID}/resume`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -185,7 +202,7 @@ describe('running-admin-server-tests', () => {
     });
 
     // Restart the workflow. Verify it runs
-    response = await fetch(`http://localhost:3001/workflows/${handle.workflowID}/restart`, {
+    response = await fetch(`${ADMIN_URL}/workflows/${handle.workflowID}/restart`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -203,7 +220,7 @@ describe('running-admin-server-tests', () => {
     await expect(restartHandle.getResult()).resolves.toEqual('42-restart-message');
 
     // test fork
-    response = await fetch(`http://localhost:3001/workflows/${handle.workflowID}/fork`, {
+    response = await fetch(`${ADMIN_URL}/workflows/${handle.workflowID}/fork`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -219,7 +236,7 @@ describe('running-admin-server-tests', () => {
     // test fork with new workflow ID, version
     const applicationVersion = 'newVersion';
     globalParams.appVersion = applicationVersion;
-    response = await fetch(`http://localhost:3001/workflows/${handle.workflowID}/fork`, {
+    response = await fetch(`${ADMIN_URL}/workflows/${handle.workflowID}/fork`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -247,7 +264,7 @@ describe('running-admin-server-tests', () => {
       status: StatusString.SUCCESS,
     });
 
-    const response = await fetch(`http://localhost:3001/workflows/${handle.workflowID}/steps`, {
+    const response = await fetch(`${ADMIN_URL}/workflows/${handle.workflowID}/steps`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
@@ -290,7 +307,7 @@ describe('running-admin-server-tests', () => {
 
     // Recover the workflow, and make sure it finishes with the correct executor ID.
     const data = ['other-executor'];
-    const recoveryResponse = await fetch(`http://localhost:3001${WorkflowRecoveryUrl}`, {
+    const recoveryResponse = await fetch(`${ADMIN_URL}${WorkflowRecoveryUrl}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -317,7 +334,7 @@ describe('running-admin-server-tests', () => {
 
   test('test-admin-endpoints', async () => {
     // Test GET /dbos-healthz
-    const healthzResponse = await fetch(`http://localhost:3001${HealthUrl}`, {
+    const healthzResponse = await fetch(`${ADMIN_URL}${HealthUrl}`, {
       method: 'GET',
     });
     expect(healthzResponse.status).toBe(200);
@@ -325,7 +342,7 @@ describe('running-admin-server-tests', () => {
 
     // Test POST /dbos-workflow-recovery
     const data = ['executor1', 'executor2'];
-    const recoveryResponse = await fetch(`http://localhost:3001${WorkflowRecoveryUrl}`, {
+    const recoveryResponse = await fetch(`${ADMIN_URL}${WorkflowRecoveryUrl}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -336,7 +353,7 @@ describe('running-admin-server-tests', () => {
     expect(await recoveryResponse.json()).toEqual([]);
 
     // Test WorkflowQueuesMetadataUrl
-    const metadataResponse = await fetch(`http://localhost:3001${WorkflowQueuesMetadataUrl}`, {
+    const metadataResponse = await fetch(`${ADMIN_URL}${WorkflowQueuesMetadataUrl}`, {
       method: 'GET',
     });
     expect(metadataResponse.status).toBe(200);
@@ -366,7 +383,7 @@ describe('running-admin-server-tests', () => {
     // Database-backed queues should also appear in the metadata endpoint.
     await DBOS.registerQueue('admin-db-backed-queue', { concurrency: 7, workerConcurrency: 3 });
     try {
-      const dbResponse = await fetch(`http://localhost:3001${WorkflowQueuesMetadataUrl}`, { method: 'GET' });
+      const dbResponse = await fetch(`${ADMIN_URL}${WorkflowQueuesMetadataUrl}`, { method: 'GET' });
       expect(dbResponse.status).toBe(200);
       const dbMetadata = (await dbResponse.json()) as QueueMetadataResponse[];
       const dbQueue = dbMetadata.find((q) => q.name === 'admin-db-backed-queue');
@@ -378,13 +395,13 @@ describe('running-admin-server-tests', () => {
     }
 
     // Test GET not found
-    const getNotFoundResponse = await fetch('http://localhost:3001/stuff', {
+    const getNotFoundResponse = await fetch(`${ADMIN_URL}/stuff`, {
       method: 'GET',
     });
     expect(getNotFoundResponse.status).toBe(404);
 
     // Test POST not found
-    const postNotFoundResponse = await fetch('http://localhost:3001/stuff', {
+    const postNotFoundResponse = await fetch(`${ADMIN_URL}/stuff`, {
       method: 'POST',
     });
     expect(postNotFoundResponse.status).toBe(404);
@@ -401,7 +418,7 @@ describe('running-admin-server-tests', () => {
       status: StatusString.SUCCESS,
     });
 
-    const response = await fetch(`http://localhost:3001/deactivate`, {
+    const response = await fetch(`${ADMIN_URL}/deactivate`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
@@ -422,7 +439,7 @@ describe('running-admin-server-tests', () => {
     await expect(TestAdminWorkflow.exampleWorkflow(value)).resolves.toBe(value);
     expect((await DBOS.listWorkflows({})).length).toBe(1);
 
-    const response = await fetch(`http://localhost:3001/dbos-garbage-collect`, {
+    const response = await fetch(`${ADMIN_URL}/dbos-garbage-collect`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -438,7 +455,7 @@ describe('running-admin-server-tests', () => {
     const handle = await DBOS.startWorkflow(TestAdminWorkflow).blockedWorkflow();
     await sleepms(1000);
 
-    const response = await fetch(`http://localhost:3001/dbos-global-timeout`, {
+    const response = await fetch(`${ADMIN_URL}/dbos-global-timeout`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -459,7 +476,7 @@ describe('running-admin-server-tests', () => {
     });
 
     // Test GET /workflows/:workflow_id - existing workflow
-    let response = await fetch(`http://localhost:3001/workflows/${handle.workflowID}`, {
+    let response = await fetch(`${ADMIN_URL}/workflows/${handle.workflowID}`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
@@ -486,7 +503,7 @@ describe('running-admin-server-tests', () => {
     expect(workflow.ApplicationVersion).toBe(globalParams.appVersion);
 
     // Test GET /workflows/:workflow_id - non-existing workflow
-    response = await fetch(`http://localhost:3001/workflows/non-existing-workflow-id`, {
+    response = await fetch(`${ADMIN_URL}/workflows/non-existing-workflow-id`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
@@ -521,7 +538,7 @@ describe('running-admin-server-tests', () => {
     });
 
     // Test POST /workflows - list all workflows
-    let response = await fetch(`http://localhost:3001/workflows`, {
+    let response = await fetch(`${ADMIN_URL}/workflows`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -566,7 +583,7 @@ describe('running-admin-server-tests', () => {
     expect(workflows[0].ApplicationVersion).toBe(globalParams.appVersion);
 
     // Only load input and output if requested
-    response = await fetch(`http://localhost:3001/workflows`, {
+    response = await fetch(`${ADMIN_URL}/workflows`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -586,7 +603,7 @@ describe('running-admin-server-tests', () => {
     // Test POST /workflows - list with filtering by start time and workflow IDs
     // This should only return the second workflow since we filter by time after the first workflow
     // and pass both IDs to make sure the correct filters are applied
-    response = await fetch(`http://localhost:3001/workflows`, {
+    response = await fetch(`${ADMIN_URL}/workflows`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -606,7 +623,7 @@ describe('running-admin-server-tests', () => {
     expect(workflows[0].WorkflowName).toBe('exampleWorkflow');
 
     // Verify sort_dsc inverts the order
-    response = await fetch(`http://localhost:3001/workflows`, {
+    response = await fetch(`${ADMIN_URL}/workflows`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -622,7 +639,7 @@ describe('running-admin-server-tests', () => {
     expect(workflows[1].WorkflowUUID).toBe(handle1.workflowID);
 
     // Test all other filters
-    response = await fetch(`http://localhost:3001/workflows`, {
+    response = await fetch(`${ADMIN_URL}/workflows`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -635,7 +652,7 @@ describe('running-admin-server-tests', () => {
     workflows = (await response.json()) as protocol.WorkflowsOutput[];
     expect(workflows.length).toBe(0);
 
-    response = await fetch(`http://localhost:3001/workflows`, {
+    response = await fetch(`${ADMIN_URL}/workflows`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -648,7 +665,7 @@ describe('running-admin-server-tests', () => {
     workflows = (await response.json()) as protocol.WorkflowsOutput[];
     expect(workflows.length).toBe(2);
 
-    response = await fetch(`http://localhost:3001/workflows`, {
+    response = await fetch(`${ADMIN_URL}/workflows`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -661,7 +678,7 @@ describe('running-admin-server-tests', () => {
     workflows = (await response.json()) as protocol.WorkflowsOutput[];
     expect(workflows.length).toBe(0);
 
-    response = await fetch(`http://localhost:3001/workflows`, {
+    response = await fetch(`${ADMIN_URL}/workflows`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -674,7 +691,7 @@ describe('running-admin-server-tests', () => {
     workflows = (await response.json()) as protocol.WorkflowsOutput[];
     expect(workflows.length).toBe(0);
 
-    response = await fetch(`http://localhost:3001/workflows`, {
+    response = await fetch(`${ADMIN_URL}/workflows`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -687,7 +704,7 @@ describe('running-admin-server-tests', () => {
     workflows = (await response.json()) as protocol.WorkflowsOutput[];
     expect(workflows.length).toBe(2);
 
-    response = await fetch(`http://localhost:3001/workflows`, {
+    response = await fetch(`${ADMIN_URL}/workflows`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -700,7 +717,7 @@ describe('running-admin-server-tests', () => {
     workflows = (await response.json()) as protocol.WorkflowsOutput[];
     expect(workflows.length).toBe(1);
 
-    response = await fetch(`http://localhost:3001/workflows`, {
+    response = await fetch(`${ADMIN_URL}/workflows`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -713,7 +730,7 @@ describe('running-admin-server-tests', () => {
     workflows = (await response.json()) as protocol.WorkflowsOutput[];
     expect(workflows.length).toBe(2);
 
-    response = await fetch(`http://localhost:3001/workflows`, {
+    response = await fetch(`${ADMIN_URL}/workflows`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -726,7 +743,7 @@ describe('running-admin-server-tests', () => {
     workflows = (await response.json()) as protocol.WorkflowsOutput[];
     expect(workflows.length).toBe(2);
 
-    response = await fetch(`http://localhost:3001/workflows`, {
+    response = await fetch(`${ADMIN_URL}/workflows`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -741,7 +758,7 @@ describe('running-admin-server-tests', () => {
     expect(workflows.length).toBe(1);
     expect(workflows[0].WorkflowUUID).toBe(handle2.workflowID);
 
-    response = await fetch(`http://localhost:3001/workflows`, {
+    response = await fetch(`${ADMIN_URL}/workflows`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -775,7 +792,7 @@ describe('running-admin-server-tests', () => {
     const handle4 = await DBOS.startWorkflow(TestAdminWorkflow, { queueName: testQueueOne.name }).blockedWorkflow();
 
     // Test POST /queues - list all queued workflows
-    let response = await fetch(`http://localhost:3001/queues`, {
+    let response = await fetch(`${ADMIN_URL}/queues`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -811,7 +828,7 @@ describe('running-admin-server-tests', () => {
     expect(queuedWorkflows[0].ApplicationVersion).toBe(globalParams.appVersion);
 
     // Only load input if requested
-    response = await fetch(`http://localhost:3001/queues`, {
+    response = await fetch(`${ADMIN_URL}/queues`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -827,7 +844,7 @@ describe('running-admin-server-tests', () => {
     expect(queuedWorkflows[0].Input).toBeDefined();
 
     // Test filtering by queue name
-    response = await fetch(`http://localhost:3001/queues`, {
+    response = await fetch(`${ADMIN_URL}/queues`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -847,7 +864,7 @@ describe('running-admin-server-tests', () => {
     });
 
     // Test with limit
-    response = await fetch(`http://localhost:3001/queues`, {
+    response = await fetch(`${ADMIN_URL}/queues`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -863,7 +880,7 @@ describe('running-admin-server-tests', () => {
     expect(queuedWorkflows.length).toBe(2);
 
     // Verify sort_dsc inverts the order
-    response = await fetch(`http://localhost:3001/queues`, {
+    response = await fetch(`${ADMIN_URL}/queues`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -881,7 +898,7 @@ describe('running-admin-server-tests', () => {
     expect(queuedWorkflows[3].WorkflowUUID).toBe(handle1.workflowID);
 
     // Test all other filters
-    response = await fetch(`http://localhost:3001/queues`, {
+    response = await fetch(`${ADMIN_URL}/queues`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -894,7 +911,7 @@ describe('running-admin-server-tests', () => {
     queuedWorkflows = (await response.json()) as protocol.WorkflowsOutput[];
     expect(queuedWorkflows.length).toBe(4);
 
-    response = await fetch(`http://localhost:3001/queues`, {
+    response = await fetch(`${ADMIN_URL}/queues`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -907,7 +924,7 @@ describe('running-admin-server-tests', () => {
     queuedWorkflows = (await response.json()) as protocol.WorkflowsOutput[];
     expect(queuedWorkflows.length).toBe(3);
 
-    response = await fetch(`http://localhost:3001/queues`, {
+    response = await fetch(`${ADMIN_URL}/queues`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -920,7 +937,7 @@ describe('running-admin-server-tests', () => {
     queuedWorkflows = (await response.json()) as protocol.WorkflowsOutput[];
     expect(queuedWorkflows.length).toBe(0);
 
-    response = await fetch(`http://localhost:3001/queues`, {
+    response = await fetch(`${ADMIN_URL}/queues`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -933,7 +950,7 @@ describe('running-admin-server-tests', () => {
     queuedWorkflows = (await response.json()) as protocol.WorkflowsOutput[];
     expect(queuedWorkflows.length).toBeGreaterThanOrEqual(0);
 
-    response = await fetch(`http://localhost:3001/queues`, {
+    response = await fetch(`${ADMIN_URL}/queues`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -950,7 +967,7 @@ describe('running-admin-server-tests', () => {
     expect(queuedWorkflows[0].WorkflowUUID).toBe(handle2.workflowID);
 
     // Test with non-existent queue
-    response = await fetch(`http://localhost:3001/queues`, {
+    response = await fetch(`${ADMIN_URL}/queues`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

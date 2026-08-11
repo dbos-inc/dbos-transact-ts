@@ -1,11 +1,11 @@
 import { execSync, spawn } from 'child_process';
 import { existsSync, readFileSync, statSync } from 'fs';
 import path from 'path';
-import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
+import { generateDBOSTestConfig, setUpDBOSTestSysDb, usingSQLite } from './helpers';
 import { DBOS } from '../src';
 import { Client } from 'pg';
 
-describe('DBOS Bundler Tests', () => {
+(usingSQLite() ? describe.skip : describe)('DBOS Bundler Tests', () => {
   const bundlerTestDir = path.join(__dirname, 'bundler-test');
   const bundleFile = path.join(bundlerTestDir, 'dist', 'bundle.js');
 

@@ -12,11 +12,11 @@
  *   Java:   dbos-transact-java/transact/src/test/java/dev/dbos/transact/json/InteropTest.java
  */
 
-import { Client } from 'pg';
+import { Pool } from 'pg';
 import { DBOS, DBOSClient } from '../src';
 import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
 import { workflow_events, workflow_events_history, workflow_status, streams } from '../schemas/system_db_schema';
-import { DBOSConfig } from '../src/dbos-executor';
+import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import { z } from 'zod';
 
 // ============================================================================
@@ -110,7 +110,7 @@ const _canonicalWorkflow = DBOS.registerWorkflow(
 
 describe('interop-tests', () => {
   let config: DBOSConfig;
-  let systemDBClient: Client;
+  let systemDBClient: Pool;
 
   beforeAll(() => {
     config = generateDBOSTestConfig();
@@ -123,14 +123,10 @@ describe('interop-tests', () => {
     await DBOS.launch();
     await DBOS.registerQueue('interopq', { onConflict: 'always_update' });
 
-    systemDBClient = new Client({
-      connectionString: config.systemDatabaseUrl,
-    });
-    await systemDBClient.connect();
+    systemDBClient = DBOSExecutor.globalInstance!.systemDatabase.pool;
   });
 
   afterEach(async () => {
-    await systemDBClient.end();
     await DBOS.shutdown();
     process.env.DBOS__APPVERSION = undefined;
   });

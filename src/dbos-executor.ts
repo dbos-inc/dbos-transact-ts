@@ -4,11 +4,13 @@ import {
   DBOSWorkflowConflictError,
   DBOSNotRegisteredError,
   DBOSMaxStepRetriesError,
+  DBOSMaxRecoveryAttemptsExceededError,
   DBOSWorkflowCancelledError,
   DBOSUnexpectedStepError,
   DBOSAwaitedWorkflowCancelledError,
   DBOSQueueDuplicatedError,
   DBOSStepTimeoutError,
+  DBOSInvalidWorkflowInputError,
 } from './error';
 import {
   InvokedHandle,
@@ -137,7 +139,12 @@ export interface DBOSConfig {
    */
   otelAttributeFormat?: OtelAttributeFormat;
 
+  /** @deprecated The admin server is deprecated and will be removed in a future version of DBOS. */
   adminPort?: number;
+  /**
+   * Whether to run the admin server. Defaults to `false` outside DBOS Cloud.
+   * @deprecated The admin server is deprecated and will be removed in a future version of DBOS.
+   */
   runAdminServer?: boolean;
 
   applicationVersion?: string;
@@ -153,12 +160,27 @@ export interface DBOSConfig {
    * up by the supervisor.
    */
   listenQueues?: (WorkflowQueue | string)[];
+  /**
+   * Maximum number of independent queue dispatch cycles that may run concurrently
+   * in this executor. Defaults to 3. Set to 1 to serialize queue dispatch.
+   * This does not limit workflow concurrency or system-database polling reads.
+   *
+   * Each concurrent dispatch checks out a system-database connection for the
+   * duration of its dequeue transaction, so values approaching
+   * `systemDatabasePoolSize` (default 10, of which the polling limiter already
+   * reserves half) leave little of the pool for control-plane operations.
+   */
+  maxConcurrentQueueDispatches?: number;
   schedulerPollingIntervalMs?: number;
   useListenNotify?: boolean;
+  /** Interval (ms) for coalescing LISTEN/NOTIFY notifications (streams and events) off the write path; bounds read latency. Default 10, min 1. */
+  notificationCoalesceMs?: number;
 }
 
 export interface DBOSRuntimeConfig {
+  /** @deprecated The admin server is deprecated and will be removed in a future version of DBOS. */
   admin_port: number;
+  /** @deprecated The admin server is deprecated and will be removed in a future version of DBOS. */
   runAdminServer: boolean;
   start: string[];
   setup: string[];
@@ -208,7 +230,9 @@ export type DBOSConfigInternal = {
   telemetry: TelemetryConfig;
 
   schedulerPollingIntervalMs?: number;
+  maxConcurrentQueueDispatches?: number;
   useListenNotify: boolean;
+  notificationCoalesceMs?: number;
 
   http?: {
     cors_middleware?: boolean;
@@ -223,6 +247,20 @@ export interface InternalWorkflowParams extends WorkflowParams {
   readonly tempWfClass?: string;
   readonly isRecoveryDispatch?: boolean;
   readonly isQueueDispatch?: boolean;
+}
+
+/** Options for assembling an ENQUEUED workflow row without persisting it. */
+export interface PrepareEnqueuedWorkflowOptions {
+  /** Queue the workflow is enqueued on. */
+  readonly queueName: string;
+  /** Workflow ID. Doubles as the idempotency key for a batch insert, so it must be deterministic. */
+  readonly workflowID: string;
+  /**
+   * Partition key for a partitioned queue. Not validated here: a partitioned queue only ever
+   * dequeues rows that carry a key, so a row enqueued onto one without a key sits ENQUEUED
+   * forever rather than failing.
+   */
+  readonly queuePartitionKey?: string;
 }
 
 export const OperationType = {
@@ -323,6 +361,7 @@ export class DBOSExecutor {
         this.systemDBSchemaName,
         this.config.useListenNotify,
         this.config.systemDatabasePollingConcurrency,
+        this.config.notificationCoalesceMs,
       );
     }
 
@@ -420,6 +459,68 @@ export class DBOSExecutor {
     ...args: T
   ): Promise<WorkflowHandle<R>> {
     return this.internalWorkflow(wf, params, undefined, undefined, ...args);
+  }
+
+  /**
+   * Build, without persisting, an ENQUEUED status row for `wf` on `options.queueName`.
+   *
+   * For batch enqueuers (e.g. a Kafka consumer) that persist many rows in one transaction via
+   * {@link SystemDatabase.enqueueWorkflows}. Any ambient DBOS context is ignored: the workflow ID and
+   * enqueue options are passed explicitly, and the row inherits no parent, auth, or attributes.
+   */
+  async prepareEnqueuedWorkflow<T extends unknown[], R>(
+    wf: TypedAsyncFunction<T, R>,
+    args: T,
+    options: PrepareEnqueuedWorkflowOptions,
+  ): Promise<WorkflowStatusInternal> {
+    const wInfo = getFunctionRegistration(wf);
+    if (!wInfo || !wInfo.workflowConfig) {
+      throw new DBOSNotRegisteredError(wf.name, `${wf.name} is not a registered workflow function`);
+    }
+    if (wInfo.isInstance) {
+      // The row would carry no config name, so the dequeuer could not find the instance to bind and
+      // would run the workflow with a null `this`.
+      throw new DBOSError(
+        `Cannot enqueue instance method "${wInfo.name}" in a batch. Only static methods and free functions can be used.`,
+      );
+    }
+    const { name: workflowName, className: workflowClassName } = getRegisteredFunctionFullName(wf);
+    const serializationType = wInfo.workflowConfig.serialization;
+    let funcArgs: Awaited<ReturnType<typeof serializeFunctionInputOutput>>;
+    try {
+      funcArgs = await serializeFunctionInputOutput(
+        serializationType === 'portable' ? ({ positionalArgs: args } as JsonWorkflowArgs) : args,
+        [workflowName, '<arguments>'],
+        this.serializer,
+        serializationType,
+      );
+    } catch (e) {
+      // Tagged so a batch enqueuer can tell "these arguments are bad" apart from the failures above,
+      // which condemn every workflow it would enqueue rather than just this one.
+      throw new DBOSInvalidWorkflowInputError(workflowName, e);
+    }
+    return {
+      workflowUUID: options.workflowID,
+      status: StatusString.ENQUEUED,
+      workflowName,
+      workflowClassName,
+      workflowConfigName: '',
+      queueName: options.queueName,
+      output: null,
+      error: null,
+      authenticatedUser: '',
+      assumedRole: '',
+      authenticatedRoles: [],
+      request: {},
+      executorId: globalParams.executorID,
+      applicationVersion: globalParams.appVersion,
+      applicationID: globalParams.appID,
+      createdAt: Date.now(),
+      input: funcArgs.stringified,
+      priority: 0,
+      queuePartitionKey: options.queuePartitionKey,
+      serialization: funcArgs.sername,
+    };
   }
 
   // If callerWFID and functionID are set, it means the workflow is invoked from within a workflow.
@@ -632,94 +733,176 @@ export class DBOSExecutor {
       }
     }
 
+    // Release the running-workflow map entry before the terminal outcome
+    // becomes durable: once it is visible, a resume can re-dispatch this
+    // workflow ID to this executor, and a stale entry would block that
+    // dispatch. Guarded so the backstop in registerRunningWorkflow's finally
+    // never deletes an entry a resumed run has re-acquired.
+    let runningWorkflowReleased = false;
+    const releaseRunningWorkflow = () => {
+      if (runningWorkflowReleased) return;
+      runningWorkflowReleased = true;
+      this.systemDatabase.clearRunningWorkflow(workflowID);
+    };
+
     const eserializer = this.serializer;
-    async function handleWorkflowError(err: Error, exec: DBOSExecutor) {
+    async function handleWorkflowError(
+      err: Error,
+      exec: DBOSExecutor,
+    ): Promise<{ recorded: boolean; reviveError: () => Promise<Error> }> {
       // Record the error.
       const e = err as Error & { dbos_already_logged?: boolean };
-      exec.logger.error(e);
-      e.dbos_already_logged = true;
       const sererr = await serializeResErrorWithSerializer(e, eserializer, ires.serialization ?? null);
       internalStatus.error = sererr.serializedValue;
       internalStatus.status = StatusString.ERROR;
-      await exec.systemDatabase.recordWorkflowError(workflowID, internalStatus);
+      releaseRunningWorkflow();
+      const recorded = await exec.systemDatabase.recordWorkflowError(workflowID, internalStatus);
+      if (recorded) {
+        exec.logger.error(e);
+        e.dbos_already_logged = true;
+      } else {
+        exec.logger.debug(e);
+      }
       span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
-      return await deserializeResError(sererr.serializedValue, sererr.serialization, eserializer);
+      return {
+        recorded,
+        // deserializeResError can throw directly if the serialized error represents a portable workflow error.
+        // Defer this until we check whether the error has been recorded.
+        reviveError: () => deserializeResError(sererr.serializedValue, sererr.serialization, eserializer),
+      };
     }
 
-    const runWorkflow = async () => {
-      let result: R;
-
-      // Execute the workflow.
+    // This run does not own the workflow's outcome: park the run and deliver
+    // the recorded outcome through its own handle instead of the locally
+    // computed one. The span reflects the adopted outcome — `cached` marks a
+    // result served from the store rather than computed by this run, and the
+    // final status overrides anything a caller stamped before parking.
+    const adoptRecordedOutcome = async (warning: string): Promise<R> => {
+      this.logger.warn(warning);
       try {
-        const callResult = await runWithTrace(span, async () => {
-          return await runWithParentContext(
-            pctx,
-            {
-              presetID,
-              workflowTimeoutMS: undefined, // Becomes deadline
-              deadlineEpochMS,
-              workflowId: workflowID,
-              logger: this.ctxLogger,
-              curWFFunctionId: undefined,
-              serializationType,
-            },
-            () => {
-              const callPromise = wf.call(params.configuredInstance, ...args);
-
-              if ($deadlineEpochMS === undefined) {
-                return callPromise;
-              } else {
-                return callPromiseWithTimeout(callPromise, $deadlineEpochMS, this.systemDatabase);
-              }
-            },
-          );
-        });
-
-        result = callResult!;
-
-        const funcResult = await serializeFunctionInputOutputWithSerializer(
-          result,
-          [wfname, '<result>'],
-          this.serializer,
-          ires.serialization,
-        );
-        result = funcResult.deserialized;
-        internalStatus.output = funcResult.stringified;
-        internalStatus.status = StatusString.SUCCESS;
-        await this.systemDatabase.recordWorkflowOutput(workflowID, internalStatus);
-        span.setStatus({ code: SpanStatusCode.OK });
-      } catch (err) {
-        if (err instanceof DBOSWorkflowConflictError) {
-          // Retrieve the handle and wait for the result.
-          const retrievedHandle = this.retrieveWorkflow<R>(workflowID);
-          result = await retrievedHandle.getResult();
-          span.setAttribute('cached', true);
-          span.setStatus({ code: SpanStatusCode.OK });
-        } else if (err instanceof DBOSWorkflowCancelledError) {
-          span.setStatus({ code: SpanStatusCode.ERROR, message: err.message });
-          internalStatus.error = err.message;
-          if (err.workflowID === workflowID) {
-            internalStatus.status = StatusString.CANCELLED;
-            throw err;
-          } else {
-            const e = new DBOSAwaitedWorkflowCancelledError(err.workflowID);
-            await handleWorkflowError(e as Error, this);
-            throw e;
-          }
-        } else {
-          // If we want to be consistent about what is thrown (stored result vs live)
-          //  we would have to do this.  It is a breaking change in the sense that it
-          //  is a behavior change, but it would "break" things that are already broken
-          if (serializationType === 'portable') {
-            throw await handleWorkflowError(err as Error, this);
-          }
-          await handleWorkflowError(err as Error, this);
-          throw err;
+        // The workflow's row is known to have existed (this run was dispatched
+        // from it), so fail fast if it is missing: a missing row means it was
+        // deleted, not that it has yet to be inserted.
+        const recordedResult = (await this.systemDatabase.awaitWorkflowResult(
+          workflowID,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          /* failIfMissing */ true,
+        ))!;
+        span.setAttribute('cached', true);
+        if (recordedResult.cancelled) {
+          // awaitWorkflowResult reports a CANCELLED row from an awaiter's point
+          // of view, but this outcome is delivered to the workflow's own handle:
+          // report the workflow's cancellation.
+          throw new DBOSWorkflowCancelledError(workflowID);
         }
+        if (recordedResult.maxRecoveryAttemptsExceeded) {
+          throw new DBOSMaxRecoveryAttemptsExceededError(workflowID, maxRecoveryAttempts);
+        }
+        const adopted = await DBOSExecutor.reviveResultOrError<R>(recordedResult, this.serializer);
+        span.setStatus({ code: SpanStatusCode.OK });
+        return adopted;
+      } catch (e) {
+        span.setStatus({ code: SpanStatusCode.ERROR, message: (e as Error).message });
+        throw e;
+      }
+    };
+
+    const notRecordedWarning = `Workflow ${workflowID} outcome was not recorded: the workflow is no longer owned by this execution. Waiting for the recorded outcome`;
+
+    const runWorkflow = async () => {
+      try {
+        let result: R;
+        // The warning to park under, set by whichever site found that this run
+        // does not own the workflow's outcome.
+        let pendingAdopt: string;
+
+        // Execute the workflow.
+        try {
+          const callResult = await runWithTrace(span, async () => {
+            return await runWithParentContext(
+              pctx,
+              {
+                presetID,
+                workflowTimeoutMS: undefined, // Becomes deadline
+                deadlineEpochMS,
+                workflowId: workflowID,
+                logger: this.ctxLogger,
+                curWFFunctionId: undefined,
+                serializationType,
+              },
+              () => {
+                const callPromise = wf.call(params.configuredInstance, ...args);
+
+                if ($deadlineEpochMS === undefined) {
+                  return callPromise;
+                } else {
+                  return callPromiseWithTimeout(callPromise, $deadlineEpochMS, this.systemDatabase);
+                }
+              },
+            );
+          });
+
+          result = callResult!;
+
+          const funcResult = await serializeFunctionInputOutputWithSerializer(
+            result,
+            [wfname, '<result>'],
+            this.serializer,
+            ires.serialization,
+          );
+          result = funcResult.deserialized;
+          internalStatus.output = funcResult.stringified;
+          internalStatus.status = StatusString.SUCCESS;
+          releaseRunningWorkflow();
+          const recorded = await this.systemDatabase.recordWorkflowOutput(workflowID, internalStatus);
+          if (recorded) {
+            span.setStatus({ code: SpanStatusCode.OK });
+            return result;
+          }
+          pendingAdopt = notRecordedWarning;
+        } catch (err) {
+          if (err instanceof DBOSWorkflowConflictError) {
+            // Another execution owns this workflow's step checkpoints. Release
+            // before parking so a resume re-dispatched here is not blocked.
+            releaseRunningWorkflow();
+            pendingAdopt = `Aborting duplicate execution of workflow ${workflowID}.`;
+          } else if (err instanceof DBOSWorkflowCancelledError) {
+            if (err.workflowID === workflowID) {
+              // The run observed its own cancellation. Park the execution.
+              // Of course this relies on the user not abusing DBOSWorkflowCancelledError to not hang.
+              releaseRunningWorkflow();
+              pendingAdopt = `Workflow ${workflowID} was cancelled during execution. Waiting for the recorded outcome`;
+            } else {
+              const e = new DBOSAwaitedWorkflowCancelledError(err.workflowID);
+              const { recorded } = await handleWorkflowError(e as Error, this);
+              if (recorded) {
+                throw e;
+              }
+              pendingAdopt = notRecordedWarning;
+            }
+          } else {
+            const { recorded, reviveError } = await handleWorkflowError(err as Error, this);
+            if (recorded) {
+              // If we want to be consistent about what is thrown (stored result vs live)
+              //  we would have to do this.  It is a breaking change in the sense that it
+              //  is a behavior change, but it would "break" things that are already broken
+              if (serializationType === 'portable') {
+                throw await reviveError();
+              }
+              throw err;
+            }
+            pendingAdopt = notRecordedWarning;
+          }
+        }
+
+        // Reached only when a refusal above set pendingAdopt.
+        return await adoptRecordedOutcome(pendingAdopt);
       } finally {
         this.tracer.endSpan(span);
       }
-      return result;
     };
 
     if (
@@ -732,6 +915,7 @@ export class DBOSExecutor {
       this.systemDatabase.registerRunningWorkflow(
         workflowID,
         workflowPromise,
+        releaseRunningWorkflow,
         params.queueName,
         params.enqueueOptions?.queuePartitionKey,
       );
@@ -1063,6 +1247,11 @@ export class DBOSExecutor {
       );
       return funcOutput.deserialized;
     } catch (e) {
+      if (e instanceof DBOSWorkflowCancelledError && e.workflowID === workflowID) {
+        // The calling workflow's own cancellation interrupted the step; it did not
+        // complete. Don't checkpoint it, so a resumed workflow re-executes it.
+        throw e;
+      }
       await this.systemDatabase.recordOperationResult(
         workflowID,
         functionID,
@@ -1105,48 +1294,33 @@ export class DBOSExecutor {
   /* INTERNAL HELPERS */
   /**
    * A recovery process that by default runs during executor init time.
-   * It runs to completion all pending workflows that were executing when the previous executor failed.
+   * It returns all workflows that were executing when the previous executor failed to a queue, which re-dispatches them.
    */
   async recoverPendingWorkflows(executorIDs: string[] = ['local']): Promise<WorkflowHandle<unknown>[]> {
     const handlerArray: WorkflowHandle<unknown>[] = [];
     for (const execID of executorIDs) {
       this.logger.debug(`Recovering workflows assigned to executor: ${execID}`);
-      const pendingWorkflows = await this.systemDatabase.getPendingWorkflows(execID, globalParams.appVersion);
-      if (pendingWorkflows.length > 0) {
+      const recoveredWorkflowIDs = await this.systemDatabase.reenqueueWorkflowsForRecovery(
+        execID,
+        globalParams.appVersion,
+        INTERNAL_QUEUE_NAME,
+      );
+      if (recoveredWorkflowIDs.length > 0) {
         this.logger.info(
-          `Recovering ${pendingWorkflows.length} workflows from application version ${globalParams.appVersion}`,
+          `Recovering ${recoveredWorkflowIDs.length} workflows from application version ${globalParams.appVersion}`,
         );
       } else {
         this.logger.info(`No workflows to recover from application version ${globalParams.appVersion}`);
       }
-      for (const pendingWorkflow of pendingWorkflows) {
-        this.logger.debug(
-          `Recovering workflow: ${pendingWorkflow.workflowUUID}. Queue name: ${pendingWorkflow.queueName}`,
-        );
-        try {
-          // If the workflow is member of a queue, re-enqueue it.
-          if (pendingWorkflow.queueName) {
-            const cleared = await this.systemDatabase.clearQueueAssignment(pendingWorkflow.workflowUUID);
-            if (cleared) {
-              handlerArray.push(this.retrieveWorkflow(pendingWorkflow.workflowUUID));
-            } else {
-              handlerArray.push(
-                await this.executeWorkflowId(pendingWorkflow.workflowUUID, { isRecoveryDispatch: true }),
-              );
-            }
-          } else {
-            handlerArray.push(await this.executeWorkflowId(pendingWorkflow.workflowUUID, { isRecoveryDispatch: true }));
-          }
-        } catch (e) {
-          this.logger.warn(`Recovery of workflow ${pendingWorkflow.workflowUUID} failed: ${(e as Error).message}`);
-        }
+      for (const workflowID of recoveredWorkflowIDs) {
+        handlerArray.push(this.retrieveWorkflow(workflowID));
       }
     }
     return handlerArray;
   }
 
   async initEventReceivers(listenQueues: (WorkflowQueue | string)[] | null) {
-    this.#wfqEnded = wfQueueRunner.dispatchLoop(this, listenQueues);
+    this.#wfqEnded = wfQueueRunner.dispatchLoop(this, listenQueues, this.config.maxConcurrentQueueDispatches);
 
     for (const lcl of getLifecycleListeners()) {
       await lcl.initialize?.();

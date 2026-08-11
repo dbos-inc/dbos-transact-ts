@@ -6,6 +6,10 @@ import { ensureSystemDatabase, SystemDatabase } from '../src/system_database';
 import { GlobalLogger } from '../src/telemetry/logs';
 import { dropPGDatabase, maskDatabaseUrl } from '../src/datasource';
 import { Client } from 'pg';
+import { randomUUID } from 'node:crypto';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { isSQLiteSystemDatabaseUrl, resetSQLiteSystemDatabase } from '../src/sqlite_system_database';
 
 /* DB management helpers */
 function getSysDatabaseUrlFromUserDb(userDB: string) {
@@ -19,8 +23,42 @@ function getSysDatabaseUrlFromUserDb(userDB: string) {
   return url.toString();
 }
 
+export function usingSQLite(): boolean {
+  return process.env.DBOS_DATABASE === 'SQLITE';
+}
+
+export function getPostgresTestUrl(): string {
+  if (process.env.DBOS_TEST_DB_URL) {
+    return process.env.DBOS_TEST_DB_URL;
+  }
+
+  const dbPassword = process.env.DB_PASSWORD || process.env.PGPASSWORD;
+  if (!dbPassword) {
+    throw new Error('DB_PASSWORD or PGPASSWORD environment variable not set');
+  }
+  const dbUser = process.env.DB_USER || process.env.PGUSER || 'postgres';
+  return `postgresql://${dbUser}:${dbPassword}@localhost:5432/postgres?sslmode=disable`;
+}
+
+function getSQLiteTestUrl(): string {
+  if (process.env.DBOS_TEST_SQLITE_URL) {
+    return process.env.DBOS_TEST_SQLITE_URL;
+  }
+  const filePath = path.join(tmpdir(), `dbos-transact-ts-${process.pid}-${randomUUID()}.sqlite`);
+  return `sqlite:////${filePath.replace(/^\/+/, '')}`;
+}
+
 export function generateDBOSTestConfig(): DBOSConfig {
   const _silenceLogs = process.env.SILENCE_LOGS === 'true';
+
+  if (usingSQLite()) {
+    return {
+      name: 'dbostest',
+      systemDatabaseUrl: getSQLiteTestUrl(),
+      useListenNotify: false,
+      logLevel: _silenceLogs ? 'error' : undefined,
+    };
+  }
 
   let databaseUrl = process.env.DBOS_TEST_DB_URL;
   if (!databaseUrl) {
@@ -37,6 +75,7 @@ export function generateDBOSTestConfig(): DBOSConfig {
   return {
     name: 'dbostest',
     systemDatabaseUrl,
+    logLevel: _silenceLogs ? 'error' : undefined,
     ...(isCockroach ? { useListenNotify: false } : {}),
   };
 }
@@ -44,6 +83,12 @@ export function generateDBOSTestConfig(): DBOSConfig {
 export async function setUpDBOSTestSysDb(config: DBOSConfig) {
   config.name ??= 'dbostest';
   const internalConfig = translateDbosConfig(config);
+
+  if (isSQLiteSystemDatabaseUrl(internalConfig.systemDatabaseUrl)) {
+    resetSQLiteSystemDatabase(internalConfig.systemDatabaseUrl);
+    await ensureSystemDatabase(internalConfig.systemDatabaseUrl, new GlobalLogger(), undefined, undefined, false);
+    return;
+  }
 
   const r = await dropPGDatabase({ urlToDrop: internalConfig.systemDatabaseUrl, logger: () => {} });
   if (r.status !== 'did_not_exist' && r.status !== 'dropped') {
@@ -112,9 +157,30 @@ export function uuidValidate(uuid: string) {
   return regex.test(uuid);
 }
 
+// Poll `check` until it stops throwing, rethrowing its last failure if the deadline passes.
+export async function retryUntilSuccess(check: () => void | Promise<void>, timeoutMs: number = 15000) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    try {
+      await check();
+      return;
+    } catch (e) {
+      if (Date.now() >= deadline) throw e;
+      await sleepms(100);
+    }
+  }
+}
+
 export function recoverPendingWorkflows(executorIDs: string[] = ['local']) {
   expect(DBOSExecutor.globalInstance).toBeDefined();
   return DBOSExecutor.globalInstance!.recoverPendingWorkflows(executorIDs);
+}
+
+// Recover and return the handle for `workflowID`; the handle array's order is unspecified, so indexing it can pick another test's workflow and block forever.
+export async function recoverWorkflow(workflowID: string, executorIDs: string[] = ['local']) {
+  const handles = (await recoverPendingWorkflows(executorIDs)).filter((h) => h.workflowID === workflowID);
+  expect(handles).toHaveLength(1);
+  return handles[0];
 }
 
 export function executeWorkflowById(workflowId: string) {
@@ -151,6 +217,11 @@ export async function reexecuteWorkflowById(
 }
 
 export async function dropDatabase(connectionString: string, database?: string) {
+  if (isSQLiteSystemDatabaseUrl(connectionString)) {
+    resetSQLiteSystemDatabase(connectionString);
+    return;
+  }
+
   const r = await dropPGDatabase({ urlToDrop: connectionString, dbToDrop: database });
   if (r.status !== 'did_not_exist' && r.status !== 'dropped') {
     throw new Error(`Unable to drop ${maskDatabaseUrl(connectionString)}`);
@@ -161,6 +232,8 @@ export async function causeChaos(db: string): Promise<void> {
   const client = new Client({
     connectionString: db, // or your config object
   });
+  // A concurrent causeChaos can terminate this backend too; without a listener that 'error' event crashes the process.
+  client.on('error', () => {});
 
   try {
     await client.connect();

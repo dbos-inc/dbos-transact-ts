@@ -1,7 +1,7 @@
 import { Client } from 'pg';
 import { ConfiguredInstance, DBOS, DBOSClient, WorkflowHandle } from '../src/';
 import { DBOSConflictingRegistrationError } from '../src/error';
-import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
+import { generateDBOSTestConfig, setUpDBOSTestSysDb, usingSQLite } from './helpers';
 import { randomUUID } from 'node:crypto';
 import { promises as fsp } from 'node:fs';
 import { DBOSExecutor } from '../src/dbos-executor';
@@ -750,9 +750,11 @@ describe('unserializable-negative-tests', () => {
       await expect(wfReturnsAFileHandle()).rejects.toThrow(
         `Attempted to call 'readFile' at path returnFH.<result> on an object that is a serialized function input our output value. Functions are not preserved through serialization; see 'DBOS.registerSerialization'.`,
       );
-      await expect(wfReturnsAPGClient()).rejects.toThrow(
-        `Attempted to call 'query' at path returnClient.<result> on an object that is a serialized function input our output value. Functions are not preserved through serialization; see 'DBOS.registerSerialization'.`,
-      );
+      if (!usingSQLite()) {
+        await expect(wfReturnsAPGClient()).rejects.toThrow(
+          `Attempted to call 'query' at path returnClient.<result> on an object that is a serialized function input our output value. Functions are not preserved through serialization; see 'DBOS.registerSerialization'.`,
+        );
+      }
     } finally {
       await DBOS.shutdown();
     }

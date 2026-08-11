@@ -1,22 +1,74 @@
-import { DBOS, DBOSLifecycleCallback, FunctionName } from '@dbos-inc/dbos-sdk';
+import { DBOS, DBOSLifecycleCallback, Error as DBOSErrors, FunctionName, WorkflowQueue } from '@dbos-inc/dbos-sdk';
+import {
+  getOrCreateQueue,
+  getQueue,
+  enqueueWorkflows,
+  prepareEnqueuedWorkflow,
+  PreparedWorkflow,
+  registerPollerQueue,
+} from '@dbos-inc/dbos-sdk/eventreceiver';
 
 import { KafkaJS, LibrdKafkaError as KafkaError } from '@confluentinc/kafka-javascript';
 
 export type KafkaArgs = [string, number, KafkaJS.Message];
 type KafkaMessageHandler<Return> = (...args: KafkaArgs) => Promise<Return>;
 
-const sleepms = (ms: number) => new Promise((r) => setTimeout(r, ms));
+/**
+ * How to order the workflows a consumer starts.
+ *  - `none` (default): messages are processed in parallel.
+ *  - `partition`: serial per topic partition (Kafka's delivery-order guarantee), parallel across partitions.
+ *  - `topic`: serial per topic.
+ */
+export type KafkaOrdering = 'none' | 'partition' | 'topic';
+
+/** Queue for ordering="none" consumers that don't name their own queue. */
+const KAFKA_QUEUE_NAME = '_dbos_confluent_kafka_queue';
+/** Shared partitioned queue for ordered consumers: concurrency=1 is enforced per partition key. */
+const KAFKA_ORDERED_QUEUE_NAME = '_dbos_confluent_kafka_ordered_queue';
+
+const DEFAULT_BATCH_SIZE = 250;
+const MIN_RETRY_WAIT_MS = 1000;
+const MAX_RETRY_WAIT_MS = 60000;
+
+const sleepms = (ms: number, signal?: AbortSignal) =>
+  new Promise<void>((resolve) => {
+    if (signal?.aborted) {
+      resolve();
+      return;
+    }
+    const finish = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', finish);
+      resolve();
+    };
+    const timer = setTimeout(finish, ms);
+    signal?.addEventListener('abort', finish, { once: true });
+  });
 
 interface KafkaMethodConfig {
   topics?: Array<string | RegExp>;
   config?: KafkaJS.ConsumerConstructorConfig;
+  /** Custom queue the consumer's workflows run on, if the caller named one. */
   queueName?: string;
+  ordering?: KafkaOrdering;
+  batchSize?: number;
+  /** Queue this consumer actually enqueues onto: the custom queue, or an internal one. */
+  consumerQueueName?: string;
 }
 
 interface KafkaRetryConfig {
   maxRetries: number;
   retryTime: number;
   multiplier: number;
+}
+
+export interface KafkaConsumerOptions {
+  queueName?: string;
+  config?: KafkaJS.ConsumerConstructorConfig;
+  /** Ordering guarantee for this consumer's workflows. Defaults to `none`. */
+  ordering?: KafkaOrdering;
+  /** Maximum number of messages durably enqueued per batch. Defaults to 250. */
+  batchSize?: number;
 }
 
 function safeGroupName(className: string, methodName: string, topics: Array<string | RegExp>) {
@@ -34,10 +86,164 @@ function isKafkaError(e: unknown): e is KafkaError {
   return false;
 }
 
+function groupIdOf(config: KafkaJS.ConsumerConstructorConfig): string | undefined {
+  return config['group.id'] ?? config.kafkaJS?.groupId;
+}
+
+function isFalsey(value: unknown): boolean {
+  return value === false || (typeof value === 'string' && ['false', '0'].includes(value.trim().toLowerCase()));
+}
+
+/**
+ * Describe every topic two consumers would both subscribe to, comparing by what each pattern
+ * matches rather than by how it is spelled: a RegExp and a string naming the same topic are the
+ * same subscription to Kafka. Two different RegExps are left to the caller — deciding whether
+ * arbitrary patterns intersect is not worth rejecting a legitimate config over.
+ */
+function overlappingTopics(a: Array<string | RegExp>, b: Array<string | RegExp>): string[] {
+  const shared = new Set<string>();
+  for (const x of a) {
+    for (const y of b) {
+      if (typeof x === 'string' && typeof y === 'string') {
+        if (x === y) shared.add(x);
+      } else if (typeof x === 'string' && y instanceof RegExp) {
+        if (y.test(x)) shared.add(x);
+      } else if (x instanceof RegExp && typeof y === 'string') {
+        if (x.test(y)) shared.add(y);
+      } else if (x instanceof RegExp && y instanceof RegExp) {
+        if (x.toString() === y.toString()) shared.add(x.toString());
+      }
+    }
+  }
+  return Array.from(shared);
+}
+
+/**
+ * Return a copy of `config` with the offset settings DBOS depends on, never mutating the caller's.
+ *
+ * DBOS stores offsets itself after a batch is durably enqueued and relies on auto-commit to flush
+ * them, so a consumer that never auto-commits would reprocess its whole backlog on every restart.
+ * The client rejects `enable.auto.offset.store` outright (it owns offset storage), so drop it
+ * rather than fail on a config that is merely redundant.
+ */
+export function applyDBOSConsumerConfig(
+  config: KafkaJS.ConsumerConstructorConfig,
+  batchSize: number,
+  groupId: string,
+): KafkaJS.ConsumerConstructorConfig {
+  const resolved: KafkaJS.ConsumerConstructorConfig = {
+    // Defaults to 32, which would cap every batch well below batchSize.
+    'js.consumer.max.batch.size': batchSize,
+    ...config,
+    // group.id is optional to this client but not to DBOS: the workflow IDs are namespaced by it,
+    // so the consumer must join the very group those IDs claim.
+    'group.id': groupIdOf(config) ?? groupId,
+  };
+
+  // Only default the reset policy when the caller asked for nothing in either spelling. Setting it
+  // unconditionally would outrank kafkaJS.fromBeginning, which the client resolves into this very
+  // key, silently replaying the whole retained backlog for a consumer that asked to start at the end.
+  if (resolved['auto.offset.reset'] === undefined && config.kafkaJS?.fromBeginning === undefined) {
+    resolved['auto.offset.reset'] = 'earliest';
+  }
+
+  if ('enable.auto.offset.store' in resolved) {
+    if (!isFalsey(resolved['enable.auto.offset.store'])) {
+      DBOS.logger.warn(
+        'Ignoring enable.auto.offset.store: DBOS manages Kafka offset storage to avoid committing past durable workflow state.',
+      );
+    }
+    delete resolved['enable.auto.offset.store'];
+  }
+
+  // Note this must be checked after the spread: a top-level enable.auto.commit silently overrides
+  // kafkaJS.autoCommit, and a false value stores offsets that are never committed.
+  if (isFalsey(resolved['enable.auto.commit']) || resolved.kafkaJS?.autoCommit === false) {
+    DBOS.logger.warn(
+      'Overriding enable.auto.commit=false: DBOS relies on Kafka auto-commit to flush the offsets it stores after durable enqueue.',
+    );
+    resolved['enable.auto.commit'] = true;
+    if (resolved.kafkaJS?.autoCommit === false) {
+      resolved.kafkaJS = { ...resolved.kafkaJS, autoCommit: true };
+    }
+  }
+  return resolved;
+}
+
+/** Several receivers in one process share the internal queues, so resolve rather than construct. */
+function getKafkaQueue(): WorkflowQueue {
+  return getOrCreateQueue(KAFKA_QUEUE_NAME);
+}
+
+function getKafkaOrderedQueue(): WorkflowQueue {
+  // One shared partitioned queue: concurrency=1 is enforced per partition key, so execution is
+  // serial per key and parallel across keys.
+  return getOrCreateQueue(KAFKA_ORDERED_QUEUE_NAME, { partitionQueue: true, concurrency: 1 });
+}
+
+function partitionKeyFor(
+  ordering: KafkaOrdering,
+  groupId: string,
+  topic: string,
+  partition: number,
+): string | undefined {
+  switch (ordering) {
+    case 'partition':
+      return `${groupId}:${topic}:${partition}`;
+    case 'topic':
+      return `${groupId}:${topic}`;
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * Rethrow an error that cannot be blamed on one message.
+ *
+ * Building a workflow row fails per message only when that message's own content won't serialize.
+ * Every other cause — the consumer's function not being a registered workflow, DBOS being torn
+ * down — fails identically for every message, so dropping is never right: it would discard the
+ * entire stream and commit the offsets, losing the data with nothing but a log line.
+ */
+function rethrowIfNotPerMessage(e: unknown): void {
+  if (!(e instanceof DBOSErrors.DBOSInvalidWorkflowInputError)) throw e;
+}
+
+/** A consumer's display name; bare functions registered outside a class have no class name. */
+function qualifiedName(className: string, name: string): string {
+  return className ? `${className}.${name}` : name;
+}
+
+/**
+ * Run `operation` until it succeeds, backing off between attempts. Gives up only once `signal`
+ * is aborted, in which case it returns `undefined`.
+ */
+async function retryUntilSuccess<T>(
+  operation: () => Promise<T>,
+  description: string,
+  signal: AbortSignal,
+): Promise<{ value: T } | undefined> {
+  let waitMS = MIN_RETRY_WAIT_MS;
+  while (!signal.aborted) {
+    try {
+      return { value: await operation() };
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      DBOS.logger.error(
+        `Kafka consumer failed to ${description}: ${message}. Retrying in ${Math.round(waitMS / 1000)}s.`,
+      );
+      await sleepms(waitMS, signal);
+      waitMS = Math.min(waitMS * 2, MAX_RETRY_WAIT_MS);
+    }
+  }
+  return undefined;
+}
+
 export type ConsumerTopics = string | RegExp | Array<string | RegExp>;
 
 export class ConfluentKafkaReceiver implements DBOSLifecycleCallback {
   readonly #consumers = new Array<KafkaJS.Consumer>();
+  #abortController = new AbortController();
 
   constructor(
     private readonly config: KafkaJS.KafkaConfig,
@@ -46,12 +252,101 @@ export class ConfluentKafkaReceiver implements DBOSLifecycleCallback {
     DBOS.registerLifecycleCallback(this);
   }
 
+  /**
+   * Two consumers on the same group and topic would each receive only some of the messages, which
+   * is never what a caller wants; the same group on different topics only risks rebalance churn.
+   */
+  #validateConsumerGroups(registrations: { funcName: string; groupId: string; topics: Array<string | RegExp> }[]) {
+    for (let i = 0; i < registrations.length; i++) {
+      for (let j = i + 1; j < registrations.length; j++) {
+        const a = registrations[i];
+        const b = registrations[j];
+        if (a.groupId !== b.groupId) continue;
+        const shared = overlappingTopics(a.topics, b.topics);
+        if (shared.length > 0) {
+          throw new Error(
+            `Kafka consumers ${a.funcName} and ${b.funcName} share group.id ${a.groupId} and topic(s) ` +
+              `${shared.sort().join(', ')}, so each message would be delivered to only one of them. ` +
+              `Use distinct group IDs.`,
+          );
+        }
+        DBOS.logger.warn(
+          `Kafka consumers ${a.funcName} and ${b.funcName} share group.id ${a.groupId} with different topics. ` +
+            `This can cause rebalance churn; consider using distinct group IDs.`,
+        );
+      }
+    }
+  }
+
+  /**
+   * A custom queue must not be partitioned: ordering="none" enqueues no partition key, which a
+   * partitioned queue never dequeues, so its workflows would sit ENQUEUED forever.
+   */
+  async #validateConsumerQueue(funcName: string, queueName: string) {
+    let queue: WorkflowQueue | null;
+    try {
+      queue = await getQueue(queueName);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      DBOS.logger.warn(
+        `Could not check the configuration of Kafka consumer ${funcName}'s queue ${queueName}: ${message}`,
+      );
+      return;
+    }
+    // A consumer may name a queue that does not exist yet: it can be registered after launch.
+    if (queue === null) return;
+    if (queue.partitionQueue) {
+      throw new Error(
+        `Kafka consumer ${funcName}'s queue ${queueName} is a partitioned queue, which a custom Kafka ` +
+          `queue must not be; use ordering="partition" or "topic" for ordered processing`,
+      );
+    }
+  }
+
+  /** Stop tracking a consumer, so destroy() no longer tries to sweep it. */
+  #untrackConsumer(consumer: KafkaJS.Consumer) {
+    const idx = this.#consumers.indexOf(consumer);
+    if (idx >= 0) this.#consumers.splice(idx, 1);
+  }
+
   async initialize() {
+    this.#abortController = new AbortController();
     const { maxRetries, multiplier } = this.retryConfig;
     const clientId = this.config.clientId ?? 'dbos-confluent-kafka-receiver';
     const kafka = new KafkaJS.Kafka({ kafkaJS: { ...this.config, clientId } });
 
-    for (const regOp of DBOS.getAssociatedInfo(this)) {
+    const regOps = DBOS.getAssociatedInfo(this);
+    const registrations: { funcName: string; groupId: string; topics: Array<string | RegExp> }[] = [];
+    for (const regOp of regOps) {
+      const methodConfig = regOp.methodConfig as KafkaMethodConfig;
+      const topics = methodConfig.topics ?? [];
+      if (regOp.methodReg.registeredFunction === undefined || topics.length === 0) continue;
+      const { name, className } = regOp.methodReg;
+      // Fail here rather than per message: an unregistered function fails identically for every
+      // message, which the batch loop would mistake for a stream of poison messages and drop.
+      if (regOp.methodReg.workflowConfig === undefined) {
+        throw new Error(
+          `Kafka consumer ${qualifiedName(className, name)} is not a registered DBOS workflow. Register it ` +
+            `with DBOS.registerWorkflow, or apply the @DBOS.workflow() decorator beneath @consumer().`,
+        );
+      }
+      // Likewise identical for every message: batch enqueue cannot bind an instance to the workflow.
+      if (regOp.methodReg.isInstance) {
+        throw new Error(
+          `Kafka consumer ${qualifiedName(className, name)} is an instance method, which cannot be enqueued in a ` +
+            `batch. Make it static, or register a free function with registerConsumer.`,
+        );
+      }
+      const groupId =
+        (methodConfig.config ? groupIdOf(methodConfig.config) : undefined) ?? safeGroupName(className, name, topics);
+      registrations.push({ funcName: qualifiedName(className, name), groupId, topics });
+      if (methodConfig.queueName !== undefined) {
+        await this.#validateConsumerQueue(qualifiedName(className, name), methodConfig.queueName);
+      }
+    }
+    this.#validateConsumerGroups(registrations);
+
+    for (const regOp of regOps) {
       const func = regOp.methodReg.registeredFunction as KafkaMessageHandler<unknown> | undefined;
       if (func === undefined) {
         continue; // TODO: Log?
@@ -64,52 +359,126 @@ export class ConfluentKafkaReceiver implements DBOSLifecycleCallback {
       }
 
       const { name, className } = regOp.methodReg;
-      const config: KafkaJS.ConsumerConstructorConfig = methodConfig.config ?? {
-        'group.id': safeGroupName(className, name, topics),
-      };
-      const consumer = kafka.consumer({ ...config, 'auto.offset.reset': 'earliest' });
-      await consumer.connect();
+      const config: KafkaJS.ConsumerConstructorConfig = methodConfig.config ?? {};
+      const batchSize = methodConfig.batchSize ?? DEFAULT_BATCH_SIZE;
+      const groupId = groupIdOf(config) ?? safeGroupName(className, name, topics);
+      const consumer = kafka.consumer(applyDBOSConsumerConfig(config, batchSize, groupId));
+      // Track it before anything below can throw. Setup is not atomic — connect, subscribe and run
+      // all take time — and destroy() can only disconnect the consumers it can see, so registering
+      // late would strand a connected consumer whenever setup failed partway.
+      this.#consumers.push(consumer);
+      try {
+        await consumer.connect();
 
-      // A temporary workaround for https://github.com/tulios/kafkajs/pull/1558 until it gets fixed
-      // If topic auto-creation is on and you try to subscribe to a nonexistent topic, KafkaJS should retry until the topic is created.
-      // However, it has a bug where it won't. Thus, we retry instead.
-      let { retryTime } = this.retryConfig;
-      for (let i = 1; i <= maxRetries; i++) {
-        try {
-          await consumer.subscribe({ topics });
-          break;
-        } catch (e) {
-          if (isKafkaError(e) && e.code === 3 && i < maxRetries) {
-            await sleepms(retryTime);
-            retryTime *= multiplier;
-          } else {
-            throw e;
+        // A temporary workaround for https://github.com/tulios/kafkajs/pull/1558 until it gets fixed
+        // If topic auto-creation is on and you try to subscribe to a nonexistent topic, KafkaJS should retry until the topic is created.
+        // However, it has a bug where it won't. Thus, we retry instead.
+        let { retryTime } = this.retryConfig;
+        for (let i = 1; i <= maxRetries; i++) {
+          try {
+            await consumer.subscribe({ topics });
+            break;
+          } catch (e) {
+            if (isKafkaError(e) && e.code === 3 && i < maxRetries) {
+              await sleepms(retryTime);
+              retryTime *= multiplier;
+            } else {
+              throw e;
+            }
           }
+        }
+
+        const ordering = methodConfig.ordering ?? 'none';
+        const queueName = methodConfig.consumerQueueName ?? KAFKA_QUEUE_NAME;
+
+        // Unlike the kafkajs receiver, this one needs no crash-recovery handler: this client always
+        // retries internally and cannot stop for good (it rejects `retry.restartOnFailure` outright,
+        // and its worker loop logs and retries every error), so there is nothing to recreate. It also
+        // exposes no CRASH event to hook.
+        await consumer.run({
+          // DBOS resolves offsets itself, only after a batch is durably enqueued, so commits never
+          // outrun durable state.
+          eachBatchAutoResolve: false,
+          eachBatch: (payload) => this.#eachBatch(payload, func, groupId, ordering, batchSize, queueName),
+        });
+      } catch (e) {
+        // Nothing will retry this consumer, so release it here rather than leave a connected client
+        // holding native handles until an exit that a stranded consumer would itself prevent.
+        this.#untrackConsumer(consumer);
+        await consumer.disconnect().catch(() => {}); // Already failing; a disconnect error would mask it.
+        throw e;
+      }
+    }
+  }
+
+  async #eachBatch(
+    payload: KafkaJS.EachBatchPayload,
+    func: KafkaMessageHandler<unknown>,
+    groupId: string,
+    ordering: KafkaOrdering,
+    batchSize: number,
+    queueName: string,
+  ) {
+    const { batch } = payload;
+    const { topic, partition } = batch;
+    const signal = this.#abortController.signal;
+    const queuePartitionKey = partitionKeyFor(ordering, groupId, topic, partition);
+
+    for (let start = 0; start < batch.messages.length; start += batchSize) {
+      // A rebalance revoked this partition, or we're shutting down: stop without resolving offsets,
+      // so the remaining messages are redelivered.
+      if (!payload.isRunning() || payload.isStale() || signal.aborted) return;
+      const chunk = batch.messages.slice(start, start + batchSize);
+
+      const prepared: PreparedWorkflow[] = [];
+      for (const message of chunk) {
+        try {
+          prepared.push(
+            await prepareEnqueuedWorkflow(func, [topic, partition, message], {
+              queueName,
+              // This ID format is the dedup key for redelivered messages; never change it.
+              workflowID: `confluent-kafka-${topic}-${partition}-${groupId}-${message.offset}`,
+              queuePartitionKey,
+            }),
+          );
+        } catch (e) {
+          // Only this message is unprocessable, so drop it rather than wedge the partition behind
+          // it. Never drop for a reason that applies to every message (see rethrowIfNotPerMessage):
+          // that would silently discard the whole stream, offsets and all.
+          rethrowIfNotPerMessage(e);
+          const message_ = e instanceof Error ? e.message : String(e);
+          DBOS.logger.error(
+            `Dropping unprocessable Kafka message ${topic}[${partition}]@${message.offset}: ${message_}`,
+          );
         }
       }
 
-      await consumer.run({
-        eachMessage: async ({ topic, partition, message }) => {
-          DBOS.logger.debug(
-            `ConfluentKafkaReceiver message on topic ${topic} partition ${partition} offset ${message.offset}`,
-          );
-          try {
-            const workflowID = `confluent-kafka-${topic}-${partition}-${config['group.id']}-${message.offset}`;
-            const wfParams = { workflowID, queueName: methodConfig.queueName };
-            await DBOS.startWorkflow(func, wfParams)(topic, partition, message);
-          } catch (e) {
-            const message = e instanceof Error ? e.message : String(e);
-            DBOS.logger.error(`Error processing Kafka message ${message}`);
-            throw e;
-          }
-        },
-      });
+      if (prepared.length > 0) {
+        // Retry this same chunk until durable, rather than dropping it: nothing has been committed,
+        // so giving up here would lose these messages until the next rebalance.
+        const result = await retryUntilSuccess(
+          () => enqueueWorkflows(prepared),
+          'durably enqueue consumed messages',
+          signal,
+        );
+        // Aborted before the chunk was durable; offsets weren't resolved, so Kafka redelivers.
+        if (result === undefined) return;
+      }
 
-      this.#consumers.push(consumer);
+      // Every message in the chunk is now handled (enqueued or dropped), so advance past all of
+      // them: a poison message must not be redelivered forever.
+      for (const message of chunk) {
+        // Pass the leader epoch through. The client accepts it and asks callers to supply it, but
+        // only types the one-argument form, so a cast is needed. Without it the offset commits with
+        // epoch -1, which defeats the broker's log-truncation detection (KIP-320).
+        (payload.resolveOffset as (offset: string, leaderEpoch?: number) => void)(message.offset, message.leaderEpoch);
+      }
+      await payload.heartbeat();
     }
   }
 
   async destroy() {
+    this.#abortController.abort();
     const disconnectPromises = this.#consumers.splice(0, this.#consumers.length).map((c) => c.disconnect());
     await Promise.allSettled(disconnectPromises);
   }
@@ -122,7 +491,7 @@ export class ConfluentKafkaReceiver implements DBOSLifecycleCallback {
       const methodConfig = regOp.methodConfig as KafkaMethodConfig;
       const { name, className } = regOp.methodReg;
       for (const topic of methodConfig.topics ?? []) {
-        DBOS.logger.info(`    ${topic} -> ${className}.${name}`);
+        DBOS.logger.info(`    ${topic} -> ${qualifiedName(className, name)}`);
       }
     }
   }
@@ -130,20 +499,44 @@ export class ConfluentKafkaReceiver implements DBOSLifecycleCallback {
   registerConsumer<This, Return>(
     func: (this: This, ...args: KafkaArgs) => Promise<Return>,
     topics: ConsumerTopics,
-    options: FunctionName & {
-      queueName?: string;
-      config?: KafkaJS.ConsumerConstructorConfig;
-    } = {},
+    options: FunctionName & KafkaConsumerOptions = {},
   ) {
+    const ordering = options.ordering ?? 'none';
+    if (ordering !== 'none' && ordering !== 'partition' && ordering !== 'topic') {
+      throw new Error(`Invalid Kafka ordering "${String(ordering)}": must be "none", "partition", or "topic"`);
+    }
+    const batchSize = options.batchSize ?? DEFAULT_BATCH_SIZE;
+    if (!Number.isInteger(batchSize) || batchSize < 1) {
+      throw new Error('Kafka batchSize must be a positive integer');
+    }
+    if (options.queueName !== undefined && ordering !== 'none') {
+      throw new Error(
+        'A custom queue is only supported with ordering="none"; ordered consumers share an internal partitioned queue',
+      );
+    }
+
     const { regInfo } = DBOS.associateFunctionWithInfo(this, func, options);
 
     const kafkaRegInfo = regInfo as KafkaMethodConfig;
     kafkaRegInfo.topics = Array.isArray(topics) ? topics : [topics];
     kafkaRegInfo.queueName = options.queueName;
     kafkaRegInfo.config = options.config;
+    kafkaRegInfo.ordering = ordering;
+    kafkaRegInfo.batchSize = batchSize;
+
+    // Resolve the consumer's queue now, before launch: the dispatcher snapshots in-memory queues
+    // when it starts, and a queue created later would never be dispatched.
+    if (ordering === 'none') {
+      kafkaRegInfo.consumerQueueName = options.queueName ?? getKafkaQueue().name;
+    } else {
+      kafkaRegInfo.consumerQueueName = getKafkaOrderedQueue().name;
+    }
+    // This process runs the consumer and enqueues onto that queue, so it must poll it even under
+    // a listenQueues filter.
+    registerPollerQueue(kafkaRegInfo.consumerQueueName);
   }
 
-  consumer(topics: ConsumerTopics, options: { queueName?: string; config?: KafkaJS.ConsumerConstructorConfig } = {}) {
+  consumer(topics: ConsumerTopics, options: KafkaConsumerOptions = {}) {
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const $this = this;
     function methodDecorator<This, Return>(
@@ -155,8 +548,7 @@ export class ConfluentKafkaReceiver implements DBOSLifecycleCallback {
         $this.registerConsumer(descriptor.value, topics, {
           ctorOrProto: target,
           name: String(propertyKey),
-          queueName: options.queueName,
-          config: options.config,
+          ...options,
         });
       }
       return descriptor;

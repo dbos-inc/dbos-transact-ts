@@ -92,7 +92,9 @@ function isNativeSQLiteModule(value: unknown): value is NativeSQLiteModule {
 }
 
 function sqliteNowMsExpr(): string {
-  return "(CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER))";
+  // Keep the calculation in integer milliseconds. julianday() uses floating-point
+  // arithmetic and can occasionally round the current time down by one millisecond.
+  return "(CAST(strftime('%s', 'now') AS INTEGER) * 1000 + CAST(substr(strftime('%f', 'now'), 4, 3) AS INTEGER))";
 }
 
 export function isSQLiteSystemDatabaseUrl(databaseUrl: string): boolean {
@@ -121,13 +123,15 @@ function sqliteFileFromUrl(databaseUrl: string): string {
 function normalizeValue(value: unknown): SQLiteValue {
   if (value === undefined) return null;
   if (typeof value === 'boolean') return value ? 1 : 0;
-  if (
-    value === null ||
-    typeof value === 'string' ||
-    typeof value === 'number' ||
-    typeof value === 'bigint' ||
-    Buffer.isBuffer(value)
-  ) {
+  if (typeof value === 'bigint') {
+    // node:sqlite only binds signed 64-bit integers. Preserve larger sequence
+    // values exactly as decimal text rather than coercing them to a lossy number.
+    if (value > 9223372036854775807n || value < -9223372036854775808n) {
+      return value.toString();
+    }
+    return value;
+  }
+  if (value === null || typeof value === 'string' || typeof value === 'number' || Buffer.isBuffer(value)) {
     return value;
   }
   return JSON.stringify(value);
@@ -725,7 +729,7 @@ function currentSQLiteSchemaStatements(): ReadonlyArray<string> {
       workflow_fn_name TEXT NOT NULL,
       key TEXT NOT NULL,
       value TEXT,
-      update_seq NUMERIC,
+      update_seq TEXT,
       update_time NUMERIC,
       PRIMARY KEY (service_name, workflow_fn_name, key)
     )`,
@@ -815,6 +819,7 @@ function translateQuery(sql: string, params: unknown[], schemaName: string): { s
   translated = translateReturningQualifiers(translated);
   translated = translateEventDispatchUpsertExpressions(translated);
   translated = translateBooleanLiterals(translated);
+  translated = translateOffsetWithoutLimit(translated);
   translated = translateAnyArrayExpressions(translated, params, extras);
 
   return bindSQLiteParameters(translated, params, extras.values);
@@ -898,6 +903,14 @@ function translateBooleanLiterals(sql: string): string {
   return sql.replace(/\bTRUE\b/g, '1').replace(/\bFALSE\b/g, '0');
 }
 
+function translateOffsetWithoutLimit(sql: string): string {
+  const offsetClause = /\sOFFSET\s+(?=\$\d+|\d+)/i;
+  if (offsetClause.test(sql) && !/\bLIMIT\b/i.test(sql)) {
+    return sql.replace(offsetClause, (match) => match.replace(/OFFSET/i, 'LIMIT -1 OFFSET'));
+  }
+  return sql;
+}
+
 function translateAnyArrayExpressions(sql: string, params: unknown[], extras: SQLiteExtraParams): string {
   return sql.replace(/([A-Za-z0-9_".]+)\s*=\s*ANY\(\$(\d+)\)/g, (_match, column: string, index: string) => {
     const value = getPositionalParam(params, index);
@@ -949,8 +962,13 @@ function getExtraParam(extras: ReadonlyMap<string, SQLiteValue>, token: string):
 }
 
 function mapSQLiteError(e: unknown): Error {
-  if (!(e instanceof Error)) return new Error(String(e));
-  const err = e as Error & { code?: string };
+  const sqliteError = e as { code?: unknown; message?: unknown } | null;
+  const message = typeof sqliteError?.message === 'string' ? sqliteError.message : String(e);
+  const err: Error & { code?: string } =
+    e instanceof Error ? (e as Error & { code?: string }) : Object.assign(new Error(message), {});
+  if (typeof sqliteError?.code === 'string') {
+    err.code = sqliteError.code;
+  }
   if (
     err.code === 'SQLITE_CONSTRAINT_UNIQUE' ||
     err.code === 'SQLITE_CONSTRAINT_PRIMARYKEY' ||

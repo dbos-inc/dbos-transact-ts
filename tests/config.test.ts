@@ -472,6 +472,35 @@ describe('dbos-config', () => {
       ).toThrow('Custom systemDatabasePool is not supported for SQLite system databases');
     });
 
+    test('translate validates maxConcurrentQueueDispatches', () => {
+      const internalConfig = translateDbosConfig({
+        name: 'dbostest',
+        maxConcurrentQueueDispatches: 4,
+      });
+      expect(internalConfig.maxConcurrentQueueDispatches).toBe(4);
+      // Unset is allowed (dispatcher defaults it to 3).
+      expect(translateDbosConfig({ name: 'dbostest' }).maxConcurrentQueueDispatches).toBeUndefined();
+      // Every non-positive-integer value is rejected.
+      for (const bad of [0, -1, 2.5, NaN, Infinity]) {
+        expect(() => translateDbosConfig({ name: 'dbostest', maxConcurrentQueueDispatches: bad })).toThrow(
+          'maxConcurrentQueueDispatches must be a positive integer',
+        );
+      }
+    });
+
+    test('translate validates notificationCoalesceMs', () => {
+      // A valid value is threaded through.
+      expect(translateDbosConfig({ name: 'dbostest', notificationCoalesceMs: 1 }).notificationCoalesceMs).toBe(1);
+      // Unset is allowed (the system database defaults it).
+      expect(translateDbosConfig({ name: 'dbostest' }).notificationCoalesceMs).toBeUndefined();
+      // Invalid values are rejected, including NaN/inf which slip past a bare < 1 check.
+      for (const bad of [0.5, 0, -1, NaN, Infinity]) {
+        expect(() => translateDbosConfig({ name: 'dbostest', notificationCoalesceMs: bad })).toThrow(
+          'notificationCoalesceMs must be a finite number at least 1 millisecond',
+        );
+      }
+    });
+
     test('translate passes through a custom logger', () => {
       const myLogger = { info: () => {}, debug: () => {}, warn: () => {}, error: () => {} };
       let internalConfig = translateDbosConfig({ name: 'dbostest', logger: myLogger });

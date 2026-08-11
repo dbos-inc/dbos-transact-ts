@@ -1,6 +1,29 @@
-import { inspect } from 'node:util';
+import { inspect, type InspectOptions } from 'node:util';
 import { serializeError } from 'serialize-error';
 import type { StepInfo, WorkflowStatus } from '../workflow';
+
+// Options for rendering a value into its human-readable Conductor string
+// representation. Unlike inspect's defaults, these never truncate:
+//   - `depth: null` keeps nested objects/arrays fully expanded instead of
+//     collapsing deeper levels to `[Object]`/`[Array]` (issue #1313).
+//   - lifting the array/string length caps avoids hiding large payloads.
+// inspect (rather than JSON.stringify) is intentional: values may contain
+// types that are not JSON-serializable — BigInt, Date, Map/Set, circular
+// references — which must still render rather than break the view (issue #1167).
+const CONDUCTOR_INSPECT_OPTIONS: InspectOptions = {
+  depth: null,
+  maxArrayLength: null,
+  maxStringLength: null,
+};
+
+/**
+ * Render a value into the human-readable string representation Conductor
+ * displays for workflow/step inputs, outputs, and other context. Never throws
+ * and never truncates.
+ */
+export function inspectForConductor(value: unknown): string {
+  return inspect(value, CONDUCTOR_INSPECT_OPTIONS);
+}
 
 export enum MessageType {
   EXECUTOR_INFO = 'executor_info',
@@ -249,8 +272,8 @@ export class WorkflowsOutput {
     this.AssumedRole = info.assumedRole ? info.assumedRole : undefined;
     this.AuthenticatedRoles =
       (info.authenticatedRoles ?? []).length > 0 ? JSON.stringify(info.authenticatedRoles) : undefined;
-    this.Input = info.input ? inspect(info.input) : undefined;
-    this.Output = info.output ? inspect(info.output) : undefined;
+    this.Input = info.input ? inspectForConductor(info.input) : undefined;
+    this.Output = info.output ? inspectForConductor(info.output) : undefined;
     this.Error = info.error ? JSON.stringify(serializeError(info.error)) : undefined;
     this.CreatedAt = info.createdAt ? String(info.createdAt) : undefined;
     this.UpdatedAt = info.updatedAt ? String(info.updatedAt) : undefined;
@@ -286,7 +309,7 @@ export class WorkflowSteps {
   constructor(info: StepInfo) {
     this.function_id = info.functionID;
     this.function_name = info.name;
-    this.output = info.output ? inspect(info.output) : undefined;
+    this.output = info.output ? inspectForConductor(info.output) : undefined;
     this.error = info.error ? JSON.stringify(serializeError(info.error)) : undefined;
     this.child_workflow_id = info.childWorkflowID ?? undefined;
     this.started_at_epoch_ms = info.startedAtEpochMs !== undefined ? String(info.startedAtEpochMs) : undefined;

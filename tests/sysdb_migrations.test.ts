@@ -1,7 +1,7 @@
 import { Client } from 'pg';
 import { DBMigration, getCurrentSysDBVersion, runSysMigrationsPg } from '../src/sysdb_migrations/migration_runner';
 import { allMigrations } from '../src/sysdb_migrations/internal/migrations';
-import { generateDBOSTestConfig } from './helpers';
+import { generateDBOSTestConfig, usingSQLite } from './helpers';
 
 const TEST_SCHEMA = 'dbos_migration_test';
 
@@ -27,7 +27,15 @@ async function indexExists(client: Client, name: string): Promise<boolean> {
   return res.rows[0].exists;
 }
 
-describe('sysdb migration runner', () => {
+async function indexDefinition(client: Client, name: string): Promise<string | undefined> {
+  const res = await client.query<{ indexdef: string }>(
+    `SELECT indexdef FROM pg_indexes WHERE schemaname = $1 AND indexname = $2`,
+    [TEST_SCHEMA, name],
+  );
+  return res.rows[0]?.indexdef;
+}
+
+(usingSQLite() ? describe.skip : describe)('sysdb migration runner', () => {
   let client: Client;
 
   beforeAll(async () => {
@@ -66,10 +74,17 @@ describe('sysdb migration runner', () => {
     expect(await indexExists(client, 'idx_workflow_status_in_flight')).toBe(true);
     expect(await indexExists(client, 'idx_workflow_status_rate_limited')).toBe(true);
     expect(await indexExists(client, 'uq_workflow_status_dedup_id')).toBe(true);
+    expect(await indexExists(client, 'idx_workflow_status_partition_dequeue_v2')).toBe(true);
+    // v2 must carry the workflow_uuid tiebreaker, which is what keeps the batched head probe index-provided.
+    expect(await indexDefinition(client, 'idx_workflow_status_partition_dequeue_v2')).toContain(
+      'priority, created_at, workflow_uuid',
+    );
 
     expect(await indexExists(client, 'workflow_status_status_index')).toBe(false);
     expect(await indexExists(client, 'workflow_status_executor_id_index')).toBe(false);
     expect(await indexExists(client, 'idx_workflow_status_queue_status_started')).toBe(false);
+    // Superseded by v2, so the original name must be gone.
+    expect(await indexExists(client, 'idx_workflow_status_partition_dequeue')).toBe(false);
   });
 
   test('per-version bump on partial failure resumes on retry', async () => {

@@ -1,5 +1,5 @@
 import { DBOS, DBOSClient } from '../src';
-import { generateDBOSTestConfig } from './helpers';
+import { generateDBOSTestConfig, usingSQLite } from './helpers';
 import { Client } from 'pg';
 
 interface ExistenceCheck {
@@ -19,7 +19,7 @@ class WorkflowTestClass {
   }
 }
 
-describe('custom-schema-tests', () => {
+(usingSQLite() ? describe.skip : describe)('custom-schema-tests', () => {
   beforeAll(async () => {
     // Clean up any existing test database
     const config = generateDBOSTestConfig();

@@ -3,6 +3,7 @@ import {
   type DuplicationPolicy,
   type WorkflowStatusInternal,
   type WorkflowScheduleInternal,
+  type WorkflowScheduleUpdate,
   type VersionInfo,
   type DebounceParams,
   type DebounceResult,
@@ -537,7 +538,7 @@ export class DBOSClient {
    * @param destinationID - The ID of the destination workflow.
    * @param message - The message to send. This can be any serializable object.
    * @param topic - An optional topic to send the message to. If not provided, the default topic will be used.
-   * @param idempotencyKey - An optional idempotency key to ensure that the message is only sent once.
+   * @param idempotencyKey - An optional idempotency key to ensure that the message is only sent once per destination.
    * @returns A Promise that resolves when the message has been sent.
    */
   async send<T>(
@@ -547,14 +548,13 @@ export class DBOSClient {
     idempotencyKey?: string,
     options?: ClientSendOptions,
   ): Promise<void> {
-    const messageUUID = idempotencyKey ?? randomUUID();
     const sermsg = await serializeValue(message, this.serializer, options?.serializationType);
     await this.systemDatabase.sendDirect(
       destinationID,
       sermsg.serializedValue,
       topic,
       sermsg.serialization,
-      messageUUID,
+      idempotencyKey,
     );
   }
 
@@ -686,6 +686,7 @@ export class DBOSClient {
   async *readStream<T>(workflowID: string, key: string): AsyncGenerator<T, void, unknown> {
     const payload = `${workflowID}::${key}`;
     let offset = 0;
+    let finalRead = false;
 
     while (true) {
       // Register a listener before reading so a notification arriving between the
@@ -699,33 +700,36 @@ export class DBOSClient {
       });
       const cbr = this.systemDatabase.streamsMap.registerCallback(payload, resolveNotification!);
       try {
-        let value: { serializedValue: string; serialization: string | null };
-        try {
-          value = await this.systemDatabase.readStream(workflowID, key, offset);
-        } catch (error: unknown) {
-          if (error instanceof Error && error.message.includes('No value found')) {
-            // No value yet: stop if the workflow is done, else wait for a
-            // notification, bounded by the polling interval so termination
-            // (which fires no notification) is still noticed.
-            const status = await this.getWorkflow(workflowID);
-            if (!status || !isWorkflowActive(status.status)) {
-              break;
-            }
-            const { promise, cancel } = cancellableSleep(1000); // 1 second polling fallback
-            try {
-              await Promise.race([messagePromise, promise]);
-            } finally {
-              cancel();
-            }
-            continue;
-          }
-          throw error;
-        }
-        if (value.serializedValue === DBOS_STREAM_CLOSED_SENTINEL) {
+        // One round trip for both the value and the workflow's status.
+        const { status, value } = await this.systemDatabase.readStreamValue(workflowID, key, offset);
+        if (status === null) {
+          // An unknown workflow ends the generator quietly (the in-process reader raises instead).
           break;
         }
-        yield (await deserializeValue(value.serializedValue, value.serialization, this.serializer)) as T;
-        offset += 1;
+        if (value !== undefined) {
+          if (value.serializedValue === DBOS_STREAM_CLOSED_SENTINEL) {
+            return;
+          }
+          yield (await deserializeValue(value.serializedValue, value.serialization, this.serializer)) as T;
+          offset += 1;
+          // More may be buffered; read the next offset before waiting.
+          continue;
+        }
+        if (finalRead) {
+          break;
+        }
+        // No value yet: stop if the workflow is done, else wait for a notification (bounded by the poll interval so termination is noticed).
+        if (!isWorkflowActive(status)) {
+          // Cancel/timeout set a terminal status while the workflow may still be writing, so drain to the first empty offset before stopping.
+          finalRead = true;
+          continue;
+        }
+        const { promise, cancel } = cancellableSleep(1000); // 1 second polling fallback
+        try {
+          await Promise.race([messagePromise, promise]);
+        } finally {
+          cancel();
+        }
       } finally {
         this.systemDatabase.streamsMap.deregisterCallback(cbr);
       }
@@ -788,6 +792,32 @@ export class DBOSClient {
 
   async resumeSchedule(name: string): Promise<void> {
     await this.systemDatabase.setScheduleStatus(name, 'ACTIVE');
+  }
+
+  async updateSchedule(
+    name: string,
+    updates: {
+      schedule?: string;
+      context?: unknown;
+      automaticBackfill?: boolean;
+      cronTimezone?: string | null;
+      queueName?: string | null;
+    },
+  ): Promise<void> {
+    if (updates.schedule !== undefined) {
+      validateCrontab(updates.schedule);
+    }
+    if (updates.cronTimezone) {
+      validateTimezone(updates.cronTimezone);
+    }
+    // Only the keys the caller provided are updated. An `undefined` value leaves a field unchanged; `null` clears a nullable field. Including `context` (even as `undefined`) sets it, since `undefined` is a valid empty context.
+    const internalUpdates: WorkflowScheduleUpdate = {};
+    if (updates.schedule !== undefined) internalUpdates.schedule = updates.schedule;
+    if ('context' in updates) internalUpdates.context = await this.serializer.stringify(updates.context);
+    if (updates.automaticBackfill !== undefined) internalUpdates.automaticBackfill = updates.automaticBackfill;
+    if (updates.cronTimezone !== undefined) internalUpdates.cronTimezone = updates.cronTimezone;
+    if (updates.queueName !== undefined) internalUpdates.queueName = updates.queueName;
+    await this.systemDatabase.updateSchedule(name, internalUpdates);
   }
 
   async applySchedules(
