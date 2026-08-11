@@ -1061,7 +1061,7 @@ describe('custom-pool-test', () => {
   test('custom-pool-test', async () => {
     const baseConfig = generateDBOSTestConfig();
     // Destroy the system database
-    await dropPGDatabase({ urlToDrop: baseConfig.systemDatabaseUrl, logger: () => {} });
+    await dropPGDatabase(baseConfig.systemDatabaseUrl!, () => {});
     const systemDatabaseURL = baseConfig.systemDatabaseUrl;
     assert(systemDatabaseURL);
     let pool = new Pool({ connectionString: systemDatabaseURL });

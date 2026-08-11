@@ -4,7 +4,7 @@ import { sleepms } from '../src/utils';
 import { isValidDatabaseName, translateDbosConfig } from '../src/config';
 import { ensureSystemDatabase, SystemDatabase } from '../src/system_database';
 import { GlobalLogger } from '../src/telemetry/logs';
-import { dropPGDatabase, maskDatabaseUrl } from '../src/datasource';
+import { deriveDatabaseUrl, dropPGDatabase, maskDatabaseUrl } from '../src/datasource';
 import { Client } from 'pg';
 
 /* DB management helpers */
@@ -45,10 +45,7 @@ export async function setUpDBOSTestSysDb(config: DBOSConfig) {
   config.name ??= 'dbostest';
   const internalConfig = translateDbosConfig(config);
 
-  const r = await dropPGDatabase({ urlToDrop: internalConfig.systemDatabaseUrl, logger: () => {} });
-  if (r.status !== 'did_not_exist' && r.status !== 'dropped') {
-    throw new Error(`Unable to drop ${maskDatabaseUrl(internalConfig.systemDatabaseUrl)}`);
-  }
+  await dropPGDatabase(internalConfig.systemDatabaseUrl, () => {});
   await ensureSystemDatabase(
     internalConfig.systemDatabaseUrl,
     new GlobalLogger(),
@@ -172,10 +169,7 @@ export async function reexecuteWorkflowById(
 }
 
 export async function dropDatabase(connectionString: string, database?: string) {
-  const r = await dropPGDatabase({ urlToDrop: connectionString, dbToDrop: database });
-  if (r.status !== 'did_not_exist' && r.status !== 'dropped') {
-    throw new Error(`Unable to drop ${maskDatabaseUrl(connectionString)}`);
-  }
+  await dropPGDatabase(database ? deriveDatabaseUrl(connectionString, database) : connectionString, () => {});
 }
 
 export async function causeChaos(db: string): Promise<void> {

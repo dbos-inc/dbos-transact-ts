@@ -200,23 +200,12 @@ program
     }
     const urls = await getDatabaseURLs(options.sysDbUrl);
 
-    const res = await dropPGDatabase({
-      urlToDrop: urls.systemDatabaseURL,
-      logger: (msg: string) => console.log(msg),
-    });
-
     const sysDbName = getDatabaseNameFromUrl(urls.systemDatabaseURL);
-
-    if (res.status === 'dropped') {
+    try {
+      await dropPGDatabase(urls.systemDatabaseURL, (msg: string) => console.log(msg));
       console.log(`Dropped '${sysDbName}'.  To use DBOS in the future, you will need to create a new system database.`);
-    } else if (res.status === 'did_not_exist') {
-      console.log(
-        `Database '${sysDbName} was already dropped'.  To use DBOS in the future, you will need to create a new system database.`,
-      );
-    } else if (res.status === 'failed') {
-      console.log(
-        `DROP operation for '${sysDbName} could not be attempted: \n ${res.notes.join('\n')} ${res.hint ?? ''}.`,
-      );
+    } catch (e) {
+      console.log(`Could not drop '${sysDbName}': ${(e as Error).message}`);
     }
   });
 

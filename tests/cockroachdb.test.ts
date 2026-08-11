@@ -51,10 +51,7 @@ describeIf('cockroachdb', () => {
     url.pathname = '/dbos_test';
     const systemDatabaseUrl = url.toString();
 
-    const dropResult = await dropPGDatabase({ urlToDrop: systemDatabaseUrl, logger: () => {} });
-    if (dropResult.status !== 'dropped' && dropResult.status !== 'did_not_exist') {
-      throw new Error(`Failed to drop dbos_test: ${dropResult.message}`);
-    }
+    await dropPGDatabase(systemDatabaseUrl, () => {});
     await ensurePGDatabase(systemDatabaseUrl, () => {});
     config = {
       name: 'cockroachdb-test',

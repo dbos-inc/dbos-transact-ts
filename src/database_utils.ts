@@ -1,178 +1,25 @@
 import { Client } from 'pg';
 
 /**
- * The logical thing to provide is the name of the DB to drop (`dbToDrop`) and a connection string with permission (`adminUrl`)
- * However, you can specify `urlToDrop` and we will do our best to find a way to connect and drop it.
+ * Drop `databaseUrl`'s database, via the admin (`/postgres`) database on the same server.
+ * Throws if the database still exists afterwards.
  */
-export interface DropDatabaseOptions {
-  /** Name of the database to drop */
-  dbToDrop?: string;
-  /** URL of the database to drop */
-  urlToDrop?: string;
-  /** Admin/alternate DB URL on the same server. If omitted, we'll try `<urlToDrop but with /postgres>` */
-  adminUrl?: string;
-  /** Optional logger (default: console.log) */
-  logger?: (msg: string) => void;
-  /** Also try /template1 if /postgres fails (default: true) */
-  tryTemplate1Fallback?: boolean;
-}
-
-/**
- * Result of a `dropPostgresDatabase` call.
- * Status of `dropped` or `did_not_exist` is a "success",
- *  from the perspective that we are completely sure the DB is not there at the end.
- * Status of `failed` means that the DB still exists,  or we cannot say.
- *  This means "failure" in the sense that the postcondition of a nonexistent DB is not verified.
- */
-
-export type DropDatabaseResult =
-  | { status: 'dropped' | 'did_not_exist'; notes: string[]; message: string }
-  | { status: 'failed'; notes: string[]; hint?: string; message: string };
-/**
- * Drop a postgres database from a postgres server.  This requires a target DB name,
- *  and a way to connect to its server with privileges to issue the drop.  See `opts`.
- * Environment variables are not currently considered.
- *
- * @param opts - Options for connecting to DB and issuing the drop
- * @returns `DropDatabaseResult` indicating success, failures, and any notes or hints
- */
-
-export async function dropPGDatabase(opts: DropDatabaseOptions = {}): Promise<DropDatabaseResult> {
-  if (!opts.urlToDrop && !opts.dbToDrop) {
-    throw new TypeError(`dropPGDatabase requires a target database name or URL to DROP`);
-  }
-
-  const notes: string[] = [];
-  const log = (msg: string) => {
-    notes.push(msg);
-    (opts.logger ?? console.log)(msg);
-  };
-
-  function fail(msg: string, hint?: string): DropDatabaseResult {
-    log(`FAIL: ${msg}${hint ? ` | HINT: ${hint}` : ''}`);
-    return { message: msg, status: 'failed', notes, hint };
-  }
-
-  const adminUrl = opts.adminUrl ?? (opts.urlToDrop ? deriveDatabaseUrl(opts.urlToDrop, 'postgres') : undefined);
-
-  if (!adminUrl) {
-    // We could consider the environment, but let's not right now.
-    throw new TypeError(
-      `dropPostgresDatabase requires a connection string to a database with permission to perform the DROP`,
-    );
-  }
-
-  const maybeTemplate1Url = deriveDatabaseUrl(opts.urlToDrop ?? adminUrl, 'template1');
-  const tryTemplate1Fallback = opts.tryTemplate1Fallback ?? true;
-
-  const targetDb = opts.dbToDrop ?? getDatabaseNameFromUrl(opts.urlToDrop!);
-  if (!targetDb) {
-    return fail('Target URL has no database name in the path (e.g., /mydb).', 'Fix the target URL and retry.');
-  }
-
-  log(`Target DB to drop: ${targetDb}`);
-  log(`Admin URL (planned): ${maskDatabaseUrl(adminUrl)}`);
-
-  // 1) Try admin connection first (best detection for existence & privileges)
-  let admin = await connectToPGDatabase(adminUrl, log);
-  if (!admin && tryTemplate1Fallback) {
-    log(`Admin connect failed. Trying template1 as a fallback...`);
-    admin = await connectToPGDatabase(maybeTemplate1Url, log);
-  }
-
-  // Helper to check DB existence via catalog (requires admin connection)
-  const checkExistsViaAdmin = async (): Promise<boolean | 'unknown'> => {
-    if (!admin) return 'unknown';
-    const { rows } = await admin.query<{ exists: boolean }>(
-      `SELECT EXISTS (SELECT 1 FROM pg_database WHERE datname = $1) AS exists`,
-      [targetDb],
-    );
-    return rows[0]?.exists ?? false;
-  };
-
+export async function dropPGDatabase(databaseUrl: string, log: (msg: string) => void): Promise<void> {
+  const quoted = quotePGIdentifier(getDatabaseNameFromUrl(databaseUrl));
+  const client = new Client(getPGClientConfig(deriveDatabaseUrl(databaseUrl, 'postgres')));
+  // An 'error' event with no listener would take down the process.
+  client.on('error', (err: Error) => log(`Unexpected error in admin client: ${err}`));
   try {
-    // If admin connected, see if the DB exists; if not, this is an early success.
-    let exists: boolean | 'unknown' = 'unknown';
-    if (admin) {
-      exists = await checkExistsViaAdmin();
-      if (exists === false) {
-        log(`DB "${targetDb}" does not exist (confirmed via catalog).`);
-        return { status: 'did_not_exist', notes, message: 'Success (already dropped)' };
-      }
-    }
-
-    // If we couldn't connect as admin, try connecting to target to distinguish "doesn't exist" from failure to connect.
-    if (!admin) {
-      const probe = await connectToPGAndReportOutcome(
-        opts.urlToDrop ?? deriveDatabaseUrl(adminUrl, targetDb),
-        log,
-        'probe target (existence test)',
-      );
-      if (probe.result === 'ok') {
-        // We can reach the target DB—so it exists—but we’re connected *to* it; we cannot DROP from within.
-        await probe.client.end().catch(() => {});
-        return fail(
-          `Database "${targetDb}" exists, but we could not establish an admin connection to drop it.`,
-          `Provide an admin/alternate DB URL (same server) with privileges to DROP DATABASE`,
-        );
-      } else if (probe.code === '3D000') {
-        log(`DB "${targetDb}" does not exist (error 3D000 while connecting). Database already does not exist.`);
-        return { status: 'did_not_exist', notes, message: 'Success (already dropped)' };
-      } else {
-        // Ambiguous: not proven missing, no admin path to check or drop.
-        return fail(
-          `Could not establish any admin connection, and target connect failed with ${probe.code ?? probe.result}.`,
-          networkOrAuthHint(probe.code),
-        );
-      }
-    }
-
-    // 2) We have an admin connection and the DB likely exists. Check privileges upfront (nice error).
-    const who = await currentDBUserIdentity(admin);
-    const owner = await getPGDatabaseOwner(admin, targetDb);
-
-    if (!who.isSuperuser && owner && owner !== who.user) {
-      log(`Ownership check: DB owned by "${owner}", current_user is "${who.user}" (superuser=${who.isSuperuser}).`);
-      // We can still try (maybe you have sufficient rights via membership), but warn early.
-      log(`Warning: You might lack privileges to DROP this database unless you are the owner or superuser.`);
-    }
-
-    // 3) Attempt the drop
+    await client.connect();
     try {
-      log(`Attempting DROP ... WITH (FORCE).`);
-      await dropWithForce(admin, targetDb);
-    } catch (err) {
-      const e = err as Error & { code: string };
-      // If FORCE path failed due to syntax (older server), fallback once.
-      if (isForceSyntaxError(e)) {
-        log(`WITH (FORCE) not supported by server (syntax error). Falling back to terminate-and-drop.`);
-        try {
-          await terminateAndDrop(admin, targetDb, 3000, log);
-        } catch (err2) {
-          const e2 = err2 as Error & { code: string };
-          await admin.end().catch(() => {});
-          return fail(`Drop failed even after fallback: ${shortenErr(e2)}`, createDropHintFromSqlState(e2?.code));
-        }
-      } else {
-        await admin.end().catch(() => {});
-        return fail(`Drop failed: ${shortenErr(e)}`, createDropHintFromSqlState(e?.code));
-      }
-    }
-
-    // 4) Verify postcondition
-    const finalExists = await checkExistsViaAdmin();
-    if (finalExists === false) {
-      log(`Verified: database "${targetDb}" is gone.`);
-      return { status: 'dropped', notes, message: 'Success (dropped)' };
-    } else if (finalExists === true) {
-      return fail(`After drop attempt, database "${targetDb}" still exists.`, `Terminate all sessions and retry.`);
-    } else {
-      // Unknown (shouldn't happen with admin connected)
-      log(`Could not verify drop due to unexpected state.`);
-      return { status: 'dropped', notes, message: 'Success (dropped)' }; // we did our best; treat as success if we didn't see errors
+      await client.query(`DROP DATABASE IF EXISTS ${quoted} WITH (FORCE)`);
+    } catch (e) {
+      // CockroachDB and Postgres before 13 reject WITH (FORCE), and drop an idle database without it.
+      if ((e as { code?: string }).code !== '42601') throw e;
+      await client.query(`DROP DATABASE IF EXISTS ${quoted}`);
     }
   } finally {
-    await admin?.end().catch(() => {});
+    await client.end().catch(() => {});
   }
 }
 
@@ -248,25 +95,6 @@ export function maskDatabaseUrl(urlStr: string): string {
   }
 }
 
-export async function connectToPGDatabase(url: string, log: (m: string) => void): Promise<Client | null> {
-  log(`Connecting: ${maskDatabaseUrl(url)}`);
-  const client = new Client(getPGClientConfig(url));
-  client.on('error', (err: Error) => {
-    log(`Unexpected error in startup client: ${err}`);
-  });
-  try {
-    await client.connect();
-    return client;
-  } catch (err) {
-    const e = err as Error & { code?: string };
-    log(`Connect failed: ${shortenErr(e)}${e?.code ? ` (code ${e.code})` : ''}`);
-    try {
-      await client.end();
-    } catch {}
-    return null;
-  }
-}
-
 export async function connectToPGAndReportOutcome(
   url: string,
   log: (m: string) => void,
@@ -289,129 +117,6 @@ export async function connectToPGAndReportOutcome(
   }
 }
 
-function shortenErr(e: Error): string {
-  const m = e?.message ?? String(e);
-  return m.length > 500 ? `${m.slice(0, 500)}…` : m;
-}
-
-export async function currentDBUserIdentity(client: Client): Promise<{ user: string; isSuperuser: boolean }> {
-  const { rows: userRows } = await client.query<{ user: string }>(`SELECT current_user AS user`);
-  const user = userRows[0]?.user ?? '';
-  const { rows: roleRows } = await client.query<{ rolsuper: boolean }>(
-    `SELECT rolsuper FROM pg_roles WHERE rolname = current_user`,
-  );
-  return { user, isSuperuser: !!roleRows[0]?.rolsuper };
-}
-
-export async function getPGDatabaseOwner(admin: Client, dbName: string): Promise<string | null> {
-  const { rows } = await admin.query<{ owner: string }>(
-    `SELECT r.rolname AS owner
-     FROM pg_database d JOIN pg_roles r ON r.oid = d.datdba
-     WHERE d.datname = $1`,
-    [dbName],
-  );
-  return rows[0]?.owner ?? null;
-}
-
 function quotePGIdentifier(name: string): string {
   return `"${name.replace(/"/g, '""')}"`;
-}
-
-async function dropWithForce(admin: Client, dbName: string): Promise<void> {
-  await admin.query(`DROP DATABASE IF EXISTS ${quotePGIdentifier(dbName)} WITH (FORCE)`);
-}
-
-function isForceSyntaxError(e: { code?: string; message?: string }): boolean {
-  return e?.code === '42601' /* syntax_error */ || /WITH\s*\(\s*FORCE\s*\)/i.test(e?.message ?? '');
-}
-
-async function terminateAndDrop(
-  admin: Client,
-  dbName: string,
-  settleMs: number,
-  log: (m: string) => void,
-): Promise<void> {
-  // Prevent new connections (best-effort; ignore errors)
-  try {
-    await admin.query(`ALTER DATABASE ${quotePGIdentifier(dbName)} WITH ALLOW_CONNECTIONS = false`);
-  } catch (e) {
-    log(`ALTER DATABASE ... ALLOW_CONNECTIONS=false failed (continuing): ${shortenErr(e as Error)}`);
-  }
-  // Terminate existing sessions (best-effort; not all servers expose pg_terminate_backend, e.g. CockroachDB)
-  try {
-    await admin.query(
-      `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()`,
-      [dbName],
-    );
-  } catch (e) {
-    log(`pg_terminate_backend failed (continuing): ${shortenErr(e as Error)}`);
-  }
-  if (settleMs > 0) {
-    log(`Waiting ${settleMs}ms for backends to terminate...`);
-    await new Promise((r) => setTimeout(r, settleMs));
-  }
-  // Try DROP, and if "being accessed" shows up, retry once after an extra wait
-  try {
-    await admin.query(`DROP DATABASE IF EXISTS ${quotePGIdentifier(dbName)}`);
-  } catch (err) {
-    const e = err as Error & { code: string };
-    if (e?.code === '55006') {
-      log(`DB still "being accessed by other users"; retrying after extra wait...`);
-      await new Promise((r) => setTimeout(r, Math.max(1000, settleMs)));
-      try {
-        await admin.query(
-          `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()`,
-          [dbName],
-        );
-      } catch (e2) {
-        log(`pg_terminate_backend failed (continuing): ${shortenErr(e2 as Error)}`);
-      }
-      await admin.query(`DROP DATABASE IF EXISTS ${quotePGIdentifier(dbName)}`);
-    } else {
-      throw e;
-    }
-  }
-}
-
-function networkOrAuthHint(code?: string): string | undefined {
-  if (!code) return;
-  switch (code) {
-    case 'ECONNREFUSED':
-      return 'Server not reachable. Check host/port or firewall.';
-    case 'ENOTFOUND':
-      return 'Hostname not resolvable. Check DNS/host.';
-    case 'ETIMEDOUT':
-      return 'Connection timed out. Check network/firewall.';
-    case '28P01':
-      return 'Invalid password.';
-    case '28000':
-      return 'Authentication rejected (pg_hba.conf or method).';
-    default: {
-      if (code.substring(0, 2) === '28') return 'Other connection security error';
-      return undefined;
-    }
-  }
-}
-
-function createDropHintFromSqlState(code?: string): string | undefined {
-  switch (code?.substring(0, 5)) {
-    case '42501':
-      return 'Insufficient privilege. You must be the owner or a superuser.';
-    case '53300':
-      return 'Too many connections to server; free some slots.';
-    default:
-      break;
-  }
-  switch (code?.substring(0, 2)) {
-    case '42':
-      return 'Syntax error or access rule violation.';
-    case '3D':
-      return 'Target database does not exist (already gone).';
-    case '55':
-      return 'Database is in use. Terminate sessions or use PG13+ WITH (FORCE).';
-    case '53':
-      return 'Insufficient resources.';
-    default:
-      return undefined;
-  }
 }
