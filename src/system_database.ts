@@ -409,14 +409,15 @@ export async function ensureSystemDatabase(
     // a client to run migrations.
     client = await customPool.connect();
   } else {
-    // Otherwise, create the system database if it does not exist.
+    // Otherwise, create the system database if it does not exist. This is best-effort:
+    // a database we cannot provision may still be one we can connect to and use.
     const res = await ensurePGDatabase({
       urlToEnsure: sysDbUrl,
       logger: (msg: string) => logger.debug(msg),
     });
     if (res.status === 'failed') {
       logger.warn(
-        `Database could not be verified / created: ${maskDatabaseUrl(sysDbUrl)}: ${res.message} ${res.hint ?? ''}\n  ${res.notes.join('\n')}`,
+        `Could not create or verify system database ${maskDatabaseUrl(sysDbUrl)}: ${res.message}${res.hint ? ` (${res.hint})` : ''}`,
       );
     }
     const cconnect = await connectToPGAndReportOutcome(sysDbUrl, () => {}, 'System Database');
@@ -431,6 +432,15 @@ export async function ensureSystemDatabase(
   }
 
   try {
+    if (customPool) {
+      // The database is assumed to exist; check only that the pool can reach it.
+      try {
+        await client.query('SELECT 1');
+      } catch (e) {
+        throw new DBOSInitializationError(`Unable to connect to system database: ${(e as Error).message}`);
+      }
+    }
+
     const versionRes = await client.query<{ version: string }>('SELECT version() AS version');
     const isCockroach = /cockroachdb/i.test(versionRes.rows[0]?.version ?? '');
     await runSysMigrationsPg(client, allMigrations(schemaName, { useListenNotify, isCockroach }), schemaName, {

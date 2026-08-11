@@ -302,13 +302,13 @@ describe('PG16 drop/create e2e', () => {
       });
       expect(res4.status).toBe('did_not_exist');
 
-      // Bogus admin
+      // Bogus admin: the target is reachable, but ensure only reports what the admin connection can see
       const res4c = await ensurePGDatabase({
         urlToEnsure: container.getConnectionUri(),
         adminUrl: bogusAdminServer,
         logger: () => {},
       });
-      expect(res4c.status).toBe('already_exists');
+      expect(res4c.status).toBe('failed');
     } finally {
       await container.stop();
     }
@@ -402,8 +402,9 @@ describe('PG16 drop/create e2e', () => {
       expect(res3c.message.includes('permission denied')).toBeTruthy();
       expect(res3c.notes.find((s) => s.includes('permission denied for database "postgres"'))).toBeUndefined(); // admin given, do not try 'postgres'
 
+      // The target exists and appuser can connect to it, but it cannot be confirmed without admin access
       const res2c = await ensurePGDatabase({ urlToEnsure: userDb, logger: () => {} });
-      expect(res2c.status).toBe('already_exists');
+      expect(res2c.status).toBe('failed');
 
       // Try dropping (doesn't exist, vs cannot drop)
       const res1d = await dropPGDatabase({ urlToDrop: createUserDb, logger: () => {} });

@@ -178,10 +178,10 @@ export async function dropPGDatabase(opts: DropDatabaseOptions = {}): Promise<Dr
 
 /**
  * Result of a `ensurePGDatabase` call.
- * Status of `created` or `already_exists` is a "success",
- *  from the perspective that we are completely sure the DB is there at the end.
- * Status of `failed` means that the DB still doesn't exist, or we cannot say.
- *  This is a "failure" from the sense that the postcondition of an existing DB is not verified.
+ * Status of `created` or `already_exists` is a "success": the DB is there at the end.
+ * Status of `failed` means we could not provision the DB from the admin database.
+ *  The target may still exist and be reachable; callers that can connect to it directly
+ *  should treat this as a warning rather than a fatal error.
  */
 
 export type EnsureDatabaseResult =
@@ -190,20 +190,25 @@ export type EnsureDatabaseResult =
 
 /**
  * The logical thing to provide is the name of the DB to ensure (`dbToEnsure`) and a connection string with permission (`adminUrl`)
- * However, you can specify `urlToEnsure` and we will do our best to find a way to connect and ensure it.
+ * However, you can specify `urlToEnsure` and we will derive the admin URL from it.
  */
 export interface EnsureDatabaseOptions {
   /** Name of the database to ensure */
   dbToEnsure?: string;
   /** URL of the database to ensure */
   urlToEnsure?: string;
-  /** Admin/alternate DB URL on the same server. If omitted, we'll try `<urlToEnsure but with /postgres>` */
+  /** Admin DB URL on the same server. If omitted, we'll use `<urlToEnsure but with /postgres>` */
   adminUrl?: string;
   /** Optional logger (default: console.log) */
   logger?: (msg: string) => void;
-  /** Also try /template1 if /postgres fails (default: true) */
-  tryTemplate1Fallback?: boolean;
 }
+
+/**
+ * Create the target database if it does not already exist, by connecting to the admin
+ * (`/postgres`) database on the same server. Every failure is reported in the result
+ * instead of thrown, so a caller that only needs an already-provisioned database can
+ * log a warning and carry on.
+ */
 export async function ensurePGDatabase(opts: EnsureDatabaseOptions): Promise<EnsureDatabaseResult> {
   if (!opts.urlToEnsure && !opts.dbToEnsure) {
     throw new TypeError(`ensurePGDatabase requires a target database name or URL to check`);
@@ -225,110 +230,42 @@ export async function ensurePGDatabase(opts: EnsureDatabaseOptions): Promise<Ens
     return fail('Target URL has no database name in the path (e.g., /mydb).', 'Fix the target URL and retry.');
   }
 
-  // Try a quick connect attempt first; this requires the least assumptions and has the least chance of messing us up.
-  if (opts.urlToEnsure) {
-    try {
-      const probe = await connectToPGAndReportOutcome(opts.urlToEnsure, log, 'probe target (existence test)');
-      if (probe.result === 'ok') {
-        // CockroachDB lets you connect to (and SELECT 1 from) a nonexistent database;
-        // hit a catalog that requires the current database to exist to verify.
-        try {
-          await probe.client.query('SELECT 1 FROM information_schema.schemata LIMIT 1');
-          await probe.client.end().catch(() => {});
-          return { status: 'already_exists', notes, message: 'Success (already existed)' };
-        } catch (qerr) {
-          await probe.client.end().catch(() => {});
-          log(`Probe connect succeeded but verification query failed: ${(qerr as Error).message}; attempting create.`);
-        }
-      }
-    } catch (e) {
-      log(`Caught error probing database: (e as Error).message; attempting create.`);
-    }
+  const adminUrl = opts.adminUrl ?? (opts.urlToEnsure ? deriveDatabaseUrl(opts.urlToEnsure, 'postgres') : undefined);
+  if (!adminUrl) {
+    throw new TypeError(`ensurePGDatabase requires a connection string to a database with permission to CREATE`);
   }
 
-  // At this point, we know we need an admin URL, if only as a base of the real URL
-  const adminUrl = opts.adminUrl ?? (opts.urlToEnsure ? deriveDatabaseUrl(opts.urlToEnsure, 'postgres') : undefined);
-
-  if (!adminUrl) {
-    // We could consider the environment, but let's not right now.
-    throw new TypeError(
-      `dropPostgresDatabase requires a connection string to a database with permission to perform the DROP`,
+  const admin = await connectToPGAndReportOutcome(adminUrl, log, 'admin database');
+  if (admin.result !== 'ok') {
+    return fail(
+      `Could not establish any admin connection to ${maskDatabaseUrl(adminUrl)}: ${admin.message}`,
+      networkOrAuthHint(admin.code),
     );
   }
 
-  const maybeTemplate1Url = deriveDatabaseUrl(opts.urlToEnsure ?? adminUrl, 'template1');
-  const tryTemplate1Fallback = opts.tryTemplate1Fallback ?? true;
-
-  // 1) Try admin connection first (best detection for existence & privileges)
-  let admin = await connectToPGDatabase(adminUrl, log);
-  if (!admin && tryTemplate1Fallback) {
-    log(`Admin connect failed. Trying template1 as a fallback...`);
-    admin = await connectToPGDatabase(maybeTemplate1Url, log);
-  }
-
-  // Helper to check DB existence via catalog (requires admin connection)
-  const checkExistsViaAdmin = async (): Promise<boolean | 'unknown'> => {
-    if (!admin) return 'unknown';
-    const { rows } = await admin.query<{ exists: boolean }>(
+  try {
+    const { rows } = await admin.client.query<{ exists: boolean }>(
       `SELECT EXISTS (SELECT 1 FROM pg_database WHERE datname = $1) AS exists`,
       [targetDb],
     );
-    return rows[0]?.exists ?? false;
-  };
-
-  try {
-    // If admin connected, see if the DB exists; if so, this is an early success.
-    let exists: boolean | 'unknown' = 'unknown';
-    if (admin) {
-      exists = await checkExistsViaAdmin();
-      if (exists === true) {
-        log(`DB "${targetDb}" exists (confirmed via catalog).`);
-        return { status: 'already_exists', notes, message: 'Success (already existed)' };
-      }
+    if (rows[0]?.exists) {
+      log(`Database "${targetDb}" exists.`);
+      return { status: 'already_exists', notes, message: 'Success (already existed)' };
     }
 
-    // If we couldn't connect as admin, try connecting to target to distinguish "doesn't exist" from failure to connect.
-    if (!admin) {
-      const dbUrl = opts.urlToEnsure ?? deriveDatabaseUrl(adminUrl, targetDb);
-      const probe = await connectToPGAndReportOutcome(dbUrl, log, 'probe target (existence test)');
-      if (probe.result === 'ok') {
-        // We can reach the target DB.... via a URL derived from admin
-        await probe.client.end().catch(() => {});
-        log(`Probe of database ${targetDb} via ${maskDatabaseUrl(dbUrl)} succeeds.`);
-        return { status: 'already_exists', notes, message: 'Success (already existed)' };
-      } else {
-        // Ambiguous: We do not know it to be there, and we can't make an admin connection to proceed.
-        return fail(
-          `Could not establish any admin connection, and target connect failed with ${probe.code ?? probe.result}.`,
-          networkOrAuthHint(probe.code),
-        );
-      }
+    log(`Creating database "${targetDb}".`);
+    await createDb(admin.client, targetDb);
+    return { status: 'created', notes, message: 'Success (created)' };
+  } catch (err) {
+    const e = err as Error & { code?: string };
+    // A peer starting up concurrently may have won the race to create it.
+    if (e?.code === '42P04') {
+      log(`Database "${targetDb}" was created concurrently.`);
+      return { status: 'already_exists', notes, message: 'Success (already existed)' };
     }
-
-    // 3) Attempt the CREATE
-    try {
-      log(`Attempting CREATE.`);
-      await createDb(admin, targetDb);
-    } catch (err) {
-      const e = err as Error & { code: string };
-      await admin.end().catch(() => {});
-      return fail(`Create failed: ${shortenErr(e)}`, createDropHintFromSqlState(e?.code));
-    }
-
-    // 4) Verify postcondition
-    const finalExists = await checkExistsViaAdmin();
-    if (finalExists === true) {
-      log(`Verified: database "${targetDb}" exists.`);
-      return { status: 'created', notes, message: 'Success (created)' };
-    } else if (finalExists === false) {
-      return fail(`After create attempt, database "${targetDb}" does not exist still.`);
-    } else {
-      // Unknown (shouldn't happen with admin connected)
-      log(`Could not verify creation due to unexpected state.`);
-      return { status: 'created', notes, message: 'Success (unverified)' };
-    }
+    return fail(`Create failed: ${shortenErr(e)}`, createDropHintFromSqlState(e?.code));
   } finally {
-    await admin?.end().catch(() => {});
+    await admin.client.end().catch(() => {});
   }
 }
 
