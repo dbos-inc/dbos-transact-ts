@@ -202,7 +202,7 @@ program
 
     const sysDbName = getDatabaseNameFromUrl(urls.systemDatabaseURL);
     try {
-      await dropPGDatabase(urls.systemDatabaseURL, (msg: string) => console.log(msg));
+      await dropPGDatabase(urls.systemDatabaseURL, { warn: (msg: string) => console.error(msg) });
       console.log(`Dropped '${sysDbName}'.  To use DBOS in the future, you will need to create a new system database.`);
     } catch (e) {
       console.log(`Could not drop '${sysDbName}': ${(e as Error).message}`);

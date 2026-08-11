@@ -4,8 +4,10 @@ import { getClientConfig, sleepms } from '../src/utils';
 import { isValidDatabaseName, translateDbosConfig } from '../src/config';
 import { ensureSystemDatabase, SystemDatabase } from '../src/system_database';
 import { GlobalLogger } from '../src/telemetry/logs';
-import { deriveDatabaseUrl, dropPGDatabase, ensurePGDatabase, maskDatabaseUrl } from '../src/datasource';
+import { deriveDatabaseUrl, dropPGDatabase, ensurePGDatabase, maskDatabaseUrl } from '../src/database_utils';
 import { Client } from 'pg';
+
+const silentDropLogger = { warn: () => {} };
 
 /* DB management helpers */
 
@@ -67,7 +69,7 @@ export async function setUpDBOSTestSysDb(config: DBOSConfig) {
   config.name ??= 'dbostest';
   const internalConfig = translateDbosConfig(config);
 
-  await dropPGDatabase(internalConfig.systemDatabaseUrl, () => {});
+  await dropPGDatabase(internalConfig.systemDatabaseUrl, silentDropLogger);
   await ensureSystemDatabase(
     internalConfig.systemDatabaseUrl,
     new GlobalLogger(),
@@ -191,7 +193,7 @@ export async function reexecuteWorkflowById(
 }
 
 export async function dropDatabase(connectionString: string, database?: string) {
-  await dropPGDatabase(database ? deriveDatabaseUrl(connectionString, database) : connectionString, () => {});
+  await dropPGDatabase(database ? deriveDatabaseUrl(connectionString, database) : connectionString, silentDropLogger);
 }
 
 export async function causeChaos(db: string): Promise<void> {

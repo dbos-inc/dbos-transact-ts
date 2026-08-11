@@ -14,13 +14,13 @@ function requireDatabaseName(databaseUrl: string): string {
 
 /**
  * Drop `databaseUrl`'s database, via the admin (`/postgres`) database on the same server.
- * Throws if the database still exists afterwards.
+ * Throws if the drop could not be carried out.
  */
-export async function dropPGDatabase(databaseUrl: string, log: (msg: string) => void): Promise<void> {
+export async function dropPGDatabase(databaseUrl: string, logger: { warn: (msg: string) => void }): Promise<void> {
   const quoted = quotePGIdentifier(requireDatabaseName(databaseUrl));
   const client = new Client(getClientConfig(deriveDatabaseUrl(databaseUrl, 'postgres')));
   // An 'error' event with no listener would take down the process.
-  client.on('error', (err: Error) => log(`Unexpected error in admin client: ${err}`));
+  client.on('error', (err: Error) => logger.warn(`Unexpected error in admin client: ${err}`));
   try {
     await client.connect();
     try {
@@ -56,7 +56,7 @@ export async function ensurePGDatabase(
     if (!rowCount) {
       creating = true;
       await client.query(`CREATE DATABASE ${quotePGIdentifier(dbName)}`);
-      logger.info(`Created system database ${dbName}`);
+      logger.info(`Created database ${dbName}`);
     }
   } catch (e) {
     // Name the operation that failed: "verify" and "create" need very different fixes.

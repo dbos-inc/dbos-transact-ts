@@ -10,6 +10,8 @@ import { DBOSClient } from '../dist/src';
 import { dropPGDatabase, ensurePGDatabase } from '../src/database_utils';
 import { sleepConfig } from '../src/utils';
 
+const silentDropLogger = { warn: () => {} };
+
 describe('dbos-tests', () => {
   let username: string;
   let config: DBOSConfig;
@@ -1061,7 +1063,7 @@ describe('custom-pool-test', () => {
   test('custom-pool-test', async () => {
     const baseConfig = generateDBOSTestConfig();
     // Destroy the system database
-    await dropPGDatabase(baseConfig.systemDatabaseUrl!, () => {});
+    await dropPGDatabase(baseConfig.systemDatabaseUrl!, silentDropLogger);
     const systemDatabaseURL = baseConfig.systemDatabaseUrl;
     assert(systemDatabaseURL);
     let pool = new Pool({ connectionString: systemDatabaseURL });

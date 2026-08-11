@@ -1,12 +1,14 @@
 import { DBOS } from '../src/';
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
-import { dropPGDatabase } from '../src/datasource';
+import { dropPGDatabase } from '../src/database_utils';
 import { ensureTestDatabase } from './helpers';
 import { randomUUID } from 'node:crypto';
 import { Client } from 'pg';
 
 const cockroachdbUrl = process.env.DBOS_COCKROACHDB_URL;
 const describeIf = cockroachdbUrl ? describe : describe.skip;
+
+const silentDropLogger = { warn: () => {} };
 
 const testQueueName = 'crdb-test-queue';
 
@@ -52,7 +54,7 @@ describeIf('cockroachdb', () => {
     url.pathname = '/dbos_test';
     const systemDatabaseUrl = url.toString();
 
-    await dropPGDatabase(systemDatabaseUrl, () => {});
+    await dropPGDatabase(systemDatabaseUrl, silentDropLogger);
     await ensureTestDatabase(systemDatabaseUrl);
     config = {
       name: 'cockroachdb-test',

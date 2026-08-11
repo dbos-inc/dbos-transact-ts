@@ -350,11 +350,3 @@ export function isPGKeyConflictError(error: unknown): boolean {
 export function isPGFailedSqlTransactionError(error: unknown): boolean {
   return getPGErrorCode(error) === '25P02';
 }
-
-export {
-  maskDatabaseUrl,
-  getDatabaseNameFromUrl,
-  deriveDatabaseUrl,
-  dropPGDatabase,
-  ensurePGDatabase,
-} from './database_utils';

@@ -427,11 +427,6 @@ export async function ensureSystemDatabase(
   }
 
   try {
-    if (customPool) {
-      // The database is assumed to exist; validate only that the pool can connect.
-      await client.query('SELECT 1');
-    }
-
     const versionRes = await client.query<{ version: string }>('SELECT version() AS version');
     const isCockroach = /cockroachdb/i.test(versionRes.rows[0]?.version ?? '');
     await runSysMigrationsPg(client, allMigrations(schemaName, { useListenNotify, isCockroach }), schemaName, {
