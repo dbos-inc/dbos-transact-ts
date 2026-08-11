@@ -317,9 +317,10 @@ export class DBOSStepAlreadyRecordedError extends Error {
  * Data sources share this between their pre-execution check and their conflict handler
  * so the two paths cannot drift apart.
  */
-export function replayRecordedStep<Return>(recorded: { output: string | null } | { error: string }): Return {
+export function replayRecordedStep<Return>(recorded: { output?: string | null; error?: string | null }): Return {
   DBOS.span?.setAttribute('cached', true);
-  if ('error' in recorded) {
+  // Discriminate on the value: a raw row carries both keys, with the unused one null.
+  if (typeof recorded.error === 'string') {
     throw SuperJSON.parse(recorded.error);
   }
   return (recorded.output ? SuperJSON.parse(recorded.output) : null) as Return;
