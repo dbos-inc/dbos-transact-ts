@@ -60,9 +60,13 @@ export function deriveDatabaseUrl(urlStr: string, otherDbName: string): string {
 }
 
 export function getDatabaseNameFromUrl(urlStr: string) {
-  const u = new URL(urlStr);
-  // The path is percent-encoded, so a name like `"db".'v1'` arrives here as `%22db%22.'v1'`.
-  return decodeURIComponent(u.pathname?.replace(/^\//, '') || '');
+  const pathname = new URL(urlStr).pathname?.replace(/^\//, '') || '';
+  // Decode exactly as `pg` does, so we never provision a different database than we connect to.
+  try {
+    return decodeURI(pathname);
+  } catch {
+    return pathname;
+  }
 }
 
 export function maskDatabaseUrl(urlStr: string): string {
