@@ -137,10 +137,6 @@ class TypeOrmTransactionHandler implements DataSourceTransactionHandler {
       return undefined;
     }
 
-    if (rows[0].output === null) {
-      return undefined;
-    }
-
     const { output, error } = rows[0];
     return error !== null ? { error } : { output };
   }
