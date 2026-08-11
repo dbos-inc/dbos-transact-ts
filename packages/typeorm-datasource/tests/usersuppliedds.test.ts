@@ -62,6 +62,8 @@ async function ensureTestDatabase(databaseUrl: string) {
   const client = new Client({ connectionString: databaseUrl });
   try {
     await client.connect();
+    // CockroachDB connects to a nonexistent database, so hit a catalog that requires it to exist.
+    await client.query('SELECT 1 FROM information_schema.schemata LIMIT 1');
   } catch (e) {
     const why = notes.length ? ` [${notes.join('; ')}]` : '';
     throw new Error(`Could not provision the test database: ${(e as Error).message}${why}`);
