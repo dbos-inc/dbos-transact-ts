@@ -420,6 +420,7 @@ export async function ensureSystemDatabase(
       await sysClient.end().catch(() => {});
       throw new DBOSInitializationError(
         `Unable to connect to system database at ${maskDatabaseUrl(sysDbUrl)}: ${(e as Error).message}`,
+        e instanceof Error ? e : undefined,
       );
     }
     client = sysClient;

@@ -201,7 +201,7 @@ describe('PG16 drop/create e2e', () => {
       const firstRun = collectingLogger();
       await ensurePGDatabase(deriveDatabaseUrl(adminUri, dbName), firstRun);
       expect(await databaseExists(adminUri, dbName)).toBe(true);
-      expect(firstRun.lines).toEqual([`Creating system database ${dbName}`]);
+      expect(firstRun.lines).toEqual([`Created system database ${dbName}`]);
 
       const secondRun = collectingLogger();
       await ensurePGDatabase(deriveDatabaseUrl(adminUri, dbName), secondRun);

@@ -49,15 +49,19 @@ export async function ensurePGDatabase(
   const client = new Client(getClientConfig(deriveDatabaseUrl(databaseUrl, 'postgres')));
   // An 'error' event with no listener would take down the process.
   client.on('error', (err: Error) => logger.warn(`Unexpected error in startup client: ${err}`));
+  let creating = false;
   try {
     await client.connect();
     const { rowCount } = await client.query(`SELECT 1 FROM pg_database WHERE datname = $1`, [dbName]);
     if (!rowCount) {
-      logger.info(`Creating system database ${dbName}`);
+      creating = true;
       await client.query(`CREATE DATABASE ${quotePGIdentifier(dbName)}`);
+      logger.info(`Created system database ${dbName}`);
     }
   } catch (e) {
-    logger.warn(`Could not verify the existence of database ${dbName}, continuing: ${(e as Error).message}`);
+    // Name the operation that failed: "verify" and "create" need very different fixes.
+    const attempted = creating ? `create database ${dbName}` : `verify the existence of database ${dbName}`;
+    logger.warn(`Could not ${attempted}, continuing: ${(e as Error).message}`);
   } finally {
     await client.end().catch(() => {});
   }
