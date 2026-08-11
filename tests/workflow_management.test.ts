@@ -1900,8 +1900,7 @@ describe('test-fork', () => {
     expect(await DBOS.retrieveWorkflow<number>(forkedMixed[0]).getResult()).toBe(42);
     expect(await DBOS.retrieveWorkflow<number>(forkedMixed[1]).getResult()).toBe(6);
     expect(ExampleWorkflow.steplessCount).toBe(4);
-    // The counters pin the start steps to the right workflows: wf3 resumed at its last
-    // step, so only step three re-ran. Misaligned start steps would re-run all three.
+    // Only step three re-ran: catches a start step misassigned when the copy mapping drops wf4's zero.
     expect(ExampleWorkflow.stepOneCount).toBe(3);
     expect(ExampleWorkflow.stepTwoCount).toBe(7);
     expect(ExampleWorkflow.stepThreeCount).toBe(11);

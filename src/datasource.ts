@@ -11,6 +11,7 @@ import {
 } from './decorators';
 import { DBOSError, DBOSInvalidWorkflowTransitionError } from './error';
 import { runWithTrace, SpanStatusCode } from './telemetry/traces';
+import { SuperJSON } from 'superjson';
 
 /**
  * This interface is to be used for implementers of transactional data sources
@@ -309,6 +310,19 @@ export class DBOSStepAlreadyRecordedError extends Error {
     super(`Step ${stepID} of workflow ${workflowID} was already recorded by a concurrent execution`);
     this.name = 'DBOSStepAlreadyRecordedError';
   }
+}
+
+/**
+ * Deliver a transaction outcome recorded by an earlier or concurrent execution.
+ * Data sources share this between their pre-execution check and their conflict handler
+ * so the two paths cannot drift apart.
+ */
+export function replayRecordedStep<Return>(recorded: { output: string | null } | { error: string }): Return {
+  DBOS.span?.setAttribute('cached', true);
+  if ('error' in recorded) {
+    throw SuperJSON.parse(recorded.error);
+  }
+  return (recorded.output ? SuperJSON.parse(recorded.output) : null) as Return;
 }
 
 export interface CheckSchemaInstallationReturn {

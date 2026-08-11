@@ -8,6 +8,7 @@ import {
   isPGRetriableTransactionError,
   DBOSError,
   DBOSStepAlreadyRecordedError,
+  replayRecordedStep,
   registerTransaction,
   runTransaction,
   PGTransactionConfig,
@@ -154,11 +155,7 @@ class NodePostgresTransactionHandler implements DataSourceTransactionHandler {
         `Step ${stepID} of workflow ${workflowID} conflicted with a concurrent execution, but no recorded outcome was found`,
       );
     }
-    DBOS.span?.setAttribute('cached', true);
-    if ('error' in recorded) {
-      throw SuperJSON.parse(recorded.error);
-    }
-    return (recorded.output ? SuperJSON.parse(recorded.output) : null) as Return;
+    return replayRecordedStep<Return>(recorded);
   }
 
   async #transaction<Return>(
@@ -207,13 +204,7 @@ class NodePostgresTransactionHandler implements DataSourceTransactionHandler {
       // Check to see if this tx has already been executed
       const previousResult = saveResults ? await this.#checkExecution(workflowID, stepID!) : undefined;
       if (previousResult) {
-        DBOS.span?.setAttribute('cached', true);
-
-        if ('error' in previousResult) {
-          throw SuperJSON.parse(previousResult.error);
-        }
-
-        return (previousResult.output ? SuperJSON.parse(previousResult.output) : null) as Return;
+        return replayRecordedStep<Return>(previousResult);
       }
 
       try {
@@ -239,8 +230,8 @@ class NodePostgresTransactionHandler implements DataSourceTransactionHandler {
 
         return result;
       } catch (error) {
-        if (error instanceof DBOSStepAlreadyRecordedError) {
-          return await this.#replayConflictingStep<Return>(workflowID!, stepID!);
+        if (saveResults && error instanceof DBOSStepAlreadyRecordedError) {
+          return await this.#replayConflictingStep<Return>(workflowID, stepID!);
         }
         if (isPGRetriableTransactionError(error)) {
           DBOS.span?.addEvent('TXN SERIALIZATION FAILURE', { retryWaitMillis: retryWaitMS }, performance.now());
