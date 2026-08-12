@@ -11,7 +11,7 @@ import {
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import { Client } from 'pg';
 import { StatusString } from '../dist/src';
-import { DBOSAwaitedWorkflowExceededMaxRecoveryAttempts, DBOSMaxRecoveryAttemptsExceededError } from '../src/error';
+import { DBOSAwaitedWorkflowExceededMaxRecoveryAttempts } from '../src/error';
 import { INTERNAL_QUEUE_NAME } from '../src/utils';
 import { runWithTopContext } from '../src/context';
 import assert from 'assert';
@@ -171,10 +171,13 @@ describe('recovery-tests', () => {
     let status = await handle.getStatus();
     expect(status?.recoveryAttempts).toBe(LocalRecovery.maxRecoveryAttempts + 2);
 
-    // Verify a direct invocation errors
-    await expect(
-      DBOS.startWorkflow(LocalRecovery, { workflowID: handle.workflowID }).deadLetterWorkflow(),
-    ).rejects.toThrow(DBOSMaxRecoveryAttemptsExceededError);
+    // A direct invocation does not re-run the body; it adopts the row and surfaces its terminal status.
+    const runsBeforeDirectStart = LocalRecovery.recoveryCount;
+    const dlqHandle = await DBOS.startWorkflow(LocalRecovery, {
+      workflowID: handle.workflowID,
+    }).deadLetterWorkflow();
+    await expect(dlqHandle.getResult()).rejects.toThrow(DBOSAwaitedWorkflowExceededMaxRecoveryAttempts);
+    expect(LocalRecovery.recoveryCount).toBe(runsBeforeDirectStart);
 
     // Verify retrieving the status throws an exception
     const retrievedHandle = DBOS.retrieveWorkflow(handle.workflowID);

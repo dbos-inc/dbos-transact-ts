@@ -3,7 +3,6 @@ import { DatabaseError, Pool, PoolClient, Notification, Client, PoolConfig, Clie
 import {
   DBOSWorkflowConflictError,
   DBOSNonExistentWorkflowError,
-  DBOSMaxRecoveryAttemptsExceededError,
   DBOSConflictingWorkflowError,
   DBOSUnexpectedStepError,
   DBOSWorkflowCancelledError,
@@ -944,9 +943,6 @@ export class SystemDatabase {
   async initWorkflowStatus(
     initStatus: WorkflowStatusInternal,
     ownerXid: string | null,
-    options?: {
-      maxRetries?: number;
-    },
   ): Promise<{
     status: string;
     shouldExecuteOnThisExecutor: boolean;
@@ -980,11 +976,6 @@ export class SystemDatabase {
 
       // If there is an existing DB record and we aren't here to recover it, leave it be.
       if (ownerXid !== resRow.owner_xid) {
-        // Dead-lettering belongs to the dequeue path, which counts every dispatch; starting a
-        // workflow already in the DLQ just reports it.
-        if (status === StatusString.MAX_RECOVERY_ATTEMPTS_EXCEEDED) {
-          throw new DBOSMaxRecoveryAttemptsExceededError(initStatus.workflowUUID, options?.maxRetries);
-        }
         return { status, deadlineEpochMS, shouldExecuteOnThisExecutor: false, serialization: resRow.serialization };
       }
 

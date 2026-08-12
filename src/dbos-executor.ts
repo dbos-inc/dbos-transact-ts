@@ -687,9 +687,7 @@ export class DBOSExecutor {
       serializationType = ires.serialization === DBOSPortableJSON.name() ? 'portable' : undefined;
     } else {
       try {
-        ires = await this.systemDatabase.initWorkflowStatus(internalStatus, randomUUID(), {
-          maxRetries: maxRecoveryAttempts,
-        });
+        ires = await this.systemDatabase.initWorkflowStatus(internalStatus, randomUUID());
         serializationType = ires.serialization === DBOSPortableJSON.name() ? 'portable' : undefined;
       } catch (e) {
         // For 'return-existing' enqueues we don't pre-record the dedup error: the wrapper will
