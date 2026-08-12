@@ -612,12 +612,12 @@ class ProbeTransactionHandler implements DataSourceTransactionHandler {
 const probeHandler = new ProbeTransactionHandler();
 registerDataSource(probeHandler);
 
-const probeState = { bodyRuns: 0, winnerRecordedOutput: false };
+const probeState = { bodyRuns: 0, workflowBodyFinished: 0, claimSysdb: false, winnerRecordedOutput: false };
 
 /**
- * Mid-transaction, a duplicate execution commits everything a real winner would:
- * the app-database completion row, the system-database step checkpoint, and the
- * workflow's terminal outcome.
+ * Mid-transaction, a duplicate execution commits the app-database completion row.
+ * When `claimSysdb` is set it also takes the system-database step checkpoint and
+ * finishes the workflow, which is what forces this run to park instead of continuing.
  */
 async function raceTransaction(): Promise<string> {
   probeState.bodyRuns += 1;
@@ -635,14 +635,16 @@ async function raceTransaction(): Promise<string> {
     await winner.end();
   }
 
-  const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
-  const winnerMs = winnerEpochMs();
-  await sysdb.recordOperationResult(workflowID, stepID, 'raceTransaction', false, winnerMs, winnerMs, {
-    output: DBOSJSON.stringify(WINNER_TX_OUTPUT),
-  });
-  probeState.winnerRecordedOutput = await sysdb.recordWorkflowOutput(workflowID, {
-    output: DBOSJSON.stringify(ADOPTED_WF_OUTPUT),
-  } as WorkflowStatusInternal);
+  if (probeState.claimSysdb) {
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    const winnerMs = winnerEpochMs();
+    await sysdb.recordOperationResult(workflowID, stepID, 'raceTransaction', false, winnerMs, winnerMs, {
+      output: DBOSJSON.stringify(WINNER_TX_OUTPUT),
+    });
+    probeState.winnerRecordedOutput = await sysdb.recordWorkflowOutput(workflowID, {
+      output: DBOSJSON.stringify(ADOPTED_WF_OUTPUT),
+    } as WorkflowStatusInternal);
+  }
 
   return 'loser-tx-output';
 }
@@ -651,7 +653,10 @@ const regRaceTransaction = registerTransaction(probeHandler.name, raceTransactio
 
 async function raceWorkflowGuts(): Promise<string> {
   // Prefixed so a locally computed result can never be mistaken for the adopted one.
-  return `local:${await regRaceTransaction()}`;
+  const tx = await regRaceTransaction();
+  // Only reached when the step returned; a parked run throws out of the line above.
+  probeState.workflowBodyFinished += 1;
+  return `local:${tx}`;
 }
 
 const raceWorkflow = DBOS.registerWorkflow(raceWorkflowGuts, { name: 'raceWorkflow' });
@@ -664,6 +669,8 @@ describe('datasource-duplicate-execution', () => {
 
   beforeEach(async () => {
     probeState.bodyRuns = 0;
+    probeState.workflowBodyFinished = 0;
+    probeState.claimSysdb = false;
     probeState.winnerRecordedOutput = false;
     await DBOS.launch();
   });
@@ -672,16 +679,35 @@ describe('datasource-duplicate-execution', () => {
     await DBOS.shutdown();
   });
 
-  test('a losing duplicate execution replays the transaction, then parks and adopts the workflow outcome', async () => {
+  test('a losing duplicate execution replays the winner transaction and carries on', async () => {
     const wfid = randomUUID();
+
+    // The winner committed only the app-database row, which is the crash window this
+    // whole mechanism exists for: the completion row is durable, the checkpoint is not.
+    const result = await DBOS.withNextWorkflowID(wfid, () => raceWorkflow());
+
+    expect(result).toBe(`local:${WINNER_TX_OUTPUT}`); // the winner's value, not this run's
+    expect(probeState.bodyRuns).toBe(1); // the replay did not re-enter the transaction body
+    expect(probeState.workflowBodyFinished).toBe(1);
+
+    const steps = await DBOS.listWorkflowSteps(wfid);
+    expect(steps).toHaveLength(1);
+    expect(steps![0].output).toBe(WINNER_TX_OUTPUT);
+    expect((await DBOS.getWorkflowStatus(wfid))?.status).toBe('SUCCESS');
+  });
+
+  test('a losing duplicate execution parks when the winner also owns the checkpoint', async () => {
+    const wfid = randomUUID();
+    probeState.claimSysdb = true;
 
     const result = await DBOS.withNextWorkflowID(wfid, () => raceWorkflow());
 
-    // The winner owned the workflow, so this run delivered the recorded outcome
-    // rather than the `local:` value its own body would have produced.
+    // The step conflict aborted this run mid-workflow, so its body never finished and
+    // the recorded outcome was adopted in place of the `local:` value it would have made.
     expect(probeState.winnerRecordedOutput).toBe(true);
+    expect(probeState.workflowBodyFinished).toBe(0);
     expect(result).toBe(ADOPTED_WF_OUTPUT);
-    expect(probeState.bodyRuns).toBe(1); // the replay did not re-enter the transaction body
+    expect(probeState.bodyRuns).toBe(1);
 
     // The winner's records still stand, and the loser wrote nothing over them.
     const { rows: completions } = await probeHandler.pool.query<CompletionRow>(
@@ -695,8 +721,6 @@ describe('datasource-duplicate-execution', () => {
     const steps = await DBOS.listWorkflowSteps(wfid);
     expect(steps).toHaveLength(1);
     expect(steps![0].output).toBe(WINNER_TX_OUTPUT);
-
-    const status = await DBOS.getWorkflowStatus(wfid);
-    expect(status?.status).toBe('SUCCESS');
+    expect((await DBOS.getWorkflowStatus(wfid))?.status).toBe('SUCCESS');
   });
 });

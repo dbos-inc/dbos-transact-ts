@@ -17,9 +17,14 @@ import {
 import { AsyncLocalStorage } from 'async_hooks';
 import { SuperJSON } from 'superjson';
 
-// Prisma reports a failed raw query's SQLSTATE in `meta` rather than on the error itself.
+// Prisma reports a failed raw query's SQLSTATE in `meta` rather than on the error itself,
+// and reports a write conflict raised by its own query API as P2034 with no SQLSTATE at all.
 function unwrapPrismaError(error: unknown): unknown {
-  const meta = (error as { meta?: unknown } | null)?.meta;
+  const prismaError = (error as { code?: unknown; meta?: unknown } | null) ?? undefined;
+  if (prismaError?.code === 'P2034') {
+    return { code: '40001' };
+  }
+  const meta = prismaError?.meta;
   return meta && typeof meta === 'object' && 'code' in meta ? meta : error;
 }
 
