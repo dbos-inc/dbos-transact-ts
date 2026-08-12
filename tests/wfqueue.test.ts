@@ -3633,6 +3633,39 @@ describe('dequeue-dispatch-cost', () => {
     expect(await queueEntriesAreCleanedUp()).toBe(true);
   }, 30000);
 
+  test('status-fetch-chunks-and-retries-per-chunk', async () => {
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    // Started off-queue so the dispatcher never fetches these rows itself.
+    const handles: WorkflowHandle<number>[] = [];
+    for (let i = 0; i < 5; i++) {
+      handles.push(await DBOS.startWorkflow(DispatchCostWF).run(i));
+    }
+    const ids = handles.map((h) => h.workflowID);
+    for (const handle of handles) {
+      await handle.getResult();
+    }
+
+    const originalChunkSize = sysdb.statusFetchChunkSize;
+    const originalList = sysdb.listWorkflows.bind(sysdb);
+    sysdb.statusFetchChunkSize = 2;
+    let calls = 0;
+    jest.spyOn(sysdb, 'listWorkflows').mockImplementation(async (input) => {
+      calls++;
+      if (calls === 2) throw new Error('Connection terminated unexpectedly');
+      return await originalList(input);
+    });
+
+    try {
+      const statuses = await sysdb.getWorkflowStatuses(ids);
+      // 5 IDs at chunk size 2 is 3 chunks, plus one refetch of only the chunk that failed.
+      expect(calls).toBe(4);
+      expect([...statuses.keys()].sort()).toEqual([...ids].sort());
+    } finally {
+      jest.restoreAllMocks();
+      sysdb.statusFetchChunkSize = originalChunkSize;
+    }
+  }, 30000);
+
   test('dequeue-refreshes-updated-at', async () => {
     const handle = await DBOS.startWorkflow(DispatchCostWF, { queueName: SLOW_QUEUE_NAME }).blockAfterStart();
 

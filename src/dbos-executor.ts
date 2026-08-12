@@ -1376,22 +1376,9 @@ export class DBOSExecutor {
     }
   }
 
-  /** Bounds the ID list per status fetch: listWorkflows binds one parameter per ID. */
-  static readonly #dispatchFetchChunkSize = 500;
-
   /** Fetch the claimed workflows' statuses in as few round trips as possible, then dispatch each. */
   async dispatchDequeuedWorkflows(workflowIDs: string[]): Promise<void> {
-    const statuses = new Map<string, WorkflowStatusInternal>();
-    for (let start = 0; start < workflowIDs.length; start += DBOSExecutor.#dispatchFetchChunkSize) {
-      const chunk = workflowIDs.slice(start, start + DBOSExecutor.#dispatchFetchChunkSize);
-      for (const status of await this.systemDatabase.listWorkflows({
-        workflowIDs: chunk,
-        loadInput: true,
-        loadOutput: false,
-      })) {
-        statuses.set(status.workflowUUID, status);
-      }
-    }
+    const statuses = await this.systemDatabase.getWorkflowStatuses(workflowIDs);
     for (const workflowID of workflowIDs) {
       const status = statuses.get(workflowID);
       if (!status) {

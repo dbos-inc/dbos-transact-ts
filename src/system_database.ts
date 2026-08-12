@@ -1334,6 +1334,28 @@ export class SystemDatabase {
     }
   }
 
+  /** Max IDs per {@link getWorkflowStatuses} fetch: listWorkflows binds one parameter per ID. */
+  statusFetchChunkSize: number = 500;
+
+  // Retried per chunk so a reconnect refetches one chunk, not every chunk before it.
+  @dbRetry()
+  private async fetchWorkflowStatusChunk(workflowIDs: string[]): Promise<WorkflowStatusInternal[]> {
+    return await this.listWorkflows({ workflowIDs, loadInput: true, loadOutput: false });
+  }
+
+  /** Fetch many statuses in as few round trips as possible. IDs with no row are omitted. */
+  async getWorkflowStatuses(workflowIDs: string[]): Promise<Map<string, WorkflowStatusInternal>> {
+    const statuses = new Map<string, WorkflowStatusInternal>();
+    for (let start = 0; start < workflowIDs.length; start += this.statusFetchChunkSize) {
+      for (const status of await this.fetchWorkflowStatusChunk(
+        workflowIDs.slice(start, start + this.statusFetchChunkSize),
+      )) {
+        statuses.set(status.workflowUUID, status);
+      }
+    }
+    return statuses;
+  }
+
   // Only used in tests
   async setWorkflowStatus(
     workflowID: string,
