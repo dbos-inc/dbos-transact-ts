@@ -63,10 +63,9 @@ describe('run-workflow-once-tests', () => {
     expect(TryConcExec.maxConc).toBe(1);
     expect(TryConcExec.maxWf).toBe(1);
 
-    const wfh1r = await reexecuteWorkflowById(workflowUUID);
-    const wfh2r = await reexecuteWorkflowById(workflowUUID);
-    await wfh1r!.getResult();
-    await wfh2r!.getResult();
+    // Re-enqueued once: a second re-enqueue would just race the first dispatch's claim, not the fence.
+    const wfhr = await reexecuteWorkflowById(workflowUUID);
+    await wfhr.getResult();
     expect(TryConcExec.maxConc).toBe(1);
     expect(TryConcExec.maxWf).toBe(1);
   });

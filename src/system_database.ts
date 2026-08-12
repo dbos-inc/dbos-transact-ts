@@ -946,7 +946,6 @@ export class SystemDatabase {
     initStatus: WorkflowStatusInternal,
     ownerXid: string | null,
     options?: {
-      isRecoveryRequest?: boolean;
       isDequeuedRequest?: boolean;
       maxRetries?: number;
     },
@@ -963,12 +962,7 @@ export class SystemDatabase {
 
       // Moving from enqueued to pending asks to increment recovery attempts... rather than in the recovery process
       //  where it moves from pending back to enqueued.
-      const resRow = await this.insertWorkflowStatus(
-        client,
-        initStatus,
-        ownerXid,
-        !!options?.isRecoveryRequest || !!options?.isDequeuedRequest,
-      );
+      const resRow = await this.insertWorkflowStatus(client, initStatus, ownerXid, !!options?.isDequeuedRequest);
       if (resRow.name !== initStatus.workflowName) {
         const msg = `Workflow already exists with a different function name: ${resRow.name}, but the provided function name is: ${initStatus.workflowName}`;
         throw new DBOSConflictingWorkflowError(initStatus.workflowUUID, msg);
@@ -990,7 +984,7 @@ export class SystemDatabase {
 
       // If there is an existing DB record and we aren't here to recover it,
       //  leave it be.  Roll back the change to max recovery attempts.
-      if (ownerXid !== resRow.owner_xid && !options?.isRecoveryRequest && !options?.isDequeuedRequest) {
+      if (ownerXid !== resRow.owner_xid && !options?.isDequeuedRequest) {
         // It is not clear if getting the handle should throw the error, or getting the result from the handle should error.
         //  Current precedent is the former.
         if (status === StatusString.MAX_RECOVERY_ATTEMPTS_EXCEEDED) {
@@ -1349,12 +1343,19 @@ export class SystemDatabase {
     resetRecoveryAttempts: boolean,
     internalOptions?: {
       updateName?: string;
+      queueName?: string;
+      resetStartedAtEpochMs?: boolean;
     },
   ): Promise<void> {
     const client = await this.pool.connect();
     try {
       await this.updateWorkflowStatus(client, workflowID, status, {
-        update: { resetRecoveryAttempts, resetNameTo: internalOptions?.updateName },
+        update: {
+          resetRecoveryAttempts,
+          resetNameTo: internalOptions?.updateName,
+          queueName: internalOptions?.queueName,
+          resetStartedAtEpochMs: internalOptions?.resetStartedAtEpochMs,
+        },
       });
     } finally {
       client.release();

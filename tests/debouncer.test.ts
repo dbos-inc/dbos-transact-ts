@@ -204,8 +204,8 @@ describe('debouncer-tests', () => {
 
     // Rerun the workflow, verify it still works
     const recoverHandle = await reexecuteWorkflowById(originalHandle.workflowID);
-    await recoverHandle!.getResult();
-    const status = await recoverHandle!.getStatus();
+    await recoverHandle.getResult();
+    const status = await recoverHandle.getStatus();
     assert.equal(status?.status, StatusString.SUCCESS);
   });
 
@@ -546,7 +546,7 @@ describe('debouncer-tests', () => {
 
     // Force the parent to replay from its checkpoints: the bounce step and enqueue are checkpointed, so replay must re-run the body, return the same child ID, and not enqueue a second child.
     const recoverHandle = await reexecuteWorkflowById(parentHandle.workflowID);
-    expect(await recoverHandle!.getResult()).toBe(childID);
+    expect(await recoverHandle.getResult()).toBe(childID);
     expect(replayParentRuns).toBe(2);
 
     // Exactly one child workflow exists for this key: replay did not double-enqueue.
@@ -913,7 +913,7 @@ describe('debouncer-tests', () => {
 
     // Recovery replays the parent: no checkpoint exists, so the bounce re-executes and lands exactly once.
     const recoverHandle = await reexecuteWorkflowById(parentID);
-    expect(await recoverHandle!.getResult()).toBe(wHandle.workflowID);
+    expect(await recoverHandle.getResult()).toBe(wHandle.workflowID);
 
     status = await getSysDB().getWorkflowStatus(wHandle.workflowID);
     expect(status!.delayUntilEpochMS!).toBeGreaterThan(delayBefore);
@@ -957,7 +957,7 @@ describe('debouncer-tests', () => {
 
     // Replay short-circuits through the checkpoint: same handle, and no re-executed bounce re-extends the delay.
     const recoverHandle = await reexecuteWorkflowById(parentID);
-    expect(await recoverHandle!.getResult()).toBe(wHandle.workflowID);
+    expect(await recoverHandle.getResult()).toBe(wHandle.workflowID);
 
     status = await getSysDB().getWorkflowStatus(wHandle.workflowID);
     expect(status?.delayUntilEpochMS).toBe(delayAfterCrash);

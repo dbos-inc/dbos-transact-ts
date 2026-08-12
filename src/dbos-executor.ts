@@ -244,7 +244,6 @@ export interface InternalWorkflowParams extends WorkflowParams {
   readonly tempWfType?: string;
   readonly tempWfName?: string;
   readonly tempWfClass?: string;
-  readonly isRecoveryDispatch?: boolean;
   readonly isQueueDispatch?: boolean;
 }
 
@@ -665,7 +664,6 @@ export class DBOSExecutor {
       ires = await this.systemDatabase.initWorkflowStatus(internalStatus, randomUUID(), {
         maxRetries: maxRecoveryAttempts,
         isDequeuedRequest: params.isQueueDispatch,
-        isRecoveryRequest: params.isRecoveryDispatch,
       });
       serializationType = ires.serialization === DBOSPortableJSON.name() ? 'portable' : undefined;
     } catch (e) {
@@ -1355,8 +1353,6 @@ export class DBOSExecutor {
   async executeWorkflowId(
     workflowID: string,
     options?: {
-      startNewWorkflow?: boolean;
-      isRecoveryDispatch?: boolean;
       isQueueDispatch?: boolean;
     },
   ): Promise<WorkflowHandle<unknown>> {
@@ -1386,8 +1382,6 @@ export class DBOSExecutor {
 
     const { methReg, configuredInst } = this.#getFunctionInfoFromWFStatus(wfStatus);
 
-    // If starting a new workflow, assign a new UUID. Otherwise, use the workflow's original UUID.
-    const workflowStartID = !!options?.startNewWorkflow ? undefined : workflowID;
     const enqueueOptions =
       wfStatus.queuePartitionKey !== undefined ? { queuePartitionKey: wfStatus.queuePartitionKey } : undefined;
 
@@ -1396,13 +1390,12 @@ export class DBOSExecutor {
         return await this.workflow(
           methReg.registeredFunction as UntypedAsyncFunction,
           {
-            workflowUUID: workflowStartID,
+            workflowUUID: workflowID,
             configuredInstance: configuredInst,
             queueName: wfStatus.queueName,
             enqueueOptions,
             executeWorkflow: true,
             deadlineEpochMS: wfStatus.deadlineEpochMS,
-            isRecoveryDispatch: !!options?.isRecoveryDispatch,
             isQueueDispatch: !!options?.isQueueDispatch,
           },
           ...inputs,
@@ -1429,12 +1422,11 @@ export class DBOSExecutor {
         return await this.startStepTempWF(
           stepReg.registeredFunction as UntypedAsyncFunction,
           {
-            workflowUUID: workflowStartID,
+            workflowUUID: workflowID,
             configuredInstance: configuredInst,
             queueName: wfStatus.queueName, // Probably null
             enqueueOptions,
             executeWorkflow: true,
-            isRecoveryDispatch: !!options?.isRecoveryDispatch,
             isQueueDispatch: !!options?.isQueueDispatch,
           },
           undefined,
@@ -1470,11 +1462,10 @@ export class DBOSExecutor {
           {
             tempWfName: nameArr[2],
             tempWfType: TempWorkflowType.send,
-            workflowUUID: workflowStartID,
+            workflowUUID: workflowID,
             queueName: wfStatus.queueName,
             enqueueOptions,
             executeWorkflow: true,
-            isRecoveryDispatch: !!options?.isRecoveryDispatch,
             isQueueDispatch: !!options?.isQueueDispatch,
           },
           ...inputs,

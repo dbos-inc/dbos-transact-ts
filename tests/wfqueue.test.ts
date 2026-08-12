@@ -1871,7 +1871,7 @@ describe('queue-time-outs', () => {
 
     // Verify it still works on recovery
     const recoveredHandle = await reexecuteWorkflowById(handle.workflowID);
-    await recoveredHandle!.getResult();
+    await recoveredHandle.getResult();
   });
 
   const partitionBlockingEvent = new Event();

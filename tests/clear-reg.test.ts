@@ -35,7 +35,7 @@ describe('clear-reg-tests', () => {
         await expect(wf()).resolves.toBe(`${i}${i}`);
         const wfh = await DBOS.startWorkflow(wf)();
         expect(await wfh.getResult()).toBe(`${i}${i}`);
-        expect(await (await reexecuteWorkflowById(wfh.workflowID))!.getResult()).toBe(`${i}${i}`);
+        expect(await (await reexecuteWorkflowById(wfh.workflowID)).getResult()).toBe(`${i}${i}`);
         await expect(m.DBOSWFTest.runWF()).resolves.toBe(i === 1 ? 'A' : 'B');
         await expect(m.instA.doWorkflow()).resolves.toBe(i === 1 ? 'done A1' : 'done A2');
         await expect(m.instB.doWorkflow()).resolves.toBe('done B');

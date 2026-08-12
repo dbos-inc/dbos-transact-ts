@@ -140,7 +140,7 @@ export class DBOSConflictingRegistrationError extends DBOSError {
   }
 }
 
-const UnexpectedStep = 26;
+export const UnexpectedStep = 26;
 /** Exception raised when a step has an unexpected recorded name, indicating a determinism problem. */
 export class DBOSUnexpectedStepError extends DBOSError {
   constructor(

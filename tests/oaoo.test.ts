@@ -384,7 +384,7 @@ describe('oaoo-tests', () => {
 
     // Test OAOO for getEvent and getWorkflowStatus by reexecuting.
     const handle2 = await reexecuteWorkflowById(getUUID);
-    await expect(handle2!.getResult()).resolves.toBe('valueNull-statusNull-PENDING');
+    await expect(handle2.getResult()).resolves.toBe('valueNull-statusNull-PENDING');
 
     // Run without UUID, should get the new result.
     await expect(EventStatusOAOO.getEventRetrieveWorkflow(setUUID)).resolves.toBe('value1-ERROR-ERROR');

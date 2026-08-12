@@ -2,7 +2,13 @@ import { DBOS, ConfiguredInstance } from '../src/';
 import { generateDBOSTestConfig, reexecuteWorkflowById, setUpDBOSTestSysDb } from './helpers';
 import { randomUUID } from 'node:crypto';
 import { StatusString } from '../src/workflow';
-import { DBOSError, DBOSMaxStepRetriesError, DBOSNotRegisteredError, DBOSUnexpectedStepError } from '../src/error';
+import {
+  DBOSError,
+  DBOSMaxStepRetriesError,
+  DBOSNotRegisteredError,
+  getDBOSErrorCode,
+  UnexpectedStep,
+} from '../src/error';
 import { DBOSConfig } from '../src/dbos-executor';
 
 describe('failures-tests', () => {
@@ -263,7 +269,12 @@ describe('failures-tests', () => {
     NDWFS.flag = false;
 
     const ndh = await reexecuteWorkflowById(wfidnds);
-    await expect(ndh!.getResult()).rejects.toThrow(DBOSUnexpectedStepError);
+    // Instanceof is not preserved by serialization, so we must assert the error code.
+    const err = await ndh.getResult().then(
+      () => undefined,
+      (e: Error) => e,
+    );
+    expect(getDBOSErrorCode(err!)).toBe(UnexpectedStep);
   });
 
   test('non-deterministic-workflow-tx', async () => {
@@ -275,7 +286,12 @@ describe('failures-tests', () => {
     NDWFT.flag = false;
 
     const ndh = await reexecuteWorkflowById(wfidndt);
-    await expect(ndh!.getResult()).rejects.toThrow(DBOSUnexpectedStepError);
+    // Instanceof is not preserved by serialization, so we must assert the error code.
+    const err = await ndh.getResult().then(
+      () => undefined,
+      (e: Error) => e,
+    );
+    expect(getDBOSErrorCode(err!)).toBe(UnexpectedStep);
   });
 
   test('not launched', async () => {

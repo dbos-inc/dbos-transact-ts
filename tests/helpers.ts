@@ -1,8 +1,8 @@
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import { DBOS, StatusString } from '../src';
-import { getClientConfig, sleepms } from '../src/utils';
+import { getClientConfig, INTERNAL_QUEUE_NAME, sleepms } from '../src/utils';
 import { isValidDatabaseName, translateDbosConfig } from '../src/config';
-import { ensureSystemDatabase, SystemDatabase } from '../src/system_database';
+import { ensureSystemDatabase } from '../src/system_database';
 import { GlobalLogger } from '../src/telemetry/logs';
 import { deriveDatabaseUrl, dropPGDatabase, ensurePGDatabase, maskDatabaseUrl } from '../src/database_utils';
 import { Client } from 'pg';
@@ -161,11 +161,6 @@ export async function recoverWorkflow(workflowID: string, executorIDs: string[] 
   return handles[0];
 }
 
-export function executeWorkflowById(workflowId: string) {
-  expect(DBOSExecutor.globalInstance).toBeDefined();
-  return DBOSExecutor.globalInstance!.executeWorkflowId(workflowId);
-}
-
 export async function setWfAndChildrenToPending(workflowId: string, resetRecoveryAttempts: boolean = true) {
   const wfl = await DBOS.listWorkflows({ workflow_id_prefix: workflowId });
   for (const wf of wfl) {
@@ -177,21 +172,23 @@ export async function setWfAndChildrenToPending(workflowId: string, resetRecover
   }
 }
 
+// Re-run a workflow the way recovery does: re-enqueue the row and let the queue dispatch it.
 export async function reexecuteWorkflowById(
   workflowId: string,
   resetRecoveryAttempts: boolean = true,
   updateName?: string,
 ) {
   expect(DBOSExecutor.globalInstance).toBeDefined();
-  await (DBOSExecutor.globalInstance?.systemDatabase as SystemDatabase).setWorkflowStatus(
-    workflowId,
-    StatusString.PENDING,
-    resetRecoveryAttempts,
-    {
-      updateName,
-    },
-  );
-  return await DBOSExecutor.globalInstance?.executeWorkflowId(workflowId, { isRecoveryDispatch: true });
+  const sysDB = DBOSExecutor.globalInstance!.systemDatabase;
+  const status = await sysDB.getWorkflowStatus(workflowId);
+  expect(status).not.toBeNull();
+  await sysDB.setWorkflowStatus(workflowId, StatusString.ENQUEUED, resetRecoveryAttempts, {
+    updateName,
+    // Leave an already-queued workflow on its own queue, as reenqueueWorkflowsForRecovery does.
+    queueName: status!.queueName ?? INTERNAL_QUEUE_NAME,
+    resetStartedAtEpochMs: true,
+  });
+  return DBOS.retrieveWorkflow(workflowId);
 }
 
 export async function dropDatabase(connectionString: string, database?: string) {
