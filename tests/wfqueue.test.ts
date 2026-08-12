@@ -612,9 +612,10 @@ describe('queued-wf-tests-simple', () => {
 
     // Verify the blocked workflow starts and is PENDING while the regular workflow remains ENQUEUED
     await TestCancelQueues.startEvent.wait();
-    await expect(blockedHandle.getStatus()).resolves.toMatchObject({
-      status: StatusString.PENDING,
-    });
+    const blockedStatus = await blockedHandle.getStatus();
+    expect(blockedStatus).toMatchObject({ status: StatusString.PENDING });
+    // The dequeue refreshes updated_at, and nothing else has written this row since it was enqueued.
+    expect(blockedStatus!.updatedAt!).toBeGreaterThan(blockedStatus!.createdAt);
     await expect(regularHandle.getStatus()).resolves.toMatchObject({
       status: StatusString.ENQUEUED,
     });
@@ -2901,7 +2902,7 @@ describe('bounded-lane dispatcher', () => {
     return {
       executorID: 'lane-test',
       logger: { info: () => {}, warn: () => {}, debug: () => {}, error: () => {} },
-      executeWorkflowId: () => Promise.resolve({}),
+      dispatchDequeuedWorkflows: () => Promise.resolve(),
       systemDatabase: {
         listQueues: () => Promise.resolve([]),
         getQueuePartitions: () => Promise.resolve([]),
@@ -3565,6 +3566,57 @@ describe('partitioned-batch-dequeue-dispatch', () => {
     expect(await follower2.getResult()).toBe('a2');
     expect(exclusiveOrderLock.filter((tag) => tag !== 'b1')).toEqual(['head', 'a1', 'a2']);
     expect(batchedQueues).toContain(queueName);
+    expect(await queueEntriesAreCleanedUp()).toBe(true);
+  }, 30000);
+});
+
+describe('dequeue-dispatch-cost', () => {
+  class DispatchCostWF {
+    @DBOS.workflow()
+    static async run(n: number): Promise<number> {
+      return Promise.resolve(n);
+    }
+  }
+
+  const QUEUE_NAME = 'dispatch-cost-queue';
+  let config: DBOSConfig;
+
+  beforeAll(async () => {
+    config = generateDBOSTestConfig();
+    await setUpDBOSTestSysDb(config);
+    DBOS.setConfig(config);
+  });
+
+  beforeEach(async () => {
+    await DBOS.launch();
+    await DBOS.registerQueue(QUEUE_NAME, { onConflict: 'always_update', ...testPolling });
+  });
+
+  afterEach(async () => {
+    jest.restoreAllMocks();
+    await DBOS.shutdown();
+  });
+
+  test('dispatch-does-not-upsert-workflow-status', async () => {
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    const initSpy = jest.spyOn(sysdb, 'initWorkflowStatus');
+
+    const count = 20;
+    const handles: WorkflowHandle<number>[] = [];
+    for (let i = 0; i < count; i++) {
+      handles.push(await DBOS.startWorkflow(DispatchCostWF, { queueName: QUEUE_NAME }).run(i));
+    }
+    for (let i = 0; i < count; i++) {
+      expect(await handles[i].getResult()).toBe(i);
+    }
+
+    // One upsert per enqueue and none per dispatch: dequeuing a claimed row re-reads it, never rewrites it.
+    expect(initSpy).toHaveBeenCalledTimes(count);
+
+    // The claim counts the dispatch exactly once, so a workflow that ran on its first claim sits at 1.
+    for (const handle of handles) {
+      expect((await handle.getStatus())?.recoveryAttempts).toBe(1);
+    }
     expect(await queueEntriesAreCleanedUp()).toBe(true);
   }, 30000);
 });

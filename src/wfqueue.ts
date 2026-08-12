@@ -645,13 +645,7 @@ class WFQueueRunner {
       if (wfids.length > 0) {
         await debugTriggerPoint(DEBUG_TRIGGER_WORKFLOW_QUEUE_START);
       }
-      for (const wfid of wfids) {
-        try {
-          await exec.executeWorkflowId(wfid, { isQueueDispatch: true });
-        } catch (e) {
-          exec.logger.warn(`Could not execute workflow with id ${wfid}: ${(e as Error).message}`);
-        }
-      }
+      await exec.dispatchDequeuedWorkflows(wfids);
     };
     // Dequeue workflows for this queue, either in one batched sweep across partitions or one partition at a time.
     try {

@@ -477,7 +477,6 @@ class NotificationMap<T> {
 }
 
 interface InsertWorkflowResult {
-  recovery_attempts: number;
   status: string;
   name: string;
   class_name: string;
@@ -946,7 +945,6 @@ export class SystemDatabase {
     initStatus: WorkflowStatusInternal,
     ownerXid: string | null,
     options?: {
-      isDequeuedRequest?: boolean;
       maxRetries?: number;
     },
   ): Promise<{
@@ -960,9 +958,7 @@ export class SystemDatabase {
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
 
-      // Moving from enqueued to pending asks to increment recovery attempts... rather than in the recovery process
-      //  where it moves from pending back to enqueued.
-      const resRow = await this.insertWorkflowStatus(client, initStatus, ownerXid, !!options?.isDequeuedRequest);
+      const resRow = await this.insertWorkflowStatus(client, initStatus, ownerXid);
       if (resRow.name !== initStatus.workflowName) {
         const msg = `Workflow already exists with a different function name: ${resRow.name}, but the provided function name is: ${initStatus.workflowName}`;
         throw new DBOSConflictingWorkflowError(initStatus.workflowUUID, msg);
@@ -982,33 +978,19 @@ export class SystemDatabase {
       const status = resRow.status;
       const deadlineEpochMS = resRow.workflow_deadline_epoch_ms ?? undefined;
 
-      // If there is an existing DB record and we aren't here to recover it,
-      //  leave it be.  Roll back the change to max recovery attempts.
-      if (ownerXid !== resRow.owner_xid && !options?.isDequeuedRequest) {
-        // It is not clear if getting the handle should throw the error, or getting the result from the handle should error.
-        //  Current precedent is the former.
+      // If there is an existing DB record and we aren't here to recover it, leave it be.
+      if (ownerXid !== resRow.owner_xid) {
+        // Dead-lettering belongs to the dequeue path, which counts every dispatch; starting a
+        // workflow already in the DLQ just reports it.
         if (status === StatusString.MAX_RECOVERY_ATTEMPTS_EXCEEDED) {
-          throw new DBOSMaxRecoveryAttemptsExceededError(initStatus.workflowUUID, options?.maxRetries ?? -1);
+          throw new DBOSMaxRecoveryAttemptsExceededError(initStatus.workflowUUID, options?.maxRetries);
         }
         return { status, deadlineEpochMS, shouldExecuteOnThisExecutor: false, serialization: resRow.serialization };
       }
 
-      // Upsert above already set executor assignment and incremented the recovery attempt
+      // Upsert above already set executor assignment
       shouldCommit = true;
 
-      // recovery_attempt means "attempts" (we kept the name for backward compatibility). It's default value is 1.
-      // Every time we init the status, we increment `recovery_attempts` by 1.
-      // Thus, when this number becomes equal to `maxRetries + 1`, we should mark the workflow as `MAX_RECOVERY_ATTEMPTS_EXCEEDED`.
-      const attempts = resRow.recovery_attempts;
-      if (options?.maxRetries && attempts > options?.maxRetries + 1) {
-        await this.updateWorkflowStatus(client, initStatus.workflowUUID, StatusString.MAX_RECOVERY_ATTEMPTS_EXCEEDED, {
-          where: { status: StatusString.PENDING },
-          throwOnFailure: false,
-          update: { resetDeduplicationID: true },
-        });
-        throw new DBOSMaxRecoveryAttemptsExceededError(initStatus.workflowUUID, options.maxRetries);
-      }
-      this.logger.debug(`Workflow ${initStatus.workflowUUID} attempt number: ${attempts}.`);
       return {
         status,
         deadlineEpochMS,
@@ -1027,6 +1009,22 @@ export class SystemDatabase {
         client.release();
       }
     }
+  }
+
+  /** Move claimed workflows that exhausted their attempts off the queue, leaving rows others have moved on alone. */
+  @dbRetry()
+  async deadLetterWorkflows(workflowIDs: string[]): Promise<void> {
+    if (workflowIDs.length === 0) return;
+    await this.pool.query(
+      `UPDATE "${this.schemaName}".workflow_status
+       SET status = $1,
+           deduplication_id = NULL,
+           started_at_epoch_ms = NULL,
+           queue_name = NULL,
+           updated_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint
+       WHERE workflow_uuid = ANY($2::text[]) AND status = $3`,
+      [StatusString.MAX_RECOVERY_ATTEMPTS_EXCEEDED, workflowIDs, StatusString.PENDING],
+    );
   }
 
   /** Highest created_at among still-active rows per partition key, used to seed the in-memory cursor. */
@@ -3287,9 +3285,14 @@ export class SystemDatabase {
 
       let maxTasks = Infinity;
 
+      if (queue.rateLimit) {
+        // Bound the claim by the limiter's remaining slots so a backlogged queue locks only what it can start.
+        maxTasks = Math.max(0, queue.rateLimit.limitPerPeriod - numRecentQueries);
+      }
+
       if (queue.workerConcurrency !== undefined) {
         // Use the in-memory registry for this worker's running count — avoids a DB round trip.
-        maxTasks = Math.max(0, queue.workerConcurrency - localRunningForQueue);
+        maxTasks = Math.min(maxTasks, Math.max(0, queue.workerConcurrency - localRunningForQueue));
       }
 
       if (queue.concurrency !== undefined) {
@@ -3351,30 +3354,23 @@ export class SystemDatabase {
 
       // Start the workflows
       const workflowIDs = rows.map((row) => row.workflow_uuid);
-      for (const id of workflowIDs) {
-        // If we have a rate limit, stop starting functions when the number
-        //   of functions started this period exceeds the limit.
-        if (queue.rateLimit && claimedIDs.length + numRecentQueries >= queue.rateLimit.limitPerPeriod) {
-          break;
-        }
-
+      if (workflowIDs.length > 0) {
         // Start the functions by marking them as pending and updating their executor IDs.
-        // Only claim the workflow if the UPDATE actually transitioned an ENQUEUED row —
-        // otherwise another worker won the race and we must not re-dispatch it.
         const updateParams: unknown[] = [
           StatusString.PENDING,
           executorID,
           appVersion,
           startTimeMs,
           queue.rateLimit !== undefined,
-          id,
+          workflowIDs,
           StatusString.ENQUEUED,
           // Claim an unclaimed row for this application; a nameless dequeuer leaves ownership untouched.
           this.appName ?? null,
         ];
         // Re-check ownership alongside status, as the partitioned claim guard does.
         const claimScope = this.#appNameFilter('application_name', this.appName, updateParams);
-        const updateRes = await client.query(
+        // RETURNING reports exactly the rows this statement flipped, so a row another worker won is absent.
+        const flippedResult = await client.query<{ workflow_uuid: string }>(
           `UPDATE "${this.schemaName}".workflow_status
            SET status = $1,
                executor_id = $2,
@@ -3382,17 +3378,20 @@ export class SystemDatabase {
                started_at_epoch_ms = $4,
                rate_limited = $5,
                application_name = COALESCE(application_name, $8),
+               recovery_attempts = recovery_attempts + 1,
+               updated_at = (EXTRACT(epoch FROM now()) * 1000)::bigint,
                workflow_deadline_epoch_ms = CASE
                  WHEN workflow_timeout_ms IS NOT NULL AND workflow_deadline_epoch_ms IS NULL
                  THEN (EXTRACT(epoch FROM now()) * 1000)::bigint + workflow_timeout_ms
                  ELSE workflow_deadline_epoch_ms
                END
-           WHERE workflow_uuid = $6 AND status = $7 AND ${claimScope}`,
+           WHERE workflow_uuid = ANY($6::text[]) AND status = $7 AND ${claimScope}
+           RETURNING workflow_uuid`,
           updateParams,
         );
-        if ((updateRes.rowCount ?? 0) > 0) {
-          claimedIDs.push(id);
-        }
+        const flippedIDs = new Set(flippedResult.rows.map((row) => row.workflow_uuid));
+        // RETURNING order is unspecified, so re-impose the dequeue order.
+        claimedIDs.push(...workflowIDs.filter((id) => flippedIDs.has(id)));
       }
 
       await client.query('COMMIT');
@@ -3537,6 +3536,8 @@ export class SystemDatabase {
              started_at_epoch_ms = $7,
              rate_limited = FALSE,
              application_name = COALESCE(application_name, $8),
+             recovery_attempts = recovery_attempts + 1,
+             updated_at = (EXTRACT(epoch FROM now()) * 1000)::bigint,
              workflow_deadline_epoch_ms = CASE
                WHEN workflow_timeout_ms IS NOT NULL AND workflow_deadline_epoch_ms IS NULL
                THEN (EXTRACT(epoch FROM now()) * 1000)::bigint + workflow_timeout_ms
@@ -4828,7 +4829,6 @@ export class SystemDatabase {
     client: PoolClient,
     initStatus: WorkflowStatusInternal,
     ownerXid: string | null,
-    incrementAttempts: boolean = false,
   ): Promise<InsertWorkflowResult> {
     try {
       const { rows } = await client.query<InsertWorkflowResult>(
@@ -4865,21 +4865,16 @@ export class SystemDatabase {
           debounce_deadline_epoch_ms,
           is_debounced,
           application_name
-        ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $26, $27, $28, $29, $30, $31, $32, $33)
+        ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32)
         ON CONFLICT (workflow_uuid)
           DO UPDATE SET
-            recovery_attempts = CASE
-              WHEN workflow_status.status != '${StatusString.ENQUEUED}' AND workflow_status.status != '${StatusString.DELAYED}'
-              THEN workflow_status.recovery_attempts + $25
-              ELSE workflow_status.recovery_attempts
-            END,
             updated_at = EXCLUDED.updated_at,
             executor_id = CASE
               WHEN EXCLUDED.status != '${StatusString.ENQUEUED}' AND EXCLUDED.status != '${StatusString.DELAYED}'
               THEN EXCLUDED.executor_id
               ELSE workflow_status.executor_id
             END
-          RETURNING recovery_attempts, status, name, class_name, config_name, queue_name, workflow_deadline_epoch_ms, executor_id, owner_xid, serialization`,
+          RETURNING status, name, class_name, config_name, queue_name, workflow_deadline_epoch_ms, executor_id, owner_xid, serialization`,
         [
           initStatus.workflowUUID,
           initStatus.status,
@@ -4906,7 +4901,6 @@ export class SystemDatabase {
           initStatus.queuePartitionKey ?? null,
           initStatus.forkedFrom ?? null,
           initStatus.parentWorkflowID ?? null,
-          (incrementAttempts ?? false) ? 1 : 0,
           initStatus.serialization,
           ownerXid,
           initStatus.delayUntilEpochMS ?? null,

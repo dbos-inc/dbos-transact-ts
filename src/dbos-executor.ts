@@ -244,7 +244,8 @@ export interface InternalWorkflowParams extends WorkflowParams {
   readonly tempWfType?: string;
   readonly tempWfName?: string;
   readonly tempWfClass?: string;
-  readonly isQueueDispatch?: boolean;
+  /** Set only by queue dispatch: the claimed row this run was started from. */
+  readonly dequeuedStatus?: WorkflowStatusInternal;
 }
 
 /** Options for assembling an ENQUEUED workflow row without persisting it. */
@@ -660,34 +661,59 @@ export class DBOSExecutor {
       }
     }
     let ires: Awaited<ReturnType<SystemDatabase['initWorkflowStatus']>>;
-    try {
-      ires = await this.systemDatabase.initWorkflowStatus(internalStatus, randomUUID(), {
-        maxRetries: maxRecoveryAttempts,
-        isDequeuedRequest: params.isQueueDispatch,
-      });
-      serializationType = ires.serialization === DBOSPortableJSON.name() ? 'portable' : undefined;
-    } catch (e) {
-      // For 'return-existing' enqueues we don't pre-record the dedup error: the wrapper will
-      // catch it, attach to the existing workflow, and record the child mapping itself.
+    const claimed = params.dequeuedStatus;
+    if (claimed) {
+      // The claim counted this dispatch; dead-letter the workflow if that exhausted its attempts.
       if (
-        e instanceof DBOSQueueDuplicatedError &&
-        callerID &&
-        callerFunctionID &&
-        params.duplicationPolicy !== 'return-existing'
+        claimed.status !== StatusString.SUCCESS &&
+        claimed.status !== StatusString.ERROR &&
+        (claimed.recoveryAttempts ?? 0) > maxRecoveryAttempts + 1
       ) {
-        const sererr = await serializeResError(e, this.serializer, undefined); // This is a step result
-        await this.systemDatabase.recordOperationResult(
-          callerID,
-          callerFunctionID,
-          internalStatus.workflowName,
-          true,
-          Date.now(),
-          Date.now(),
-          { error: sererr.serializedValue, serialization: sererr.serialization },
-        );
+        await this.systemDatabase.deadLetterWorkflows([workflowID]);
+        this.tracer.endSpan(span);
+        throw new DBOSMaxRecoveryAttemptsExceededError(workflowID, maxRecoveryAttempts);
       }
-      this.tracer.endSpan(span);
-      throw e;
+      // Only a PENDING row owns its outcome, so a row moved on since the claim would run for nothing.
+      if (claimed.status !== StatusString.PENDING) {
+        this.tracer.endSpan(span);
+        return new RetrievedHandle(this.systemDatabase, workflowID);
+      }
+      ires = {
+        status: claimed.status,
+        deadlineEpochMS: claimed.deadlineEpochMS,
+        shouldExecuteOnThisExecutor: true,
+        serialization: claimed.serialization,
+      };
+      serializationType = ires.serialization === DBOSPortableJSON.name() ? 'portable' : undefined;
+    } else {
+      try {
+        ires = await this.systemDatabase.initWorkflowStatus(internalStatus, randomUUID(), {
+          maxRetries: maxRecoveryAttempts,
+        });
+        serializationType = ires.serialization === DBOSPortableJSON.name() ? 'portable' : undefined;
+      } catch (e) {
+        // For 'return-existing' enqueues we don't pre-record the dedup error: the wrapper will
+        // catch it, attach to the existing workflow, and record the child mapping itself.
+        if (
+          e instanceof DBOSQueueDuplicatedError &&
+          callerID &&
+          callerFunctionID &&
+          params.duplicationPolicy !== 'return-existing'
+        ) {
+          const sererr = await serializeResError(e, this.serializer, undefined); // This is a step result
+          await this.systemDatabase.recordOperationResult(
+            callerID,
+            callerFunctionID,
+            internalStatus.workflowName,
+            true,
+            Date.now(),
+            Date.now(),
+            { error: sererr.serializedValue, serialization: sererr.serialization },
+          );
+        }
+        this.tracer.endSpan(span);
+        throw e;
+      }
     }
 
     if (callerFunctionID !== undefined && callerID !== undefined) {
@@ -1350,19 +1376,46 @@ export class DBOSExecutor {
     }
   }
 
-  async executeWorkflowId(
-    workflowID: string,
-    options?: {
-      isQueueDispatch?: boolean;
-    },
-  ): Promise<WorkflowHandle<unknown>> {
-    const wfStatus = await this.systemDatabase.getWorkflowStatus(workflowID);
-    if (!wfStatus) {
-      this.logger.error(`Failed to find workflow status for workflowUUID: ${workflowID}`);
-      throw new DBOSError(`Failed to find workflow status for workflow UUID: ${workflowID}`);
-    }
+  /** Bounds the ID list per status fetch: listWorkflows binds one parameter per ID. */
+  static readonly #dispatchFetchChunkSize = 500;
 
-    if (!wfStatus?.input) {
+  /** Fetch the claimed workflows' statuses in as few round trips as possible, then dispatch each. */
+  async dispatchDequeuedWorkflows(workflowIDs: string[]): Promise<void> {
+    const statuses = new Map<string, WorkflowStatusInternal>();
+    for (let start = 0; start < workflowIDs.length; start += DBOSExecutor.#dispatchFetchChunkSize) {
+      const chunk = workflowIDs.slice(start, start + DBOSExecutor.#dispatchFetchChunkSize);
+      for (const status of await this.systemDatabase.listWorkflows({
+        workflowIDs: chunk,
+        loadInput: true,
+        loadOutput: false,
+      })) {
+        statuses.set(status.workflowUUID, status);
+      }
+    }
+    for (const workflowID of workflowIDs) {
+      const status = statuses.get(workflowID);
+      if (!status) {
+        this.logger.warn(`Could not execute workflow with id ${workflowID}: workflow status not found`);
+        continue;
+      }
+      try {
+        await this.executeDequeuedWorkflow(status);
+      } catch (e) {
+        this.logger.warn(`Could not execute workflow with id ${workflowID}: ${(e as Error).message}`);
+      }
+    }
+  }
+
+  /**
+   * Run a workflow the queue has just claimed, from its persisted status.
+   *
+   * Deliberately skips initWorkflowStatus: the claim already wrote everything it would
+   * (PENDING, executor, deadline, recovery_attempts) and this status was read back from
+   * that row, so re-upserting it only rewrites the columns it just read.
+   */
+  async executeDequeuedWorkflow(wfStatus: WorkflowStatusInternal): Promise<WorkflowHandle<unknown>> {
+    const workflowID = wfStatus.workflowUUID;
+    if (!wfStatus.input) {
       this.logger.error(`Failed to find inputs for workflowUUID: ${workflowID}`);
       throw new DBOSError(`Failed to find inputs for workflow UUID: ${workflowID}`);
     }
@@ -1396,7 +1449,7 @@ export class DBOSExecutor {
             enqueueOptions,
             executeWorkflow: true,
             deadlineEpochMS: wfStatus.deadlineEpochMS,
-            isQueueDispatch: !!options?.isQueueDispatch,
+            dequeuedStatus: wfStatus,
           },
           ...inputs,
         );
@@ -1427,7 +1480,7 @@ export class DBOSExecutor {
             queueName: wfStatus.queueName, // Probably null
             enqueueOptions,
             executeWorkflow: true,
-            isQueueDispatch: !!options?.isQueueDispatch,
+            dequeuedStatus: wfStatus,
           },
           undefined,
           undefined,
@@ -1466,7 +1519,7 @@ export class DBOSExecutor {
             queueName: wfStatus.queueName,
             enqueueOptions,
             executeWorkflow: true,
-            isQueueDispatch: !!options?.isQueueDispatch,
+            dequeuedStatus: wfStatus,
           },
           ...inputs,
         );
