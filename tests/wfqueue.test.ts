@@ -612,10 +612,9 @@ describe('queued-wf-tests-simple', () => {
 
     // Verify the blocked workflow starts and is PENDING while the regular workflow remains ENQUEUED
     await TestCancelQueues.startEvent.wait();
-    const blockedStatus = await blockedHandle.getStatus();
-    expect(blockedStatus).toMatchObject({ status: StatusString.PENDING });
-    // The dequeue refreshes updated_at, and nothing else has written this row since it was enqueued.
-    expect(blockedStatus!.updatedAt!).toBeGreaterThan(blockedStatus!.createdAt);
+    await expect(blockedHandle.getStatus()).resolves.toMatchObject({
+      status: StatusString.PENDING,
+    });
     await expect(regularHandle.getStatus()).resolves.toMatchObject({
       status: StatusString.ENQUEUED,
     });
@@ -3571,14 +3570,25 @@ describe('partitioned-batch-dequeue-dispatch', () => {
 });
 
 describe('dequeue-dispatch-cost', () => {
+  const dequeueStarted = new Event();
+  const releaseDequeued = new Event();
+
   class DispatchCostWF {
     @DBOS.workflow()
     static async run(n: number): Promise<number> {
       return Promise.resolve(n);
     }
+
+    @DBOS.workflow()
+    static async blockAfterStart(): Promise<void> {
+      dequeueStarted.set();
+      await releaseDequeued.wait();
+    }
   }
 
   const QUEUE_NAME = 'dispatch-cost-queue';
+  // Polls one interval out, so the row is observably ENQUEUED before the first claim.
+  const SLOW_QUEUE_NAME = 'dispatch-cost-slow-queue';
   let config: DBOSConfig;
 
   beforeAll(async () => {
@@ -3588,8 +3598,11 @@ describe('dequeue-dispatch-cost', () => {
   });
 
   beforeEach(async () => {
+    dequeueStarted.clear();
+    releaseDequeued.clear();
     await DBOS.launch();
     await DBOS.registerQueue(QUEUE_NAME, { onConflict: 'always_update', ...testPolling });
+    await DBOS.registerQueue(SLOW_QUEUE_NAME, { onConflict: 'always_update', minPollingIntervalMs: 3000 });
   });
 
   afterEach(async () => {
@@ -3617,6 +3630,30 @@ describe('dequeue-dispatch-cost', () => {
     for (const handle of handles) {
       expect((await handle.getStatus())?.recoveryAttempts).toBe(1);
     }
+    expect(await queueEntriesAreCleanedUp()).toBe(true);
+  }, 30000);
+
+  test('dequeue-refreshes-updated-at', async () => {
+    const handle = await DBOS.startWorkflow(DispatchCostWF, { queueName: SLOW_QUEUE_NAME }).blockAfterStart();
+
+    try {
+      // Read while the row is still waiting on the first poll; nothing has written it since the enqueue.
+      const enqueued = await handle.getStatus();
+      expect(enqueued?.status).toBe(StatusString.ENQUEUED);
+      const enqueuedUpdatedAt = enqueued!.updatedAt;
+
+      await dequeueStarted.wait();
+      const dequeued = await handle.getStatus();
+      // Still blocked, so the claim is the only write between the two reads.
+      expect(dequeued?.status).toBe(StatusString.PENDING);
+      // Compared against the earlier value of the same column, so app/database clock skew cannot decide it.
+      expect(dequeued!.updatedAt).not.toBe(enqueuedUpdatedAt);
+    } finally {
+      // Released here so a failed assertion fails the test instead of hanging teardown.
+      releaseDequeued.set();
+    }
+
+    await handle.getResult();
     expect(await queueEntriesAreCleanedUp()).toBe(true);
   }, 30000);
 });

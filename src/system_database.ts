@@ -3393,8 +3393,9 @@ export class SystemDatabase {
           updateParams,
         );
         const flippedIDs = new Set(flippedResult.rows.map((row) => row.workflow_uuid));
-        // RETURNING order is unspecified, so re-impose the dequeue order.
-        claimedIDs.push(...workflowIDs.filter((id) => flippedIDs.has(id)));
+        for (const id of workflowIDs) {
+          if (flippedIDs.has(id)) claimedIDs.push(id);
+        }
       }
 
       await client.query('COMMIT');
