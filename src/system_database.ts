@@ -3329,7 +3329,10 @@ export class SystemDatabase {
         ? '(application_version = $3 OR application_version IS NULL)'
         : 'application_version = $3';
 
-      const lockMode = queue.concurrency ? 'FOR UPDATE NOWAIT' : 'FOR UPDATE SKIP LOCKED';
+      // A limit shared across processes needs a consistent view of the table: NOWAIT makes an
+      // overlapping dequeuer abort rather than claim the next rows and spend the same budget twice.
+      const sharedBudget = queue.concurrency !== undefined || queue.rateLimit !== undefined;
+      const lockMode = sharedBudget ? 'FOR UPDATE NOWAIT' : 'FOR UPDATE SKIP LOCKED';
       const limitClause = maxTasks !== Infinity ? `LIMIT ${maxTasks}` : '';
 
       const selectParams: unknown[] = [StatusString.ENQUEUED, queue.name, appVersion, ...partitionParams];
