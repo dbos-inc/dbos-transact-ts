@@ -1627,6 +1627,13 @@ describe('test-fork', () => {
     static transactionTwoCount = 0;
     static transactionThreeCount = 0;
     static childWorkflowCount = 0;
+    static steplessCount = 0;
+
+    @DBOS.workflow()
+    static async steplessWorkflow(): Promise<number> {
+      ExampleWorkflow.steplessCount += 1;
+      return Promise.resolve(42);
+    }
 
     @DBOS.workflow()
     static async stepsWorkflow(input: number): Promise<number> {
@@ -1873,8 +1880,37 @@ describe('test-fork', () => {
     expect(ExampleWorkflow.stepTwoCount).toBe(7);
     expect(ExampleWorkflow.stepThreeCount).toBe(10);
 
+    // A workflow with no recorded steps has nothing to resume from, so both
+    // step-deriving modes fork it from step 0 rather than failing.
+    ExampleWorkflow.steplessCount = 0;
+    const wf4Id = randomUUID();
+    const h4 = await DBOS.startWorkflow(ExampleWorkflow, { workflowID: wf4Id }).steplessWorkflow();
+    expect(await h4.getResult()).toBe(42);
+    expect(ExampleWorkflow.steplessCount).toBe(1);
+    expect(await DBOS.listWorkflowSteps(wf4Id)).toEqual([]);
+
+    for (const mode of [{ fromLastFailure: true }, { fromLastStep: true }]) {
+      const forkedStepless = await sysdb.forkFromFailure([wf4Id], mode);
+      expect(await DBOS.retrieveWorkflow<number>(forkedStepless[0]).getResult()).toBe(42);
+    }
+    expect(ExampleWorkflow.steplessCount).toBe(3); // the body re-ran from the top for both forks
+
+    // A stepless workflow mixed into a batch does not break its peers.
+    const forkedMixed = await sysdb.forkFromFailure([wf4Id, wf3Id], { fromLastStep: true });
+    expect(await DBOS.retrieveWorkflow<number>(forkedMixed[0]).getResult()).toBe(42);
+    expect(await DBOS.retrieveWorkflow<number>(forkedMixed[1]).getResult()).toBe(6);
+    expect(ExampleWorkflow.steplessCount).toBe(4);
+    // Only step three re-ran: catches a start step misassigned when the copy mapping drops wf4's zero.
+    expect(ExampleWorkflow.stepOneCount).toBe(3);
+    expect(ExampleWorkflow.stepTwoCount).toBe(7);
+    expect(ExampleWorkflow.stepThreeCount).toBe(11);
+
     // Validation: step name not found
     await expect(sysdb.forkFromFailure([wf1Id], { fromStepName: 'failableStepThree' })).rejects.toThrow(
+      'has no step named',
+    );
+    // A stepless workflow has no named step either, so this still raises.
+    await expect(sysdb.forkFromFailure([wf4Id], { fromStepName: 'failableStepOne' })).rejects.toThrow(
       'has no step named',
     );
     await expect(sysdb.forkFromFailure([wf3Id], { fromStepName: 'nonexistent_step' })).rejects.toThrow(
@@ -1890,7 +1926,7 @@ describe('test-fork', () => {
     );
 
     // All originals marked as forked from
-    for (const wid of [wf1Id, wf2Id, wf3Id]) {
+    for (const wid of [wf1Id, wf2Id, wf3Id, wf4Id]) {
       const status = await DBOS.getWorkflowStatus(wid);
       expect(status?.wasForkedFrom).toBe(true);
     }
@@ -1901,6 +1937,7 @@ describe('test-fork', () => {
     expect(forkedFromIDs).toContain(wf1Id);
     expect(forkedFromIDs).toContain(wf2Id);
     expect(forkedFromIDs).toContain(wf3Id);
+    expect(forkedFromIDs).toContain(wf4Id);
   });
 
   test('test-fork-childwf', async () => {

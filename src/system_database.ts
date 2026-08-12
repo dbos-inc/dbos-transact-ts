@@ -1800,15 +1800,15 @@ export class SystemDatabase {
 
       const result = await this.pool.query<{ workflow_uuid: string; start_step: number }>(query, params);
       const startStepByID = new Map(result.rows.map((r) => [r.workflow_uuid, Number(r.start_step)]));
-      for (const wid of workflowIDs) {
-        if (!startStepByID.has(wid)) {
-          if (options.fromStepName !== undefined) {
+      if (options.fromStepName !== undefined) {
+        for (const wid of workflowIDs) {
+          if (!startStepByID.has(wid)) {
             throw new Error(`Workflow ${wid} has no step named '${options.fromStepName}'`);
           }
-          throw new Error(`Workflow ${wid} has no steps`);
         }
       }
-      startSteps = workflowIDs.map((wid) => startStepByID.get(wid)!);
+      // A workflow with no recorded steps has nothing to resume from, so restart it from the beginning.
+      startSteps = workflowIDs.map((wid) => startStepByID.get(wid) ?? 0);
     }
 
     const forkedIDs = workflowIDs.map(() => randomUUID());

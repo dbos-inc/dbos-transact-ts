@@ -9,8 +9,9 @@ import {
   registerTransactionalDataSource,
   wrapDBOSFunctionAndRegister,
 } from './decorators';
-import { DBOSInvalidWorkflowTransitionError } from './error';
+import { DBOSError, DBOSInvalidWorkflowTransitionError } from './error';
 import { runWithTrace, SpanStatusCode } from './telemetry/traces';
+import { SuperJSON } from 'superjson';
 
 /**
  * This interface is to be used for implementers of transactional data sources
@@ -296,6 +297,35 @@ export interface PGTransactionConfig {
   readOnly?: boolean;
 }
 
+/** Base error type, re-exported so data sources can raise DBOS-typed failures. */
+export { DBOSError };
+
+/**
+ * Internal signal that a concurrent duplicate execution recorded this step's outcome first.
+ * Data sources throw this from their completion insert so the user transaction rolls back
+ * and the recorded outcome is replayed instead; it is never surfaced to user code.
+ */
+export class DBOSStepAlreadyRecordedError extends Error {
+  constructor(workflowID: string, stepID: number) {
+    super(`Step ${stepID} of workflow ${workflowID} was already recorded by a concurrent execution`);
+    this.name = 'DBOSStepAlreadyRecordedError';
+  }
+}
+
+/**
+ * Deliver a transaction outcome recorded by an earlier or concurrent execution.
+ * Data sources share this between their pre-execution check and their conflict handler
+ * so the two paths cannot drift apart.
+ */
+export function replayRecordedStep<Return>(recorded: { output?: string | null; error?: string | null }): Return {
+  DBOS.span?.setAttribute('cached', true);
+  // Discriminate on the value: a raw row carries both keys, with the unused one null.
+  if (typeof recorded.error === 'string') {
+    throw SuperJSON.parse(recorded.error);
+  }
+  return (recorded.output ? SuperJSON.parse(recorded.output) : null) as Return;
+}
+
 export interface CheckSchemaInstallationReturn {
   schema_exists: number;
   table_exists: number;
@@ -335,8 +365,19 @@ export function createTransactionCompletionTablePG(schemaName: string = 'dbos'):
 `;
 }
 
+const SQLSTATE_PATTERN = /^[0-9A-Z]{5}$/;
+
 function getPGErrorCode(error: unknown): string | undefined {
-  return error && typeof error === 'object' && 'code' in error ? (error.code as string) : undefined;
+  // Some clients wrap the driver's error, so follow the cause chain to find the code.
+  for (let depth = 0, e = error; e && typeof e === 'object' && depth < 10; depth++) {
+    // Only a SQLSTATE ends the search, so a wrapper's own code cannot shadow the driver's.
+    const code = (e as { code?: unknown }).code;
+    if (typeof code === 'string' && SQLSTATE_PATTERN.test(code)) {
+      return code;
+    }
+    e = (e as { cause?: unknown }).cause;
+  }
+  return undefined;
 }
 
 export function isPGRetriableTransactionError(error: unknown): boolean {

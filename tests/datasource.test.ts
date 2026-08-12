@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
-import { PoolConfig } from 'pg';
+import { Client, Pool, PoolConfig } from 'pg';
 import knex, { Knex } from 'knex';
+import { SuperJSON } from 'superjson';
 import { DBOS, FunctionName } from '../src';
 
 import {
@@ -15,13 +16,18 @@ import {
   PGIsolationLevel as IsolationLevel,
   type PGTransactionConfig,
   DBOSDataSource,
+  DBOSError,
+  DBOSStepAlreadyRecordedError,
   registerDataSource,
+  replayRecordedStep,
 } from '../src/datasource';
 import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
 import { AsyncLocalStorage } from 'async_hooks';
 import { DBOSNotAuthorizedError, DBOSInvalidWorkflowTransitionError } from '../src/error';
 import { sleepms } from '../src/utils';
 import { DBOSJSON } from '../src/serialization';
+import { DBOSExecutor } from '../src/dbos-executor';
+import type { WorkflowStatusInternal } from '../src/system_database';
 
 /*
  * Knex user data access interface
@@ -504,5 +510,217 @@ describe('decoratorless-api-tests', () => {
     await expect(DBWFI.sectx2()).rejects.toThrow(DBOSNotAuthorizedError);
     await expect(DBWFI.wfs1()).rejects.toThrow(DBOSNotAuthorizedError);
     await expect(DBWFI.wfs2()).rejects.toThrow(DBOSNotAuthorizedError);
+  });
+});
+
+////
+/// Duplicate execution: replaying a step the winner already recorded
+////
+
+const WINNER_TX_OUTPUT = 'winner-tx-output';
+const ADOPTED_WF_OUTPUT = 'adopted-workflow-output';
+
+// A duplicate execution's step checkpoint must look older than ours, or the
+// system database's same-millisecond comparison would not see a conflict.
+const winnerEpochMs = () => Date.now() - 60_000;
+
+type CompletionRow = { output: string | null; error: string | null };
+
+/**
+ * The smallest data source that follows the current contract: detect a lost
+ * completion insert with ON CONFLICT DO NOTHING, then replay the winner.
+ */
+class ProbeTransactionHandler implements DataSourceTransactionHandler {
+  readonly name = 'probe-ds';
+  readonly dsType = 'ProbeDataSource';
+  #poolField: Pool | undefined;
+
+  async initialize(): Promise<void> {
+    this.#poolField = new Pool({ connectionString: config.systemDatabaseUrl });
+    await this.#poolField.query(createTransactionCompletionSchemaPG());
+    await this.#poolField.query(createTransactionCompletionTablePG());
+  }
+
+  async destroy(): Promise<void> {
+    const pool = this.#poolField;
+    this.#poolField = undefined;
+    await pool?.end();
+  }
+
+  get pool(): Pool {
+    if (!this.#poolField) {
+      throw new Error('ProbeTransactionHandler is not initialized');
+    }
+    return this.#poolField;
+  }
+
+  // Returns the raw row, exercising replayRecordedStep's tolerance of both columns.
+  async #checkExecution(workflowID: string, stepID: number): Promise<CompletionRow | undefined> {
+    const { rows } = await this.pool.query<CompletionRow>(
+      `SELECT output, error FROM dbos.transaction_completion WHERE workflow_id = $1 AND function_num = $2`,
+      [workflowID, stepID],
+    );
+    return rows[0];
+  }
+
+  async invokeTransactionFunction<This, Args extends unknown[], Return>(
+    _config: unknown,
+    target: This,
+    func: (this: This, ...args: Args) => Promise<Return>,
+    ...args: Args
+  ): Promise<Return> {
+    const workflowID = DBOS.workflowID!;
+    const stepID = DBOS.stepID!;
+
+    const previous = await this.#checkExecution(workflowID, stepID);
+    if (previous) {
+      return replayRecordedStep<Return>(previous);
+    }
+
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const result = await func.call(target, ...args);
+      const { rows } = await client.query(
+        `INSERT INTO dbos.transaction_completion (workflow_id, function_num, output)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (workflow_id, function_num) DO NOTHING
+         RETURNING workflow_id`,
+        [workflowID, stepID, SuperJSON.stringify(result)],
+      );
+      if (rows.length === 0) {
+        throw new DBOSStepAlreadyRecordedError(workflowID, stepID);
+      }
+      await client.query('COMMIT');
+      return result;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      if (error instanceof DBOSStepAlreadyRecordedError) {
+        const recorded = await this.#checkExecution(workflowID, stepID);
+        if (recorded === undefined) {
+          throw new DBOSError(`Step ${stepID} of workflow ${workflowID} conflicted but nothing was recorded`);
+        }
+        return replayRecordedStep<Return>(recorded);
+      }
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+}
+
+const probeHandler = new ProbeTransactionHandler();
+registerDataSource(probeHandler);
+
+const probeState = { bodyRuns: 0, workflowBodyFinished: 0, claimSysdb: false, winnerRecordedOutput: false };
+
+/**
+ * Mid-transaction, a duplicate execution commits the app-database completion row.
+ * When `claimSysdb` is set it also takes the system-database step checkpoint and
+ * finishes the workflow, which is what forces this run to park instead of continuing.
+ */
+async function raceTransaction(): Promise<string> {
+  probeState.bodyRuns += 1;
+  const workflowID = DBOS.workflowID!;
+  const stepID = DBOS.stepID!;
+
+  const winner = new Client({ connectionString: config.systemDatabaseUrl });
+  try {
+    await winner.connect();
+    await winner.query(
+      `INSERT INTO dbos.transaction_completion (workflow_id, function_num, output) VALUES ($1, $2, $3)`,
+      [workflowID, stepID, SuperJSON.stringify(WINNER_TX_OUTPUT)],
+    );
+  } finally {
+    await winner.end();
+  }
+
+  if (probeState.claimSysdb) {
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    const winnerMs = winnerEpochMs();
+    await sysdb.recordOperationResult(workflowID, stepID, 'raceTransaction', false, winnerMs, winnerMs, {
+      output: DBOSJSON.stringify(WINNER_TX_OUTPUT),
+    });
+    probeState.winnerRecordedOutput = await sysdb.recordWorkflowOutput(workflowID, {
+      output: DBOSJSON.stringify(ADOPTED_WF_OUTPUT),
+    } as WorkflowStatusInternal);
+  }
+
+  return 'loser-tx-output';
+}
+
+const regRaceTransaction = registerTransaction(probeHandler.name, raceTransaction, { name: 'raceTransaction' });
+
+async function raceWorkflowGuts(): Promise<string> {
+  // Prefixed so a locally computed result can never be mistaken for the adopted one.
+  const tx = await regRaceTransaction();
+  // Only reached when the step returned; a parked run throws out of the line above.
+  probeState.workflowBodyFinished += 1;
+  return `local:${tx}`;
+}
+
+const raceWorkflow = DBOS.registerWorkflow(raceWorkflowGuts, { name: 'raceWorkflow' });
+
+describe('datasource-duplicate-execution', () => {
+  beforeAll(async () => {
+    await setUpDBOSTestSysDb(config);
+    DBOS.setConfig(config);
+  });
+
+  beforeEach(async () => {
+    probeState.bodyRuns = 0;
+    probeState.workflowBodyFinished = 0;
+    probeState.claimSysdb = false;
+    probeState.winnerRecordedOutput = false;
+    await DBOS.launch();
+  });
+
+  afterEach(async () => {
+    await DBOS.shutdown();
+  });
+
+  test('a losing duplicate execution replays the winner transaction and carries on', async () => {
+    const wfid = randomUUID();
+
+    // The winner committed only the app-database row, which is the crash window this
+    // whole mechanism exists for: the completion row is durable, the checkpoint is not.
+    const result = await DBOS.withNextWorkflowID(wfid, () => raceWorkflow());
+
+    expect(result).toBe(`local:${WINNER_TX_OUTPUT}`); // the winner's value, not this run's
+    expect(probeState.bodyRuns).toBe(1); // the replay did not re-enter the transaction body
+    expect(probeState.workflowBodyFinished).toBe(1);
+
+    const steps = await DBOS.listWorkflowSteps(wfid);
+    expect(steps).toHaveLength(1);
+    expect(steps![0].output).toBe(WINNER_TX_OUTPUT);
+    expect((await DBOS.getWorkflowStatus(wfid))?.status).toBe('SUCCESS');
+  });
+
+  test('a losing duplicate execution parks when the winner also owns the checkpoint', async () => {
+    const wfid = randomUUID();
+    probeState.claimSysdb = true;
+
+    const result = await DBOS.withNextWorkflowID(wfid, () => raceWorkflow());
+
+    // The step conflict aborted this run mid-workflow, so its body never finished and
+    // the recorded outcome was adopted in place of the `local:` value it would have made.
+    expect(probeState.winnerRecordedOutput).toBe(true);
+    expect(probeState.workflowBodyFinished).toBe(0);
+    expect(result).toBe(ADOPTED_WF_OUTPUT);
+    expect(probeState.bodyRuns).toBe(1);
+
+    // The winner's records still stand, and the loser wrote nothing over them.
+    const { rows: completions } = await probeHandler.pool.query<CompletionRow>(
+      `SELECT output, error FROM dbos.transaction_completion WHERE workflow_id = $1`,
+      [wfid],
+    );
+    expect(completions).toHaveLength(1);
+    expect(completions[0].error).toBeNull();
+    expect(SuperJSON.parse(completions[0].output!)).toBe(WINNER_TX_OUTPUT);
+
+    const steps = await DBOS.listWorkflowSteps(wfid);
+    expect(steps).toHaveLength(1);
+    expect(steps![0].output).toBe(WINNER_TX_OUTPUT);
+    expect((await DBOS.getWorkflowStatus(wfid))?.status).toBe('SUCCESS');
   });
 });

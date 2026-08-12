@@ -1,8 +1,10 @@
-import { DBOS, DBOSWorkflowConflictError, FunctionName } from '@dbos-inc/dbos-sdk';
+import { DBOS, FunctionName } from '@dbos-inc/dbos-sdk';
 import {
   type DataSourceTransactionHandler,
   isPGRetriableTransactionError,
-  isPGKeyConflictError,
+  DBOSError,
+  DBOSStepAlreadyRecordedError,
+  replayRecordedStep,
   registerTransaction,
   runTransaction,
   DBOSDataSource,
@@ -14,6 +16,17 @@ import {
 } from '@dbos-inc/dbos-sdk/datasource';
 import { AsyncLocalStorage } from 'async_hooks';
 import { SuperJSON } from 'superjson';
+
+// Prisma reports a failed raw query's SQLSTATE in `meta` rather than on the error itself,
+// and reports a write conflict raised by its own query API as P2034 with no SQLSTATE at all.
+function unwrapPrismaError(error: unknown): unknown {
+  const prismaError = (error as { code?: unknown; meta?: unknown } | null) ?? undefined;
+  if (prismaError?.code === 'P2034') {
+    return { code: '40001' };
+  }
+  const meta = prismaError?.meta;
+  return meta && typeof meta === 'object' && 'code' in meta ? meta : error;
+}
 
 type PrismaLike = {
   $connect: () => Promise<void>;
@@ -120,21 +133,29 @@ class PrismaTransactionHandler implements DataSourceTransactionHandler {
   }
 
   async #recordError(workflowID: string, stepID: number, error: string): Promise<void> {
-    try {
-      await this.#prismaDB.$executeRawUnsafe(
-        `INSERT INTO "${this.schemaName}".transaction_completion (workflow_id, function_num, error) 
-        VALUES ($1, $2, $3)`,
-        workflowID,
-        stepID,
-        error,
-      );
-    } catch (error) {
-      if (isPGKeyConflictError(error)) {
-        throw new DBOSWorkflowConflictError(workflowID);
-      } else {
-        throw error;
-      }
+    // $executeRawUnsafe reports affected rows, so DO NOTHING yields 0 when a duplicate won.
+    const inserted = await this.#prismaDB.$executeRawUnsafe(
+      `INSERT INTO "${this.schemaName}".transaction_completion (workflow_id, function_num, error)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (workflow_id, function_num) DO NOTHING`,
+      workflowID,
+      stepID,
+      error,
+    );
+    if (inserted === 0) {
+      throw new DBOSStepAlreadyRecordedError(workflowID, stepID);
     }
+  }
+
+  // A duplicate execution won the race, so its recorded outcome is the durable one.
+  async #replayConflictingStep<Return>(workflowID: string, stepID: number): Promise<Return> {
+    const recorded = await this.#checkExecution(this.#prismaDB, workflowID, stepID);
+    if (recorded === undefined) {
+      throw new DBOSError(
+        `Step ${stepID} of workflow ${workflowID} conflicted with a concurrent execution, but no recorded outcome was found`,
+      );
+    }
+    return replayRecordedStep<Return>(recorded);
   }
 
   static async #recordOutput(
@@ -144,20 +165,16 @@ class PrismaTransactionHandler implements DataSourceTransactionHandler {
     output: string | null,
     schemaName: string,
   ): Promise<void> {
-    try {
-      await client.$executeRawUnsafe(
-        `INSERT INTO "${schemaName}".transaction_completion (workflow_id, function_num, output) 
-         VALUES ($1, $2, $3)`,
-        workflowID,
-        stepID,
-        output,
-      );
-    } catch (error) {
-      if (isPGKeyConflictError(error)) {
-        throw new DBOSWorkflowConflictError(workflowID);
-      } else {
-        throw error;
-      }
+    const inserted = await client.$executeRawUnsafe(
+      `INSERT INTO "${schemaName}".transaction_completion (workflow_id, function_num, output)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (workflow_id, function_num) DO NOTHING`,
+      workflowID,
+      stepID,
+      output,
+    );
+    if (inserted === 0) {
+      throw new DBOSStepAlreadyRecordedError(workflowID, stepID);
     }
   }
 
@@ -185,12 +202,7 @@ class PrismaTransactionHandler implements DataSourceTransactionHandler {
       // Check to see if this tx has already been executed
       const previousResult = saveResults ? await this.#checkExecution(this.#prismaDB, workflowID, stepID!) : undefined;
       if (previousResult) {
-        DBOS.span?.setAttribute('cached', true);
-
-        if ('error' in previousResult) {
-          throw SuperJSON.parse(previousResult.error);
-        }
-        return (previousResult.output ? SuperJSON.parse(previousResult.output) : null) as Return;
+        return replayRecordedStep<Return>(previousResult);
       }
 
       try {
@@ -219,7 +231,10 @@ class PrismaTransactionHandler implements DataSourceTransactionHandler {
 
         return result;
       } catch (error) {
-        if (isPGRetriableTransactionError(error)) {
+        if (saveResults && error instanceof DBOSStepAlreadyRecordedError) {
+          return await this.#replayConflictingStep<Return>(workflowID, stepID!);
+        }
+        if (isPGRetriableTransactionError(unwrapPrismaError(error))) {
           DBOS.span?.addEvent('TXN SERIALIZATION FAILURE', { retryWaitMillis: retryWaitMS }, performance.now());
           await new Promise((resolve) => setTimeout(resolve, retryWaitMS));
           retryWaitMS = Math.min(retryWaitMS * backoffFactor, maxRetryWaitMS);
@@ -227,7 +242,14 @@ class PrismaTransactionHandler implements DataSourceTransactionHandler {
         } else {
           if (saveResults) {
             const message = SuperJSON.stringify(error);
-            await this.#recordError(workflowID, stepID!, message);
+            try {
+              await this.#recordError(workflowID, stepID!, message);
+            } catch (recordError) {
+              if (recordError instanceof DBOSStepAlreadyRecordedError) {
+                return await this.#replayConflictingStep<Return>(workflowID, stepID!);
+              }
+              throw recordError;
+            }
           }
 
           throw error;

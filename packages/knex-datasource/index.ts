@@ -1,10 +1,12 @@
 // using https://github.com/knex/knex
 
-import { DBOS, DBOSWorkflowConflictError, FunctionName } from '@dbos-inc/dbos-sdk';
+import { DBOS, FunctionName } from '@dbos-inc/dbos-sdk';
 import {
   type DataSourceTransactionHandler,
   isPGRetriableTransactionError,
-  isPGKeyConflictError,
+  DBOSError,
+  DBOSStepAlreadyRecordedError,
+  replayRecordedStep,
   registerTransaction,
   runTransaction,
   DBOSDataSource,
@@ -114,19 +116,30 @@ class KnexTransactionHandler implements DataSourceTransactionHandler {
   }
 
   async #recordError(workflowID: string, stepID: number, error: string): Promise<void> {
-    try {
-      await this.#knexDB<transaction_completion>('transaction_completion').withSchema('dbos').insert({
+    const rows = await this.#knexDB<transaction_completion>('transaction_completion')
+      .withSchema('dbos')
+      .insert({
         workflow_id: workflowID,
         function_num: stepID,
         error,
-      });
-    } catch (error) {
-      if (isPGKeyConflictError(error)) {
-        throw new DBOSWorkflowConflictError(workflowID);
-      } else {
-        throw error;
-      }
+      })
+      .onConflict(['workflow_id', 'function_num'])
+      .ignore()
+      .returning('workflow_id');
+    if (rows.length === 0) {
+      throw new DBOSStepAlreadyRecordedError(workflowID, stepID);
     }
+  }
+
+  // A duplicate execution won the race, so its recorded outcome is the durable one.
+  async #replayConflictingStep<Return>(workflowID: string, stepID: number): Promise<Return> {
+    const recorded = await this.#checkExecution(workflowID, stepID);
+    if (recorded === undefined) {
+      throw new DBOSError(
+        `Step ${stepID} of workflow ${workflowID} conflicted with a concurrent execution, but no recorded outcome was found`,
+      );
+    }
+    return replayRecordedStep<Return>(recorded);
   }
 
   static async #recordOutput(
@@ -135,18 +148,18 @@ class KnexTransactionHandler implements DataSourceTransactionHandler {
     stepID: number,
     output: string | null,
   ): Promise<void> {
-    try {
-      await client<transaction_completion>('transaction_completion').withSchema('dbos').insert({
+    const rows = await client<transaction_completion>('transaction_completion')
+      .withSchema('dbos')
+      .insert({
         workflow_id: workflowID,
         function_num: stepID,
         output,
-      });
-    } catch (error) {
-      if (isPGKeyConflictError(error)) {
-        throw new DBOSWorkflowConflictError(workflowID);
-      } else {
-        throw error;
-      }
+      })
+      .onConflict(['workflow_id', 'function_num'])
+      .ignore()
+      .returning('workflow_id');
+    if (rows.length === 0) {
+      throw new DBOSStepAlreadyRecordedError(workflowID, stepID);
     }
   }
 
@@ -174,12 +187,7 @@ class KnexTransactionHandler implements DataSourceTransactionHandler {
       // Check to see if this tx has already been executed
       const previousResult = saveResults ? await this.#checkExecution(workflowID, stepID!) : undefined;
       if (previousResult) {
-        DBOS.span?.setAttribute('cached', true);
-
-        if ('error' in previousResult) {
-          throw SuperJSON.parse(previousResult.error);
-        }
-        return (previousResult.output ? SuperJSON.parse(previousResult.output) : null) as Return;
+        return replayRecordedStep<Return>(previousResult);
       }
 
       try {
@@ -202,6 +210,9 @@ class KnexTransactionHandler implements DataSourceTransactionHandler {
 
         return result;
       } catch (error) {
+        if (saveResults && error instanceof DBOSStepAlreadyRecordedError) {
+          return await this.#replayConflictingStep<Return>(workflowID, stepID!);
+        }
         if (isPGRetriableTransactionError(error)) {
           DBOS.span?.addEvent('TXN SERIALIZATION FAILURE', { retryWaitMillis: retryWaitMS }, performance.now());
           await new Promise((resolve) => setTimeout(resolve, retryWaitMS));
@@ -210,7 +221,14 @@ class KnexTransactionHandler implements DataSourceTransactionHandler {
         } else {
           if (saveResults) {
             const message = SuperJSON.stringify(error);
-            await this.#recordError(workflowID, stepID!, message);
+            try {
+              await this.#recordError(workflowID, stepID!, message);
+            } catch (recordError) {
+              if (recordError instanceof DBOSStepAlreadyRecordedError) {
+                return await this.#replayConflictingStep<Return>(workflowID, stepID!);
+              }
+              throw recordError;
+            }
           }
 
           throw error;

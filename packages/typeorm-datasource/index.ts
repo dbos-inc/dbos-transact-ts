@@ -1,11 +1,13 @@
 import { PoolConfig } from 'pg';
-import { DBOS, DBOSWorkflowConflictError, FunctionName } from '@dbos-inc/dbos-sdk';
+import { DBOS, FunctionName } from '@dbos-inc/dbos-sdk';
 import {
   type DataSourceTransactionHandler,
   createTransactionCompletionSchemaPG,
   createTransactionCompletionTablePG,
   isPGRetriableTransactionError,
-  isPGKeyConflictError,
+  DBOSError,
+  DBOSStepAlreadyRecordedError,
+  replayRecordedStep,
   registerTransaction,
   runTransaction,
   DBOSDataSource,
@@ -136,10 +138,6 @@ class TypeOrmTransactionHandler implements DataSourceTransactionHandler {
       return undefined;
     }
 
-    if (rows[0].output === null) {
-      return undefined;
-    }
-
     const { output, error } = rows[0];
     return error !== null ? { error } : { output };
   }
@@ -151,35 +149,40 @@ class TypeOrmTransactionHandler implements DataSourceTransactionHandler {
     output: string,
     schemaName: string,
   ): Promise<void> {
-    try {
-      await entityManager.query(
-        `INSERT INTO "${schemaName}".transaction_completion (workflow_id, function_num, output)
-         VALUES ($1, $2, $3)`,
-        [workflowID, stepID, output],
-      );
-    } catch (error) {
-      if (isPGKeyConflictError(error)) {
-        throw new DBOSWorkflowConflictError(workflowID);
-      } else {
-        throw error;
-      }
+    const rows = await entityManager.query<{ workflow_id: string }[]>(
+      `INSERT INTO "${schemaName}".transaction_completion (workflow_id, function_num, output)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (workflow_id, function_num) DO NOTHING
+       RETURNING workflow_id`,
+      [workflowID, stepID, output],
+    );
+    if (rows.length === 0) {
+      throw new DBOSStepAlreadyRecordedError(workflowID, stepID);
     }
   }
 
   async #recordError(workflowID: string, stepID: number, error: string): Promise<void> {
-    try {
-      await this.dataSource.query(
-        `INSERT INTO "${this.schemaName}".transaction_completion (workflow_id, function_num, error)
-         VALUES ($1, $2, $3)`,
-        [workflowID, stepID, error],
-      );
-    } catch (error) {
-      if (isPGKeyConflictError(error)) {
-        throw new DBOSWorkflowConflictError(workflowID);
-      } else {
-        throw error;
-      }
+    const rows = await this.dataSource.query<{ workflow_id: string }[]>(
+      `INSERT INTO "${this.schemaName}".transaction_completion (workflow_id, function_num, error)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (workflow_id, function_num) DO NOTHING
+       RETURNING workflow_id`,
+      [workflowID, stepID, error],
+    );
+    if (rows.length === 0) {
+      throw new DBOSStepAlreadyRecordedError(workflowID, stepID);
     }
+  }
+
+  // A duplicate execution won the race, so its recorded outcome is the durable one.
+  async #replayConflictingStep<Return>(workflowID: string, stepID: number): Promise<Return> {
+    const recorded = await this.#checkExecution(workflowID, stepID);
+    if (recorded === undefined) {
+      throw new DBOSError(
+        `Step ${stepID} of workflow ${workflowID} conflicted with a concurrent execution, but no recorded outcome was found`,
+      );
+    }
+    return replayRecordedStep<Return>(recorded);
   }
 
   /* Required by base class */
@@ -208,12 +211,7 @@ class TypeOrmTransactionHandler implements DataSourceTransactionHandler {
       // Check to see if this tx has already been executed
       const previousResult = saveResults ? await this.#checkExecution(workflowID, stepID!) : undefined;
       if (previousResult) {
-        DBOS.span?.setAttribute('cached', true);
-
-        if ('error' in previousResult) {
-          throw SuperJSON.parse(previousResult.error);
-        }
-        return (previousResult.output ? SuperJSON.parse(previousResult.output) : null) as Return;
+        return replayRecordedStep<Return>(previousResult);
       }
 
       try {
@@ -242,6 +240,9 @@ class TypeOrmTransactionHandler implements DataSourceTransactionHandler {
 
         return result;
       } catch (error) {
+        if (saveResults && error instanceof DBOSStepAlreadyRecordedError) {
+          return await this.#replayConflictingStep<Return>(workflowID, stepID!);
+        }
         if (isPGRetriableTransactionError(error)) {
           DBOS.span?.addEvent('TXN SERIALIZATION FAILURE', { retryWaitMillis: retryWaitMS }, performance.now());
           // Retry serialization failures.
@@ -251,7 +252,14 @@ class TypeOrmTransactionHandler implements DataSourceTransactionHandler {
         } else {
           if (saveResults) {
             const message = SuperJSON.stringify(error);
-            await this.#recordError(workflowID, stepID!, message);
+            try {
+              await this.#recordError(workflowID, stepID!, message);
+            } catch (recordError) {
+              if (recordError instanceof DBOSStepAlreadyRecordedError) {
+                return await this.#replayConflictingStep<Return>(workflowID, stepID!);
+              }
+              throw recordError;
+            }
           }
 
           throw error;

@@ -1,10 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // using https://kysely.dev/
-import { DBOS, DBOSWorkflowConflictError, FunctionName } from '@dbos-inc/dbos-sdk';
+import { DBOS, FunctionName } from '@dbos-inc/dbos-sdk';
 import {
   type DataSourceTransactionHandler,
   isPGRetriableTransactionError,
-  isPGKeyConflictError,
+  DBOSError,
+  DBOSStepAlreadyRecordedError,
+  replayRecordedStep,
   registerTransaction,
   runTransaction,
   DBOSDataSource,
@@ -136,23 +138,31 @@ class KyselyTransactionHandler implements DataSourceTransactionHandler {
   }
 
   async #recordError(workflowID: string, stepID: number, error: string): Promise<void> {
-    try {
-      await this.#kyselyDB
-        .insertInto('dbos.transaction_completion')
-        .values({
-          workflow_id: workflowID,
-          function_num: stepID,
-          error,
-          output: null,
-        })
-        .execute();
-    } catch (error) {
-      if (isPGKeyConflictError(error)) {
-        throw new DBOSWorkflowConflictError(workflowID);
-      } else {
-        throw error;
-      }
+    const inserted = await this.#kyselyDB
+      .insertInto('dbos.transaction_completion')
+      .values({
+        workflow_id: workflowID,
+        function_num: stepID,
+        error,
+        output: null,
+      })
+      .onConflict((oc) => oc.columns(['workflow_id', 'function_num']).doNothing())
+      .returning('workflow_id')
+      .executeTakeFirst();
+    if (inserted === undefined) {
+      throw new DBOSStepAlreadyRecordedError(workflowID, stepID);
     }
+  }
+
+  // A duplicate execution won the race, so its recorded outcome is the durable one.
+  async #replayConflictingStep<Return>(workflowID: string, stepID: number): Promise<Return> {
+    const recorded = await this.#checkExecution(workflowID, stepID);
+    if (recorded === undefined) {
+      throw new DBOSError(
+        `Step ${stepID} of workflow ${workflowID} conflicted with a concurrent execution, but no recorded outcome was found`,
+      );
+    }
+    return replayRecordedStep<Return>(recorded);
   }
 
   static async #recordOutput(
@@ -161,22 +171,19 @@ class KyselyTransactionHandler implements DataSourceTransactionHandler {
     stepID: number,
     output: string | null,
   ): Promise<void> {
-    try {
-      await client
-        .insertInto('dbos.transaction_completion')
-        .values({
-          workflow_id: workflowID,
-          function_num: stepID,
-          output,
-          error: null,
-        })
-        .execute();
-    } catch (error) {
-      if (isPGKeyConflictError(error)) {
-        throw new DBOSWorkflowConflictError(workflowID);
-      } else {
-        throw error;
-      }
+    const inserted = await client
+      .insertInto('dbos.transaction_completion')
+      .values({
+        workflow_id: workflowID,
+        function_num: stepID,
+        output,
+        error: null,
+      })
+      .onConflict((oc) => oc.columns(['workflow_id', 'function_num']).doNothing())
+      .returning('workflow_id')
+      .executeTakeFirst();
+    if (inserted === undefined) {
+      throw new DBOSStepAlreadyRecordedError(workflowID, stepID);
     }
   }
 
@@ -204,12 +211,7 @@ class KyselyTransactionHandler implements DataSourceTransactionHandler {
       // Check to see if this tx has already been executed
       const previousResult = saveResults ? await this.#checkExecution(workflowID, stepID!) : undefined;
       if (previousResult) {
-        DBOS.span?.setAttribute('cached', true);
-
-        if ('error' in previousResult) {
-          throw SuperJSON.parse(previousResult.error);
-        }
-        return (previousResult.output ? SuperJSON.parse(previousResult.output) : null) as Return;
+        return replayRecordedStep<Return>(previousResult);
       }
 
       try {
@@ -236,6 +238,9 @@ class KyselyTransactionHandler implements DataSourceTransactionHandler {
 
         return result;
       } catch (error) {
+        if (saveResults && error instanceof DBOSStepAlreadyRecordedError) {
+          return await this.#replayConflictingStep<Return>(workflowID, stepID!);
+        }
         if (isPGRetriableTransactionError(error)) {
           DBOS.span?.addEvent('TXN SERIALIZATION FAILURE', { retryWaitMillis: retryWaitMS }, performance.now());
           await new Promise((resolve) => setTimeout(resolve, retryWaitMS));
@@ -244,7 +249,14 @@ class KyselyTransactionHandler implements DataSourceTransactionHandler {
         } else {
           if (saveResults) {
             const message = SuperJSON.stringify(error);
-            await this.#recordError(workflowID, stepID!, message);
+            try {
+              await this.#recordError(workflowID, stepID!, message);
+            } catch (recordError) {
+              if (recordError instanceof DBOSStepAlreadyRecordedError) {
+                return await this.#replayConflictingStep<Return>(workflowID, stepID!);
+              }
+              throw recordError;
+            }
           }
 
           throw error;
