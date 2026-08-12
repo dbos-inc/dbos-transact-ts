@@ -623,6 +623,7 @@ async function runSQLiteSystemMigrations(pool: SQLitePool, logger: GlobalLogger)
         for (const statement of migration.statements) {
           await client.query(statement);
         }
+        await ensureSQLiteApplicationNameSchema(client);
         await setSQLiteMigrationVersion(client, migration.version);
         await client.query('COMMIT');
         inTransaction = false;
@@ -645,6 +646,32 @@ async function runSQLiteSystemMigrations(pool: SQLitePool, logger: GlobalLogger)
   } finally {
     client.release();
   }
+}
+
+async function ensureSQLiteApplicationNameSchema(client: SQLiteClient): Promise<void> {
+  for (const table of [
+    'workflow_status',
+    'queues',
+    'workflow_schedules',
+    'application_versions',
+    'operation_outputs',
+  ]) {
+    const columns = await client.query<{ name: string }>(`PRAGMA table_info("${table}")`);
+    if (!columns.rows.some((column) => column.name === 'application_name')) {
+      await client.query(`ALTER TABLE "${table}" ADD COLUMN application_name TEXT DEFAULT NULL`);
+    }
+  }
+
+  await client.query(
+    `CREATE UNIQUE INDEX IF NOT EXISTS uq_application_versions_owner_version
+     ON application_versions (application_name, version_name)
+     WHERE application_name IS NOT NULL`,
+  );
+  await client.query(
+    `CREATE UNIQUE INDEX IF NOT EXISTS uq_application_versions_unclaimed_version
+     ON application_versions (version_name)
+     WHERE application_name IS NULL`,
+  );
 }
 
 function currentSQLiteSchemaStatements(): ReadonlyArray<string> {
@@ -688,7 +715,8 @@ function currentSQLiteSchemaStatements(): ReadonlyArray<string> {
       attributes TEXT,
       schedule_name TEXT,
       debounce_deadline_epoch_ms INTEGER DEFAULT NULL,
-      is_debounced BOOLEAN NOT NULL DEFAULT FALSE
+      is_debounced BOOLEAN NOT NULL DEFAULT FALSE,
+      application_name TEXT DEFAULT NULL
     )`,
     `CREATE TABLE IF NOT EXISTS operation_outputs (
       workflow_uuid TEXT NOT NULL,
@@ -700,6 +728,7 @@ function currentSQLiteSchemaStatements(): ReadonlyArray<string> {
       started_at_epoch_ms INTEGER,
       completed_at_epoch_ms INTEGER,
       serialization TEXT DEFAULT NULL,
+      application_name TEXT DEFAULT NULL,
       PRIMARY KEY (workflow_uuid, function_id),
       FOREIGN KEY (workflow_uuid) REFERENCES workflow_status(workflow_uuid)
         ON UPDATE CASCADE ON DELETE CASCADE
@@ -769,13 +798,15 @@ function currentSQLiteSchemaStatements(): ReadonlyArray<string> {
       last_fired_at TEXT DEFAULT NULL,
       automatic_backfill BOOLEAN NOT NULL DEFAULT FALSE,
       cron_timezone TEXT DEFAULT NULL,
-      queue_name TEXT DEFAULT NULL
+      queue_name TEXT DEFAULT NULL,
+      application_name TEXT DEFAULT NULL
     )`,
     `CREATE TABLE IF NOT EXISTS application_versions (
       version_id TEXT NOT NULL PRIMARY KEY,
       version_name TEXT NOT NULL UNIQUE,
       version_timestamp INTEGER NOT NULL DEFAULT ${now},
-      created_at INTEGER NOT NULL DEFAULT ${now}
+      created_at INTEGER NOT NULL DEFAULT ${now},
+      application_name TEXT DEFAULT NULL
     )`,
     `CREATE TABLE IF NOT EXISTS queues (
       queue_id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
@@ -788,7 +819,8 @@ function currentSQLiteSchemaStatements(): ReadonlyArray<string> {
       partition_queue BOOLEAN NOT NULL DEFAULT FALSE,
       polling_interval_sec REAL NOT NULL DEFAULT 1.0,
       created_at INTEGER NOT NULL DEFAULT ${now},
-      updated_at INTEGER NOT NULL DEFAULT ${now}
+      updated_at INTEGER NOT NULL DEFAULT ${now},
+      application_name TEXT DEFAULT NULL
     )`,
     `CREATE INDEX IF NOT EXISTS workflow_status_created_at_index ON workflow_status (created_at)`,
     `CREATE INDEX IF NOT EXISTS idx_workflow_status_pending ON workflow_status (created_at) WHERE status = 'PENDING'`,
@@ -805,6 +837,8 @@ function currentSQLiteSchemaStatements(): ReadonlyArray<string> {
     `CREATE INDEX IF NOT EXISTS idx_workflow_topic ON notifications (destination_uuid, topic)`,
     `CREATE INDEX IF NOT EXISTS idx_notifications ON notifications (destination_uuid, topic)`,
     `CREATE INDEX IF NOT EXISTS idx_operation_outputs_completed_at_function_name ON operation_outputs (completed_at_epoch_ms, function_name)`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS uq_application_versions_owner_version ON application_versions (application_name, version_name) WHERE application_name IS NOT NULL`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS uq_application_versions_unclaimed_version ON application_versions (version_name) WHERE application_name IS NULL`,
   ];
 }
 

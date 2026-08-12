@@ -110,18 +110,13 @@ export async function toWorkflowStatus(
     completedAt: internal.completedAt,
     attributes: internal.attributes,
     scheduleName: internal.scheduleName,
+    applicationName: internal.applicationName,
   };
 }
 
 export async function globalTimeout(sysdb: SystemDatabase, cutoffEpochTimestampMs: number): Promise<void> {
-  const cutoffIso = new Date(cutoffEpochTimestampMs).toISOString();
-  for (const workflow of await listWorkflows(sysdb, { status: 'PENDING', endTime: cutoffIso })) {
-    await sysdb.cancelWorkflows([workflow.workflowID]);
-  }
-  for (const workflow of await listWorkflows(sysdb, { status: 'ENQUEUED', endTime: cutoffIso })) {
-    await sysdb.cancelWorkflows([workflow.workflowID]);
-  }
-  for (const workflow of await listWorkflows(sysdb, { status: 'DELAYED', endTime: cutoffIso })) {
-    await sysdb.cancelWorkflows([workflow.workflowID]);
+  // IDs only, so a bulk timeout does not deserialize every row's inputs and outputs.
+  for (const workflowID of await sysdb.listTimedOutWorkflowIds(cutoffEpochTimestampMs)) {
+    await sysdb.cancelWorkflows([workflowID]);
   }
 }

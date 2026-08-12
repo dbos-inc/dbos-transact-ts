@@ -5,6 +5,7 @@ import {
   type WorkflowScheduleInternal,
   type WorkflowScheduleUpdate,
   type VersionInfo,
+  type ApplicationRowCounts,
   type DebounceParams,
   type DebounceResult,
   DBOS_STREAM_CLOSED_SENTINEL,
@@ -153,6 +154,12 @@ export interface ClientEnqueueOptions {
    * Attributes are searchable via the `attributes` filter of `listWorkflows`.
    */
   attributes?: Record<string, unknown>;
+  /**
+   * The application that owns and runs this workflow. Defaults to the enqueuer's own
+   * application. Leaving both unset enqueues an unclaimed workflow, which any
+   * application sharing the system database may run.
+   */
+  applicationName?: string;
 }
 
 /**
@@ -230,6 +237,7 @@ export class DBOSClient {
     systemDatabasePoolSize?: number,
     systemDatabasePollingConcurrency?: number,
     logger?: DLogger,
+    applicationName?: string,
   ) {
     this.logger = new GlobalLogger(undefined, logger ? { logger } : undefined);
     this.systemDatabase = new SystemDatabase(
@@ -242,6 +250,8 @@ export class DBOSClient {
       // The client does not run a background notifications listener
       false,
       systemDatabasePollingConcurrency,
+      undefined,
+      applicationName,
     );
   }
 
@@ -254,6 +264,7 @@ export class DBOSClient {
    * @param systemDatabasePoolSize - An optional maximum size for the system database connection pool. Defaults to {@link DEFAULT_POOL_SIZE}. SQLite system databases use one serialized native connection.
    * @param systemDatabasePollingConcurrency - An optional maximum number of concurrent polling operations. Defaults to half the pool size (minimum 1). SQLite system databases clamp polling concurrency to 1.
    * @param logger - An optional custom logger to which the client directs all its logging, replacing the built-in console logger.
+   * @param applicationName - The application this client acts on behalf of. Always set this when several applications share this system database, so workflows, schedules, and queues created by this client are owned by that application.
    * @returns A Promise that resolves with the DBOSClient instance.
    */
   static async create({
@@ -264,6 +275,7 @@ export class DBOSClient {
     systemDatabasePoolSize,
     systemDatabasePollingConcurrency,
     logger,
+    applicationName,
   }: {
     systemDatabaseUrl: string;
     systemDatabasePool?: Pool;
@@ -272,6 +284,7 @@ export class DBOSClient {
     systemDatabasePoolSize?: number;
     systemDatabasePollingConcurrency?: number;
     logger?: DLogger;
+    applicationName?: string;
   }): Promise<DBOSClient> {
     const client = new DBOSClient(
       systemDatabaseUrl,
@@ -281,8 +294,14 @@ export class DBOSClient {
       systemDatabasePoolSize,
       systemDatabasePollingConcurrency,
       logger,
+      applicationName,
     );
     return Promise.resolve(client);
+  }
+
+  /** The application this client acts on behalf of; undefined if it writes unclaimed rows. */
+  get applicationName(): string | undefined {
+    return this.systemDatabase.appName;
   }
 
   /**
@@ -354,6 +373,8 @@ export class DBOSClient {
       serialization: serparam.serialization,
       delayUntilEpochMS,
       attributes: options.attributes,
+      // Fall back to the client's own application, if it was given one.
+      applicationName: options.applicationName ?? this.systemDatabase.appName,
     };
   }
 
@@ -468,6 +489,8 @@ export class DBOSClient {
       serialization: serparam.serialization,
       delayUntilEpochMS,
       attributes: options.attributes,
+      // Fall back to the client's own application, if it was given one.
+      applicationName: options.applicationName ?? this.systemDatabase.appName,
     };
 
     let finalID: string;
@@ -488,9 +511,16 @@ export class DBOSClient {
    *
    * Defaults `onConflict` to `'always_update'` because clients are not
    * associated with an application version.
+   *
+   * `applicationName` names the application that owns this queue and polls it,
+   * defaulting to the client's own. Registering a queue already owned by a
+   * different application throws.
    */
-  async registerQueue(name: string, options: RegisterQueueOptions = {}): Promise<WorkflowQueue> {
-    const { onConflict = 'always_update', ...params } = options;
+  async registerQueue(
+    name: string,
+    options: RegisterQueueOptions & { applicationName?: string } = {},
+  ): Promise<WorkflowQueue> {
+    const { onConflict = 'always_update', applicationName, ...params } = options;
     if (onConflict === 'update_if_latest_version') {
       throw new Error(
         "DBOSClient.registerQueue does not support onConflict='update_if_latest_version' " +
@@ -501,7 +531,7 @@ export class DBOSClient {
     WorkflowQueue.validateQueueParams(params);
 
     const updateExisting = onConflict === 'always_update';
-    const record = WorkflowQueue.recordFromParams(name, params);
+    const record = { ...WorkflowQueue.recordFromParams(name, params), applicationName };
     const inserted = await this.systemDatabase.upsertQueue(record, updateExisting);
 
     const persisted = await this.systemDatabase.getQueue(name);
@@ -522,15 +552,19 @@ export class DBOSClient {
     return record === null ? null : WorkflowQueue._fromRecord(record, this.systemDatabase);
   }
 
-  /** List all database-backed queues registered in the system database. */
-  async listQueues(): Promise<WorkflowQueue[]> {
-    const records = await this.systemDatabase.listQueues();
-    return records.map((record) => WorkflowQueue._fromRecord(record, this.systemDatabase));
-  }
-
   /** Delete a database-backed queue. Pending workflows on it are unrecoverable. */
   async deleteQueue(name: string): Promise<void> {
     await this.systemDatabase.deleteQueue(name);
+  }
+
+  /**
+   * List all database-backed queues registered in the system database. `applicationName`
+   * lists only queues owned by these applications. By default, only lists this
+   * application's queues.
+   */
+  async listQueues(applicationName?: string | string[]): Promise<WorkflowQueue[]> {
+    const records = await this.systemDatabase.listQueues(applicationName);
+    return records.map((record) => WorkflowQueue._fromRecord(record, this.systemDatabase));
   }
 
   /**
@@ -747,6 +781,12 @@ export class DBOSClient {
     schedule: string;
     context?: unknown;
     options?: ScheduleOptions;
+    /**
+     * The application that owns this schedule and runs its workflows. Defaults to the
+     * client's own. Leaving both unset creates an unclaimed schedule, which every
+     * application sharing the system database will run.
+     */
+    applicationName?: string;
   }): Promise<void> {
     validateCrontab(options.schedule);
     if (options.options?.cronTimezone) {
@@ -764,14 +804,21 @@ export class DBOSClient {
       automaticBackfill: options.options?.automaticBackfill ?? false,
       cronTimezone: options.options?.cronTimezone ?? null,
       queueName: options.options?.queueName ?? null,
+      applicationName: options.applicationName ?? this.systemDatabase.appName,
     };
     await this.systemDatabase.createSchedule(schedInternal);
   }
 
+  /**
+   * Return registered workflow schedules, optionally filtered. `applicationName`
+   * lists only schedules owned by these applications. By default, only lists this
+   * application's schedules.
+   */
   async listSchedules(filters?: {
     status?: string | string[];
     workflowName?: string | string[];
     scheduleNamePrefix?: string | string[];
+    applicationName?: string | string[];
   }): Promise<WorkflowSchedule[]> {
     const results = await this.systemDatabase.listSchedules(filters);
     return await Promise.all(results.map((r) => toWorkflowSchedule(r, this.serializer)));
@@ -830,6 +877,7 @@ export class DBOSClient {
       automaticBackfill?: boolean;
       cronTimezone?: string;
       queueName?: string;
+      applicationName?: string;
     }>,
   ): Promise<void> {
     const internals: WorkflowScheduleInternal[] = [];
@@ -850,6 +898,7 @@ export class DBOSClient {
         automaticBackfill: sched.automaticBackfill ?? false,
         cronTimezone: sched.cronTimezone ?? null,
         queueName: sched.queueName ?? null,
+        applicationName: sched.applicationName ?? this.systemDatabase.appName,
       });
     }
     await this.systemDatabase.applySchedules(internals);
@@ -875,7 +924,34 @@ export class DBOSClient {
     return this.systemDatabase.getLatestApplicationVersion();
   }
 
-  async setLatestApplicationVersion(versionName: string): Promise<void> {
-    await this.systemDatabase.updateApplicationVersionTimestamp(versionName, Date.now());
+  /**
+   * Set a version as the latest by updating its timestamp to now. `applicationName`
+   * is the application to act as, defaulting to this client's. Version names are
+   * global, so promoting one registered by a different application throws.
+   */
+  async setLatestApplicationVersion(versionName: string, options?: { applicationName?: string }): Promise<void> {
+    await this.systemDatabase.updateApplicationVersionTimestamp(versionName, Date.now(), options?.applicationName);
+  }
+
+  // ==================== Application Rename ====================
+
+  /**
+   * Give an application ownership of rows another name holds, rows nobody holds, or
+   * both. Do not run while the application being renamed is running.
+   *
+   * @param oldName - The application's previous name. `undefined` moves nothing but the
+   *   unclaimed rows, so it requires `adoptUnclaimedRows`.
+   * @param newName - The application that ends up owning the rows.
+   * @param options.batchSize - Terminal workflows and steps are re-owned this many at a
+   *   time. `null` moves them in a single transaction.
+   * @param options.adoptUnclaimedRows - Also take rows no application owns. Defaults to false.
+   * @returns The number of rows moved, by table.
+   */
+  async renameApplication(
+    oldName: string | undefined,
+    newName: string,
+    options: { batchSize?: number | null; adoptUnclaimedRows?: boolean } = {},
+  ): Promise<ApplicationRowCounts> {
+    return await this.systemDatabase.renameApplication(oldName, newName, options);
   }
 }

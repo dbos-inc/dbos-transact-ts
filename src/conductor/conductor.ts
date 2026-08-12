@@ -286,6 +286,7 @@ export class Conductor {
               hasParent: body.has_parent,
               attributes: body.attributes,
               scheduleName: body.schedule_name,
+              applicationName: body.application_name,
             };
             let workflowsOutput: protocol.WorkflowsOutput[] = [];
             try {
@@ -327,6 +328,7 @@ export class Conductor {
               hasParent: bodyQueued.has_parent,
               attributes: bodyQueued.attributes,
               scheduleName: bodyQueued.schedule_name,
+              applicationName: bodyQueued.application_name,
             };
             let queuedWFOutput: protocol.WorkflowsOutput[] = [];
             try {
@@ -437,6 +439,7 @@ export class Conductor {
                 const sysMetrics = await this.dbosExec.systemDatabase.getMetrics(
                   getMetricsMessage.start_time,
                   getMetricsMessage.end_time,
+                  getMetricsMessage.application_name,
                 );
                 metricsData = sysMetrics.map((m) => new protocol.MetricDataOutput(m.metricType, m.metricName, m.value));
               } catch (e) {
@@ -519,6 +522,7 @@ export class Conductor {
                 status: listSchedMsg.body.status,
                 workflowName: listSchedMsg.body.workflow_name,
                 scheduleNamePrefix: listSchedMsg.body.schedule_name_prefix,
+                applicationName: listSchedMsg.body.application_name,
               });
               schedOutput = await Promise.all(
                 scheds.map(async (s) => ({
@@ -535,6 +539,7 @@ export class Conductor {
                   automatic_backfill: s.automaticBackfill,
                   cron_timezone: s.cronTimezone,
                   queue_name: s.queueName,
+                  application_name: s.applicationName ?? null,
                 })),
               );
             } catch (e) {
@@ -565,6 +570,7 @@ export class Conductor {
                   automatic_backfill: sched.automaticBackfill,
                   cron_timezone: sched.cronTimezone,
                   queue_name: sched.queueName,
+                  application_name: sched.applicationName ?? null,
                 };
               }
             } catch (e) {
@@ -760,6 +766,7 @@ export class Conductor {
                 groupByQueueName: aggBody.group_by_queue_name ?? false,
                 groupByExecutorId: aggBody.group_by_executor_id ?? false,
                 groupByApplicationVersion: aggBody.group_by_application_version ?? false,
+                groupByApplicationName: aggBody.group_by_application_name ?? false,
                 selectCount,
                 selectMinCreatedAt,
                 selectMaxQueueWaitMs,
@@ -782,6 +789,7 @@ export class Conductor {
                 forkedFrom: aggBody.forked_from,
                 parentWorkflowID: aggBody.parent_workflow_id,
                 scheduleName: aggBody.schedule_name,
+                applicationName: aggBody.application_name,
                 queuesOnly: aggBody.queues_only,
                 wasForkedFrom: aggBody.was_forked_from,
                 hasParent: aggBody.has_parent,
@@ -823,6 +831,7 @@ export class Conductor {
                 workflowIdPrefix: stepAggBody.workflow_id_prefix,
                 completedAfter: stepAggBody.completed_after,
                 completedBefore: stepAggBody.completed_before,
+                applicationName: stepAggBody.application_name,
               });
               stepAggOutput = rows.map((r) => ({
                 group: r.group,
@@ -837,9 +846,10 @@ export class Conductor {
             currWebsocket.send(JSON.stringify(stepAggResp));
             break;
           case protocol.MessageType.LIST_QUEUES:
+            const listQueuesMsg = baseMsg as protocol.ListQueuesRequest;
             let queueOutputs: protocol.QueueOutput[] = [];
             try {
-              const queues = await this.dbosExec.systemDatabase.listQueues();
+              const queues = await this.dbosExec.systemDatabase.listQueues(listQueuesMsg.body?.application_name);
               queueOutputs = queues.map((q) => ({
                 name: q.name,
                 concurrency: q.concurrency,
@@ -849,6 +859,7 @@ export class Conductor {
                 priority_enabled: q.priorityEnabled,
                 partition_queue: q.partitionQueue,
                 polling_interval_sec: q.pollingIntervalSec,
+                application_name: q.applicationName ?? null,
               }));
             } catch (e) {
               errorMsg = `Exception encountered when listing queues: ${(e as Error).message}`;
@@ -872,6 +883,7 @@ export class Conductor {
                   priority_enabled: queue.priorityEnabled,
                   partition_queue: queue.partitionQueue,
                   polling_interval_sec: queue.pollingIntervalSec,
+                  application_name: queue.applicationName ?? null,
                 };
               }
             } catch (e) {

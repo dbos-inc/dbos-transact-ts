@@ -9,7 +9,7 @@ import { Client } from 'pg';
 import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { isSQLiteSystemDatabaseUrl, resetSQLiteSystemDatabase } from '../src/sqlite_system_database';
+import { isSQLiteSystemDatabaseUrl, resetSQLiteSystemDatabase, SQLitePool } from '../src/sqlite_system_database';
 
 /* DB management helpers */
 function getSysDatabaseUrlFromUserDb(userDB: string) {
@@ -38,6 +38,21 @@ export function getPostgresTestUrl(): string {
   }
   const dbUser = process.env.DB_USER || process.env.PGUSER || 'postgres';
   return `postgresql://${dbUser}:${dbPassword}@localhost:5432/postgres?sslmode=disable`;
+}
+
+export type DBOSTestSystemDatabaseClient = Pick<Client, 'query' | 'end'>;
+
+export async function connectToDBOSTestSystemDatabase(config: DBOSConfig): Promise<DBOSTestSystemDatabaseClient> {
+  if (isSQLiteSystemDatabaseUrl(config.systemDatabaseUrl!)) {
+    return new SQLitePool(
+      config.systemDatabaseUrl!,
+      config.systemDatabaseSchemaName ?? 'dbos',
+    ) as unknown as DBOSTestSystemDatabaseClient;
+  }
+
+  const client = new Client({ connectionString: config.systemDatabaseUrl });
+  await client.connect();
+  return client;
 }
 
 function getSQLiteTestUrl(): string {

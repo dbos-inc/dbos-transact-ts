@@ -228,6 +228,7 @@ export interface ListWorkflowsBody {
   has_parent?: boolean;
   attributes?: Record<string, unknown>;
   schedule_name?: string | string[];
+  application_name?: string | string[];
 }
 
 export class WorkflowsOutput {
@@ -260,6 +261,7 @@ export class WorkflowsOutput {
   CompletedAt?: string;
   Attributes?: string;
   ScheduleName?: string;
+  ApplicationName?: string;
 
   constructor(info: WorkflowStatus) {
     // Mark empty fields as undefined
@@ -294,6 +296,7 @@ export class WorkflowsOutput {
     // JSON rather than inspect() so the wire format stays parseable by Conductor.
     this.Attributes = info.attributes !== undefined ? JSON.stringify(info.attributes) : undefined;
     this.ScheduleName = info.scheduleName;
+    this.ApplicationName = info.applicationName;
   }
 }
 
@@ -361,6 +364,7 @@ export interface ListQueuedWorkflowsBody {
   has_parent?: boolean;
   attributes?: Record<string, unknown>;
   schedule_name?: string | string[];
+  application_name?: string | string[];
 }
 
 export class ListQueuedWorkflowsRequest implements BaseMessage {
@@ -528,11 +532,20 @@ export class GetMetricsRequest implements BaseMessage {
   start_time: string;
   end_time: string;
   metric_class: string;
-  constructor(request_id: string, start_time: string, end_time: string, metric_class: string) {
+  // Optional so a Conductor predating the field still deserializes, as unscoped.
+  application_name?: string[];
+  constructor(
+    request_id: string,
+    start_time: string,
+    end_time: string,
+    metric_class: string,
+    application_name?: string[],
+  ) {
     this.request_id = request_id;
     this.start_time = start_time;
     this.end_time = end_time;
     this.metric_class = metric_class;
+    this.application_name = application_name;
   }
 }
 
@@ -622,12 +635,14 @@ export interface ScheduleOutput {
   automatic_backfill: boolean;
   cron_timezone: string | null;
   queue_name: string | null;
+  application_name: string | null;
 }
 
 export interface ListSchedulesBody {
   status?: string | string[];
   workflow_name?: string | string[];
   schedule_name_prefix?: string | string[];
+  application_name?: string | string[];
   load_context?: boolean;
 }
 
@@ -868,6 +883,7 @@ export interface GetWorkflowAggregatesBody {
   group_by_queue_name?: boolean;
   group_by_executor_id?: boolean;
   group_by_application_version?: boolean;
+  group_by_application_name?: boolean;
   select_count?: boolean;
   select_min_created_at?: boolean;
   select_max_queue_wait_ms?: boolean;
@@ -890,6 +906,7 @@ export interface GetWorkflowAggregatesBody {
   forked_from?: string[];
   parent_workflow_id?: string[];
   schedule_name?: string[];
+  application_name?: string[];
   queues_only?: boolean;
   was_forked_from?: boolean;
   has_parent?: boolean;
@@ -935,6 +952,7 @@ export interface GetStepAggregatesBody {
   workflow_id_prefix?: string[];
   completed_after?: string;
   completed_before?: string;
+  application_name?: string[];
 }
 
 export class GetStepAggregatesRequest implements BaseMessage {
@@ -972,13 +990,21 @@ export interface QueueOutput {
   priority_enabled: boolean;
   partition_queue: boolean;
   polling_interval_sec: number;
+  application_name: string | null;
+}
+
+export interface ListQueuesBody {
+  application_name?: string | string[];
 }
 
 export class ListQueuesRequest implements BaseMessage {
   type = MessageType.LIST_QUEUES;
   request_id: string;
-  constructor(request_id: string) {
+  // Optional: a Conductor that predates the filter sends no body.
+  body?: ListQueuesBody;
+  constructor(request_id: string, body?: ListQueuesBody) {
     this.request_id = request_id;
+    this.body = body;
   }
 }
 

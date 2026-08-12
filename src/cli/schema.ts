@@ -23,32 +23,43 @@ function migrationSections(schemaName: string, startMigration: number): PrintedS
     .slice(0, startMigration - 1)
     .some((m) => (m.pg ?? []).some((s) => CREATES_MIGRATIONS_TABLE.test(s)));
   let versionRowExists = tableExists;
+  let lastEmitted = startMigration - 1;
+
+  // Version bookkeeping mirroring the runner, which records nothing until a migration creates dbos_migrations.
+  const versionStatement = (version: number): string | undefined => {
+    if (!tableExists) return undefined;
+    lastEmitted = version;
+    if (versionRowExists) {
+      return `UPDATE "${schemaName}"."dbos_migrations" SET "version" = ${version};`;
+    }
+    versionRowExists = true;
+    return `INSERT INTO "${schemaName}"."dbos_migrations" ("version") VALUES (${version});`;
+  };
+
   for (let i = startMigration; i <= migrations.length; i++) {
     const m = migrations[i - 1];
     const stmts = (m.pg ?? [])
       .map((s) => s.trim())
       .filter((s) => s !== '')
       .map((s) => (s.endsWith(';') ? s : `${s};`));
-    const statements = [...stmts];
+    // Renumbering onto the shared base leaves long runs of empty migrations; nothing to emit.
+    if (stmts.length === 0) continue;
     if (!tableExists) {
       tableExists = stmts.some((s) => CREATES_MIGRATIONS_TABLE.test(s));
     }
-    // Per-migration version bookkeeping, mirroring the runner: an interrupted
-    // apply can be resumed from the next migration number. The runner records
-    // nothing until a migration has created the dbos_migrations table.
-    if (tableExists) {
-      if (versionRowExists) {
-        statements.push(`UPDATE "${schemaName}"."dbos_migrations" SET "version" = ${i};`);
-      } else {
-        statements.push(`INSERT INTO "${schemaName}"."dbos_migrations" ("version") VALUES (${i});`);
-        versionRowExists = true;
-      }
-    }
-    if (statements.length === 0) continue;
+    const statements = [...stmts];
+    const version = versionStatement(i);
+    if (version) statements.push(version);
     sections.push({
-      comment: stmts.length > 0 ? `-- Migration ${i}${m.name ? `: ${m.name}` : ''}` : undefined,
+      comment: `-- Migration ${i}${m.name ? `: ${m.name}` : ''}`,
       statements,
     });
+  }
+
+  // Empty migrations at the end still count as applied.
+  if (migrations.length > lastEmitted) {
+    const version = versionStatement(migrations.length);
+    if (version) sections.push({ statements: [version] });
   }
   return sections;
 }

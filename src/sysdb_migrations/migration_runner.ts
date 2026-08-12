@@ -1,5 +1,11 @@
 import type { ClientBase } from 'pg';
 
+/**
+ * From this index on, every SDK defines the same migration at the same index and runs it
+ * in one transaction, so a peer in another language never observes it half-applied.
+ */
+export const SHARED_MIGRATION_BASE = 100;
+
 export type DBMigration = {
   name?: string;
   pg?: ReadonlyArray<string>;
@@ -79,6 +85,34 @@ async function runStatementsIgnoring(
       }
       throw err;
     }
+  }
+}
+
+/**
+ * Run a migration's statements and record its version in one transaction, with no "already applied"
+ * tolerance: every SDK must reach the same verdict, so a failure halts with the version un-advanced.
+ */
+async function runStatementsTransactionally(
+  client: ClientBase,
+  stmts: ReadonlyArray<string>,
+  schemaName: string,
+  version: number,
+): Promise<void> {
+  await client.query('BEGIN');
+  try {
+    for (const s of stmts) {
+      await client.query(s, []);
+    }
+    // Recorded inside the transaction, so an interrupt cannot leave the migration applied but unrecorded.
+    await bumpMigrationVersion(client, schemaName, version);
+    await client.query('COMMIT');
+  } catch (err) {
+    try {
+      await client.query('ROLLBACK');
+    } catch {
+      // Preserve the original failure; the rollback only matters if the connection survived.
+    }
+    throw err;
   }
 }
 
@@ -170,19 +204,20 @@ export async function runSysMigrationsPg(
       continue;
     }
 
+    // Renumbering onto the shared base leaves long runs of empty migrations; skip them without a round trip.
+    const stmts = m.pg ?? [];
+    if (stmts.length === 0) {
+      skipped++;
+      continue;
+    }
+
     if (!loggedInfo) {
       onWarn(`Running DBOS system database migrations...`);
       loggedInfo = true;
     }
 
-    const stmts = m.pg ?? [];
-    if (stmts.length === 0) {
-      onWarn(`Migration "${m.name}" has no Postgres statements; skipping.`);
-      await bumpMigrationVersion(client, schemaName, v);
-      skipped++;
-      lastAppliedVersion = v;
-      continue;
-    }
+    const warnWithCause = (msg: string, e?: unknown) =>
+      onWarn(`${msg}${e ? `\n  → ${String((e as { message?: string }).message ?? '')}` : ''}`);
 
     // Run migrations in autocommit
     if (m.online && !isCockroach) {
@@ -192,14 +227,22 @@ export async function runSysMigrationsPg(
       for (const s of stmts) {
         await client.query(s, []);
       }
+      await bumpMigrationVersion(client, schemaName, v);
+    } else if (v >= SHARED_MIGRATION_BASE) {
+      // Shared migrations commit all-or-nothing: a peer must never find the function 105 replaces missing mid-migration.
+      await runStatementsTransactionally(client, stmts, schemaName, v);
     } else {
-      await runStatementsIgnoring(client, stmts, ignoreErrorCodes, (msg, e) =>
-        onWarn(`${msg}${e ? `\n  → ${String((e as { message?: string }).message ?? '')}` : ''}`),
-      );
+      await runStatementsIgnoring(client, stmts, ignoreErrorCodes, warnWithCause);
+      await bumpMigrationVersion(client, schemaName, v);
     }
-    await bumpMigrationVersion(client, schemaName, v);
     applied++;
     lastAppliedVersion = v;
+  }
+
+  // Empty migrations at the end still count as applied, so record them in one write.
+  if (maxKnown > lastAppliedVersion) {
+    await bumpMigrationVersion(client, schemaName, maxKnown);
+    lastAppliedVersion = maxKnown;
   }
 
   return {

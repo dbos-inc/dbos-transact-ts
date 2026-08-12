@@ -99,8 +99,12 @@ describe('schema --print-migrations and --print-user-role', () => {
     expect(out).not.toContain('("version") VALUES (1)');
     expect(out).toContain('INSERT INTO "dbos"."dbos_migrations" ("version") VALUES (2);');
     expect(out.match(/INSERT INTO "dbos"\."dbos_migrations"/g)).toHaveLength(1);
+    // Renumbering onto the shared base leaves empty migrations, which emit nothing.
+    const migrations = allMigrations();
     for (let i = 3; i <= LATEST; i++) {
-      expect(out).toContain(`UPDATE "dbos"."dbos_migrations" SET "version" = ${i};`);
+      const bump = `UPDATE "dbos"."dbos_migrations" SET "version" = ${i};`;
+      const isEmpty = (migrations[i - 1].pg ?? []).length === 0;
+      expect(out.includes(bump)).toBe(!isEmpty || i === LATEST);
     }
     expect(out.trimEnd().endsWith(`UPDATE "dbos"."dbos_migrations" SET "version" = ${LATEST};`)).toBe(true);
 

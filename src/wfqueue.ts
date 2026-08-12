@@ -123,6 +123,7 @@ async function refreshFromDb(q: WorkflowQueue): Promise<void> {
   q.priorityEnabled = record.priorityEnabled;
   q.partitionQueue = record.partitionQueue;
   q.minPollingIntervalMs = record.pollingIntervalSec * 1000;
+  q.applicationName = record.applicationName;
 }
 
 /**
@@ -143,6 +144,8 @@ export class WorkflowQueue {
   priorityEnabled: boolean = false;
   partitionQueue: boolean = false;
   minPollingIntervalMs?: number;
+  /** Owner from the queues table; undefined for in-memory and unclaimed queues. */
+  applicationName?: string;
 
   /**
    * When true, this queue's configuration is persisted in the `queues` system
@@ -248,6 +251,7 @@ export class WorkflowQueue {
     q.priorityEnabled = record.priorityEnabled;
     q.partitionQueue = record.partitionQueue;
     q.minPollingIntervalMs = record.pollingIntervalSec * 1000;
+    q.applicationName = record.applicationName;
     q.databaseBacked = true;
     q.clientBound = clientSystemDatabase !== undefined;
     if (clientSystemDatabase !== undefined) {
@@ -454,7 +458,7 @@ class WFQueueRunner {
   private async refreshDbQueues(exec: DBOSExecutor, now: number): Promise<void> {
     let records: QueueRecord[];
     try {
-      records = await exec.systemDatabase.listQueues();
+      records = await exec.systemDatabase.listQueues(exec.systemDatabase.appName);
     } catch (e) {
       exec.logger.warn(`Error listing database-backed queues: ${(e as Error).message}`);
       return;
