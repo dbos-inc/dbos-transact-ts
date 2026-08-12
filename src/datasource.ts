@@ -365,11 +365,15 @@ export function createTransactionCompletionTablePG(schemaName: string = 'dbos'):
 `;
 }
 
+const SQLSTATE_PATTERN = /^[0-9A-Z]{5}$/;
+
 function getPGErrorCode(error: unknown): string | undefined {
   // Some clients wrap the driver's error, so follow the cause chain to find the code.
   for (let depth = 0, e = error; e && typeof e === 'object' && depth < 10; depth++) {
-    if ('code' in e) {
-      return e.code as string;
+    // Only a SQLSTATE ends the search, so a wrapper's own code cannot shadow the driver's.
+    const code = (e as { code?: unknown }).code;
+    if (typeof code === 'string' && SQLSTATE_PATTERN.test(code)) {
+      return code;
     }
     e = (e as { cause?: unknown }).cause;
   }
