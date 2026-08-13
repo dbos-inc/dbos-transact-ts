@@ -820,6 +820,13 @@ export class SystemDatabase {
   // Per-partition-key created_at cursors: keep per-key queue order monotonic across batches
   readonly #batchCreatedAtCursors: Map<string, number> = new Map();
 
+  // Pool listeners this handle registered, removed on destroy so they cannot pile up on a caller's pool.
+  readonly #onPoolError: (err: Error) => void;
+  readonly #onPoolConnect: (client: PoolClient) => void;
+
+  // Set by destroy(), so polling waits end instead of running on against a pool that outlives this handle.
+  #destroyed: boolean = false;
+
   constructor(
     readonly systemDatabaseUrl: string,
     readonly logger: GlobalLogger,
@@ -856,14 +863,17 @@ export class SystemDatabase {
     const pollingLimit = pollingConcurrency ?? Math.max(1, Math.floor(effectivePoolSize / 2));
     this.pollLimiter = new Semaphore(pollingLimit);
 
-    this.pool.on('error', (err: Error) => {
+    // Kept so destroy() can remove them: a caller-supplied pool outlives this handle.
+    this.#onPoolError = (err: Error) => {
       this.logger.warn(`Unexpected error in pool: ${err}`);
-    });
-    this.pool.on('connect', (client: PoolClient) => {
+    };
+    this.#onPoolConnect = (client: PoolClient) => {
       client.on('error', (err: Error) => {
         this.logger.warn(`Unexpected error in idle client: ${err}`);
       });
-    });
+    };
+    this.pool.on('error', this.#onPoolError);
+    this.pool.on('connect', this.#onPoolConnect);
   }
   getSerializer(): DBOSSerializer {
     return this.serializer;
@@ -963,6 +973,7 @@ export class SystemDatabase {
   async destroy() {
     // Set synchronously, before any await, so no reconnect is scheduled or published after this point.
     this.#notificationsStopped = true;
+    this.#destroyed = true;
     if (this.reconnectTimeout) {
       clearTimeout(this.reconnectTimeout);
       this.reconnectTimeout = null;
@@ -977,6 +988,8 @@ export class SystemDatabase {
     if (this.notificationsClient) {
       this.#retireNotificationsClient(this.notificationsClient);
     }
+    this.pool.off('error', this.#onPoolError);
+    this.pool.off('connect', this.#onPoolConnect);
     // A caller-supplied pool outlives this handle, so only close a pool we created.
     if (!this.customPool) {
       await this.pool.end();
@@ -2380,6 +2393,10 @@ export class SystemDatabase {
    * control-plane work hits the pool directly and bypasses the limiter.
    */
   #pollWithLimiter<T>(query: () => Promise<T>): Promise<T> {
+    // Closing our own pool used to end these waits; a caller's pool stays open, so end them here.
+    if (this.#destroyed) {
+      return Promise.reject(new DBOSError('The system database has been shut down'));
+    }
     return this.pollLimiter.runExclusive(query);
   }
 

@@ -1120,6 +1120,56 @@ describe('custom-pool-test', () => {
   });
 });
 
+describe('custom-pool-lifecycle', () => {
+  let config: DBOSConfig;
+  let systemDatabaseUrl: string;
+
+  beforeAll(async () => {
+    config = generateDBOSTestConfig();
+    systemDatabaseUrl = config.systemDatabaseUrl!;
+    await setUpDBOSTestSysDb(config);
+  });
+
+  test('destroy ends polling waits instead of leaving them running on the caller pool', async () => {
+    const pool = new Pool({ connectionString: systemDatabaseUrl });
+    try {
+      const client = await DBOSClient.create({ systemDatabaseUrl, systemDatabasePool: pool });
+      await client.registerQueue('custom-pool-lifecycle-queue');
+      // Nothing is launched to dequeue it, so this wait would otherwise poll forever.
+      const handle = await client.enqueue<() => Promise<string>>({
+        workflowName: 'neverRuns',
+        queueName: 'custom-pool-lifecycle-queue',
+      });
+      const pending = handle.getResult();
+      await client.destroy();
+
+      await expect(pending).rejects.toThrow('The system database has been shut down');
+      // The caller's pool is still theirs to use.
+      await pool.query('SELECT 1');
+    } finally {
+      await pool.end();
+    }
+  });
+
+  test('destroy removes the listeners it added to the caller pool', async () => {
+    const pool = new Pool({ connectionString: systemDatabaseUrl });
+    try {
+      const errorListeners = pool.listenerCount('error');
+      const connectListeners = pool.listenerCount('connect');
+
+      for (let i = 0; i < 3; i++) {
+        const client = await DBOSClient.create({ systemDatabaseUrl, systemDatabasePool: pool });
+        await client.destroy();
+      }
+
+      expect(pool.listenerCount('error')).toBe(errorListeners);
+      expect(pool.listenerCount('connect')).toBe(connectListeners);
+    } finally {
+      await pool.end();
+    }
+  });
+});
+
 describe('run-migrations-flag', () => {
   let config: DBOSConfig;
   // A throwaway system database, so a failed verification never touches the shared test one.
