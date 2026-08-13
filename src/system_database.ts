@@ -821,8 +821,14 @@ export class SystemDatabase {
   readonly #batchCreatedAtCursors: Map<string, number> = new Map();
 
   // Pool listeners this handle registered, removed on destroy so they cannot pile up on a caller's pool.
-  readonly #onPoolError: (err: Error) => void;
-  readonly #onPoolConnect: (client: PoolClient) => void;
+  readonly #onPoolError = (err: Error) => {
+    this.logger.warn(`Unexpected error in pool: ${err}`);
+  };
+  readonly #onPoolConnect = (client: PoolClient) => {
+    client.on('error', (err: Error) => {
+      this.logger.warn(`Unexpected error in idle client: ${err}`);
+    });
+  };
 
   // Set by destroy(), so polling waits end instead of running on against a pool that outlives this handle.
   #destroyed: boolean = false;
@@ -863,15 +869,6 @@ export class SystemDatabase {
     const pollingLimit = pollingConcurrency ?? Math.max(1, Math.floor(effectivePoolSize / 2));
     this.pollLimiter = new Semaphore(pollingLimit);
 
-    // Kept so destroy() can remove them: a caller-supplied pool outlives this handle.
-    this.#onPoolError = (err: Error) => {
-      this.logger.warn(`Unexpected error in pool: ${err}`);
-    };
-    this.#onPoolConnect = (client: PoolClient) => {
-      client.on('error', (err: Error) => {
-        this.logger.warn(`Unexpected error in idle client: ${err}`);
-      });
-    };
     this.pool.on('error', this.#onPoolError);
     this.pool.on('connect', this.#onPoolConnect);
   }
