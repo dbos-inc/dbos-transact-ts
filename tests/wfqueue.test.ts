@@ -3642,6 +3642,9 @@ describe('dequeue-dispatch-cost', () => {
     const reh = await reexecuteWorkflowById(handle.workflowID, true, 'not-a-registered-workflow', 3000);
     await expect(reh.getResult()).rejects.toThrow(/produced no result within 3000ms/);
     expect((await reh.getStatus())?.status).toBe(StatusString.PENDING);
+
+    // Nothing else retires a row stranded this way, and later tests assert the queues are empty.
+    await DBOS.cancelWorkflow(handle.workflowID);
   }, 30000);
 
   test('status-fetch-chunks-and-retries-per-chunk', async () => {
