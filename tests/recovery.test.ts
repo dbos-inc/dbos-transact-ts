@@ -162,6 +162,8 @@ describe('recovery-tests', () => {
     }
 
     // Send to DLQ and verify it enters the DLQ status.
+    const completedBeforeDLQ = (await handle.getStatus())?.completedAt;
+    expect(completedBeforeDLQ).toBeDefined();
     await setWfAndChildrenToPending(handle.workflowID, false); // Simulate not finishing
     await recoverPendingWorkflows();
     // Recovery re-enqueues, so the DLQ transition happens when the queue dequeues the workflow.
@@ -170,6 +172,8 @@ describe('recovery-tests', () => {
     });
     let status = await handle.getStatus();
     expect(status?.recoveryAttempts).toBe(LocalRecovery.maxRecoveryAttempts + 2);
+    // Terminal like ERROR/CANCELLED, so the DLQ write stamps its own completion time.
+    expect(status?.completedAt).toBeGreaterThan(completedBeforeDLQ!);
 
     // A direct invocation does not re-run the body; it adopts the row and surfaces its terminal status.
     const runsBeforeDirectStart = LocalRecovery.recoveryCount;

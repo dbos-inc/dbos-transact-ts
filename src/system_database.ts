@@ -1012,7 +1012,8 @@ export class SystemDatabase {
            deduplication_id = NULL,
            started_at_epoch_ms = NULL,
            queue_name = NULL,
-           updated_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint
+           updated_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint,
+           completed_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint
        WHERE workflow_uuid = ANY($2::text[]) AND status = $3 AND recovery_attempts >= $4`,
       [StatusString.MAX_RECOVERY_ATTEMPTS_EXCEEDED, workflowIDs, StatusString.PENDING, minRecoveryAttempts],
     );
@@ -3241,7 +3242,6 @@ export class SystemDatabase {
     appVersion: string,
     queuePartitionKey?: string,
   ): Promise<string[]> {
-    const startTimeMs = Date.now();
     const limiterPeriodMS = queue.rateLimit ? queue.rateLimit.periodSec * 1000 : 0;
     const claimedIDs: string[] = [];
     const localRunningForQueue = this.countRunningWorkflowsForQueue(queue.name, queuePartitionKey);
@@ -3270,7 +3270,7 @@ export class SystemDatabase {
           queue.name,
           StatusString.ENQUEUED,
           StatusString.DELAYED,
-          startTimeMs - limiterPeriodMS,
+          limiterPeriodMS,
           ...partitionParams,
         ];
         // Count only what this application would dequeue, matching the select below.
@@ -3280,7 +3280,8 @@ export class SystemDatabase {
            WHERE queue_name = $1
              AND rate_limited = TRUE
              AND status NOT IN ($2, $3)
-             AND started_at_epoch_ms > $4
+             -- Database clock on both sides, as the claim stamps started_at_epoch_ms with it.
+             AND started_at_epoch_ms > (EXTRACT(epoch FROM now()) * 1000)::bigint - $4
              AND ${scope}
              ${partitionFilter.replace('$PARTITION', '$5')}`,
           params,
@@ -3376,7 +3377,6 @@ export class SystemDatabase {
           StatusString.PENDING,
           executorID,
           appVersion,
-          startTimeMs,
           queue.rateLimit !== undefined,
           workflowIDs,
           StatusString.ENQUEUED,
@@ -3391,9 +3391,9 @@ export class SystemDatabase {
            SET status = $1,
                executor_id = $2,
                application_version = $3,
-               started_at_epoch_ms = $4,
-               rate_limited = $5,
-               application_name = COALESCE(application_name, $8),
+               started_at_epoch_ms = (EXTRACT(epoch FROM now()) * 1000)::bigint,
+               rate_limited = $4,
+               application_name = COALESCE(application_name, $7),
                recovery_attempts = recovery_attempts + 1,
                updated_at = (EXTRACT(epoch FROM now()) * 1000)::bigint,
                workflow_deadline_epoch_ms = CASE
@@ -3401,7 +3401,7 @@ export class SystemDatabase {
                  THEN (EXTRACT(epoch FROM now()) * 1000)::bigint + workflow_timeout_ms
                  ELSE workflow_deadline_epoch_ms
                END
-           WHERE workflow_uuid = ANY($6::text[]) AND status = $7 AND ${claimScope}
+           WHERE workflow_uuid = ANY($5::text[]) AND status = $6 AND ${claimScope}
            RETURNING workflow_uuid`,
           updateParams,
         );
@@ -3438,7 +3438,6 @@ export class SystemDatabase {
       );
     }
     // workerConcurrency needs no handling here: dispatch routes 0 (the pause-dequeue idiom) to the fallback path, and validation caps any other value at concurrency=1, which the PENDING gate already enforces globally.
-    const startTimeMs = Date.now();
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
@@ -3539,7 +3538,6 @@ export class SystemDatabase {
         StatusString.ENQUEUED,
         queue.name,
         appVersion,
-        startTimeMs,
         // Claim the row, as the unpartitioned dequeue does.
         this.appName ?? null,
       ];
@@ -3550,9 +3548,9 @@ export class SystemDatabase {
          SET status = $1,
              executor_id = $2,
              application_version = $6,
-             started_at_epoch_ms = $7,
+             started_at_epoch_ms = (EXTRACT(epoch FROM now()) * 1000)::bigint,
              rate_limited = FALSE,
-             application_name = COALESCE(application_name, $8),
+             application_name = COALESCE(application_name, $7),
              recovery_attempts = recovery_attempts + 1,
              updated_at = (EXTRACT(epoch FROM now()) * 1000)::bigint,
              workflow_deadline_epoch_ms = CASE
