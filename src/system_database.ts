@@ -935,7 +935,10 @@ export class SystemDatabase {
     if (this.notificationsClient) {
       this.#retireNotificationsClient(this.notificationsClient);
     }
-    await this.pool.end();
+    // A caller-supplied pool outlives this handle, so only close a pool we created.
+    if (!this.customPool) {
+      await this.pool.end();
+    }
   }
 
   // ==================== Workflow Status ====================

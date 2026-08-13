@@ -1082,6 +1082,9 @@ describe('custom-pool-test', () => {
     // Launching with a custom pool but nonexistent database should fail
     await expect(DBOS.launch()).rejects.toThrow(DBOSInitializationError);
     await DBOS.shutdown();
+    // A pool DBOS was given is the caller's to close, even after a failed launch
+    assert(!pool.ending && !pool.ended);
+    await pool.end();
     // Create the system database, launch should succeed with a custom pool but fake URL
     await ensurePGDatabase(baseConfig.systemDatabaseUrl!, { info: () => {}, warn: () => {} });
     pool = new Pool({ connectionString: systemDatabaseURL });
@@ -1104,6 +1107,16 @@ describe('custom-pool-test', () => {
     });
     const clientHandle = client.retrieveWorkflow(handle.workflowID);
     assert.equal(await clientHandle.getResult(), message);
+
+    // Destroying the client must leave the shared pool open for the runtime still using it
+    await client.destroy();
+    const secondHandle = await DBOS.startWorkflow(workflow)();
+    await DBOS.send(secondHandle.workflowID, message);
+    assert.equal(await secondHandle.getResult(), message);
+
+    await DBOS.shutdown();
+    await pool.query('SELECT 1');
+    await pool.end();
   });
 });
 
