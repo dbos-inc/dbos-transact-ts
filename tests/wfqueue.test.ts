@@ -3633,6 +3633,17 @@ describe('dequeue-dispatch-cost', () => {
     expect(await queueEntriesAreCleanedUp()).toBe(true);
   }, 30000);
 
+  test('reexecute-helper-fails-fast-on-dispatch-error', async () => {
+    const handle = await DBOS.startWorkflow(DispatchCostWF).run(1);
+    expect(await handle.getResult()).toBe(1);
+
+    // Renamed to a function this process never registered: dispatch throws and the queue only logs it,
+    // leaving the row PENDING. Without a deadline the handle would poll until the jest timeout.
+    const reh = await reexecuteWorkflowById(handle.workflowID, true, 'not-a-registered-workflow', 3000);
+    await expect(reh.getResult()).rejects.toThrow(/produced no result within 3000ms/);
+    expect((await reh.getStatus())?.status).toBe(StatusString.PENDING);
+  }, 30000);
+
   test('status-fetch-chunks-and-retries-per-chunk', async () => {
     const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
     // Started off-queue so the dispatcher never fetches these rows itself.

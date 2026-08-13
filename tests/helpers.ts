@@ -1,5 +1,5 @@
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
-import { DBOS, StatusString } from '../src';
+import { DBOS, StatusString, type WorkflowHandle } from '../src';
 import { getClientConfig, INTERNAL_QUEUE_NAME, sleepms } from '../src/utils';
 import { isValidDatabaseName, translateDbosConfig } from '../src/config';
 import { ensureSystemDatabase } from '../src/system_database';
@@ -172,11 +172,50 @@ export async function setWfAndChildrenToPending(workflowId: string, resetRecover
   }
 }
 
+/**
+ * Bound a polling handle's wait. The queue logs dispatch failures rather than throwing them, so an
+ * unregistered function or an undeserializable input would otherwise leave the row PENDING and poll
+ * until the test times out with no indication of the cause.
+ */
+function withDispatchDeadline<R>(handle: WorkflowHandle<R>, timeoutMs: number): WorkflowHandle<R> {
+  return {
+    get workflowID() {
+      return handle.workflowID;
+    },
+    getStatus: () => handle.getStatus(),
+    getWorkflowInputs: <T extends unknown[]>() => handle.getWorkflowInputs<T>(),
+    getResult: async (options?: Parameters<WorkflowHandle<R>['getResult']>[0]) => {
+      const expired = Symbol('expired');
+      const pending = handle.getResult(options);
+      // The loser of the race keeps polling; swallow it so it cannot surface as an unhandled rejection.
+      pending.catch(() => {});
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        const raced = await Promise.race([
+          pending,
+          new Promise<typeof expired>((resolve) => {
+            timer = setTimeout(() => resolve(expired), timeoutMs);
+          }),
+        ]);
+        if (raced !== expired) return raced;
+      } finally {
+        clearTimeout(timer);
+      }
+      const status = await handle.getStatus();
+      throw new Error(
+        `Re-executed workflow ${handle.workflowID} produced no result within ${timeoutMs}ms; ` +
+          `its status is ${status?.status ?? 'missing'}. A dispatch failure is logged, not thrown — check the queue's warnings.`,
+      );
+    },
+  };
+}
+
 // Re-run a workflow the way recovery does: re-enqueue the row and let the queue dispatch it.
 export async function reexecuteWorkflowById(
   workflowId: string,
   resetRecoveryAttempts: boolean = true,
   updateName?: string,
+  timeoutMs: number = 30000,
 ) {
   expect(DBOSExecutor.globalInstance).toBeDefined();
   const sysDB = DBOSExecutor.globalInstance!.systemDatabase;
@@ -188,7 +227,7 @@ export async function reexecuteWorkflowById(
     queueName: status!.queueName ?? INTERNAL_QUEUE_NAME,
     resetStartedAtEpochMs: true,
   });
-  return DBOS.retrieveWorkflow(workflowId);
+  return withDispatchDeadline(DBOS.retrieveWorkflow(workflowId), timeoutMs);
 }
 
 export async function dropDatabase(connectionString: string, database?: string) {
