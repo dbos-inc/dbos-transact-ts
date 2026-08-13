@@ -7,7 +7,7 @@ import { Client, Pool } from 'pg';
 import { DBOSWorkflowCancelledError, DBOSAwaitedWorkflowCancelledError, DBOSInitializationError } from '../src/error';
 import assert from 'node:assert';
 import { DBOSClient } from '../dist/src';
-import { dropPGDatabase, ensurePGDatabase } from '../src/database_utils';
+import { deriveDatabaseUrl, dropPGDatabase, ensurePGDatabase, getDatabaseNameFromUrl } from '../src/database_utils';
 import { sleepConfig } from '../src/utils';
 
 const silentDropLogger = { warn: () => {} };
@@ -1117,6 +1117,72 @@ describe('custom-pool-test', () => {
     await DBOS.shutdown();
     await pool.query('SELECT 1');
     await pool.end();
+  });
+});
+
+describe('run-migrations-flag', () => {
+  let config: DBOSConfig;
+  // A throwaway system database, so a failed verification never touches the shared test one.
+  let unmigratedUrl: string;
+
+  beforeAll(async () => {
+    config = generateDBOSTestConfig();
+    await setUpDBOSTestSysDb(config);
+    unmigratedUrl = deriveDatabaseUrl(config.systemDatabaseUrl!, 'dbostest_unmigrated_sys');
+  });
+
+  afterEach(async () => {
+    await DBOS.shutdown();
+    await dropPGDatabase(unmigratedUrl, silentDropLogger);
+  });
+
+  test('launches against an already-migrated system database', async () => {
+    const workflow = DBOS.registerWorkflow(() => Promise.resolve('migrated'), { name: 'run-migrations-false-test' });
+    DBOS.setConfig({ ...config, runMigrations: false });
+    await DBOS.launch();
+
+    assert.equal(await workflow(), 'migrated');
+  });
+
+  test('throws when the system database is not migrated', async () => {
+    // The database exists but holds no DBOS schema, so it is at version 0.
+    await ensurePGDatabase(unmigratedUrl, { info: () => {}, warn: () => {} });
+    DBOS.setConfig({ ...config, systemDatabaseUrl: unmigratedUrl, runMigrations: false });
+
+    const error = await DBOS.launch().then(
+      () => undefined,
+      (e: unknown) => e,
+    );
+    expect(error).toBeInstanceOf(DBOSInitializationError);
+    expect((error as Error).message).toMatch(/is at schema version 0, but this version of DBOS requires/);
+
+    // Verification must not have migrated it on the way past.
+    const dbClient = new Client({ connectionString: unmigratedUrl });
+    try {
+      await dbClient.connect();
+      const { rows } = await dbClient.query<{ schema_name: string }>(
+        `SELECT schema_name FROM information_schema.schemata WHERE schema_name = 'dbos'`,
+      );
+      expect(rows).toHaveLength(0);
+    } finally {
+      await dbClient.end();
+    }
+  });
+
+  test('does not create a missing system database', async () => {
+    DBOS.setConfig({ ...config, systemDatabaseUrl: unmigratedUrl, runMigrations: false });
+    await expect(DBOS.launch()).rejects.toThrow(DBOSInitializationError);
+
+    const dbClient = new Client({ connectionString: deriveDatabaseUrl(unmigratedUrl, 'postgres') });
+    try {
+      await dbClient.connect();
+      const { rowCount } = await dbClient.query('SELECT 1 FROM pg_database WHERE datname = $1', [
+        getDatabaseNameFromUrl(unmigratedUrl),
+      ]);
+      expect(rowCount).toBe(0);
+    } finally {
+      await dbClient.end();
+    }
   });
 });
 

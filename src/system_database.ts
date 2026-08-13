@@ -38,7 +38,7 @@ import { WorkflowQueue } from './wfqueue';
 import { randomUUID } from 'crypto';
 import { getClientConfig } from './utils';
 import { ensurePGDatabase, maskDatabaseUrl } from './database_utils';
-import { runSysMigrationsPg } from './sysdb_migrations/migration_runner';
+import { getCurrentSysDBVersion, runSysMigrationsPg } from './sysdb_migrations/migration_runner';
 import { allMigrations } from './sysdb_migrations/internal/migrations';
 import {
   DEBUG_TRIGGER_STEP_COMMIT,
@@ -395,6 +395,41 @@ export async function grantDbosSchemaPermissions(
   }
 }
 
+/** Connect to the system database without creating it. The caller releases the client. */
+async function connectToSystemDatabase(sysDbUrl: string, logger: GlobalLogger, customPool?: Pool): Promise<ClientBase> {
+  if (customPool) {
+    return await customPool.connect();
+  }
+  const sysClient = new Client(getClientConfig(sysDbUrl));
+  // An 'error' event with no listener would take down the process.
+  sysClient.on('error', (err: Error) => logger.warn(`Unexpected error in system database client: ${err}`));
+  try {
+    await sysClient.connect();
+  } catch (e) {
+    await sysClient.end().catch(() => {});
+    throw new DBOSInitializationError(
+      `Unable to connect to system database at ${maskDatabaseUrl(sysDbUrl)}: ${(e as Error).message}`,
+      e instanceof Error ? e : undefined,
+    );
+  }
+  return sysClient;
+}
+
+async function releaseSystemDatabaseClient(client: ClientBase, customPool?: Pool): Promise<void> {
+  try {
+    if (customPool) {
+      (client as PoolClient).release();
+    } else {
+      await (client as Client).end();
+    }
+  } catch (e) {}
+}
+
+async function isCockroachDB(client: ClientBase): Promise<boolean> {
+  const versionRes = await client.query<{ version: string }>('SELECT version() AS version');
+  return /cockroachdb/i.test(versionRes.rows[0]?.version ?? '');
+}
+
 export async function ensureSystemDatabase(
   sysDbUrl: string,
   logger: GlobalLogger,
@@ -402,44 +437,49 @@ export async function ensureSystemDatabase(
   schemaName: string = 'dbos',
   useListenNotify: boolean = true,
 ) {
-  let client: ClientBase | null = null;
-  if (customPool) {
-    // If a custom pool is passed in, assume the database already exists and create
-    // a client to run migrations.
-    client = await customPool.connect();
-  } else {
-    // Otherwise, create the system database if it does not exist.
+  if (!customPool) {
+    // A custom pool means the database already exists; otherwise, create it if it does not.
     await ensurePGDatabase(sysDbUrl, logger);
-    const sysClient = new Client(getClientConfig(sysDbUrl));
-    // An 'error' event with no listener would take down the process.
-    sysClient.on('error', (err: Error) => logger.warn(`Unexpected error in system database client: ${err}`));
-    try {
-      await sysClient.connect();
-    } catch (e) {
-      await sysClient.end().catch(() => {});
-      throw new DBOSInitializationError(
-        `Unable to connect to system database at ${maskDatabaseUrl(sysDbUrl)}: ${(e as Error).message}`,
-        e instanceof Error ? e : undefined,
-      );
-    }
-    client = sysClient;
   }
+  const client = await connectToSystemDatabase(sysDbUrl, logger, customPool);
 
   try {
-    const versionRes = await client.query<{ version: string }>('SELECT version() AS version');
-    const isCockroach = /cockroachdb/i.test(versionRes.rows[0]?.version ?? '');
+    const isCockroach = await isCockroachDB(client);
     await runSysMigrationsPg(client, allMigrations(schemaName, { useListenNotify, isCockroach }), schemaName, {
       onWarn: (e: string) => logger.info(e),
       isCockroach,
     });
   } finally {
-    try {
-      if (customPool) {
-        (client as PoolClient).release();
-      } else {
-        await (client as Client).end();
-      }
-    } catch (e) {}
+    await releaseSystemDatabaseClient(client, customPool);
+  }
+}
+
+/** Check the system database is migrated to the version this build requires, creating and changing nothing. */
+export async function verifySystemDatabase(
+  sysDbUrl: string,
+  logger: GlobalLogger,
+  customPool?: Pool,
+  schemaName: string = 'dbos',
+  useListenNotify: boolean = true,
+) {
+  const client = await connectToSystemDatabase(sysDbUrl, logger, customPool);
+
+  try {
+    const isCockroach = await isCockroachDB(client);
+    const requiredVersion = allMigrations(schemaName, { useListenNotify, isCockroach }).length;
+    const currentVersion = await getCurrentSysDBVersion(client, schemaName);
+    // A database ahead of this build belongs to a newer peer, which the migration runner also tolerates.
+    if (currentVersion < requiredVersion) {
+      throw new DBOSInitializationError(
+        `System database ${maskDatabaseUrl(sysDbUrl)} is at schema version ${currentVersion}, but this version ` +
+          `of DBOS requires ${requiredVersion}. This process is configured with runMigrations disabled, so it ` +
+          `will not migrate it: either migrate the system database out of band (\`npx dbos schema\`) or launch ` +
+          `with runMigrations enabled.`,
+      );
+    }
+    logger.debug(`System database schema version ${currentVersion} satisfies the required version ${requiredVersion}`);
+  } finally {
+    await releaseSystemDatabaseClient(client, customPool);
   }
 }
 
@@ -901,8 +941,10 @@ export class SystemDatabase {
     );
   }
 
-  async init() {
-    await ensureSystemDatabase(
+  /** Migrates the system database, or, when `runMigrations` is false, verifies it is already migrated. */
+  async init(runMigrations: boolean = true) {
+    const migrateOrVerify = runMigrations ? ensureSystemDatabase : verifySystemDatabase;
+    await migrateOrVerify(
       this.systemDatabaseUrl,
       this.logger,
       this.customPool ? this.pool : undefined,
@@ -942,11 +984,7 @@ export class SystemDatabase {
   }
 
   // ==================== Workflow Status ====================
-  /**
-   * Runs on `client` if given, joining its transaction; otherwise in its own retried transaction.
-   * A caller-owned transaction is neither committed nor rolled back here, so the status row is
-   * not visible until the caller commits.
-   */
+  /** Runs on `client` if given, joining its transaction; otherwise in its own retried transaction. */
   async initWorkflowStatus(
     initStatus: WorkflowStatusInternal,
     ownerXid: string | null,
@@ -2531,11 +2569,7 @@ export class SystemDatabase {
     }
   }
 
-  /**
-   * Runs on `client` if given, joining its transaction; otherwise on the pool with retries.
-   * The notifications trigger's `pg_notify` is transactional, so a message written in a
-   * caller-owned transaction wakes its destination only once the caller commits.
-   */
+  /** Runs on `client` if given, joining its transaction; otherwise on the pool with retries. */
   async sendDirect(
     destinationID: string,
     message: string | null,

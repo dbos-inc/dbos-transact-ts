@@ -218,6 +218,7 @@ export function translateDbosConfig(options: DBOSConfig, forceConsole: boolean =
     maxConcurrentQueueDispatches: options.maxConcurrentQueueDispatches,
     useListenNotify: options.useListenNotify ?? true,
     notificationCoalesceMs: options.notificationCoalesceMs,
+    runMigrations: options.runMigrations ?? true,
   };
 }
 

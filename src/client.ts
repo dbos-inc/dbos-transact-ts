@@ -523,8 +523,7 @@ export class DBOSClient {
     options: ClientEnqueueOptions,
   ): Promise<string> {
     if (options.duplicationPolicy === 'return-existing') {
-      // Recovering the existing ID means retrying past a unique violation, which needs a
-      // transaction of its own: the violation has already aborted the caller's.
+      // A unique violation aborts the caller's transaction, so recovering the existing ID would need a new one.
       throw new DBOSError("`duplicationPolicy: 'return-existing'` is not supported in a caller-owned transaction");
     }
     await this.systemDatabase.initWorkflowStatus(internalStatus, null, client);
