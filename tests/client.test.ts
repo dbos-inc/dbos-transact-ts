@@ -767,6 +767,353 @@ describe('DBOSClient', () => {
     expect(result).toBe(message);
   });
 
+  test('DBOSClient-enqueueInTransaction-commit', async () => {
+    await DBOS.launch();
+    await registerTestQueue();
+
+    const client = await DBOSClient.create({ systemDatabaseUrl });
+    const wfid = `client-enqueue-tx-${Date.now()}`;
+    const txClient = new Client(poolConfig);
+    const otherClient = new Client(poolConfig);
+    try {
+      await txClient.connect();
+      await otherClient.connect();
+      await txClient.query('BEGIN');
+
+      const handle = await client.enqueueInTransaction<EnqueueTest>(
+        txClient,
+        {
+          workflowName: 'enqueueTest',
+          workflowClassName: 'ClientTest',
+          queueName: 'testQueue',
+          workflowID: wfid,
+        },
+        42,
+        'test',
+        { first: 'John', last: 'Doe', age: 30 },
+      );
+      expect(handle.workflowID).toBe(wfid);
+
+      // The row belongs to the caller's transaction until it commits.
+      const beforeCommit = await otherClient.query<workflow_status>(
+        'SELECT * FROM dbos.workflow_status WHERE workflow_uuid = $1',
+        [wfid],
+      );
+      expect(beforeCommit.rows).toHaveLength(0);
+
+      await txClient.query('COMMIT');
+      expect(await handle.getResult()).toBe('42-test-{"first":"John","last":"Doe","age":30}');
+    } finally {
+      await txClient.end();
+      await otherClient.end();
+      await client.destroy();
+    }
+  });
+
+  test('DBOSClient-enqueueInTransaction-rollback', async () => {
+    await DBOS.launch();
+    await registerTestQueue();
+
+    const client = await DBOSClient.create({ systemDatabaseUrl });
+    const wfid = `client-enqueue-tx-rollback-${Date.now()}`;
+    const txClient = new Client(poolConfig);
+    try {
+      await txClient.connect();
+      await txClient.query('BEGIN');
+      await client.enqueueInTransaction<EnqueueTest>(
+        txClient,
+        {
+          workflowName: 'enqueueTest',
+          workflowClassName: 'ClientTest',
+          queueName: 'testQueue',
+          workflowID: wfid,
+        },
+        42,
+        'test',
+        { first: 'John', last: 'Doe', age: 30 },
+      );
+      await txClient.query('ROLLBACK');
+
+      const result = await txClient.query<workflow_status>(
+        'SELECT * FROM dbos.workflow_status WHERE workflow_uuid = $1',
+        [wfid],
+      );
+      expect(result.rows).toHaveLength(0);
+    } finally {
+      await txClient.end();
+      await client.destroy();
+    }
+  });
+
+  test('DBOSClient-enqueueInTransaction-idempotent', async () => {
+    await DBOS.launch();
+    await registerTestQueue();
+
+    const client = await DBOSClient.create({ systemDatabaseUrl });
+    const wfid = `client-enqueue-tx-idempotent-${Date.now()}`;
+    const options = {
+      workflowName: 'enqueueTest',
+      workflowClassName: 'ClientTest',
+      queueName: 'testQueue',
+      workflowID: wfid,
+    };
+    const txClient = new Client(poolConfig);
+    try {
+      await txClient.connect();
+      await txClient.query('BEGIN');
+      const handle = await client.enqueueInTransaction<EnqueueTest>(txClient, options, 42, 'test', {
+        first: 'John',
+        last: 'Doe',
+        age: 30,
+      });
+      // Re-enqueuing the same workflow ID keeps the inputs of the first enqueue.
+      const handle2 = await client.enqueueInTransaction<EnqueueTest>(txClient, options, 99, 'other', {
+        first: 'Jane',
+        last: 'Roe',
+        age: 40,
+      });
+      await txClient.query('COMMIT');
+
+      expect(await handle.getResult()).toBe('42-test-{"first":"John","last":"Doe","age":30}');
+      expect(await handle2.getResult()).toBe('42-test-{"first":"John","last":"Doe","age":30}');
+    } finally {
+      await txClient.end();
+      await client.destroy();
+    }
+  });
+
+  test('DBOSClient-enqueueInTransaction-deduplication', async () => {
+    // DBOS is not launched, so the enqueued workflow keeps holding the deduplication slot.
+    const client = await DBOSClient.create({ systemDatabaseUrl });
+    const now = Date.now();
+    const wfid = `client-enqueue-tx-dedup-${now}`;
+    const wfid2 = `${wfid}-other`;
+    const options = {
+      workflowName: 'enqueueTest',
+      workflowClassName: 'ClientTest',
+      queueName: 'testQueue',
+      workflowID: wfid,
+      deduplicationID: `dedup-${now}`,
+    };
+    const txClient = new Client(poolConfig);
+    try {
+      await txClient.connect();
+      await txClient.query('BEGIN');
+      await client.enqueueInTransaction<EnqueueTest>(txClient, options, 42, 'test', {
+        first: 'John',
+        last: 'Doe',
+        age: 30,
+      });
+      await txClient.query('COMMIT');
+
+      await txClient.query('BEGIN');
+      await expect(
+        client.enqueueInTransaction<EnqueueTest>(txClient, { ...options, workflowID: wfid2 }, 42, 'test', {
+          first: 'John',
+          last: 'Doe',
+          age: 30,
+        }),
+      ).rejects.toThrow(DBOSQueueDuplicatedError);
+      // The conflict aborted the caller's transaction, which is the caller's to roll back.
+      await txClient.query('ROLLBACK');
+
+      const result = await txClient.query<workflow_status>(
+        'SELECT * FROM dbos.workflow_status WHERE workflow_uuid = ANY($1)',
+        [[wfid, wfid2]],
+      );
+      expect(result.rows).toHaveLength(1);
+      expect(result.rows[0].workflow_uuid).toBe(wfid);
+    } finally {
+      await txClient.end();
+      await client.destroy();
+    }
+  });
+
+  test('DBOSClient-enqueueInTransaction-rejects-return-existing', async () => {
+    const client = await DBOSClient.create({ systemDatabaseUrl });
+    const now = Date.now();
+    const txClient = new Client(poolConfig);
+    try {
+      await txClient.connect();
+      await txClient.query('BEGIN');
+      await expect(
+        client.enqueueInTransaction<EnqueueTest>(
+          txClient,
+          {
+            workflowName: 'enqueueTest',
+            workflowClassName: 'ClientTest',
+            queueName: 'testQueue',
+            workflowID: `client-enqueue-tx-singleton-${now}`,
+            deduplicationID: `dedup-${now}`,
+            duplicationPolicy: 'return-existing',
+          },
+          42,
+          'test',
+          { first: 'John', last: 'Doe', age: 30 },
+        ),
+      ).rejects.toThrow("`duplicationPolicy: 'return-existing'` is not supported in a caller-owned transaction");
+      await txClient.query('ROLLBACK');
+    } finally {
+      await txClient.end();
+      await client.destroy();
+    }
+  });
+
+  test('DBOSClient-enqueuePortableInTransaction-commit', async () => {
+    await DBOS.launch();
+    await registerTestQueue();
+
+    const client = await DBOSClient.create({ systemDatabaseUrl });
+    const wfid = `client-enqueue-portable-tx-${Date.now()}`;
+    const txClient = new Client(poolConfig);
+    try {
+      await txClient.connect();
+      await txClient.query('BEGIN');
+      const handle = await client.enqueuePortableInTransaction<string>(
+        txClient,
+        {
+          workflowName: 'enqueueTest',
+          workflowClassName: 'ClientTest',
+          queueName: 'testQueue',
+          workflowID: wfid,
+        },
+        [42, 'test', { first: 'John', last: 'Doe', age: 30 }],
+      );
+      await txClient.query('COMMIT');
+
+      expect(await handle.getResult()).toBe('42-test-{"first":"John","last":"Doe","age":30}');
+    } finally {
+      await txClient.end();
+      await client.destroy();
+    }
+  });
+
+  test('DBOSClient-sendInTransaction-commit', async () => {
+    const now = Date.now();
+    const workflowID = `client-send-tx-${now}`;
+    const topic = `test-topic-${now}`;
+    const message = `Hello, DBOS! (${now})`;
+
+    await DBOS.launch();
+    await registerTestQueue();
+    const handle = await DBOS.startWorkflow(ClientTest, { workflowID }).sendTest(topic);
+
+    const client = await DBOSClient.create({ systemDatabaseUrl });
+    const txClient = new Client(poolConfig);
+    const otherClient = new Client(poolConfig);
+    try {
+      await txClient.connect();
+      await otherClient.connect();
+      await txClient.query('BEGIN');
+      await client.sendInTransaction<string>(txClient, workflowID, message, topic);
+
+      const beforeCommit = await otherClient.query('SELECT * FROM dbos.notifications WHERE destination_uuid = $1', [
+        workflowID,
+      ]);
+      expect(beforeCommit.rows).toHaveLength(0);
+
+      await txClient.query('COMMIT');
+      expect(await handle.getResult()).toBe(message);
+    } finally {
+      await txClient.end();
+      await otherClient.end();
+      await client.destroy();
+    }
+  });
+
+  test('DBOSClient-sendInTransaction-rollback', async () => {
+    const now = Date.now();
+    const workflowID = `client-send-tx-rollback-${now}`;
+    const topic = `test-topic-${now}`;
+    const message = `Hello, DBOS! (${now})`;
+
+    await DBOS.launch();
+    await registerTestQueue();
+    const handle = await DBOS.startWorkflow(ClientTest, { workflowID }).sendTest(topic);
+
+    const client = await DBOSClient.create({ systemDatabaseUrl });
+    const txClient = new Client(poolConfig);
+    try {
+      await txClient.connect();
+      await txClient.query('BEGIN');
+      await client.sendInTransaction<string>(txClient, workflowID, `rolled back (${now})`, topic);
+      await txClient.query('ROLLBACK');
+
+      const rows = await txClient.query('SELECT * FROM dbos.notifications WHERE destination_uuid = $1', [workflowID]);
+      expect(rows.rows).toHaveLength(0);
+
+      // The workflow is still waiting, so only a committed send unblocks it.
+      await client.send<string>(workflowID, message, topic);
+      expect(await handle.getResult()).toBe(message);
+    } finally {
+      await txClient.end();
+      await client.destroy();
+    }
+  });
+
+  test('DBOSClient-sendInTransaction-idempotent', async () => {
+    const now = Date.now();
+    const workflowID = `client-send-tx-idempotent-${now}`;
+    const topic = `test-topic-${now}`;
+    const message = `Hello, DBOS! (${now})`;
+    const idempotencyKey = `idempotency-key-${now}`;
+
+    await DBOS.launch();
+    await registerTestQueue();
+    const handle = await DBOS.startWorkflow(ClientTest, { workflowID }).sendTest(topic);
+
+    const client = await DBOSClient.create({ systemDatabaseUrl });
+    const txClient = new Client(poolConfig);
+    try {
+      await txClient.connect();
+      await txClient.query('BEGIN');
+      await client.sendInTransaction<string>(txClient, workflowID, message, topic, idempotencyKey);
+      await client.sendInTransaction<string>(txClient, workflowID, message, topic, idempotencyKey);
+      await txClient.query('COMMIT');
+
+      const rows = await txClient.query('SELECT * FROM dbos.notifications WHERE destination_uuid = $1', [workflowID]);
+      expect(rows.rows).toHaveLength(1);
+      expect(await handle.getResult()).toBe(message);
+    } finally {
+      await txClient.end();
+      await client.destroy();
+    }
+  });
+
+  test('DBOSClient-enqueue-and-send-in-transaction', async () => {
+    await DBOS.launch();
+    await registerTestQueue();
+
+    const now = Date.now();
+    const workflowID = `client-enqueue-send-tx-${now}`;
+    const topic = `test-topic-${now}`;
+    const message = `Hello, DBOS! (${now})`;
+
+    const client = await DBOSClient.create({ systemDatabaseUrl });
+    const txClient = new Client(poolConfig);
+    try {
+      await txClient.connect();
+      await txClient.query('BEGIN');
+      const handle = await client.enqueueInTransaction<typeof ClientTest.sendTest>(
+        txClient,
+        {
+          workflowName: 'sendTest',
+          workflowClassName: 'ClientTest',
+          queueName: 'testQueue',
+          workflowID,
+        },
+        topic,
+      );
+      await client.sendInTransaction<string>(txClient, workflowID, message, topic);
+      await txClient.query('COMMIT');
+
+      expect(await handle.getResult()).toBe(message);
+    } finally {
+      await txClient.end();
+      await client.destroy();
+    }
+  });
+
   test('DBOSClient-getEvent-while-running', async () => {
     const now = Date.now();
 

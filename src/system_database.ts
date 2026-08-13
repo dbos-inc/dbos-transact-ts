@@ -942,8 +942,29 @@ export class SystemDatabase {
   }
 
   // ==================== Workflow Status ====================
-  @dbRetry()
+  /**
+   * Runs on `client` if given, joining its transaction; otherwise in its own retried transaction.
+   * A caller-owned transaction is neither committed nor rolled back here, so the status row is
+   * not visible until the caller commits.
+   */
   async initWorkflowStatus(
+    initStatus: WorkflowStatusInternal,
+    ownerXid: string | null,
+    client?: ClientBase,
+  ): Promise<{
+    status: string;
+    shouldExecuteOnThisExecutor: boolean;
+    deadlineEpochMS?: number;
+    serialization: SysDBSerializationFormat | null;
+  }> {
+    if (client !== undefined) {
+      return await this.#initWorkflowStatusInternal(client, initStatus, ownerXid);
+    }
+    return await this.initWorkflowStatusStandalone(initStatus, ownerXid);
+  }
+
+  @dbRetry()
+  private async initWorkflowStatusStandalone(
     initStatus: WorkflowStatusInternal,
     ownerXid: string | null,
   ): Promise<{
@@ -956,41 +977,10 @@ export class SystemDatabase {
     let shouldCommit = false;
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
-
-      const resRow = await this.insertWorkflowStatus(client, initStatus, ownerXid);
-      if (resRow.name !== initStatus.workflowName) {
-        const msg = `Workflow already exists with a different function name: ${resRow.name}, but the provided function name is: ${initStatus.workflowName}`;
-        throw new DBOSConflictingWorkflowError(initStatus.workflowUUID, msg);
-      } else if (resRow.class_name !== initStatus.workflowClassName) {
-        const msg = `Workflow already exists with a different class name: ${resRow.class_name}, but the provided class name is: ${initStatus.workflowClassName}`;
-        throw new DBOSConflictingWorkflowError(initStatus.workflowUUID, msg);
-      } else if ((resRow.config_name || '') !== (initStatus.workflowConfigName || '')) {
-        const msg = `Workflow already exists with a different class configuration: ${resRow.config_name}, but the provided class configuration is: ${initStatus.workflowConfigName}`;
-        throw new DBOSConflictingWorkflowError(initStatus.workflowUUID, msg);
-      } else if ((resRow.queue_name ?? undefined) !== (initStatus.queueName ?? undefined)) {
-        // This is a warning because a different queue name is not necessarily an error.
-        this.logger.warn(
-          `Workflow (${initStatus.workflowUUID}) already exists in queue: ${resRow.queue_name}, but the provided queue name is: ${initStatus.queueName}. The queue is not updated. ${new Error().stack}`,
-        );
-      }
-
-      const status = resRow.status;
-      const deadlineEpochMS = resRow.workflow_deadline_epoch_ms ?? undefined;
-
+      const result = await this.#initWorkflowStatusInternal(client, initStatus, ownerXid);
       // If there is an existing DB record and we aren't here to recover it, leave it be.
-      if (ownerXid !== resRow.owner_xid) {
-        return { status, deadlineEpochMS, shouldExecuteOnThisExecutor: false, serialization: resRow.serialization };
-      }
-
-      // Upsert above already set executor assignment
-      shouldCommit = true;
-
-      return {
-        status,
-        deadlineEpochMS,
-        shouldExecuteOnThisExecutor: true,
-        serialization: resRow.serialization,
-      };
+      shouldCommit = result.shouldExecuteOnThisExecutor;
+      return result;
     } finally {
       try {
         if (shouldCommit) {
@@ -1003,6 +993,45 @@ export class SystemDatabase {
         client.release();
       }
     }
+  }
+
+  async #initWorkflowStatusInternal(
+    client: ClientBase,
+    initStatus: WorkflowStatusInternal,
+    ownerXid: string | null,
+  ): Promise<{
+    status: string;
+    shouldExecuteOnThisExecutor: boolean;
+    deadlineEpochMS?: number;
+    serialization: SysDBSerializationFormat | null;
+  }> {
+    const resRow = await this.insertWorkflowStatus(client, initStatus, ownerXid);
+    if (resRow.name !== initStatus.workflowName) {
+      const msg = `Workflow already exists with a different function name: ${resRow.name}, but the provided function name is: ${initStatus.workflowName}`;
+      throw new DBOSConflictingWorkflowError(initStatus.workflowUUID, msg);
+    } else if (resRow.class_name !== initStatus.workflowClassName) {
+      const msg = `Workflow already exists with a different class name: ${resRow.class_name}, but the provided class name is: ${initStatus.workflowClassName}`;
+      throw new DBOSConflictingWorkflowError(initStatus.workflowUUID, msg);
+    } else if ((resRow.config_name || '') !== (initStatus.workflowConfigName || '')) {
+      const msg = `Workflow already exists with a different class configuration: ${resRow.config_name}, but the provided class configuration is: ${initStatus.workflowConfigName}`;
+      throw new DBOSConflictingWorkflowError(initStatus.workflowUUID, msg);
+    } else if ((resRow.queue_name ?? undefined) !== (initStatus.queueName ?? undefined)) {
+      // This is a warning because a different queue name is not necessarily an error.
+      this.logger.warn(
+        `Workflow (${initStatus.workflowUUID}) already exists in queue: ${resRow.queue_name}, but the provided queue name is: ${initStatus.queueName}. The queue is not updated. ${new Error().stack}`,
+      );
+    }
+
+    const status = resRow.status;
+    const deadlineEpochMS = resRow.workflow_deadline_epoch_ms ?? undefined;
+
+    // The upsert above already set executor assignment for a row we own.
+    return {
+      status,
+      deadlineEpochMS,
+      shouldExecuteOnThisExecutor: ownerXid === resRow.owner_xid,
+      serialization: resRow.serialization,
+    };
   }
 
   /** Move claimed workflows that exhausted their attempts off the queue, leaving rows others have moved on alone. */
@@ -2502,8 +2531,38 @@ export class SystemDatabase {
     }
   }
 
-  @dbRetry()
+  /**
+   * Runs on `client` if given, joining its transaction; otherwise on the pool with retries.
+   * The notifications trigger's `pg_notify` is transactional, so a message written in a
+   * caller-owned transaction wakes its destination only once the caller commits.
+   */
   async sendDirect(
+    destinationID: string,
+    message: string | null,
+    topic: string | undefined,
+    serialization: string | null,
+    idempotencyKey?: string,
+    client?: ClientBase,
+  ): Promise<void> {
+    if (client !== undefined) {
+      return await this.#sendDirectInternal(client, destinationID, message, topic, serialization, idempotencyKey);
+    }
+    return await this.sendDirectStandalone(destinationID, message, topic, serialization, idempotencyKey);
+  }
+
+  @dbRetry()
+  private async sendDirectStandalone(
+    destinationID: string,
+    message: string | null,
+    topic: string | undefined,
+    serialization: string | null,
+    idempotencyKey?: string,
+  ): Promise<void> {
+    return await this.#sendDirectInternal(this.pool, destinationID, message, topic, serialization, idempotencyKey);
+  }
+
+  async #sendDirectInternal(
+    db: ClientBase | Pool,
     destinationID: string,
     message: string | null,
     topic: string | undefined,
@@ -2514,7 +2573,7 @@ export class SystemDatabase {
     // Same per-destination scoping as send() above.
     const messageUUID = idempotencyKey ? `${idempotencyKey}::${destinationID}` : randomUUID();
     try {
-      await this.pool.query(
+      await db.query(
         `INSERT INTO "${this.schemaName}".notifications (destination_uuid, topic, message, serialization, message_uuid)
          VALUES ($1, $2, $3, $4, $5)
          ON CONFLICT (message_uuid) DO NOTHING;`,
@@ -4837,7 +4896,7 @@ export class SystemDatabase {
 
   // ==================== Internal ====================
   private async insertWorkflowStatus(
-    client: PoolClient,
+    client: ClientBase,
     initStatus: WorkflowStatusInternal,
     ownerXid: string | null,
   ): Promise<InsertWorkflowResult> {
