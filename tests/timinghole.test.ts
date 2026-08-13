@@ -1,9 +1,14 @@
 /* eslint-disable @typescript-eslint/require-await */
-import { DBOS } from '../src';
-import { DBOSConfig } from '../src/dbos-executor';
+import { DBOS, StatusString } from '../src';
+import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import { DEBUG_TRIGGER_STEP_COMMIT, DEBUG_TRIGGER_INITWF_COMMIT, setDebugTrigger } from '../src/debugpoint';
 import { sleepms } from '../src/utils';
-import { generateDBOSTestConfig, reexecuteWorkflowById, setUpDBOSTestSysDb } from './helpers';
+import {
+  generateDBOSTestConfig,
+  reexecuteWorkflowById,
+  setUpDBOSTestSysDb,
+  setWfAndChildrenToPending,
+} from './helpers';
 import { randomUUID } from 'node:crypto';
 
 describe('run-workflow-once-tests', () => {
@@ -66,6 +71,19 @@ describe('run-workflow-once-tests', () => {
     // Re-enqueued once: a second re-enqueue would just race the first dispatch's claim, not the fence.
     const wfhr = await reexecuteWorkflowById(workflowUUID);
     await wfhr.getResult();
+    expect(TryConcExec.maxConc).toBe(1);
+    expect(TryConcExec.maxWf).toBe(1);
+
+    // Dispatched straight from one claimed row, the only thing left to stop a double run is the fence.
+    await setWfAndChildrenToPending(workflowUUID);
+    const exec = DBOSExecutor.globalInstance!;
+    const claimed = (await exec.systemDatabase.getWorkflowStatus(workflowUUID))!;
+    expect(claimed.status).toBe(StatusString.PENDING);
+
+    const wfh1r = await exec.executeDequeuedWorkflow(claimed);
+    const wfh2r = await exec.executeDequeuedWorkflow(claimed);
+    await wfh1r.getResult();
+    await wfh2r.getResult();
     expect(TryConcExec.maxConc).toBe(1);
     expect(TryConcExec.maxWf).toBe(1);
   });
