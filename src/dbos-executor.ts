@@ -664,12 +664,13 @@ export class DBOSExecutor {
     const claimed = params.dequeuedStatus;
     if (claimed) {
       // The claim counted this dispatch; dead-letter the workflow if that exhausted its attempts.
+      const claimedAttempts = claimed.recoveryAttempts ?? 0;
       if (
         claimed.status !== StatusString.SUCCESS &&
         claimed.status !== StatusString.ERROR &&
-        (claimed.recoveryAttempts ?? 0) > maxRecoveryAttempts + 1
+        claimedAttempts > maxRecoveryAttempts + 1
       ) {
-        await this.systemDatabase.deadLetterWorkflows([workflowID]);
+        await this.systemDatabase.deadLetterWorkflows([workflowID], claimedAttempts);
         this.tracer.endSpan(span);
         throw new DBOSMaxRecoveryAttemptsExceededError(workflowID, maxRecoveryAttempts);
       }

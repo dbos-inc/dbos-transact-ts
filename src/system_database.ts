@@ -1004,7 +1004,7 @@ export class SystemDatabase {
 
   /** Move claimed workflows that exhausted their attempts off the queue, leaving rows others have moved on alone. */
   @dbRetry()
-  async deadLetterWorkflows(workflowIDs: string[]): Promise<void> {
+  async deadLetterWorkflows(workflowIDs: string[], minRecoveryAttempts: number): Promise<void> {
     if (workflowIDs.length === 0) return;
     await this.pool.query(
       `UPDATE "${this.schemaName}".workflow_status
@@ -1013,8 +1013,8 @@ export class SystemDatabase {
            started_at_epoch_ms = NULL,
            queue_name = NULL,
            updated_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint
-       WHERE workflow_uuid = ANY($2::text[]) AND status = $3`,
-      [StatusString.MAX_RECOVERY_ATTEMPTS_EXCEEDED, workflowIDs, StatusString.PENDING],
+       WHERE workflow_uuid = ANY($2::text[]) AND status = $3 AND recovery_attempts >= $4`,
+      [StatusString.MAX_RECOVERY_ATTEMPTS_EXCEEDED, workflowIDs, StatusString.PENDING, minRecoveryAttempts],
     );
   }
 

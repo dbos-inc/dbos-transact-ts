@@ -239,6 +239,21 @@ describe('recovery-tests', () => {
     expect(status?.recoveryAttempts).toBe(LocalRecovery.maxRecoveryAttempts + 2);
   });
 
+  test('dead-letter-spares-a-row-given-a-fresh-budget', async () => {
+    const sysDB = DBOSExecutor.globalInstance!.systemDatabase;
+    const handle = await DBOS.startWorkflow(LocalRecovery).deadLetterWorkflow();
+    await handle.getResult();
+
+    // Stands in for a resume landing between the dispatcher's status read and its dead-letter write.
+    await sysDB.setWorkflowStatus(handle.workflowID, StatusString.PENDING, true);
+    await sysDB.deadLetterWorkflows([handle.workflowID], LocalRecovery.maxRecoveryAttempts + 2);
+    expect((await handle.getStatus())?.status).toBe(StatusString.PENDING);
+
+    // The same write against the count actually on the row still retires it.
+    await sysDB.deadLetterWorkflows([handle.workflowID], 0);
+    expect((await handle.getStatus())?.status).toBe(StatusString.MAX_RECOVERY_ATTEMPTS_EXCEEDED);
+  });
+
   test('local-recovery', async () => {
     LocalRecovery.cnt = 0;
     // Run a workflow until pending and start recovery.
