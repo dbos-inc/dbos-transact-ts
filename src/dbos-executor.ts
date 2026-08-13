@@ -1420,6 +1420,17 @@ export class DBOSExecutor {
 
     const { methReg, configuredInst } = this.#getFunctionInfoFromWFStatus(wfStatus);
 
+    // A named instance this process never constructed would otherwise run the workflow with a null `this`.
+    if (wfStatus.workflowConfigName && !configuredInst) {
+      this.logger.error(
+        `Cannot find configured instance '${wfStatus.workflowConfigName}' of class '${wfStatus.workflowClassName}' for ID ${workflowID}`,
+      );
+      throw new DBOSNotRegisteredError(
+        wfStatus.workflowConfigName,
+        `Configured class instance '${wfStatus.workflowClassName}/${wfStatus.workflowConfigName}' is not registered; did you change your code?`,
+      );
+    }
+
     const enqueueOptions =
       wfStatus.queuePartitionKey !== undefined ? { queuePartitionKey: wfStatus.queuePartitionKey } : undefined;
 
