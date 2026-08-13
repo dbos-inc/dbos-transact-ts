@@ -84,9 +84,9 @@ export class DBOSFailLoadOperationsError extends DBOSError {
 
 const MaxRecoveryAttemptsExceededError = 18;
 export class DBOSMaxRecoveryAttemptsExceededError extends DBOSError {
-  constructor(workflowID: string, maxRetries: number) {
+  constructor(workflowID: string, maxRetries?: number) {
     super(
-      `Workflow ${workflowID} has exceeded its maximum of ${maxRetries} execution or recovery attempts. Further attempts to execute or recover it will fail.`,
+      `Workflow ${workflowID} has exceeded its maximum ${maxRetries === undefined ? 'number of' : `of ${maxRetries}`} execution or recovery attempts. Further attempts to execute or recover it will fail.`,
       MaxRecoveryAttemptsExceededError,
     );
   }
@@ -140,7 +140,7 @@ export class DBOSConflictingRegistrationError extends DBOSError {
   }
 }
 
-const UnexpectedStep = 26;
+export const UnexpectedStep = 26;
 /** Exception raised when a step has an unexpected recorded name, indicating a determinism problem. */
 export class DBOSUnexpectedStepError extends DBOSError {
   constructor(

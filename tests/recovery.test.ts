@@ -11,7 +11,7 @@ import {
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import { Client } from 'pg';
 import { StatusString } from '../dist/src';
-import { DBOSAwaitedWorkflowExceededMaxRecoveryAttempts, DBOSMaxRecoveryAttemptsExceededError } from '../src/error';
+import { DBOSAwaitedWorkflowExceededMaxRecoveryAttempts } from '../src/error';
 import { INTERNAL_QUEUE_NAME } from '../src/utils';
 import { runWithTopContext } from '../src/context';
 import assert from 'assert';
@@ -162,6 +162,8 @@ describe('recovery-tests', () => {
     }
 
     // Send to DLQ and verify it enters the DLQ status.
+    const completedBeforeDLQ = (await handle.getStatus())?.completedAt;
+    expect(completedBeforeDLQ).toBeDefined();
     await setWfAndChildrenToPending(handle.workflowID, false); // Simulate not finishing
     await recoverPendingWorkflows();
     // Recovery re-enqueues, so the DLQ transition happens when the queue dequeues the workflow.
@@ -170,11 +172,16 @@ describe('recovery-tests', () => {
     });
     let status = await handle.getStatus();
     expect(status?.recoveryAttempts).toBe(LocalRecovery.maxRecoveryAttempts + 2);
+    // Terminal like ERROR/CANCELLED, so the DLQ write stamps its own completion time.
+    expect(status?.completedAt).toBeGreaterThan(completedBeforeDLQ!);
 
-    // Verify a direct invocation errors
-    await expect(
-      DBOS.startWorkflow(LocalRecovery, { workflowID: handle.workflowID }).deadLetterWorkflow(),
-    ).rejects.toThrow(DBOSMaxRecoveryAttemptsExceededError);
+    // A direct invocation does not re-run the body; it adopts the row and surfaces its terminal status.
+    const runsBeforeDirectStart = LocalRecovery.recoveryCount;
+    const dlqHandle = await DBOS.startWorkflow(LocalRecovery, {
+      workflowID: handle.workflowID,
+    }).deadLetterWorkflow();
+    await expect(dlqHandle.getResult()).rejects.toThrow(DBOSAwaitedWorkflowExceededMaxRecoveryAttempts);
+    expect(LocalRecovery.recoveryCount).toBe(runsBeforeDirectStart);
 
     // Verify retrieving the status throws an exception
     const retrievedHandle = DBOS.retrieveWorkflow(handle.workflowID);
@@ -234,6 +241,21 @@ describe('recovery-tests', () => {
     });
     status = await handle.getStatus();
     expect(status?.recoveryAttempts).toBe(LocalRecovery.maxRecoveryAttempts + 2);
+  });
+
+  test('dead-letter-spares-a-row-given-a-fresh-budget', async () => {
+    const sysDB = DBOSExecutor.globalInstance!.systemDatabase;
+    const handle = await DBOS.startWorkflow(LocalRecovery).deadLetterWorkflow();
+    await handle.getResult();
+
+    // Stands in for a resume landing between the dispatcher's status read and its dead-letter write.
+    await sysDB.setWorkflowStatus(handle.workflowID, StatusString.PENDING, true);
+    await sysDB.deadLetterWorkflows([handle.workflowID], LocalRecovery.maxRecoveryAttempts + 2);
+    expect((await handle.getStatus())?.status).toBe(StatusString.PENDING);
+
+    // The same write against the count actually on the row still retires it.
+    await sysDB.deadLetterWorkflows([handle.workflowID], 0);
+    expect((await handle.getStatus())?.status).toBe(StatusString.MAX_RECOVERY_ATTEMPTS_EXCEEDED);
   });
 
   test('local-recovery', async () => {

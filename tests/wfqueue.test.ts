@@ -1871,7 +1871,7 @@ describe('queue-time-outs', () => {
 
     // Verify it still works on recovery
     const recoveredHandle = await reexecuteWorkflowById(handle.workflowID);
-    await recoveredHandle!.getResult();
+    await recoveredHandle.getResult();
   });
 
   const partitionBlockingEvent = new Event();
@@ -2901,7 +2901,7 @@ describe('bounded-lane dispatcher', () => {
     return {
       executorID: 'lane-test',
       logger: { info: () => {}, warn: () => {}, debug: () => {}, error: () => {} },
-      executeWorkflowId: () => Promise.resolve({}),
+      dispatchDequeuedWorkflows: () => Promise.resolve(),
       systemDatabase: {
         listQueues: () => Promise.resolve([]),
         getQueuePartitions: () => Promise.resolve([]),
@@ -3566,5 +3566,232 @@ describe('partitioned-batch-dequeue-dispatch', () => {
     expect(exclusiveOrderLock.filter((tag) => tag !== 'b1')).toEqual(['head', 'a1', 'a2']);
     expect(batchedQueues).toContain(queueName);
     expect(await queueEntriesAreCleanedUp()).toBe(true);
+  }, 30000);
+});
+
+describe('dequeue-dispatch-cost', () => {
+  const dequeueStarted = new Event();
+  const releaseDequeued = new Event();
+
+  class DispatchCostWF {
+    @DBOS.workflow()
+    static async run(n: number): Promise<number> {
+      return Promise.resolve(n);
+    }
+
+    @DBOS.workflow()
+    static async blockAfterStart(): Promise<void> {
+      dequeueStarted.set();
+      await releaseDequeued.wait();
+    }
+  }
+
+  const QUEUE_NAME = 'dispatch-cost-queue';
+  // Polls one interval out, so the row is observably ENQUEUED before the first claim.
+  const SLOW_QUEUE_NAME = 'dispatch-cost-slow-queue';
+  let config: DBOSConfig;
+
+  beforeAll(async () => {
+    config = generateDBOSTestConfig();
+    await setUpDBOSTestSysDb(config);
+    DBOS.setConfig(config);
+  });
+
+  beforeEach(async () => {
+    dequeueStarted.clear();
+    releaseDequeued.clear();
+    await DBOS.launch();
+    await DBOS.registerQueue(QUEUE_NAME, { onConflict: 'always_update', ...testPolling });
+    await DBOS.registerQueue(SLOW_QUEUE_NAME, { onConflict: 'always_update', minPollingIntervalMs: 3000 });
+  });
+
+  afterEach(async () => {
+    jest.restoreAllMocks();
+    await DBOS.shutdown();
+  });
+
+  test('dispatch-does-not-upsert-workflow-status', async () => {
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    const initSpy = jest.spyOn(sysdb, 'initWorkflowStatus');
+
+    const count = 20;
+    const handles: WorkflowHandle<number>[] = [];
+    for (let i = 0; i < count; i++) {
+      handles.push(await DBOS.startWorkflow(DispatchCostWF, { queueName: QUEUE_NAME }).run(i));
+    }
+    for (let i = 0; i < count; i++) {
+      expect(await handles[i].getResult()).toBe(i);
+    }
+
+    // One upsert per enqueue and none per dispatch: dequeuing a claimed row re-reads it, never rewrites it.
+    expect(initSpy).toHaveBeenCalledTimes(count);
+
+    // The claim counts the dispatch exactly once, so a workflow that ran on its first claim sits at 1.
+    for (const handle of handles) {
+      expect((await handle.getStatus())?.recoveryAttempts).toBe(1);
+    }
+    expect(await queueEntriesAreCleanedUp()).toBe(true);
+  }, 30000);
+
+  test('reexecute-helper-fails-fast-on-dispatch-error', async () => {
+    const handle = await DBOS.startWorkflow(DispatchCostWF).run(1);
+    expect(await handle.getResult()).toBe(1);
+
+    // Renamed to a function this process never registered: dispatch throws and the queue only logs it,
+    // leaving the row PENDING. Without a deadline the handle would poll until the jest timeout.
+    const reh = await reexecuteWorkflowById(handle.workflowID, true, 'not-a-registered-workflow', 3000);
+    await expect(reh.getResult()).rejects.toThrow(/produced no result within 3000ms/);
+    expect((await reh.getStatus())?.status).toBe(StatusString.PENDING);
+
+    // Nothing else retires a row stranded this way, and later tests assert the queues are empty.
+    await DBOS.cancelWorkflow(handle.workflowID);
+  }, 30000);
+
+  test('status-fetch-chunks-and-retries-per-chunk', async () => {
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    // Started off-queue so the dispatcher never fetches these rows itself.
+    const handles: WorkflowHandle<number>[] = [];
+    for (let i = 0; i < 5; i++) {
+      handles.push(await DBOS.startWorkflow(DispatchCostWF).run(i));
+    }
+    const ids = handles.map((h) => h.workflowID);
+    for (const handle of handles) {
+      await handle.getResult();
+    }
+
+    const originalChunkSize = sysdb.statusFetchChunkSize;
+    const originalList = sysdb.listWorkflows.bind(sysdb);
+    sysdb.statusFetchChunkSize = 2;
+    let calls = 0;
+    jest.spyOn(sysdb, 'listWorkflows').mockImplementation(async (input) => {
+      calls++;
+      if (calls === 2) throw new Error('Connection terminated unexpectedly');
+      return await originalList(input);
+    });
+
+    try {
+      const statuses = await sysdb.getWorkflowStatuses(ids);
+      // 5 IDs at chunk size 2 is 3 chunks, plus one refetch of only the chunk that failed.
+      expect(calls).toBe(4);
+      expect([...statuses.keys()].sort()).toEqual([...ids].sort());
+    } finally {
+      jest.restoreAllMocks();
+      sysdb.statusFetchChunkSize = originalChunkSize;
+    }
+  }, 30000);
+
+  test('dequeue-refreshes-updated-at', async () => {
+    const handle = await DBOS.startWorkflow(DispatchCostWF, { queueName: SLOW_QUEUE_NAME }).blockAfterStart();
+
+    try {
+      // Read while the row is still waiting on the first poll; nothing has written it since the enqueue.
+      const enqueued = await handle.getStatus();
+      expect(enqueued?.status).toBe(StatusString.ENQUEUED);
+      const enqueuedUpdatedAt = enqueued!.updatedAt;
+
+      await dequeueStarted.wait();
+      const dequeued = await handle.getStatus();
+      // Still blocked, so the claim is the only write between the two reads.
+      expect(dequeued?.status).toBe(StatusString.PENDING);
+      // Compared against the earlier value of the same column, so app/database clock skew cannot decide it.
+      expect(dequeued!.updatedAt).not.toBe(enqueuedUpdatedAt);
+    } finally {
+      // Released here so a failed assertion fails the test instead of hanging teardown.
+      releaseDequeued.set();
+    }
+
+    await handle.getResult();
+    expect(await queueEntriesAreCleanedUp()).toBe(true);
+  }, 30000);
+
+  test('batch-status-fetch-failure-falls-back-to-single-reads', async () => {
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    // Every batch fetch fails, so each claim is only dispatchable via its own re-read.
+    jest
+      .spyOn(sysdb, 'getWorkflowStatuses')
+      .mockRejectedValue(new Error('Connection terminated unexpectedly') as never);
+
+    const count = 3;
+    const handles: WorkflowHandle<number>[] = [];
+    for (let i = 0; i < count; i++) {
+      handles.push(await DBOS.startWorkflow(DispatchCostWF, { queueName: QUEUE_NAME }).run(i));
+    }
+    for (let i = 0; i < count; i++) {
+      expect(await handles[i].getResult()).toBe(i);
+    }
+    expect(await queueEntriesAreCleanedUp()).toBe(true);
+  }, 30000);
+});
+
+describe('limiter-dequeue-locking', () => {
+  let config: DBOSConfig;
+  let sysdb: SystemDatabase;
+
+  const limitedWorkflow = DBOS.registerWorkflow(async (value: string) => Promise.resolve(value), {
+    name: 'limiterLockWorkflow',
+  });
+
+  beforeAll(async () => {
+    config = generateDBOSTestConfig();
+    await setUpDBOSTestSysDb(config);
+  });
+
+  beforeEach(async () => {
+    // No lane polls these queues, so the rows stay ENQUEUED until this test claims them itself.
+    DBOS.setConfig({ ...config, listenQueues: [] });
+    await DBOS.launch();
+    sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+  });
+
+  afterEach(async () => {
+    await DBOS.shutdown();
+  });
+
+  test('a peer mid-claim blocks a rate-limited dequeue rather than being skipped past', async () => {
+    const limit = 2;
+    const queueName = `limiter-lock-${randomUUID()}`;
+    const queue = await DBOS.registerQueue(queueName, {
+      rateLimit: { limitPerPeriod: limit, periodSec: 60 },
+      priorityEnabled: true,
+      onConflict: 'always_update',
+    });
+
+    // Distinct priorities so the head of the queue is deterministic.
+    const ids: string[] = [];
+    for (let priority = 1; priority <= limit * 2; priority++) {
+      const handle = await DBOS.startWorkflow(limitedWorkflow, {
+        queueName,
+        enqueueOptions: { priority },
+      })(`w${priority}`);
+      ids.push(handle.workflowID);
+    }
+
+    const peer = new Client({ connectionString: config.systemDatabaseUrl });
+    await peer.connect();
+    try {
+      await peer.query('BEGIN');
+      // A peer dequeuer holding an open claim on the whole limiter budget.
+      const head = await peer.query<{ workflow_uuid: string }>(
+        `SELECT workflow_uuid FROM "${sysdb.schemaName}".workflow_status
+         WHERE queue_name = $1 AND status = $2
+         ORDER BY priority ASC, created_at ASC
+         LIMIT ${limit} FOR UPDATE`,
+        [queueName, StatusString.ENQUEUED],
+      );
+      expect(head.rows.map((row) => row.workflow_uuid)).toEqual(ids.slice(0, limit));
+
+      // Under SKIP LOCKED this claims the rows behind the peer, spending the same budget a second time.
+      await expect(
+        sysdb.findAndMarkStartableWorkflows(queue, 'lock-test', globalParams.appVersion, undefined),
+      ).rejects.toMatchObject({ code: '55P03' });
+
+      // Nothing was admitted behind the peer's back.
+      for (const id of ids) {
+        expect((await sysdb.getWorkflowStatus(id))?.status).toBe(StatusString.ENQUEUED);
+      }
+    } finally {
+      await peer.query('ROLLBACK');
+      await peer.end();
+    }
   }, 30000);
 });

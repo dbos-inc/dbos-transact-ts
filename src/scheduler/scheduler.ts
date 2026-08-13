@@ -323,7 +323,6 @@ async function enqueueScheduledWorkflow(
     request: {},
     executorId: '',
     applicationID: '',
-    createdAt: Date.now(),
     input: serparam.serializedValue,
     deduplicationID: undefined,
     priority: 0,

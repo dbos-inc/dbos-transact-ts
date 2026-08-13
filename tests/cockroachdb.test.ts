@@ -12,6 +12,9 @@ const silentDropLogger = { warn: () => {} };
 
 const testQueueName = 'crdb-test-queue';
 
+// Building the schema from scratch costs ~40s on CockroachDB, so hooks that may do it need well over the 60s default.
+const CRDB_SCHEMA_TIMEOUT_MS = 180000;
+
 class CRDBTestClass {
   @DBOS.workflow()
   static async testWorkflow(input: string) {
@@ -62,7 +65,7 @@ describeIf('cockroachdb', () => {
       useListenNotify: false,
     };
     DBOS.setConfig(config);
-  });
+  }, CRDB_SCHEMA_TIMEOUT_MS);
 
   beforeEach(async () => {
     await DBOS.launch();
@@ -70,7 +73,7 @@ describeIf('cockroachdb', () => {
     const sysDB = DBOSExecutor.globalInstance!.systemDatabase;
     sysDB.dbPollingIntervalResultMs = 100;
     sysDB.dbPollingIntervalEventMs = 100;
-  }, 60000);
+  }, CRDB_SCHEMA_TIMEOUT_MS);
 
   afterEach(async () => {
     await DBOS.shutdown();

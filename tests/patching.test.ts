@@ -1,7 +1,7 @@
 import { DBOS } from '../src';
 import { generateDBOSTestConfig, reexecuteWorkflowById, setUpDBOSTestSysDb } from './helpers';
 import { DBOSConfig } from '../src/dbos-executor';
-import { DBOSUnexpectedStepError } from '../src/error';
+import { getDBOSErrorCode, UnexpectedStep } from '../src/error';
 
 const step1 = DBOS.registerStep(async () => Promise.resolve(1), { name: 'step1' });
 const step2 = DBOS.registerStep(async () => Promise.resolve(2), { name: 'step2' });
@@ -135,7 +135,7 @@ describe('patching-tests', () => {
     expect(ls?.length).toBe(2);
     expect(ls?.filter((s) => s.name.startsWith('DBOS.patch')).length).toBe(0);
     // Patch does not affect reexecution
-    await expect((await reexecuteWorkflowById(origWfh.workflowID, true, 'patchedWF1'))!.getResult()).resolves.toBe(3);
+    await expect((await reexecuteWorkflowById(origWfh.workflowID, true, 'patchedWF1')).getResult()).resolves.toBe(3);
 
     // Test fork before and after patch (will affect reexecution)
     const fwfhpost = await DBOS.forkWorkflow(origWfh.workflowID, 2);
@@ -146,16 +146,14 @@ describe('patching-tests', () => {
 
     const patchedWfh = await DBOS.startWorkflow(patchedWF1)();
     await expect(patchedWfh.getResult()).resolves.toBe(4);
-    await expect((await reexecuteWorkflowById(patchedWfh.workflowID, true, 'patchedWF1'))!.getResult()).resolves.toBe(
-      4,
-    );
+    await expect((await reexecuteWorkflowById(patchedWfh.workflowID, true, 'patchedWF1')).getResult()).resolves.toBe(4);
     const lsp = await DBOS.listWorkflowSteps(patchedWfh.workflowID);
     expect(lsp?.length).toBe(3);
     expect(lsp?.filter((s) => s.name.startsWith('DBOS.patch')).length).toBe(1);
     expect(lsp?.[1].name).toBe('DBOS.patch-patch1');
 
     // Deprecation does not affect reexecution
-    await expect((await reexecuteWorkflowById(patchedWfh.workflowID, true, 'depatchedWF1'))!.getResult()).resolves.toBe(
+    await expect((await reexecuteWorkflowById(patchedWfh.workflowID, true, 'depatchedWF1')).getResult()).resolves.toBe(
       4,
     );
 
@@ -171,32 +169,33 @@ describe('patching-tests', () => {
     await expect(origWfh.getResult()).resolves.toBe(3);
     await expect((await reexecuteWorkflowById(origWfh.workflowID))?.getResult()).resolves.toBe(3);
     // Patch does not affect reexecution
-    await expect((await reexecuteWorkflowById(origWfh.workflowID, true, 'patchedWF2'))!.getResult()).resolves.toBe(3);
+    await expect((await reexecuteWorkflowById(origWfh.workflowID, true, 'patchedWF2')).getResult()).resolves.toBe(3);
 
     const patchedWfh = await DBOS.startWorkflow(patchedWF2)();
     await expect(patchedWfh.getResult()).resolves.toBe(5);
-    await expect((await reexecuteWorkflowById(patchedWfh.workflowID, true, 'patchedWF2'))!.getResult()).resolves.toBe(
-      5,
-    );
+    await expect((await reexecuteWorkflowById(patchedWfh.workflowID, true, 'patchedWF2')).getResult()).resolves.toBe(5);
 
     // Deprecation does not affect reexecution
-    await expect((await reexecuteWorkflowById(patchedWfh.workflowID, true, 'depatchedWF2'))!.getResult()).resolves.toBe(
+    await expect((await reexecuteWorkflowById(patchedWfh.workflowID, true, 'depatchedWF2')).getResult()).resolves.toBe(
       5,
     );
 
     // Reexecution with the old code will fail, because it does not expect the patch marker.
-    await expect((await reexecuteWorkflowById(patchedWfh.workflowID, true, 'origWF'))!.getResult()).rejects.toThrow(
-      DBOSUnexpectedStepError,
+    // Instanceof is not preserved by serialization, so we must assert the error code.
+    const staleRerun = await (await reexecuteWorkflowById(patchedWfh.workflowID, true, 'origWF')).getResult().then(
+      () => undefined,
+      (e: Error) => e,
     );
+    expect(getDBOSErrorCode(staleRerun!)).toBe(UnexpectedStep);
 
     const depatchedWfh = await DBOS.startWorkflow(depatchedWF2)();
     await expect(depatchedWfh.getResult()).resolves.toBe(5);
 
     // Check 2 patches same place
-    await expect((await reexecuteWorkflowById(patchedWfh.workflowID, true, 'patchedWF3a'))!.getResult()).resolves.toBe(
+    await expect((await reexecuteWorkflowById(patchedWfh.workflowID, true, 'patchedWF3a')).getResult()).resolves.toBe(
       5,
     );
-    await expect((await reexecuteWorkflowById(patchedWfh.workflowID, true, 'patchedWF3b'))!.getResult()).resolves.toBe(
+    await expect((await reexecuteWorkflowById(patchedWfh.workflowID, true, 'patchedWF3b')).getResult()).resolves.toBe(
       5,
     );
     await expect(patchedWF3a()).resolves.toBe(4);

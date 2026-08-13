@@ -1,4 +1,6 @@
-import { ConfiguredInstance, DBOS, DBOSConfig } from '../src';
+import { ConfiguredInstance, DBOS, DBOSConfig, StatusString } from '../src';
+import { DBOSExecutor } from '../src/dbos-executor';
+import { DBOSNotRegisteredError } from '../src/error';
 import {
   generateDBOSTestConfig,
   recoverPendingWorkflows,
@@ -352,6 +354,23 @@ class CCRecovery extends ConfiguredInstance {
 const configA = new CCRecovery('configA', new CCRConfig());
 const configB = new CCRecovery('configB', new CCRConfig());
 
+// Counted outside the instance so it still records a run that reached the body with a null `this`.
+let ccBindingRuns = 0;
+
+class CCBinding extends ConfiguredInstance {
+  constructor(name: string) {
+    super(name);
+  }
+
+  @DBOS.workflow()
+  async boundWorkflow() {
+    ccBindingRuns += 1;
+    return Promise.resolve(this.name);
+  }
+}
+
+const configBind = new CCBinding('configBind');
+
 describe('recovery-cc-tests', () => {
   let config: DBOSConfig;
 
@@ -387,5 +406,33 @@ describe('recovery-cc-tests', () => {
     await expect(handleB.getResult()).resolves.toBe('configB');
     expect(configA.config.count).toBe(10); // Should run twice.
     expect(configB.config.count).toBe(10); // Should run twice.
+  });
+
+  test('dequeue-rejects-an-unregistered-configured-instance', async () => {
+    const handle = await DBOS.startWorkflow(configBind).boundWorkflow();
+    await expect(handle.getResult()).resolves.toBe('configBind');
+    const runsBeforeDispatch = ccBindingRuns;
+
+    // A claimed row is PENDING, which is what the dispatcher hands to executeDequeuedWorkflow.
+    await setWfAndChildrenToPending(handle.workflowID);
+    const sysDB = DBOSExecutor.globalInstance!.systemDatabase;
+    const claimed = (await sysDB.getWorkflowStatus(handle.workflowID))!;
+    expect(claimed.status).toBe(StatusString.PENDING);
+    claimed.workflowConfigName = 'no-such-instance';
+
+    await expect(DBOSExecutor.globalInstance!.executeDequeuedWorkflow(claimed)).rejects.toThrow(DBOSNotRegisteredError);
+    // Unbound, the body would have run against a null `this` instead of failing to dispatch.
+    expect(ccBindingRuns).toBe(runsBeforeDispatch);
+
+    // Left PENDING, not retired: the instance may be constructed before the next recovery.
+    expect((await sysDB.getWorkflowStatus(handle.workflowID))?.status).toBe(StatusString.PENDING);
+
+    // Dispatched again against the row's real instance name, it still runs to completion.
+    const rebound = (await sysDB.getWorkflowStatus(handle.workflowID))!;
+    await expect((await DBOSExecutor.globalInstance!.executeDequeuedWorkflow(rebound)).getResult()).resolves.toBe(
+      'configBind',
+    );
+    expect(ccBindingRuns).toBe(runsBeforeDispatch + 1);
+    expect((await sysDB.getWorkflowStatus(handle.workflowID))?.status).toBe(StatusString.SUCCESS);
   });
 });

@@ -244,8 +244,8 @@ export interface InternalWorkflowParams extends WorkflowParams {
   readonly tempWfType?: string;
   readonly tempWfName?: string;
   readonly tempWfClass?: string;
-  readonly isRecoveryDispatch?: boolean;
-  readonly isQueueDispatch?: boolean;
+  /** Set only by queue dispatch: the claimed row this run was started from. */
+  readonly dequeuedStatus?: WorkflowStatusInternal;
 }
 
 /** Options for assembling an ENQUEUED workflow row without persisting it. */
@@ -509,7 +509,6 @@ export class DBOSExecutor {
       executorId: globalParams.executorID,
       applicationVersion: globalParams.appVersion,
       applicationID: globalParams.appID,
-      createdAt: Date.now(),
       input: funcArgs.stringified,
       priority: 0,
       queuePartitionKey: options.queuePartitionKey,
@@ -626,7 +625,6 @@ export class DBOSExecutor {
         // Left unset for another application, whose own latest version must run it.
         (ownerAppName === globalParams.appName ? globalParams.appVersion : undefined),
       applicationID: globalParams.appID,
-      createdAt: Date.now(), // Remember the start time of this workflow,
       timeoutMS: timeoutMS,
       deadlineEpochMS: deadlineEpochMS,
       input: funcArgs.stringified,
@@ -661,35 +659,58 @@ export class DBOSExecutor {
       }
     }
     let ires: Awaited<ReturnType<SystemDatabase['initWorkflowStatus']>>;
-    try {
-      ires = await this.systemDatabase.initWorkflowStatus(internalStatus, randomUUID(), {
-        maxRetries: maxRecoveryAttempts,
-        isDequeuedRequest: params.isQueueDispatch,
-        isRecoveryRequest: params.isRecoveryDispatch,
-      });
-      serializationType = ires.serialization === DBOSPortableJSON.name() ? 'portable' : undefined;
-    } catch (e) {
-      // For 'return-existing' enqueues we don't pre-record the dedup error: the wrapper will
-      // catch it, attach to the existing workflow, and record the child mapping itself.
+    const claimed = params.dequeuedStatus;
+    if (claimed) {
+      // The claim counted this dispatch; dead-letter the workflow if that exhausted its attempts.
+      const claimedAttempts = claimed.recoveryAttempts ?? 0;
       if (
-        e instanceof DBOSQueueDuplicatedError &&
-        callerID &&
-        callerFunctionID &&
-        params.duplicationPolicy !== 'return-existing'
+        claimed.status !== StatusString.SUCCESS &&
+        claimed.status !== StatusString.ERROR &&
+        claimedAttempts > maxRecoveryAttempts + 1
       ) {
-        const sererr = await serializeResError(e, this.serializer, undefined); // This is a step result
-        await this.systemDatabase.recordOperationResult(
-          callerID,
-          callerFunctionID,
-          internalStatus.workflowName,
-          true,
-          Date.now(),
-          Date.now(),
-          { error: sererr.serializedValue, serialization: sererr.serialization },
-        );
+        await this.systemDatabase.deadLetterWorkflows([workflowID], claimedAttempts);
+        this.tracer.endSpan(span);
+        throw new DBOSMaxRecoveryAttemptsExceededError(workflowID, maxRecoveryAttempts);
       }
-      this.tracer.endSpan(span);
-      throw e;
+      // Only a PENDING row owns its outcome, so a row moved on since the claim would run for nothing.
+      if (claimed.status !== StatusString.PENDING) {
+        this.tracer.endSpan(span);
+        return new RetrievedHandle(this.systemDatabase, workflowID);
+      }
+      ires = {
+        status: claimed.status,
+        deadlineEpochMS: claimed.deadlineEpochMS,
+        shouldExecuteOnThisExecutor: true,
+        serialization: claimed.serialization,
+      };
+      serializationType = ires.serialization === DBOSPortableJSON.name() ? 'portable' : undefined;
+    } else {
+      try {
+        ires = await this.systemDatabase.initWorkflowStatus(internalStatus, randomUUID());
+        serializationType = ires.serialization === DBOSPortableJSON.name() ? 'portable' : undefined;
+      } catch (e) {
+        // For 'return-existing' enqueues we don't pre-record the dedup error: the wrapper will
+        // catch it, attach to the existing workflow, and record the child mapping itself.
+        if (
+          e instanceof DBOSQueueDuplicatedError &&
+          callerID &&
+          callerFunctionID &&
+          params.duplicationPolicy !== 'return-existing'
+        ) {
+          const sererr = await serializeResError(e, this.serializer, undefined); // This is a step result
+          await this.systemDatabase.recordOperationResult(
+            callerID,
+            callerFunctionID,
+            internalStatus.workflowName,
+            true,
+            Date.now(),
+            Date.now(),
+            { error: sererr.serializedValue, serialization: sererr.serialization },
+          );
+        }
+        this.tracer.endSpan(span);
+        throw e;
+      }
     }
 
     if (callerFunctionID !== undefined && callerID !== undefined) {
@@ -1352,21 +1373,39 @@ export class DBOSExecutor {
     }
   }
 
-  async executeWorkflowId(
-    workflowID: string,
-    options?: {
-      startNewWorkflow?: boolean;
-      isRecoveryDispatch?: boolean;
-      isQueueDispatch?: boolean;
-    },
-  ): Promise<WorkflowHandle<unknown>> {
-    const wfStatus = await this.systemDatabase.getWorkflowStatus(workflowID);
-    if (!wfStatus) {
-      this.logger.error(`Failed to find workflow status for workflowUUID: ${workflowID}`);
-      throw new DBOSError(`Failed to find workflow status for workflow UUID: ${workflowID}`);
+  /** Fetch the claimed workflows' statuses in as few round trips as possible, then dispatch each. */
+  async dispatchDequeuedWorkflows(workflowIDs: string[]): Promise<void> {
+    let statuses: Map<string, WorkflowStatusInternal>;
+    try {
+      statuses = await this.systemDatabase.getWorkflowStatuses(workflowIDs);
+    } catch (e) {
+      // A failed batch must not strand every claim in it: each ID is re-read on its own below.
+      this.logger.warn(`Error fetching dequeued workflow statuses: ${(e as Error).message}`);
+      statuses = new Map();
     }
+    for (const workflowID of workflowIDs) {
+      try {
+        const status = statuses.get(workflowID) ?? (await this.systemDatabase.getWorkflowStatus(workflowID));
+        if (!status) {
+          throw new DBOSError(`workflow status not found`);
+        }
+        await this.executeDequeuedWorkflow(status);
+      } catch (e) {
+        this.logger.warn(`Could not execute workflow with id ${workflowID}: ${(e as Error).message}`);
+      }
+    }
+  }
 
-    if (!wfStatus?.input) {
+  /**
+   * Run a workflow the queue has just claimed, from its persisted status.
+   *
+   * Deliberately skips initWorkflowStatus: the claim already wrote everything it would
+   * (PENDING, executor, deadline, recovery_attempts) and this status was read back from
+   * that row, so re-upserting it only rewrites the columns it just read.
+   */
+  async executeDequeuedWorkflow(wfStatus: WorkflowStatusInternal): Promise<WorkflowHandle<unknown>> {
+    const workflowID = wfStatus.workflowUUID;
+    if (!wfStatus.input) {
       this.logger.error(`Failed to find inputs for workflowUUID: ${workflowID}`);
       throw new DBOSError(`Failed to find inputs for workflow UUID: ${workflowID}`);
     }
@@ -1378,16 +1417,24 @@ export class DBOSExecutor {
       // so it transitions to ERROR instead of being stuck in PENDING.
       this.logger.error(`Failed to deserialize inputs for workflow ${workflowID}: ${(err as Error).message}`);
       const sererr = await serializeResErrorWithSerializer(err as Error, this.serializer, wfStatus.serialization);
-      wfStatus.error = sererr.serializedValue;
-      await this.systemDatabase.recordWorkflowError(workflowID, wfStatus);
+      await this.systemDatabase.recordWorkflowError(workflowID, { ...wfStatus, error: sererr.serializedValue });
       throw err;
     }
     const recoverCtx = this.#getRecoveryContext(workflowID, wfStatus);
 
     const { methReg, configuredInst } = this.#getFunctionInfoFromWFStatus(wfStatus);
 
-    // If starting a new workflow, assign a new UUID. Otherwise, use the workflow's original UUID.
-    const workflowStartID = !!options?.startNewWorkflow ? undefined : workflowID;
+    // A named instance this process never constructed would otherwise run the workflow with a null `this`.
+    if (wfStatus.workflowConfigName && !configuredInst) {
+      this.logger.error(
+        `Cannot find configured instance '${wfStatus.workflowConfigName}' of class '${wfStatus.workflowClassName}' for ID ${workflowID}`,
+      );
+      throw new DBOSNotRegisteredError(
+        wfStatus.workflowConfigName,
+        `Configured class instance '${wfStatus.workflowClassName}/${wfStatus.workflowConfigName}' is not registered; did you change your code?`,
+      );
+    }
+
     const enqueueOptions =
       wfStatus.queuePartitionKey !== undefined ? { queuePartitionKey: wfStatus.queuePartitionKey } : undefined;
 
@@ -1396,14 +1443,13 @@ export class DBOSExecutor {
         return await this.workflow(
           methReg.registeredFunction as UntypedAsyncFunction,
           {
-            workflowUUID: workflowStartID,
+            workflowUUID: workflowID,
             configuredInstance: configuredInst,
             queueName: wfStatus.queueName,
             enqueueOptions,
             executeWorkflow: true,
             deadlineEpochMS: wfStatus.deadlineEpochMS,
-            isRecoveryDispatch: !!options?.isRecoveryDispatch,
-            isQueueDispatch: !!options?.isQueueDispatch,
+            dequeuedStatus: wfStatus,
           },
           ...inputs,
         );
@@ -1429,13 +1475,12 @@ export class DBOSExecutor {
         return await this.startStepTempWF(
           stepReg.registeredFunction as UntypedAsyncFunction,
           {
-            workflowUUID: workflowStartID,
+            workflowUUID: workflowID,
             configuredInstance: configuredInst,
             queueName: wfStatus.queueName, // Probably null
             enqueueOptions,
             executeWorkflow: true,
-            isRecoveryDispatch: !!options?.isRecoveryDispatch,
-            isQueueDispatch: !!options?.isQueueDispatch,
+            dequeuedStatus: wfStatus,
           },
           undefined,
           undefined,
@@ -1470,12 +1515,11 @@ export class DBOSExecutor {
           {
             tempWfName: nameArr[2],
             tempWfType: TempWorkflowType.send,
-            workflowUUID: workflowStartID,
+            workflowUUID: workflowID,
             queueName: wfStatus.queueName,
             enqueueOptions,
             executeWorkflow: true,
-            isRecoveryDispatch: !!options?.isRecoveryDispatch,
-            isQueueDispatch: !!options?.isQueueDispatch,
+            dequeuedStatus: wfStatus,
           },
           ...inputs,
         );
