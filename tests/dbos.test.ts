@@ -1219,6 +1219,31 @@ describe('run-migrations-flag', () => {
     }
   });
 
+  test('accepts a system database ahead of this build', async () => {
+    // Migrate the throwaway database, then push it past this build, as a newer peer would.
+    DBOS.setConfig({ ...config, systemDatabaseUrl: unmigratedUrl });
+    await DBOS.launch();
+    await DBOS.shutdown();
+
+    const dbClient = new Client({ connectionString: unmigratedUrl });
+    try {
+      await dbClient.connect();
+      const { rows } = await dbClient.query<{ version: string }>(
+        'UPDATE dbos.dbos_migrations SET version = version + 1000 RETURNING version',
+      );
+      const aheadVersion = rows[0].version;
+
+      DBOS.setConfig({ ...config, systemDatabaseUrl: unmigratedUrl, runMigrations: false });
+      await DBOS.launch();
+
+      // Verification accepts the newer schema and leaves the version untouched.
+      const after = await dbClient.query<{ version: string }>('SELECT version FROM dbos.dbos_migrations');
+      expect(after.rows[0].version).toBe(aheadVersion);
+    } finally {
+      await dbClient.end();
+    }
+  });
+
   test('does not create a missing system database', async () => {
     DBOS.setConfig({ ...config, systemDatabaseUrl: unmigratedUrl, runMigrations: false });
     await expect(DBOS.launch()).rejects.toThrow(DBOSInitializationError);

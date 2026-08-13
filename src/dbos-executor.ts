@@ -101,6 +101,7 @@ export interface DBOSConfig {
 
   systemDatabaseUrl?: string;
   systemDatabasePoolSize?: number;
+  /** A pre-configured connection pool for the system database. This pool is left open on `DBOS.shutdown()`. */
   systemDatabasePool?: Pool;
   systemDatabaseSchemaName?: string;
   /**

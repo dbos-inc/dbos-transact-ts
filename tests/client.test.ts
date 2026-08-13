@@ -138,6 +138,24 @@ describe('DBOSClient', () => {
     DBOS.setConfig(config);
   });
 
+  // Rows written inside a caller's transaction must be invisible to everyone else until it commits,
+  // so every in-transaction test reads back through a second connection of its own.
+  async function countFromOtherConnection(sql: string, params: unknown[]): Promise<number> {
+    const other = new Client(poolConfig);
+    await other.connect();
+    try {
+      const { rowCount } = await other.query(sql, params);
+      return rowCount ?? 0;
+    } finally {
+      await other.end();
+    }
+  }
+
+  const countWorkflows = (workflowID: string) =>
+    countFromOtherConnection('SELECT 1 FROM dbos.workflow_status WHERE workflow_uuid = $1', [workflowID]);
+  const countNotifications = (destinationID: string) =>
+    countFromOtherConnection('SELECT 1 FROM dbos.notifications WHERE destination_uuid = $1', [destinationID]);
+
   afterEach(async () => {
     await DBOS.shutdown();
   });
@@ -904,6 +922,7 @@ describe('DBOSClient', () => {
         last: 'Doe',
         age: 30,
       });
+      expect(await countWorkflows(wfid)).toBe(0);
       await txClient.query('COMMIT');
 
       await txClient.query('BEGIN');
@@ -979,8 +998,20 @@ describe('DBOSClient', () => {
         },
         [42, 'test', { first: 'John', last: 'Doe', age: 30 }],
       );
-      await txClient.query('COMMIT');
+      expect(await countWorkflows(wfid)).toBe(0);
 
+      // The row must carry the portable encoding, which is the whole point of this entry
+      // point: a peer in another language has to be able to read these inputs.
+      const written = await txClient.query<workflow_status>(
+        'SELECT serialization, inputs FROM dbos.workflow_status WHERE workflow_uuid = $1',
+        [wfid],
+      );
+      expect(written.rows[0].serialization).toBe('portable_json');
+      expect(JSON.parse(written.rows[0].inputs)).toEqual({
+        positionalArgs: [42, 'test', { first: 'John', last: 'Doe', age: 30 }],
+      });
+
+      await txClient.query('COMMIT');
       expect(await handle.getResult()).toBe('42-test-{"first":"John","last":"Doe","age":30}');
     } finally {
       await txClient.end();
@@ -1069,6 +1100,7 @@ describe('DBOSClient', () => {
       await txClient.query('BEGIN');
       await client.sendInTransaction<string>(txClient, workflowID, message, topic, idempotencyKey);
       await client.sendInTransaction<string>(txClient, workflowID, message, topic, idempotencyKey);
+      expect(await countNotifications(workflowID)).toBe(0);
       await txClient.query('COMMIT');
 
       const rows = await txClient.query('SELECT * FROM dbos.notifications WHERE destination_uuid = $1', [workflowID]);
@@ -1105,11 +1137,115 @@ describe('DBOSClient', () => {
         topic,
       );
       await client.sendInTransaction<string>(txClient, workflowID, message, topic);
+      // Neither half of the pair escapes before the caller commits.
+      expect(await countWorkflows(workflowID)).toBe(0);
+      expect(await countNotifications(workflowID)).toBe(0);
       await txClient.query('COMMIT');
 
       expect(await handle.getResult()).toBe(message);
     } finally {
       await txClient.end();
+      await client.destroy();
+    }
+  });
+
+  test('DBOSClient-in-transaction-with-caller-writes', async () => {
+    // The documented use case: the caller's own rows and the DBOS work commit or roll back together.
+    await DBOS.launch();
+    await registerTestQueue();
+
+    const now = Date.now();
+    const table = `client_tx_orders_${now}`;
+    const client = await DBOSClient.create({ systemDatabaseUrl });
+    const txClient = new Client(poolConfig);
+    try {
+      await txClient.connect();
+      await txClient.query(`CREATE TABLE ${table} (id TEXT PRIMARY KEY)`);
+
+      // Rolled back together: neither the order nor the workflow survives.
+      const rolledBackID = `client-tx-caller-rollback-${now}`;
+      await txClient.query('BEGIN');
+      await txClient.query(`INSERT INTO ${table} VALUES ($1)`, [rolledBackID]);
+      await client.enqueueInTransaction<EnqueueTest>(
+        txClient,
+        {
+          workflowName: 'enqueueTest',
+          workflowClassName: 'ClientTest',
+          queueName: 'testQueue',
+          workflowID: rolledBackID,
+        },
+        1,
+        'rolled-back',
+        { first: 'John', last: 'Doe', age: 30 },
+      );
+      await txClient.query('ROLLBACK');
+
+      expect(await countWorkflows(rolledBackID)).toBe(0);
+      const rolledBackOrders = await txClient.query(`SELECT 1 FROM ${table} WHERE id = $1`, [rolledBackID]);
+      expect(rolledBackOrders.rowCount).toBe(0);
+
+      // Committed together: the order is durable and the workflow runs.
+      const committedID = `client-tx-caller-commit-${now}`;
+      await txClient.query('BEGIN');
+      await txClient.query(`INSERT INTO ${table} VALUES ($1)`, [committedID]);
+      const handle = await client.enqueueInTransaction<EnqueueTest>(
+        txClient,
+        {
+          workflowName: 'enqueueTest',
+          workflowClassName: 'ClientTest',
+          queueName: 'testQueue',
+          workflowID: committedID,
+        },
+        42,
+        'test',
+        { first: 'John', last: 'Doe', age: 30 },
+      );
+      expect(await countWorkflows(committedID)).toBe(0);
+      await txClient.query('COMMIT');
+
+      expect(await handle.getResult()).toBe('42-test-{"first":"John","last":"Doe","age":30}');
+      const committedOrders = await txClient.query(`SELECT 1 FROM ${table} WHERE id = $1`, [committedID]);
+      expect(committedOrders.rowCount).toBe(1);
+    } finally {
+      await txClient.query(`DROP TABLE IF EXISTS ${table}`).catch(() => {});
+      await txClient.end();
+      await client.destroy();
+    }
+  });
+
+  test('DBOSClient-in-transaction-rejects-unusable-clients', async () => {
+    const client = await DBOSClient.create({ systemDatabaseUrl });
+    const now = Date.now();
+    const options = {
+      workflowName: 'enqueueTest',
+      workflowClassName: 'ClientTest',
+      queueName: 'testQueue',
+      workflowID: `client-tx-unusable-${now}`,
+    };
+    // A client whose connection cannot serve the DBOS schema, as one on the wrong database cannot.
+    const missingSchemaClient = await DBOSClient.create({
+      systemDatabaseUrl,
+      systemDatabaseSchemaName: `absent_schema_${now}`,
+    });
+    const txClient = new Client(poolConfig);
+    const args = [42, 'test', { first: 'John', last: 'Doe', age: 30 }] as Parameters<EnqueueTest>;
+    try {
+      await txClient.connect();
+
+      await txClient.query('BEGIN');
+      await expect(txClient.query('SELECT 1/0')).rejects.toThrow();
+      // The caller's transaction is already aborted, so the enqueue cannot join it.
+      await expect(client.enqueueInTransaction<EnqueueTest>(txClient, options, ...args)).rejects.toThrow();
+      await txClient.query('ROLLBACK');
+
+      await txClient.query('BEGIN');
+      await expect(missingSchemaClient.enqueueInTransaction<EnqueueTest>(txClient, options, ...args)).rejects.toThrow(
+        /workflow_status/,
+      );
+      await txClient.query('ROLLBACK');
+    } finally {
+      await txClient.end();
+      await missingSchemaClient.destroy();
       await client.destroy();
     }
   });
