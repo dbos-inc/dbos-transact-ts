@@ -502,6 +502,10 @@ describe('dbos-tests', () => {
       await expect(handle.getResult()).rejects.toThrow(new DBOSWorkflowCancelledError(workflowID));
       const status = await DBOS.getWorkflowStatus(workflowID);
       expect(status?.status).toBe(StatusString.CANCELLED);
+      // A parent cancelled before it awaits its child stops waiting for it, so let the child's own deadline settle it.
+      await expect(DBOS.retrieveWorkflow(childID).getResult()).rejects.toThrow(
+        new DBOSAwaitedWorkflowCancelledError(childID),
+      );
       const childStatus = await DBOS.getWorkflowStatus(childID);
       expect(childStatus?.status).toBe(StatusString.CANCELLED);
       expect(childStatus?.deadlineEpochMS).toBeGreaterThan(status?.deadlineEpochMS as number);
