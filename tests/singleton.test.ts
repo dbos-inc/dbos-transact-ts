@@ -1,7 +1,7 @@
 import { DBOS, DBOSClient } from '../src';
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import { DBOSQueueDuplicatedError } from '../src/error';
-import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
+import { generateDBOSTestConfig, retryUntilSuccess, setUpDBOSTestSysDb } from './helpers';
 
 const testPolling = { minPollingIntervalMs: 100 };
 
@@ -219,6 +219,15 @@ describe('singleton workflows', () => {
       const parentB = await DBOS.startWorkflow(SingletonTest).parentWithSingleton(dedupID, 'third');
       parentAID = parentA.workflowID;
       parentBID = parentB.workflowID;
+
+      // Wait for both parents to attach before opening the gate: a child that completes first frees
+      // the deduplication slot, and a parent still in the retry loop then claims it with a new child.
+      await retryUntilSuccess(async () => {
+        for (const parentID of [parentAID, parentBID]) {
+          const steps = await DBOS.listWorkflowSteps(parentID);
+          expect(steps?.some((s) => s.childWorkflowID === firstChildHandle.workflowID)).toBe(true);
+        }
+      });
 
       // Release the gate so the blocking child can complete; then both
       // parents' `await handle.getResult()` resolves.
