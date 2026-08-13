@@ -3703,4 +3703,95 @@ describe('dequeue-dispatch-cost', () => {
     await handle.getResult();
     expect(await queueEntriesAreCleanedUp()).toBe(true);
   }, 30000);
+
+  test('batch-status-fetch-failure-falls-back-to-single-reads', async () => {
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    // Every batch fetch fails, so each claim is only dispatchable via its own re-read.
+    jest
+      .spyOn(sysdb, 'getWorkflowStatuses')
+      .mockRejectedValue(new Error('Connection terminated unexpectedly') as never);
+
+    const count = 3;
+    const handles: WorkflowHandle<number>[] = [];
+    for (let i = 0; i < count; i++) {
+      handles.push(await DBOS.startWorkflow(DispatchCostWF, { queueName: QUEUE_NAME }).run(i));
+    }
+    for (let i = 0; i < count; i++) {
+      expect(await handles[i].getResult()).toBe(i);
+    }
+    expect(await queueEntriesAreCleanedUp()).toBe(true);
+  }, 30000);
+});
+
+describe('limiter-dequeue-locking', () => {
+  let config: DBOSConfig;
+  let sysdb: SystemDatabase;
+
+  const limitedWorkflow = DBOS.registerWorkflow(async (value: string) => Promise.resolve(value), {
+    name: 'limiterLockWorkflow',
+  });
+
+  beforeAll(async () => {
+    config = generateDBOSTestConfig();
+    await setUpDBOSTestSysDb(config);
+  });
+
+  beforeEach(async () => {
+    // No lane polls these queues, so the rows stay ENQUEUED until this test claims them itself.
+    DBOS.setConfig({ ...config, listenQueues: [] });
+    await DBOS.launch();
+    sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+  });
+
+  afterEach(async () => {
+    await DBOS.shutdown();
+  });
+
+  test('a peer mid-claim blocks a rate-limited dequeue rather than being skipped past', async () => {
+    const limit = 2;
+    const queueName = `limiter-lock-${randomUUID()}`;
+    const queue = await DBOS.registerQueue(queueName, {
+      rateLimit: { limitPerPeriod: limit, periodSec: 60 },
+      priorityEnabled: true,
+      onConflict: 'always_update',
+    });
+
+    // Distinct priorities so the head of the queue is deterministic.
+    const ids: string[] = [];
+    for (let priority = 1; priority <= limit * 2; priority++) {
+      const handle = await DBOS.startWorkflow(limitedWorkflow, {
+        queueName,
+        enqueueOptions: { priority },
+      })(`w${priority}`);
+      ids.push(handle.workflowID);
+    }
+
+    const peer = new Client({ connectionString: config.systemDatabaseUrl });
+    await peer.connect();
+    try {
+      await peer.query('BEGIN');
+      // A peer dequeuer holding an open claim on the whole limiter budget.
+      const head = await peer.query<{ workflow_uuid: string }>(
+        `SELECT workflow_uuid FROM "${sysdb.schemaName}".workflow_status
+         WHERE queue_name = $1 AND status = $2
+         ORDER BY priority ASC, created_at ASC
+         LIMIT ${limit} FOR UPDATE`,
+        [queueName, StatusString.ENQUEUED],
+      );
+      expect(head.rows.map((row) => row.workflow_uuid)).toEqual(ids.slice(0, limit));
+
+      // Under SKIP LOCKED this claims the rows behind the peer, spending the same budget a second time.
+      await expect(
+        sysdb.findAndMarkStartableWorkflows(queue, 'lock-test', globalParams.appVersion, undefined),
+      ).rejects.toMatchObject({ code: '55P03' });
+
+      // Nothing was admitted behind the peer's back.
+      for (const id of ids) {
+        expect((await sysdb.getWorkflowStatus(id))?.status).toBe(StatusString.ENQUEUED);
+      }
+    } finally {
+      await peer.query('ROLLBACK');
+      await peer.end();
+    }
+  }, 30000);
 });

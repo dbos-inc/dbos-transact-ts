@@ -1377,14 +1377,20 @@ export class DBOSExecutor {
 
   /** Fetch the claimed workflows' statuses in as few round trips as possible, then dispatch each. */
   async dispatchDequeuedWorkflows(workflowIDs: string[]): Promise<void> {
-    const statuses = await this.systemDatabase.getWorkflowStatuses(workflowIDs);
+    let statuses: Map<string, WorkflowStatusInternal>;
+    try {
+      statuses = await this.systemDatabase.getWorkflowStatuses(workflowIDs);
+    } catch (e) {
+      // A failed batch must not strand every claim in it: each ID is re-read on its own below.
+      this.logger.warn(`Error fetching dequeued workflow statuses: ${(e as Error).message}`);
+      statuses = new Map();
+    }
     for (const workflowID of workflowIDs) {
-      const status = statuses.get(workflowID);
-      if (!status) {
-        this.logger.warn(`Could not execute workflow with id ${workflowID}: workflow status not found`);
-        continue;
-      }
       try {
+        const status = statuses.get(workflowID) ?? (await this.systemDatabase.getWorkflowStatus(workflowID));
+        if (!status) {
+          throw new DBOSError(`workflow status not found`);
+        }
         await this.executeDequeuedWorkflow(status);
       } catch (e) {
         this.logger.warn(`Could not execute workflow with id ${workflowID}: ${(e as Error).message}`);
