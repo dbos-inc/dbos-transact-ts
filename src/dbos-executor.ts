@@ -1419,8 +1419,7 @@ export class DBOSExecutor {
       // so it transitions to ERROR instead of being stuck in PENDING.
       this.logger.error(`Failed to deserialize inputs for workflow ${workflowID}: ${(err as Error).message}`);
       const sererr = await serializeResErrorWithSerializer(err as Error, this.serializer, wfStatus.serialization);
-      wfStatus.error = sererr.serializedValue;
-      await this.systemDatabase.recordWorkflowError(workflowID, wfStatus);
+      await this.systemDatabase.recordWorkflowError(workflowID, { ...wfStatus, error: sererr.serializedValue });
       throw err;
     }
     const recoverCtx = this.#getRecoveryContext(workflowID, wfStatus);
@@ -1432,10 +1431,13 @@ export class DBOSExecutor {
       this.logger.error(
         `Cannot find configured instance '${wfStatus.workflowConfigName}' of class '${wfStatus.workflowClassName}' for ID ${workflowID}`,
       );
-      throw new DBOSNotRegisteredError(
+      const err = new DBOSNotRegisteredError(
         wfStatus.workflowConfigName,
         `Configured class instance '${wfStatus.workflowClassName}/${wfStatus.workflowConfigName}' is not registered; did you change your code?`,
       );
+      const sererr = await serializeResErrorWithSerializer(err, this.serializer, wfStatus.serialization);
+      await this.systemDatabase.recordWorkflowError(workflowID, { ...wfStatus, error: sererr.serializedValue });
+      throw err;
     }
 
     const enqueueOptions =

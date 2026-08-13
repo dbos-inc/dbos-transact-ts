@@ -423,9 +423,10 @@ describe('recovery-cc-tests', () => {
     await expect(DBOSExecutor.globalInstance!.executeDequeuedWorkflow(claimed)).rejects.toThrow(DBOSNotRegisteredError);
     // Unbound, the body would have run against a null `this` instead of failing to dispatch.
     expect(ccBindingRuns).toBe(runsBeforeDispatch);
-    expect((await sysDB.getWorkflowStatus(handle.workflowID))?.status).toBe(StatusString.PENDING);
 
-    // Nothing else retires a row whose dispatch only ever throws.
-    await DBOS.cancelWorkflow(handle.workflowID);
+    // Retired rather than left PENDING, where it would hold a queue slot no later dispatch can free.
+    const failed = await sysDB.getWorkflowStatus(handle.workflowID);
+    expect(failed?.status).toBe(StatusString.ERROR);
+    await expect(DBOS.retrieveWorkflow(handle.workflowID).getResult()).rejects.toThrow(/no-such-instance/);
   });
 });
