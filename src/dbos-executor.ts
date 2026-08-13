@@ -509,7 +509,6 @@ export class DBOSExecutor {
       executorId: globalParams.executorID,
       applicationVersion: globalParams.appVersion,
       applicationID: globalParams.appID,
-      createdAt: Date.now(),
       input: funcArgs.stringified,
       priority: 0,
       queuePartitionKey: options.queuePartitionKey,
@@ -626,7 +625,6 @@ export class DBOSExecutor {
         // Left unset for another application, whose own latest version must run it.
         (ownerAppName === globalParams.appName ? globalParams.appVersion : undefined),
       applicationID: globalParams.appID,
-      createdAt: Date.now(), // Remember the start time of this workflow,
       timeoutMS: timeoutMS,
       deadlineEpochMS: deadlineEpochMS,
       input: funcArgs.stringified,

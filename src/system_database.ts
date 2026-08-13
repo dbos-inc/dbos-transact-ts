@@ -262,7 +262,7 @@ export interface WorkflowStatusInternal {
   executorId: string;
   applicationVersion?: string;
   applicationID: string;
-  createdAt: number;
+  createdAt?: number;
   updatedAt?: number;
   recoveryAttempts?: number;
   timeoutMS?: number;

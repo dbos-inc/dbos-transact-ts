@@ -108,7 +108,6 @@ export async function buildEnqueueStatus(
     executorId: '',
     applicationVersion: options.appVersion,
     applicationID: '',
-    createdAt: Date.now(),
     timeoutMS: options.workflowTimeoutMS,
     deadlineEpochMS: undefined,
     input: serparam.serializedValue,
