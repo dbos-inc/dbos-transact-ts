@@ -1269,25 +1269,18 @@ export class SystemDatabase {
     appVersion: string,
     recoveryQueueName: string,
   ): Promise<string[]> {
-    const params: unknown[] = [
-      StatusString.ENQUEUED,
-      Date.now(),
-      recoveryQueueName,
-      StatusString.PENDING,
-      executorID,
-      appVersion,
-    ];
+    const params: unknown[] = [StatusString.ENQUEUED, recoveryQueueName, StatusString.PENDING, executorID, appVersion];
     // executor_id defaults to "local", so it collides across applications.
     const scope = this.#appNameFilter('application_name', this.appName, params);
     const result = await this.pool.query<{ workflow_uuid: string }>(
       `UPDATE "${this.schemaName}".workflow_status
        SET started_at_epoch_ms = NULL,
            status = $1,
-           updated_at = $2,
-           queue_name = COALESCE(queue_name, $3)
-       WHERE status = $4
-         AND executor_id = $5
-         AND application_version = $6
+           updated_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint,
+           queue_name = COALESCE(queue_name, $2)
+       WHERE status = $3
+         AND executor_id = $4
+         AND application_version = $5
          AND ${scope}
        RETURNING workflow_uuid`,
       params,
@@ -1578,20 +1571,20 @@ export class SystemDatabase {
   async setWorkflowPriority(workflowID: string, priority: number): Promise<void> {
     await this.pool.query(
       `UPDATE "${this.schemaName}".workflow_status
-       SET priority = $1, updated_at = $2
-       WHERE workflow_uuid = $3
-         AND status IN ($4, $5)`,
-      [priority, Date.now(), workflowID, StatusString.ENQUEUED, StatusString.DELAYED],
+       SET priority = $1, updated_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint
+       WHERE workflow_uuid = $2
+         AND status IN ($3, $4)`,
+      [priority, workflowID, StatusString.ENQUEUED, StatusString.DELAYED],
     );
   }
 
   async setWorkflowDelay(workflowID: string, delayUntilEpochMS: number): Promise<void> {
     await this.pool.query(
       `UPDATE "${this.schemaName}".workflow_status
-       SET delay_until_epoch_ms = $1, updated_at = $2
-       WHERE workflow_uuid = $3
-         AND status = $4`,
-      [delayUntilEpochMS, Date.now(), workflowID, StatusString.DELAYED],
+       SET delay_until_epoch_ms = $1, updated_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint
+       WHERE workflow_uuid = $2
+         AND status = $3`,
+      [delayUntilEpochMS, workflowID, StatusString.DELAYED],
     );
   }
 
@@ -1634,7 +1627,6 @@ export class SystemDatabase {
       params.delayUntilEpochMS,
       params.input,
       params.serialization,
-      Date.now(),
       params.workflowName,
       classNameOrNull,
       params.queueName,
@@ -1651,12 +1643,13 @@ export class SystemDatabase {
              THEN debounce_deadline_epoch_ms
              ELSE $1
            END,
-           inputs = $2, serialization = $3, updated_at = $4,
+           inputs = $2, serialization = $3,
+           updated_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint,
            -- Claim it for the target, as its dequeue would: left unclaimed, every peer coalesces onto the one workflow and the last inputs win.
-           application_name = COALESCE(application_name, $10)
-       WHERE name = $5 AND class_name IS NOT DISTINCT FROM $6
-         AND queue_name = $7 AND deduplication_id = $8
-         AND status = $9 AND is_debounced = TRUE
+           application_name = COALESCE(application_name, $9)
+       WHERE name = $4 AND class_name IS NOT DISTINCT FROM $5
+         AND queue_name = $6 AND deduplication_id = $7
+         AND status = $8 AND is_debounced = TRUE
          AND ${ownScope}
        RETURNING workflow_uuid`,
       updateParams,
@@ -3189,7 +3182,7 @@ export class SystemDatabase {
     const scope = this.#appNameFilter('application_name', this.appName, params);
     await this.pool.query(
       `UPDATE "${this.schemaName}".workflow_status
-       SET status = $1, updated_at = $2,
+       SET status = $1, updated_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint,
            deduplication_id = CASE WHEN is_debounced THEN NULL ELSE deduplication_id END
        WHERE status = $3 AND delay_until_epoch_ms <= $2 AND ${scope}`,
       params,
@@ -4861,9 +4854,7 @@ export class SystemDatabase {
           executor_id,
           application_version,
           application_id,
-          created_at,
           recovery_attempts,
-          updated_at,
           workflow_timeout_ms,
           workflow_deadline_epoch_ms,
           inputs,
@@ -4880,10 +4871,10 @@ export class SystemDatabase {
           debounce_deadline_epoch_ms,
           is_debounced,
           application_name
-        ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32)
+        ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30)
         ON CONFLICT (workflow_uuid)
           DO UPDATE SET
-            updated_at = EXCLUDED.updated_at,
+            updated_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint,
             executor_id = CASE
               WHEN EXCLUDED.status != '${StatusString.ENQUEUED}' AND EXCLUDED.status != '${StatusString.DELAYED}'
               THEN EXCLUDED.executor_id
@@ -4905,9 +4896,7 @@ export class SystemDatabase {
           initStatus.executorId,
           initStatus.applicationVersion ?? null,
           initStatus.applicationID,
-          initStatus.createdAt,
           initStatus.status === StatusString.ENQUEUED || initStatus.status === StatusString.DELAYED ? 0 : 1,
-          initStatus.updatedAt ?? Date.now(),
           initStatus.timeoutMS ?? null,
           initStatus.deadlineEpochMS ?? null,
           initStatus.input ?? null,
