@@ -1429,13 +1429,10 @@ export class DBOSExecutor {
       this.logger.error(
         `Cannot find configured instance '${wfStatus.workflowConfigName}' of class '${wfStatus.workflowClassName}' for ID ${workflowID}`,
       );
-      const err = new DBOSNotRegisteredError(
+      throw new DBOSNotRegisteredError(
         wfStatus.workflowConfigName,
         `Configured class instance '${wfStatus.workflowClassName}/${wfStatus.workflowConfigName}' is not registered; did you change your code?`,
       );
-      const sererr = await serializeResErrorWithSerializer(err, this.serializer, wfStatus.serialization);
-      await this.systemDatabase.recordWorkflowError(workflowID, { ...wfStatus, error: sererr.serializedValue });
-      throw err;
     }
 
     const enqueueOptions =

@@ -424,9 +424,15 @@ describe('recovery-cc-tests', () => {
     // Unbound, the body would have run against a null `this` instead of failing to dispatch.
     expect(ccBindingRuns).toBe(runsBeforeDispatch);
 
-    // Retired rather than left PENDING, where it would hold a queue slot no later dispatch can free.
-    const failed = await sysDB.getWorkflowStatus(handle.workflowID);
-    expect(failed?.status).toBe(StatusString.ERROR);
-    await expect(DBOS.retrieveWorkflow(handle.workflowID).getResult()).rejects.toThrow(/no-such-instance/);
+    // Left PENDING, not retired: the instance may be constructed before the next recovery.
+    expect((await sysDB.getWorkflowStatus(handle.workflowID))?.status).toBe(StatusString.PENDING);
+
+    // Dispatched again against the row's real instance name, it still runs to completion.
+    const rebound = (await sysDB.getWorkflowStatus(handle.workflowID))!;
+    await expect((await DBOSExecutor.globalInstance!.executeDequeuedWorkflow(rebound)).getResult()).resolves.toBe(
+      'configBind',
+    );
+    expect(ccBindingRuns).toBe(runsBeforeDispatch + 1);
+    expect((await sysDB.getWorkflowStatus(handle.workflowID))?.status).toBe(StatusString.SUCCESS);
   });
 });
