@@ -820,24 +820,6 @@ export class SystemDatabase {
   // Per-partition-key created_at cursors: keep per-key queue order monotonic across batches
   readonly #batchCreatedAtCursors: Map<string, number> = new Map();
 
-  // Listeners this handle registered, removed on destroy so they cannot pile up on a caller's pool.
-  readonly #onPoolError = (err: Error) => {
-    this.logger.warn(`Unexpected error in pool: ${err}`);
-  };
-  // Tracked per client, because taking the 'connect' listener off only stops future registrations.
-  readonly #idleClientListeners = new Map<PoolClient, (err: Error) => void>();
-  readonly #onPoolConnect = (client: PoolClient) => {
-    const onError = (err: Error) => {
-      this.logger.warn(`Unexpected error in idle client: ${err}`);
-    };
-    client.on('error', onError);
-    this.#idleClientListeners.set(client, onError);
-  };
-  // Prune from the pool's own discard funnel: a listener on the client would be lost to removeAllListeners().
-  readonly #onPoolRemove = (client: PoolClient) => {
-    this.#idleClientListeners.delete(client);
-  };
-
   // Set by destroy(), so polling waits end instead of running on against a pool that outlives this handle.
   #destroyed: boolean = false;
 
@@ -877,9 +859,18 @@ export class SystemDatabase {
     const pollingLimit = pollingConcurrency ?? Math.max(1, Math.floor(effectivePoolSize / 2));
     this.pollLimiter = new Semaphore(pollingLimit);
 
-    this.pool.on('error', this.#onPoolError);
-    this.pool.on('connect', this.#onPoolConnect);
-    this.pool.on('remove', this.#onPoolRemove);
+    // Only ever touch a pool we own. A caller's pool is theirs to instrument, and anything we attach
+    // here we would have to unpick on destroy, on connections they keep using.
+    if (!this.customPool) {
+      this.pool.on('error', (err: Error) => {
+        this.logger.warn(`Unexpected error in pool: ${err}`);
+      });
+      this.pool.on('connect', (client: PoolClient) => {
+        client.on('error', (err: Error) => {
+          this.logger.warn(`Unexpected error in idle client: ${err}`);
+        });
+      });
+    }
   }
   getSerializer(): DBOSSerializer {
     return this.serializer;
@@ -994,17 +985,8 @@ export class SystemDatabase {
     if (this.notificationsClient) {
       this.#retireNotificationsClient(this.notificationsClient);
     }
-    if (this.customPool) {
-      // A caller-supplied pool outlives this handle, so leave it as we found it rather than closing it.
-      this.pool.off('error', this.#onPoolError);
-      this.pool.off('connect', this.#onPoolConnect);
-      this.pool.off('remove', this.#onPoolRemove);
-      for (const [client, onError] of this.#idleClientListeners) {
-        client.off('error', onError);
-      }
-      this.#idleClientListeners.clear();
-    } else {
-      // Keep the listeners: detaching the pool's only 'error' listener before end() lets a teardown error go uncaught.
+    // Nothing to unpick on a caller's pool, since we never instrumented it; only close a pool we own.
+    if (!this.customPool) {
       await this.pool.end();
     }
   }
@@ -5371,11 +5353,10 @@ export class SystemDatabase {
     } catch (e) {
       this.logger.warn(`Error releasing notifications client: ${String(e)}`);
     }
-    // release() re-attached pg's idle listener, which would forward this dead client's error to the pool.
+    // release() re-attached pg's idle listener, which would forward this dead client's error on to the
+    // pool. That is the one connection we take from a caller's pool, so its death has to stay ours.
     client.removeAllListeners('error');
     client.on('error', (e: Error) => this.logger.debug(`Error on retired notifications client: ${e}`));
-    // Normally the release above prunes this via the pool's 'remove' event, but a throwing release does not.
-    this.#idleClientListeners.delete(client);
   }
 
   // Shutdown can begin during any await in the setup below; releasing the client instead of carrying on

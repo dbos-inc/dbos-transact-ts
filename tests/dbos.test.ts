@@ -1162,36 +1162,30 @@ describe('custom-pool-lifecycle', () => {
     }
   });
 
-  test('destroy removes the listeners it added to the caller pool', async () => {
+  test('never instruments the caller pool, so there is nothing to unpick on destroy', async () => {
     const pool = new Pool({ connectionString: systemDatabaseUrl });
+    const events = ['error', 'connect', 'acquire', 'release', 'remove'] as const;
     try {
-      // A listener the caller owns: destroy must take only what DBOS added, never sweep the event clean.
-      const callerPoolListener = () => {};
-      pool.on('error', callerPoolListener);
-      const poolErrorListeners = pool.listenerCount('error');
-      const poolConnectListeners = pool.listenerCount('connect');
-      const poolRemoveListeners = pool.listenerCount('remove');
+      const before = events.map((e) => pool.listenerCount(e));
 
       const clients: DBOSClient[] = [];
       for (let i = 0; i < 3; i++) {
         clients.push(await DBOSClient.create({ systemDatabaseUrl, systemDatabasePool: pool }));
       }
+      expect(events.map((e) => pool.listenerCount(e))).toEqual(before);
 
-      // The per-client listeners are attached when the pool opens a connection, so leaking one needs a real connection.
+      // Opening a real connection is what would fire a 'connect' hook, so the leak needs one to show up.
       const connection = await pool.connect();
       try {
-        const clientErrorListeners = connection.listenerCount('error');
-        expect(clientErrorListeners).toBeGreaterThanOrEqual(clients.length);
+        // Stock pg leaves a checked-out client with no 'error' listener of its own; DBOS must not add one.
+        expect(connection.listenerCount('error')).toBe(0);
 
         for (const client of clients) {
           await client.destroy();
         }
 
-        expect(pool.listenerCount('error')).toBe(poolErrorListeners);
-        expect(pool.listenerCount('connect')).toBe(poolConnectListeners);
-        expect(pool.listenerCount('remove')).toBe(poolRemoveListeners);
-        expect(pool.listeners('error')).toContain(callerPoolListener);
-        expect(connection.listenerCount('error')).toBe(clientErrorListeners - clients.length);
+        expect(events.map((e) => pool.listenerCount(e))).toEqual(before);
+        expect(connection.listenerCount('error')).toBe(0);
       } finally {
         connection.release();
       }

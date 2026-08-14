@@ -259,7 +259,9 @@ export class DBOSClient {
   /**
    * Creates a new instance of the DBOSClient.
    * @param systemDatabaseUrl - The connection string for the system database. This should include the hostname, port, username, password, and database name.
-   * @param systemDatabasePool - An optional pre-configured connection pool to use for the system database. This pool is left open on client {@link destroy}.
+   * @param systemDatabasePool - An optional pre-configured connection pool to use for the system database. DBOS treats
+   * a pool you supply as yours: it attaches no listeners to it and leaves it open on {@link destroy}, so `systemDatabasePoolSize`
+   * is ignored and error handling on the pool stays your responsibility (`pg` pools need their own `'error'` listener).
    * @param serializer - An optional serializer for workflow inputs and outputs. Defaults to JSON serialization.
    * @param systemDatabaseSchemaName - An optional schema name for the system database. Defaults to `dbos`.
    * @param systemDatabasePoolSize - An optional maximum size for the system database connection pool. Defaults to {@link DEFAULT_POOL_SIZE}.
