@@ -1158,16 +1158,32 @@ describe('custom-pool-lifecycle', () => {
   test('destroy removes the listeners it added to the caller pool', async () => {
     const pool = new Pool({ connectionString: systemDatabaseUrl });
     try {
-      const errorListeners = pool.listenerCount('error');
-      const connectListeners = pool.listenerCount('connect');
+      const poolErrorListeners = pool.listenerCount('error');
+      const poolConnectListeners = pool.listenerCount('connect');
 
+      const clients: DBOSClient[] = [];
       for (let i = 0; i < 3; i++) {
-        const client = await DBOSClient.create({ systemDatabaseUrl, systemDatabasePool: pool });
-        await client.destroy();
+        clients.push(await DBOSClient.create({ systemDatabaseUrl, systemDatabasePool: pool }));
       }
 
-      expect(pool.listenerCount('error')).toBe(errorListeners);
-      expect(pool.listenerCount('connect')).toBe(connectListeners);
+      // The per-client listeners are attached when the pool opens a connection, so leaking one needs a real connection.
+      const connection = await pool.connect();
+      try {
+        const clientErrorListeners = connection.listenerCount('error');
+        const clientEndListeners = connection.listenerCount('end');
+        expect(clientErrorListeners).toBeGreaterThanOrEqual(clients.length);
+
+        for (const client of clients) {
+          await client.destroy();
+        }
+
+        expect(pool.listenerCount('error')).toBe(poolErrorListeners);
+        expect(pool.listenerCount('connect')).toBe(poolConnectListeners);
+        expect(connection.listenerCount('error')).toBe(clientErrorListeners - clients.length);
+        expect(connection.listenerCount('end')).toBe(clientEndListeners - clients.length);
+      } finally {
+        connection.release();
+      }
     } finally {
       await pool.end();
     }

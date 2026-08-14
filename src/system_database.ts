@@ -820,14 +820,21 @@ export class SystemDatabase {
   // Per-partition-key created_at cursors: keep per-key queue order monotonic across batches
   readonly #batchCreatedAtCursors: Map<string, number> = new Map();
 
-  // Pool listeners this handle registered, removed on destroy so they cannot pile up on a caller's pool.
+  // Listeners this handle registered, removed on destroy so they cannot pile up on a caller's pool.
   readonly #onPoolError = (err: Error) => {
     this.logger.warn(`Unexpected error in pool: ${err}`);
   };
+  // Tracked per client, because taking the 'connect' listener off only stops future registrations.
+  readonly #idleClientListeners = new Map<PoolClient, { onError: (err: Error) => void; onEnd: () => void }>();
   readonly #onPoolConnect = (client: PoolClient) => {
-    client.on('error', (err: Error) => {
+    const onError = (err: Error) => {
       this.logger.warn(`Unexpected error in idle client: ${err}`);
-    });
+    };
+    // The pool discards clients as they error or expire; forget those so this map holds only live ones.
+    const onEnd = () => this.#idleClientListeners.delete(client);
+    client.on('error', onError);
+    client.once('end', onEnd);
+    this.#idleClientListeners.set(client, { onError, onEnd });
   };
 
   // Set by destroy(), so polling waits end instead of running on against a pool that outlives this handle.
@@ -985,10 +992,17 @@ export class SystemDatabase {
     if (this.notificationsClient) {
       this.#retireNotificationsClient(this.notificationsClient);
     }
-    this.pool.off('error', this.#onPoolError);
-    this.pool.off('connect', this.#onPoolConnect);
-    // A caller-supplied pool outlives this handle, so only close a pool we created.
-    if (!this.customPool) {
+    if (this.customPool) {
+      // A caller-supplied pool outlives this handle, so leave it as we found it rather than closing it.
+      this.pool.off('error', this.#onPoolError);
+      this.pool.off('connect', this.#onPoolConnect);
+      for (const [client, { onError, onEnd }] of this.#idleClientListeners) {
+        client.off('error', onError);
+        client.off('end', onEnd);
+      }
+      this.#idleClientListeners.clear();
+    } else {
+      // Keep the listeners: detaching the pool's only 'error' listener before end() lets a teardown error go uncaught.
       await this.pool.end();
     }
   }
