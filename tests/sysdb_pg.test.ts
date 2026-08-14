@@ -620,8 +620,10 @@ describe('sysdb-notifications-lifecycle', () => {
       // Deliberately no pool.on('error'): this is the bare pool a caller hands over.
       DBOS.setConfig({ ...config, systemDatabasePool: pool });
       await DBOS.launch();
+      // Guards the premise twice over: this really is running on the caller's pool, and a caller pool
+      // gets notifications too, since useListenNotify defaults on.
+      expect(sysDB().pool).toBe(pool);
       const client = sysDB().notificationsClient;
-      // Guards the premise: a caller pool gets notifications too, since useListenNotify defaults on.
       expect(client).not.toBeNull();
 
       await DBOS.shutdown();
@@ -629,7 +631,13 @@ describe('sysdb-notifications-lifecycle', () => {
       expect(() => client!.emit('error', new Error('synthetic late server error'))).not.toThrow();
       expect((await pool.query('SELECT 1')).rowCount).toBe(1);
     } finally {
+      // Shut down before ending the pool: while DBOS is up it holds the notifications client checked
+      // out, and pool.end() waits on that if an assertion above threw before the shutdown.
+      await DBOS.shutdown();
       DBOS.setConfig(config);
+      // The assertions above are done, so guard the teardown: end() closes connections DBOS opened on a
+      // pool this test deliberately left without an error handler.
+      pool.on('error', () => {});
       await pool.end();
     }
   });

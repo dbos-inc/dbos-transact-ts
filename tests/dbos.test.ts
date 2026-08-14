@@ -1100,27 +1100,34 @@ describe('custom-pool-test', () => {
     DBOS.setConfig(config);
     await DBOS.launch();
 
-    const message = 'message';
-    const handle = await DBOS.startWorkflow(workflow)();
-    await DBOS.send(handle.workflowID, message);
-    assert.equal(await handle.getResult(), message);
+    try {
+      const message = 'message';
+      const handle = await DBOS.startWorkflow(workflow)();
+      await DBOS.send(handle.workflowID, message);
+      assert.equal(await handle.getResult(), message);
 
-    const client = await DBOSClient.create({
-      systemDatabaseUrl: config.systemDatabaseUrl!,
-      systemDatabasePool: config.systemDatabasePool,
-    });
-    const clientHandle = client.retrieveWorkflow(handle.workflowID);
-    assert.equal(await clientHandle.getResult(), message);
+      const client = await DBOSClient.create({
+        systemDatabaseUrl: config.systemDatabaseUrl!,
+        systemDatabasePool: config.systemDatabasePool,
+      });
+      const clientHandle = client.retrieveWorkflow(handle.workflowID);
+      assert.equal(await clientHandle.getResult(), message);
 
-    // Destroying the client must leave the shared pool open for the runtime still using it
-    await client.destroy();
-    const secondHandle = await DBOS.startWorkflow(workflow)();
-    await DBOS.send(secondHandle.workflowID, message);
-    assert.equal(await secondHandle.getResult(), message);
+      // Destroying the client must leave the shared pool open for the runtime still using it
+      await client.destroy();
+      const secondHandle = await DBOS.startWorkflow(workflow)();
+      await DBOS.send(secondHandle.workflowID, message);
+      assert.equal(await secondHandle.getResult(), message);
 
-    await DBOS.shutdown();
-    await pool.query('SELECT 1');
-    await pool.end();
+      await DBOS.shutdown();
+      await pool.query('SELECT 1');
+    } finally {
+      // Shutdown leaves this pool open and unlistened-to, so a failure above must not hand it to the
+      // next describe, whose DROP DATABASE ... WITH (FORCE) would kill its connections.
+      await DBOS.shutdown();
+      pool.on('error', () => {});
+      await pool.end();
+    }
   });
 });
 

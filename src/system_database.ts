@@ -5373,7 +5373,9 @@ export class SystemDatabase {
     }
     // release() re-attached pg's idle listener, which would forward this dead client's error to the pool.
     client.removeAllListeners('error');
-    client.on('error', () => {});
+    client.on('error', (e: Error) => this.logger.debug(`Error on retired notifications client: ${e}`));
+    // Normally the release above prunes this via the pool's 'remove' event, but a throwing release does not.
+    this.#idleClientListeners.delete(client);
   }
 
   // Shutdown can begin during any await in the setup below; releasing the client instead of carrying on
