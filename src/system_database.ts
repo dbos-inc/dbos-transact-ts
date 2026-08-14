@@ -825,16 +825,17 @@ export class SystemDatabase {
     this.logger.warn(`Unexpected error in pool: ${err}`);
   };
   // Tracked per client, because taking the 'connect' listener off only stops future registrations.
-  readonly #idleClientListeners = new Map<PoolClient, { onError: (err: Error) => void; onEnd: () => void }>();
+  readonly #idleClientListeners = new Map<PoolClient, (err: Error) => void>();
   readonly #onPoolConnect = (client: PoolClient) => {
     const onError = (err: Error) => {
       this.logger.warn(`Unexpected error in idle client: ${err}`);
     };
-    // The pool discards clients as they error or expire; forget those so this map holds only live ones.
-    const onEnd = () => this.#idleClientListeners.delete(client);
     client.on('error', onError);
-    client.once('end', onEnd);
-    this.#idleClientListeners.set(client, { onError, onEnd });
+    this.#idleClientListeners.set(client, onError);
+  };
+  // Prune from the pool's own discard funnel: a listener on the client would be lost to removeAllListeners().
+  readonly #onPoolRemove = (client: PoolClient) => {
+    this.#idleClientListeners.delete(client);
   };
 
   // Set by destroy(), so polling waits end instead of running on against a pool that outlives this handle.
@@ -878,6 +879,7 @@ export class SystemDatabase {
 
     this.pool.on('error', this.#onPoolError);
     this.pool.on('connect', this.#onPoolConnect);
+    this.pool.on('remove', this.#onPoolRemove);
   }
   getSerializer(): DBOSSerializer {
     return this.serializer;
@@ -996,9 +998,9 @@ export class SystemDatabase {
       // A caller-supplied pool outlives this handle, so leave it as we found it rather than closing it.
       this.pool.off('error', this.#onPoolError);
       this.pool.off('connect', this.#onPoolConnect);
-      for (const [client, { onError, onEnd }] of this.#idleClientListeners) {
+      this.pool.off('remove', this.#onPoolRemove);
+      for (const [client, onError] of this.#idleClientListeners) {
         client.off('error', onError);
-        client.off('end', onEnd);
       }
       this.#idleClientListeners.clear();
     } else {
@@ -5361,8 +5363,6 @@ export class SystemDatabase {
     if (this.notificationsClient === client) {
       this.notificationsClient = null;
     }
-    // Forget the client here: removeAllListeners() takes the hook that would otherwise prune it with it.
-    this.#idleClientListeners.delete(client);
     client.removeAllListeners();
     // Errors can still arrive while release() tears the connection down; a bare emit would crash the process.
     client.on('error', () => {});
@@ -5371,6 +5371,9 @@ export class SystemDatabase {
     } catch (e) {
       this.logger.warn(`Error releasing notifications client: ${String(e)}`);
     }
+    // release() re-attached pg's idle listener, which would forward this dead client's error to the pool.
+    client.removeAllListeners('error');
+    client.on('error', () => {});
   }
 
   // Shutdown can begin during any await in the setup below; releasing the client instead of carrying on

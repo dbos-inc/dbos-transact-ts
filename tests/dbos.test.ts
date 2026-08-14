@@ -1158,8 +1158,12 @@ describe('custom-pool-lifecycle', () => {
   test('destroy removes the listeners it added to the caller pool', async () => {
     const pool = new Pool({ connectionString: systemDatabaseUrl });
     try {
+      // A listener the caller owns: destroy must take only what DBOS added, never sweep the event clean.
+      const callerPoolListener = () => {};
+      pool.on('error', callerPoolListener);
       const poolErrorListeners = pool.listenerCount('error');
       const poolConnectListeners = pool.listenerCount('connect');
+      const poolRemoveListeners = pool.listenerCount('remove');
 
       const clients: DBOSClient[] = [];
       for (let i = 0; i < 3; i++) {
@@ -1170,7 +1174,6 @@ describe('custom-pool-lifecycle', () => {
       const connection = await pool.connect();
       try {
         const clientErrorListeners = connection.listenerCount('error');
-        const clientEndListeners = connection.listenerCount('end');
         expect(clientErrorListeners).toBeGreaterThanOrEqual(clients.length);
 
         for (const client of clients) {
@@ -1179,8 +1182,9 @@ describe('custom-pool-lifecycle', () => {
 
         expect(pool.listenerCount('error')).toBe(poolErrorListeners);
         expect(pool.listenerCount('connect')).toBe(poolConnectListeners);
+        expect(pool.listenerCount('remove')).toBe(poolRemoveListeners);
+        expect(pool.listeners('error')).toContain(callerPoolListener);
         expect(connection.listenerCount('error')).toBe(clientErrorListeners - clients.length);
-        expect(connection.listenerCount('end')).toBe(clientEndListeners - clients.length);
       } finally {
         connection.release();
       }

@@ -9,6 +9,7 @@ import { sleepms } from '../src/utils';
 import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
 
 import { randomUUID } from 'node:crypto';
+import { Pool } from 'pg';
 
 // We cover:  Things that wait within the DB: getResult, Send/Recv, Get/set event
 //
@@ -609,5 +610,27 @@ describe('sysdb-notifications-lifecycle', () => {
     await sleepms(1500);
     expect(systemDatabase.notificationsClient).toBeNull();
     expect(systemDatabase.reconnectTimeout).toBeNull();
+  });
+
+  test('late-client-error-after-shutdown-on-a-caller-pool', async () => {
+    // The caller-pool twin of the test above. Shutdown hands the notifications client back to a pool it
+    // then stops listening to, so a late teardown error has to die on the client rather than reach the pool.
+    const pool = new Pool({ connectionString: config.systemDatabaseUrl });
+    try {
+      // Deliberately no pool.on('error'): this is the bare pool a caller hands over.
+      DBOS.setConfig({ ...config, systemDatabasePool: pool });
+      await DBOS.launch();
+      const client = sysDB().notificationsClient;
+      // Guards the premise: a caller pool gets notifications too, since useListenNotify defaults on.
+      expect(client).not.toBeNull();
+
+      await DBOS.shutdown();
+
+      expect(() => client!.emit('error', new Error('synthetic late server error'))).not.toThrow();
+      expect((await pool.query('SELECT 1')).rowCount).toBe(1);
+    } finally {
+      DBOS.setConfig(config);
+      await pool.end();
+    }
   });
 });
