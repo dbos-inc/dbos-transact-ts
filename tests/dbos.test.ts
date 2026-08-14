@@ -3,7 +3,7 @@ import { generateDBOSTestConfig, setUpDBOSTestSysDb, Event } from './helpers';
 import { randomUUID } from 'node:crypto';
 import { StatusString } from '../src/workflow';
 import { DBOSConfig } from '../src/dbos-executor';
-import { Client, Pool } from 'pg';
+import { Client, Pool, PoolClient } from 'pg';
 import { DBOSWorkflowCancelledError, DBOSAwaitedWorkflowCancelledError, DBOSInitializationError } from '../src/error';
 import assert from 'node:assert';
 import { DBOSClient } from '../dist/src';
@@ -1206,10 +1206,15 @@ describe('custom-pool-lifecycle', () => {
       // This one stays up throughout, and must be unaffected by its peers coming and going.
       const survivor = await DBOSClient.create({ systemDatabaseUrl, systemDatabasePool: pool });
 
+      // One name, so the contention is on a single row and the work leaves a single row behind.
+      const queueName = 'custom-pool-shared-queue';
+
       // Each worker creates, queries, and destroys on its own schedule, so creates and destroys interleave.
       const churn = Array.from({ length: 8 }, async (_, i) => {
         const client = await DBOSClient.create({ systemDatabaseUrl, systemDatabasePool: pool });
         try {
+          // A write, so the connection is held through borrowClient; pool.query() never borrows.
+          await client.registerQueue(queueName);
           await client.listQueues();
           if (i % 2 === 0) {
             await client.listQueues();
@@ -1218,20 +1223,34 @@ describe('custom-pool-lifecycle', () => {
           await client.destroy();
         }
       });
-      const survivorWork = Array.from({ length: 8 }, () => survivor.listQueues());
+      const survivorWork = Array.from({ length: 8 }, () => survivor.registerQueue(queueName));
       await Promise.all([...churn, ...survivorWork]);
 
       // Guards the premise: the work above really did contend for several connections at once.
       expect(pool.totalCount).toBeGreaterThan(1);
 
       // Peers being destroyed mid-flight left the survivor able to keep using the shared pool.
-      await expect(survivor.listQueues()).resolves.toBeDefined();
+      await expect(survivor.registerQueue(queueName)).resolves.toBeDefined();
       await survivor.destroy();
 
       expect(events.map((e) => pool.listenerCount(e))).toEqual(before);
       // The leak a shared pool actually punishes: every connection handed out must have come back.
       expect(pool.waitingCount).toBe(0);
       expect(pool.idleCount).toBe(pool.totalCount);
+
+      // All idle per the assertion above, so taking exactly that many never waits on the pool.
+      const idleAtRest = pool.idleCount;
+      const drained: PoolClient[] = [];
+      try {
+        for (let i = 0; i < idleAtRest; i++) {
+          drained.push(await pool.connect());
+        }
+        // pg strips its own idle listener on acquire, so anything left is one borrowClient kept.
+        expect(drained.map((c) => c.listenerCount('error'))).toEqual(drained.map(() => 0));
+      } finally {
+        drained.forEach((c) => c.release());
+      }
+
       expect((await pool.query('SELECT 1')).rowCount).toBe(1);
     } finally {
       await pool.end();
