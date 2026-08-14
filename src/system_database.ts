@@ -5361,6 +5361,8 @@ export class SystemDatabase {
     if (this.notificationsClient === client) {
       this.notificationsClient = null;
     }
+    // Forget the client here: removeAllListeners() takes the hook that would otherwise prune it with it.
+    this.#idleClientListeners.delete(client);
     client.removeAllListeners();
     // Errors can still arrive while release() tears the connection down; a bare emit would crash the process.
     client.on('error', () => {});
