@@ -9,7 +9,8 @@ import { sleepms } from '../src/utils';
 import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
 
 import { randomUUID } from 'node:crypto';
-import { Pool } from 'pg';
+import { Client, Pool } from 'pg';
+import { clearDebugTriggers, DEBUG_TRIGGER_INITWF_COMMIT, setDebugTrigger } from '../src/debugpoint';
 
 // We cover:  Things that wait within the DB: getResult, Send/Recv, Get/set event
 //
@@ -639,6 +640,56 @@ describe('sysdb-notifications-lifecycle', () => {
       // pool this test deliberately left without an error handler.
       pool.on('error', () => {});
       await pool.end();
+    }
+  });
+
+  test('connection-death-while-dbos-holds-it-on-a-caller-pool', async () => {
+    const appName = `dbos_borrowed_${randomUUID().slice(0, 8)}`;
+    // max 1, so the only backend under this name is the one DBOS is holding: killing by name cannot
+    // also take out an idle connection, whose error is the caller's to handle and not what this covers.
+    const pool = new Pool({ connectionString: config.systemDatabaseUrl, application_name: appName, max: 1 });
+    const killer = new Client({ connectionString: config.systemDatabaseUrl });
+    // The listener a caller is told to attach. It covers idle connections and by construction cannot
+    // cover one DBOS has checked out, which is the window this test exercises.
+    pool.on('error', () => {});
+
+    const uncaught: Error[] = [];
+    const onUncaught = (e: Error) => uncaught.push(e);
+    process.on('uncaughtException', onUncaught);
+
+    try {
+      await killer.connect();
+      const client = await DBOSClient.create({
+        systemDatabaseUrl: config.systemDatabaseUrl!,
+        systemDatabasePool: pool,
+      });
+      const queueName = `borrowed-client-queue-${appName}`;
+      try {
+        await client.registerQueue(queueName);
+        // Fires while the enqueue still holds its connection, so the backend dies underneath DBOS.
+        setDebugTrigger(DEBUG_TRIGGER_INITWF_COMMIT, {
+          asyncCallback: async () => {
+            clearDebugTriggers();
+            await killer.query('SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE application_name = $1', [
+              appName,
+            ]);
+            // Let the socket close land: an unguarded client would throw from its own 'error' emit.
+            await sleepms(500);
+          },
+        });
+        await client.enqueue<() => Promise<void>>({ workflowName: 'neverRuns', queueName });
+      } finally {
+        clearDebugTriggers();
+        await client.destroy();
+      }
+
+      expect(uncaught).toEqual([]);
+      // The caller's pool is still theirs to use after a connection died under DBOS.
+      expect((await pool.query('SELECT 1')).rowCount).toBe(1);
+    } finally {
+      process.off('uncaughtException', onUncaught);
+      await pool.end();
+      await killer.end();
     }
   });
 });

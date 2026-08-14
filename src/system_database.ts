@@ -395,10 +395,30 @@ export async function grantDbosSchemaPermissions(
   }
 }
 
+/**
+ * Check out a connection carrying our own error handler, so a socket death while we hold it is
+ * logged instead of thrown at an emitter with no listener. `release()` takes the handler back off,
+ * so nothing we attach outlives the checkout and the pool itself is never touched.
+ */
+async function borrowClient(pool: Pool, onError: (err: Error) => void): Promise<PoolClient> {
+  const client = await pool.connect();
+  // Nothing awaits between the checkout and this attach, nor between the removal and release()
+  // below, so there is no turn of the event loop in which we hold the connection unguarded.
+  client.on('error', onError);
+  const release = client.release.bind(client);
+  client.release = (err?: Error | boolean) => {
+    client.removeListener('error', onError);
+    release(err);
+  };
+  return client;
+}
+
 /** Connect to the system database without creating it. The caller releases the client. */
 async function connectToSystemDatabase(sysDbUrl: string, logger: GlobalLogger, customPool?: Pool): Promise<ClientBase> {
   if (customPool) {
-    return await customPool.connect();
+    return await borrowClient(customPool, (err: Error) =>
+      logger.warn(`Unexpected error in system database client: ${err}`),
+    );
   }
   const sysClient = new Client(getClientConfig(sysDbUrl));
   // An 'error' event with no listener would take down the process.
@@ -859,18 +879,22 @@ export class SystemDatabase {
     const pollingLimit = pollingConcurrency ?? Math.max(1, Math.floor(effectivePoolSize / 2));
     this.pollLimiter = new Semaphore(pollingLimit);
 
-    // Only ever attach listeners to a pool we own. A caller's pool is theirs to instrument, and anything
-    // we attach here we would have to unpick on destroy, on connections they keep using.
+    // Only ever attach listeners to a pool we own; a caller's pool is theirs to instrument. Idle
+    // connections are all this covers, since #connect guards the ones we are holding.
     if (!this.customPool) {
       this.pool.on('error', (err: Error) => {
         this.logger.warn(`Unexpected error in pool: ${err}`);
       });
-      this.pool.on('connect', (client: PoolClient) => {
-        client.on('error', (err: Error) => {
-          this.logger.warn(`Unexpected error in idle client: ${err}`);
-        });
-      });
     }
+  }
+
+  readonly #onClientError = (err: Error) => {
+    this.logger.warn(`Unexpected error on a system database connection: ${err}`);
+  };
+
+  /** Check out a pool connection guarded for as long as we hold it. See {@link borrowClient}. */
+  #connect(): Promise<PoolClient> {
+    return borrowClient(this.pool, this.#onClientError);
   }
   getSerializer(): DBOSSerializer {
     return this.serializer;
@@ -1019,7 +1043,7 @@ export class SystemDatabase {
     deadlineEpochMS?: number;
     serialization: SysDBSerializationFormat | null;
   }> {
-    const client = await this.pool.connect();
+    const client = await this.#connect();
     let shouldCommit = false;
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
@@ -1210,7 +1234,7 @@ export class SystemDatabase {
       'schedule_name',
       'application_name',
     ];
-    const client = await this.pool.connect();
+    const client = await this.#connect();
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
       // Chunk to stay well under the bind-parameter limit.
@@ -1280,7 +1304,7 @@ export class SystemDatabase {
 
   @dbRetry()
   async recordWorkflowOutput(workflowID: string, status: WorkflowStatusInternal): Promise<boolean> {
-    const client = await this.pool.connect();
+    const client = await this.#connect();
     try {
       return await this.#recordWorkflowOutcome(client, workflowID, StatusString.SUCCESS, { output: status.output });
     } finally {
@@ -1290,7 +1314,7 @@ export class SystemDatabase {
 
   @dbRetry()
   async recordWorkflowError(workflowID: string, status: WorkflowStatusInternal): Promise<boolean> {
-    const client = await this.pool.connect();
+    const client = await this.#connect();
     try {
       return await this.#recordWorkflowOutcome(client, workflowID, StatusString.ERROR, { error: status.error });
     } finally {
@@ -1379,7 +1403,7 @@ export class SystemDatabase {
     };
 
     if (callerID && callerFN) {
-      const client = await this.pool.connect();
+      const client = await this.#connect();
       try {
         // Check if the operation has been done before for OAOO (only do this inside a workflow).
         const json = await this.#runAndRecordResult(client, DBOS_FUNCNAME_GETSTATUS, callerID, callerFN, funcGetStatus);
@@ -1430,7 +1454,7 @@ export class SystemDatabase {
       resetStartedAtEpochMs?: boolean;
     },
   ): Promise<void> {
-    const client = await this.pool.connect();
+    const client = await this.#connect();
     try {
       await this.updateWorkflowStatus(client, workflowID, status, {
         update: {
@@ -1451,7 +1475,7 @@ export class SystemDatabase {
     workflowID: string,
     functionID: number,
   ): Promise<SystemDatabaseStoredResult | undefined> {
-    const client = await this.pool.connect();
+    const client = await this.#connect();
     try {
       return await this.#getOperationResultAndThrowIfCancelled(client, workflowID, functionID);
     } finally {
@@ -1489,7 +1513,7 @@ export class SystemDatabase {
       serialization?: string | null;
     } = {},
   ): Promise<void> {
-    const client = await this.pool.connect();
+    const client = await this.#connect();
     try {
       await this.recordOperationResultInternal(
         client,
@@ -1513,7 +1537,7 @@ export class SystemDatabase {
     functionName: string,
     callback: (client: PoolClient) => Promise<string | null>,
   ): Promise<SystemDatabaseStoredResult | undefined> {
-    const client = await this.pool.connect();
+    const client = await this.#connect();
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
       const existing = await this.#getOperationResultAndThrowIfCancelled(client, workflowID, functionID);
@@ -1685,7 +1709,7 @@ export class SystemDatabase {
 
   @dbRetry()
   private async debounceDelayedWorkflowStandalone(params: DebounceParams): Promise<DebounceResult> {
-    const client = await this.pool.connect();
+    const client = await this.#connect();
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
       const result = await this.#debounceDelayedWorkflowInternal(client, params);
@@ -1918,7 +1942,7 @@ export class SystemDatabase {
       throw new Error('originalWorkflowIDs, forkedWorkflowIDs, and startSteps must have the same length');
     }
 
-    const client = await this.pool.connect();
+    const client = await this.#connect();
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
 
@@ -2121,7 +2145,7 @@ export class SystemDatabase {
 
     const exportedWorkflows: ExportedWorkflow[] = [];
 
-    const client = await this.pool.connect();
+    const client = await this.#connect();
     try {
       for (const wfID of workflowIDs) {
         // Export workflow_status
@@ -2201,7 +2225,7 @@ export class SystemDatabase {
   }
 
   async importWorkflow(workflows: ExportedWorkflow[]): Promise<void> {
-    const client = await this.pool.connect();
+    const client = await this.#connect();
     try {
       await client.query('BEGIN');
 
@@ -2553,7 +2577,7 @@ export class SystemDatabase {
   ): Promise<void> {
     topic = topic ?? this.nullTopic;
     const messageUUID = idempotencyKey ? `${idempotencyKey}::${destinationID}` : randomUUID();
-    const client: PoolClient = await this.pool.connect();
+    const client: PoolClient = await this.#connect();
 
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
@@ -2709,7 +2733,7 @@ export class SystemDatabase {
     // Transactionally consume and return the message if it's in the DB, otherwise return null.
     let message: string | null = null;
     let serialization: string | null = null;
-    const client = await this.pool.connect();
+    const client = await this.#connect();
     try {
       await client.query(`BEGIN ISOLATION LEVEL READ COMMITTED`);
       const finalRecvRows = (
@@ -2770,7 +2794,7 @@ export class SystemDatabase {
     message: string | null,
     serialization: string | null,
   ): Promise<void> {
-    const client: PoolClient = await this.pool.connect();
+    const client: PoolClient = await this.#connect();
 
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
@@ -2993,7 +3017,7 @@ export class SystemDatabase {
     serializedValue: string,
     serialization: string | null,
   ): Promise<void> {
-    const client: PoolClient = await this.pool.connect();
+    const client: PoolClient = await this.#connect();
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
 
@@ -3036,7 +3060,7 @@ export class SystemDatabase {
     serialization: string | null,
     functionName: string,
   ): Promise<void> {
-    const client: PoolClient = await this.pool.connect();
+    const client: PoolClient = await this.#connect();
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
 
@@ -3190,7 +3214,7 @@ export class SystemDatabase {
       }
       try {
         // One statement: one round trip, one async-notify queue-lock acquisition; unnest emits one notification per payload.
-        const client = await this.pool.connect();
+        const client = await this.#connect();
         try {
           await client.query(`SELECT pg_notify($1, p) FROM unnest($2::text[]) AS p`, [channel, Array.from(batch)]);
         } finally {
@@ -3206,7 +3230,7 @@ export class SystemDatabase {
   // ==================== Observability: Workflow Communications ====================
 
   async getAllEvents(workflowID: string): Promise<Record<string, unknown>> {
-    const client = await this.pool.connect();
+    const client = await this.#connect();
     try {
       const result = await client.query<{ key: string; value: string; serialization: string | null }>(
         `SELECT key, value, serialization FROM "${this.schemaName}".workflow_events
@@ -3226,7 +3250,7 @@ export class SystemDatabase {
   async getAllNotifications(
     workflowID: string,
   ): Promise<{ topic: string | null; message: unknown; createdAtEpochMs: number; consumed: boolean }[]> {
-    const client = await this.pool.connect();
+    const client = await this.#connect();
     try {
       const result = await client.query<{
         topic: string;
@@ -3255,7 +3279,7 @@ export class SystemDatabase {
   }
 
   async getAllStreamEntries(workflowID: string): Promise<Record<string, unknown[]>> {
-    const client = await this.pool.connect();
+    const client = await this.#connect();
     try {
       const result = await client.query<{ key: string; value: string; serialization: string | null }>(
         `SELECT key, value, serialization FROM "${this.schemaName}".streams
@@ -3355,7 +3379,7 @@ export class SystemDatabase {
       partitionParams.push(queuePartitionKey);
     }
 
-    const client = await this.pool.connect();
+    const client = await this.#connect();
     try {
       // Default to READ COMMITTED except with global concurrency limits or rate limits
       if (queue.concurrency !== undefined || queue.rateLimit !== undefined) {
@@ -3539,7 +3563,7 @@ export class SystemDatabase {
       );
     }
     // workerConcurrency needs no handling here: dispatch routes 0 (the pause-dequeue idiom) to the fallback path, and validation caps any other value at concurrency=1, which the PENDING gate already enforces globally.
-    const client = await this.pool.connect();
+    const client = await this.#connect();
     try {
       await client.query('BEGIN');
 
@@ -4486,7 +4510,7 @@ export class SystemDatabase {
   }
 
   async applySchedules(schedules: WorkflowScheduleInternal[]): Promise<void> {
-    const client = await this.pool.connect();
+    const client = await this.#connect();
     try {
       await client.query('BEGIN');
       for (const sched of schedules) {
@@ -4554,7 +4578,7 @@ export class SystemDatabase {
    */
   async createApplicationVersion(versionName: string, applicationName?: string): Promise<void> {
     const owner = applicationName ?? this.appName;
-    const client = await this.pool.connect();
+    const client = await this.#connect();
     try {
       await client.query('BEGIN');
       // Claim a pre-upgrade row in place, so the version is not recreated or retimed.
@@ -4601,7 +4625,7 @@ export class SystemDatabase {
     applicationName?: string,
   ): Promise<void> {
     const owner = applicationName ?? this.appName;
-    const client = await this.pool.connect();
+    const client = await this.#connect();
     try {
       await client.query('BEGIN');
       const resolved = await this.#resolveRowOwner(
@@ -4737,7 +4761,7 @@ export class SystemDatabase {
           application_name = COALESCE("${this.schemaName}".queues.application_name, EXCLUDED.application_name)`
       : `ON CONFLICT (name) DO NOTHING`;
     const owner = record.applicationName ?? this.appName;
-    const client = await this.pool.connect();
+    const client = await this.#connect();
     try {
       await client.query('BEGIN');
       const existed = await client.query<{ name: string }>(
@@ -4888,7 +4912,7 @@ export class SystemDatabase {
     }
 
     // Never a merge: queue, schedule, and version names are globally unique whatever their owner, so this cannot collide.
-    const client = await this.pool.connect();
+    const client = await this.#connect();
     let queues: number, schedules: number, versions: number, inFlight: number;
     try {
       await client.query('BEGIN');
@@ -5304,7 +5328,7 @@ export class SystemDatabase {
     // Round once so the deadline stays integral: completed_at_epoch_ms is BIGINT and rejects fractional values.
     const endTimeMs = startTimeMs + Math.ceil(durationMS);
 
-    const client = await this.pool.connect();
+    const client = await this.#connect();
     try {
       const res = await this.#getOperationResultAndThrowIfCancelled(client, workflowID, functionID);
       if (res) {
@@ -5383,7 +5407,7 @@ export class SystemDatabase {
 
       let acquired: PoolClient | null = null;
       try {
-        const client = await this.pool.connect();
+        const client = await this.#connect();
         acquired = client;
         if (this.#abandonIfStopped(client)) return;
 
