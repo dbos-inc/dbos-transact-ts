@@ -859,8 +859,8 @@ export class SystemDatabase {
     const pollingLimit = pollingConcurrency ?? Math.max(1, Math.floor(effectivePoolSize / 2));
     this.pollLimiter = new Semaphore(pollingLimit);
 
-    // Only ever touch a pool we own. A caller's pool is theirs to instrument, and anything we attach
-    // here we would have to unpick on destroy, on connections they keep using.
+    // Only ever attach listeners to a pool we own. A caller's pool is theirs to instrument, and anything
+    // we attach here we would have to unpick on destroy, on connections they keep using.
     if (!this.customPool) {
       this.pool.on('error', (err: Error) => {
         this.logger.warn(`Unexpected error in pool: ${err}`);
@@ -985,7 +985,7 @@ export class SystemDatabase {
     if (this.notificationsClient) {
       this.#retireNotificationsClient(this.notificationsClient);
     }
-    // Nothing to unpick on a caller's pool, since we never instrumented it; only close a pool we own.
+    // We attached nothing to the pool object itself, so there is nothing to unpick; only close one we own.
     if (!this.customPool) {
       await this.pool.end();
     }
@@ -5346,7 +5346,7 @@ export class SystemDatabase {
       this.notificationsClient = null;
     }
     client.removeAllListeners();
-    // Errors can still arrive while release() tears the connection down; a bare emit would crash the process.
+    // Cover the release() call itself, which tears the connection down and can surface a socket error.
     client.on('error', () => {});
     try {
       client.release(true);
@@ -5354,9 +5354,9 @@ export class SystemDatabase {
       this.logger.warn(`Error releasing notifications client: ${String(e)}`);
     }
     // release() re-attached pg's idle listener, which would forward this dead client's error on to the
-    // pool. That is the one connection we take from a caller's pool, so its death has to stay ours.
+    // pool. A caller's pool may have no 'error' listener at all, so this client's death has to stay ours.
     client.removeAllListeners('error');
-    client.on('error', (e: Error) => this.logger.debug(`Error on retired notifications client: ${e}`));
+    client.on('error', (e: Error) => this.logger.warn(`Error on retired notifications client: ${e}`));
   }
 
   // Shutdown can begin during any await in the setup below; releasing the client instead of carrying on

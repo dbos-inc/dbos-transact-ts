@@ -259,9 +259,7 @@ export class DBOSClient {
   /**
    * Creates a new instance of the DBOSClient.
    * @param systemDatabaseUrl - The connection string for the system database. This should include the hostname, port, username, password, and database name.
-   * @param systemDatabasePool - An optional pre-configured connection pool to use for the system database. DBOS treats
-   * a pool you supply as yours: it attaches no listeners to it and leaves it open on {@link destroy}, so `systemDatabasePoolSize`
-   * is ignored and error handling on the pool stays your responsibility (`pg` pools need their own `'error'` listener).
+   * @param systemDatabasePool - An optional pre-configured connection pool to use for the system database. DBOS uses this pool instead of its own; its configuration is your responsibility.
    * @param serializer - An optional serializer for workflow inputs and outputs. Defaults to JSON serialization.
    * @param systemDatabaseSchemaName - An optional schema name for the system database. Defaults to `dbos`.
    * @param systemDatabasePoolSize - An optional maximum size for the system database connection pool. Defaults to {@link DEFAULT_POOL_SIZE}.
@@ -308,9 +306,9 @@ export class DBOSClient {
   }
 
   /**
-   * Destroys the underlying database connection.
-   * This should be called when the client is no longer needed to clean up resources.
-   * @returns A Promise that resolves when database connection is destroyed.
+   * Releases the resources this client holds. Call it when the client is no longer needed.
+   * The system database pool is closed only if this client created it.
+   * @returns A Promise that resolves when the client has been torn down.
    */
   async destroy() {
     await this.systemDatabase.destroy();

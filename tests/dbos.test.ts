@@ -1122,8 +1122,8 @@ describe('custom-pool-test', () => {
       await DBOS.shutdown();
       await pool.query('SELECT 1');
     } finally {
-      // Shutdown leaves this pool open and unlistened-to, so a failure above must not hand it to the
-      // next describe, whose DROP DATABASE ... WITH (FORCE) would kill its connections.
+      // Shutdown leaves this pool open, and DBOS never gave it an error listener, so a failure above must
+      // not hand it to the next describe, whose DROP DATABASE ... WITH (FORCE) would kill its connections.
       await DBOS.shutdown();
       pool.on('error', () => {});
       await pool.end();
@@ -1184,11 +1184,55 @@ describe('custom-pool-lifecycle', () => {
           await client.destroy();
         }
 
+        // What destroy() does control on a pool it does not own: leave it open and usable.
         expect(events.map((e) => pool.listenerCount(e))).toEqual(before);
-        expect(connection.listenerCount('error')).toBe(0);
+        expect(pool.ended).toBe(false);
+        expect((await pool.query('SELECT 1')).rowCount).toBe(1);
       } finally {
         connection.release();
       }
+    } finally {
+      await pool.end();
+    }
+  });
+
+  test('many clients share one caller pool while others are created and destroyed', async () => {
+    // A pool smaller than the number of concurrent clients, so they genuinely contend for connections.
+    const pool = new Pool({ connectionString: systemDatabaseUrl, max: 5 });
+    const events = ['error', 'connect', 'acquire', 'release', 'remove'] as const;
+    try {
+      const before = events.map((e) => pool.listenerCount(e));
+
+      // This one stays up throughout, and must be unaffected by its peers coming and going.
+      const survivor = await DBOSClient.create({ systemDatabaseUrl, systemDatabasePool: pool });
+
+      // Each worker creates, queries, and destroys on its own schedule, so creates and destroys interleave.
+      const churn = Array.from({ length: 8 }, async (_, i) => {
+        const client = await DBOSClient.create({ systemDatabaseUrl, systemDatabasePool: pool });
+        try {
+          await client.listQueues();
+          if (i % 2 === 0) {
+            await client.listQueues();
+          }
+        } finally {
+          await client.destroy();
+        }
+      });
+      const survivorWork = Array.from({ length: 8 }, () => survivor.listQueues());
+      await Promise.all([...churn, ...survivorWork]);
+
+      // Guards the premise: the work above really did contend for several connections at once.
+      expect(pool.totalCount).toBeGreaterThan(1);
+
+      // Peers being destroyed mid-flight left the survivor able to keep using the shared pool.
+      await expect(survivor.listQueues()).resolves.toBeDefined();
+      await survivor.destroy();
+
+      expect(events.map((e) => pool.listenerCount(e))).toEqual(before);
+      // The leak a shared pool actually punishes: every connection handed out must have come back.
+      expect(pool.waitingCount).toBe(0);
+      expect(pool.idleCount).toBe(pool.totalCount);
+      expect((await pool.query('SELECT 1')).rowCount).toBe(1);
     } finally {
       await pool.end();
     }

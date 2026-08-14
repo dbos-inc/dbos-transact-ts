@@ -101,11 +101,6 @@ export interface DBOSConfig {
 
   systemDatabaseUrl?: string;
   systemDatabasePoolSize?: number;
-  /**
-   * A pre-configured connection pool for the system database. DBOS treats a pool you supply as yours: it
-   * attaches no listeners to it and leaves it open on `DBOS.shutdown()`, so `systemDatabasePoolSize` is
-   * ignored and error handling stays your responsibility (`pg` pools need their own `'error'` listener).
-   */
   systemDatabasePool?: Pool;
   systemDatabaseSchemaName?: string;
   /**

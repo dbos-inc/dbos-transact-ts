@@ -613,8 +613,8 @@ describe('sysdb-notifications-lifecycle', () => {
   });
 
   test('late-client-error-after-shutdown-on-a-caller-pool', async () => {
-    // The caller-pool twin of the test above. Shutdown hands the notifications client back to a pool it
-    // then stops listening to, so a late teardown error has to die on the client rather than reach the pool.
+    // The caller-pool twin of the test above. Shutdown releases the notifications client back to a pool
+    // DBOS never gave an 'error' listener, so a late teardown error has to die on the client.
     const pool = new Pool({ connectionString: config.systemDatabaseUrl });
     try {
       // Deliberately no pool.on('error'): this is the bare pool a caller hands over.
