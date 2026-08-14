@@ -101,6 +101,11 @@ export interface DBOSConfig {
 
   systemDatabaseUrl?: string;
   systemDatabasePoolSize?: number;
+  /**
+   * An optional pre-configured connection pool to use for the system database. DBOS uses this
+   * pool instead of its own; its configuration is your responsibility. We recommend attaching
+   * error handlers to it so connection failures are handled.
+   */
   systemDatabasePool?: Pool;
   systemDatabaseSchemaName?: string;
   /**
