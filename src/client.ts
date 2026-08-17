@@ -33,9 +33,11 @@ import {
   type WaitAllOptions,
   type SetWorkflowDelayOptions,
   type CancelWorkflowsOptions,
+  type ReadStreamOptions,
   resolvePollingIntervalMs,
   resolveTimeoutSeconds,
   resolveDelayEpochMS,
+  resolveStreamOffset,
 } from './dbos';
 import {
   DBOSJSON,
@@ -774,11 +776,16 @@ export class DBOSClient {
    * yielding each value in order until the stream is closed or the workflow terminates.
    * @param workflowID - The ID of the workflow that wrote to the stream
    * @param key - The stream key to read from
+   * @param options - Optional settings, including the offset to start reading from
    * @returns An async generator that yields each value in the stream until the stream is closed
    */
-  async *readStream<T>(workflowID: string, key: string): AsyncGenerator<T, void, unknown> {
+  async *readStream<T>(
+    workflowID: string,
+    key: string,
+    options: ReadStreamOptions = {},
+  ): AsyncGenerator<T, void, unknown> {
+    let offset = resolveStreamOffset(options);
     const payload = `${workflowID}::${key}`;
-    let offset = 0;
     let finalRead = false;
 
     while (true) {

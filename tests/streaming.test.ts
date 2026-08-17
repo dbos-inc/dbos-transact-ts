@@ -60,6 +60,56 @@ describe('dbos-streaming-tests', () => {
     expect(readValues2).toEqual(testValues);
   });
 
+  test('stream-read-offset', async () => {
+    // Test reading a stream starting from a non-zero offset
+    const streamKey = 'offset_stream';
+
+    const writerWorkflow = DBOS.registerWorkflow(
+      async (streamKey: string) => {
+        for (let i = 0; i < 5; i++) {
+          await DBOS.writeStream(streamKey, i);
+        }
+        await DBOS.closeStream(streamKey);
+      },
+      { name: 'stream-read-offset-writer' },
+    );
+    await DBOS.launch();
+
+    const wfid = randomUUID();
+    await DBOS.withNextWorkflowID(wfid, async () => {
+      await writerWorkflow(streamKey);
+    });
+
+    const readFrom = async (options?: { offset?: number }) => {
+      const values: unknown[] = [];
+      for await (const value of DBOS.readStream(wfid, streamKey, options)) {
+        values.push(value);
+      }
+      return values;
+    };
+
+    // No options, or an explicit offset of 0, reads the whole stream
+    expect(await readFrom()).toEqual([0, 1, 2, 3, 4]);
+    expect(await readFrom({})).toEqual([0, 1, 2, 3, 4]);
+    expect(await readFrom({ offset: 0 })).toEqual([0, 1, 2, 3, 4]);
+
+    // A non-zero offset skips earlier values
+    expect(await readFrom({ offset: 2 })).toEqual([2, 3, 4]);
+    expect(await readFrom({ offset: 4 })).toEqual([4]);
+
+    // An offset at or past the close sentinel yields nothing
+    expect(await readFrom({ offset: 5 })).toEqual([]);
+    expect(await readFrom({ offset: 100 })).toEqual([]);
+
+    // Invalid offsets are rejected
+    await expect(DBOS.readStream(wfid, streamKey, { offset: -1 }).next()).rejects.toThrow(
+      'offset must be a non-negative integer',
+    );
+    await expect(DBOS.readStream(wfid, streamKey, { offset: 1.5 }).next()).rejects.toThrow(
+      'offset must be a non-negative integer',
+    );
+  });
+
   test('unclosed-stream', async () => {
     // Test that reading from a stream stops when the workflow terminates
     const testValues = ['hello', 42, { key: 'value' }, [1, 2, 3], null];
@@ -931,6 +981,48 @@ describe('dbos-client-streaming-tests', () => {
     }
 
     expect(readValues).toEqual(testValues);
+  });
+
+  test('client-stream-read-offset', async () => {
+    // Test client reading a stream starting from a non-zero offset
+    const streamKey = 'client_offset_stream';
+
+    const writerWorkflow = DBOS.registerWorkflow(
+      async (streamKey: string) => {
+        for (let i = 0; i < 5; i++) {
+          await DBOS.writeStream(streamKey, i);
+        }
+        await DBOS.closeStream(streamKey);
+      },
+      { name: 'client-stream-read-offset-writer' },
+    );
+    await DBOS.launch();
+
+    const wfid = randomUUID();
+    await DBOS.withNextWorkflowID(wfid, async () => {
+      await writerWorkflow(streamKey);
+    });
+
+    const readFrom = async (options?: { offset?: number }) => {
+      const values: unknown[] = [];
+      for await (const value of client.readStream(wfid, streamKey, options)) {
+        values.push(value);
+      }
+      return values;
+    };
+
+    expect(await readFrom()).toEqual([0, 1, 2, 3, 4]);
+    expect(await readFrom({ offset: 2 })).toEqual([2, 3, 4]);
+    expect(await readFrom({ offset: 4 })).toEqual([4]);
+
+    // An offset at or past the close sentinel yields nothing
+    expect(await readFrom({ offset: 5 })).toEqual([]);
+    expect(await readFrom({ offset: 100 })).toEqual([]);
+
+    // Invalid offsets are rejected
+    await expect(client.readStream(wfid, streamKey, { offset: -1 }).next()).rejects.toThrow(
+      'offset must be a non-negative integer',
+    );
   });
 
   test('client-empty-stream', async () => {
