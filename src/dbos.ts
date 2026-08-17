@@ -199,6 +199,14 @@ export interface WriteStreamOptions {
 }
 
 /**
+ * Options for `DBOS.readStream` and client `readStream`
+ */
+export interface ReadStreamOptions {
+  /** Offset to start reading from (defaults to 0, the start of the stream) */
+  offset?: number;
+}
+
+/**
  * Options for DBOS operations that poll the system database while waiting.
  */
 export interface PollingOptions {
@@ -299,6 +307,14 @@ export function resolvePollingIntervalMs(options?: number | PollingOptions): num
     throw new DBOSError('pollingIntervalMs must be a positive finite number');
   }
   return interval;
+}
+
+export function resolveStreamOffset(options: ReadStreamOptions): number {
+  const offset = options.offset ?? 0;
+  if (!Number.isInteger(offset) || offset < 0) {
+    throw new DBOSError('offset must be a non-negative integer');
+  }
+  return offset;
 }
 
 export function resolveDelayEpochMS(options: number | SetWorkflowDelayOptions): number {
@@ -1637,13 +1653,18 @@ export class DBOS {
    * yielding each value in order until the stream is closed or the workflow terminates.
    * @param workflowID - The workflow instance ID that owns the stream
    * @param key - The stream key/name within the workflow
+   * @param options - Optional settings, including the offset to start reading from
    * @returns An async generator that yields each value in the stream until the stream is closed
    */
-  static async *readStream<T>(workflowID: string, key: string): AsyncGenerator<T, void, unknown> {
+  static async *readStream<T>(
+    workflowID: string,
+    key: string,
+    options: ReadStreamOptions = {},
+  ): AsyncGenerator<T, void, unknown> {
     ensureDBOSIsLaunched('readStream');
+    let offset = resolveStreamOffset(options);
     const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
     const payload = `${workflowID}::${key}`;
-    let offset = 0;
     let finalRead = false;
 
     while (true) {

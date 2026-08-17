@@ -101,6 +101,11 @@ export interface DBOSConfig {
 
   systemDatabaseUrl?: string;
   systemDatabasePoolSize?: number;
+  /**
+   * An optional pre-configured connection pool to use for the system database. DBOS uses this
+   * pool instead of its own; its configuration is your responsibility. We recommend attaching
+   * error handlers to it so connection failures are handled.
+   */
   systemDatabasePool?: Pool;
   systemDatabaseSchemaName?: string;
   /**
@@ -174,6 +179,15 @@ export interface DBOSConfig {
   useListenNotify?: boolean;
   /** Interval (ms) for coalescing LISTEN/NOTIFY notifications (streams and events) off the write path; bounds read latency. Default 10, min 1. */
   notificationCoalesceMs?: number;
+  /**
+   * Whether to create and migrate the system database on launch. Defaults to true.
+   *
+   * Set to false for a process that must not alter the schema, such as one whose database
+   * role cannot run DDL, or a deployment that migrates out of band with `npx dbos schema`.
+   * Launch then verifies the schema instead: a system database that is missing, or behind
+   * the version this build requires, fails with a `DBOSInitializationError`.
+   */
+  runMigrations?: boolean;
 }
 
 export interface DBOSRuntimeConfig {
@@ -232,6 +246,7 @@ export type DBOSConfigInternal = {
   maxConcurrentQueueDispatches?: number;
   useListenNotify: boolean;
   notificationCoalesceMs?: number;
+  runMigrations: boolean;
 
   http?: {
     cors_middleware?: boolean;
@@ -376,7 +391,7 @@ export class DBOSExecutor {
       return;
     }
     try {
-      await this.systemDatabase.init();
+      await this.systemDatabase.init(this.config.runMigrations);
     } catch (err) {
       if (err instanceof DBOSInitializationError) {
         throw err;

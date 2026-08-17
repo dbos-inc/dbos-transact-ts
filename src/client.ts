@@ -33,9 +33,11 @@ import {
   type WaitAllOptions,
   type SetWorkflowDelayOptions,
   type CancelWorkflowsOptions,
+  type ReadStreamOptions,
   resolvePollingIntervalMs,
   resolveTimeoutSeconds,
   resolveDelayEpochMS,
+  resolveStreamOffset,
 } from './dbos';
 import {
   DBOSJSON,
@@ -57,10 +59,11 @@ import { DBOSExecutor } from './dbos-executor';
 import {
   DBOSAwaitedWorkflowCancelledError,
   DBOSAwaitedWorkflowExceededMaxRecoveryAttempts,
+  DBOSError,
   DBOSInvalidWorkflowTransitionError,
   DBOSQueueDuplicatedError,
 } from './error';
-import { Pool } from 'pg';
+import { ClientBase, Pool } from 'pg';
 import {
   type WorkflowSchedule,
   toWorkflowSchedule,
@@ -258,7 +261,7 @@ export class DBOSClient {
   /**
    * Creates a new instance of the DBOSClient.
    * @param systemDatabaseUrl - The connection string for the system database. This should include the hostname, port, username, password, and database name.
-   * @param systemDatabasePool - An optional pre-configured connection pool to use for the system database. If provided, `systemDatabasePoolSize` is ignored.
+   * @param systemDatabasePool - An optional pre-configured connection pool to use for the system database. DBOS uses this pool instead of its own; its configuration is your responsibility. We recommend attaching error handlers to it so connection failures are handled.
    * @param serializer - An optional serializer for workflow inputs and outputs. Defaults to JSON serialization.
    * @param systemDatabaseSchemaName - An optional schema name for the system database. Defaults to `dbos`.
    * @param systemDatabasePoolSize - An optional maximum size for the system database connection pool. Defaults to {@link DEFAULT_POOL_SIZE}.
@@ -305,9 +308,9 @@ export class DBOSClient {
   }
 
   /**
-   * Destroys the underlying database connection.
-   * This should be called when the client is no longer needed to clean up resources.
-   * @returns A Promise that resolves when database connection is destroyed.
+   * Releases the resources this client holds. Call it when the client is no longer needed.
+   * The system database pool is closed only if this client created it.
+   * @returns A Promise that resolves when the client has been torn down.
    */
   async destroy() {
     await this.systemDatabase.destroy();
@@ -337,12 +340,22 @@ export class DBOSClient {
     return new ClientHandle<Awaited<ReturnType<T>>>(this.systemDatabase, finalID);
   }
 
-  async #buildEnqueueStatus(options: ClientEnqueueOptions, args: unknown[]): Promise<WorkflowStatusInternal> {
+  async #buildEnqueueStatus(
+    options: ClientEnqueueOptions,
+    args: unknown[],
+    namedArgs?: { [key: string]: unknown },
+    defaultSerializationType?: WorkflowSerializationFormat,
+  ): Promise<WorkflowStatusInternal> {
     validateWorkflowAttributes(options.attributes);
     const { workflowName, workflowClassName, workflowConfigName, queueName, appVersion } = options;
     const workflowUUID = options.workflowID ?? randomUUID();
 
-    const serparam = await serializeArgs(args, undefined, this.serializer, options?.serializationType);
+    const serparam = await serializeArgs(
+      args,
+      namedArgs,
+      this.serializer,
+      options?.serializationType ?? defaultSerializationType,
+    );
     const delayUntilEpochMS =
       options.delaySeconds !== undefined && options.delaySeconds > 0
         ? Date.now() + options.delaySeconds * 1000
@@ -448,48 +461,7 @@ export class DBOSClient {
     positionalArgs: unknown[],
     namedArgs?: { [key: string]: unknown },
   ): Promise<WorkflowHandle<T>> {
-    validateWorkflowAttributes(options.attributes);
-    const { workflowName, workflowClassName, workflowConfigName, queueName, appVersion } = options;
-    const workflowUUID = options.workflowID ?? randomUUID();
-
-    const serparam = await serializeArgs(
-      positionalArgs,
-      namedArgs,
-      this.serializer,
-      options?.serializationType ?? 'portable',
-    );
-    const delayUntilEpochMS =
-      options.delaySeconds !== undefined && options.delaySeconds > 0
-        ? Date.now() + options.delaySeconds * 1000
-        : undefined;
-    const internalStatus: WorkflowStatusInternal = {
-      workflowUUID: workflowUUID,
-      status: delayUntilEpochMS !== undefined ? StatusString.DELAYED : StatusString.ENQUEUED,
-      workflowName: workflowName,
-      workflowClassName: workflowClassName ?? '',
-      workflowConfigName: workflowConfigName ?? '',
-      queueName: queueName,
-      authenticatedUser: '',
-      output: null,
-      error: null,
-      assumedRole: '',
-      authenticatedRoles: [],
-      request: {},
-      executorId: '',
-      applicationVersion: appVersion,
-      applicationID: '',
-      timeoutMS: options.workflowTimeoutMS,
-      deadlineEpochMS: undefined,
-      input: serparam.serializedValue,
-      deduplicationID: options.deduplicationID,
-      priority: options.priority ?? 0,
-      queuePartitionKey: options.queuePartitionKey,
-      serialization: serparam.serialization,
-      delayUntilEpochMS,
-      attributes: options.attributes,
-      // Fall back to the client's own application, if it was given one.
-      applicationName: options.applicationName ?? this.systemDatabase.appName,
-    };
+    const internalStatus = await this.#buildEnqueueStatus(options, positionalArgs, namedArgs, 'portable');
 
     let finalID: string;
     if (options.duplicationPolicy === 'return-existing') {
@@ -500,6 +472,64 @@ export class DBOSClient {
     }
 
     return new ClientHandle<T>(this.systemDatabase, finalID);
+  }
+
+  /**
+   * Enqueues a workflow within a transaction the caller owns, so the enqueue commits or rolls back with the
+   * caller's own writes.
+   *
+   * `client` must be a `pg` client with an open transaction on the DBOS system database. The caller must commit
+   * the transaction: the workflow does not exist, and the returned handle does not resolve, until the
+   * transaction commits.
+   *
+   * @param client - A `pg` client with an open transaction on the system database.
+   * @param options - Options for the enqueue operation, including queue name, workflow name, and other parameters.
+   * @param args - Arguments to pass to the workflow upon execution.
+   * @returns A Promise that resolves with a handle to the workflow, valid once the transaction commits.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async enqueueInTransaction<T extends (...args: any[]) => Promise<any>>(
+    client: ClientBase,
+    options: ClientEnqueueOptions,
+    ...args: Parameters<T>
+  ): Promise<WorkflowHandle<Awaited<ReturnType<T>>>> {
+    const internalStatus = await this.#buildEnqueueStatus(options, args);
+    const finalID = await this.#enqueueInTransaction(client, internalStatus, options);
+    return new ClientHandle<Awaited<ReturnType<T>>>(this.systemDatabase, finalID);
+  }
+
+  /**
+   * Enqueues a workflow whose definition is not available and may be implemented in another language, within a
+   * transaction the caller owns. See {@link enqueueInTransaction} for the transaction requirements.
+   *
+   * @param client - A `pg` client with an open transaction on the system database.
+   * @param options - Options for the enqueue operation, including queue name, workflow name, and other parameters.
+   * @param positionalArgs - Array of positional arguments to pass to the workflow upon execution.
+   * @param namedArgs - Optional object containing named arguments for the target workflow (useful mainly for calling Python functions with kwargs)
+   * @returns A Promise that resolves with a handle to the workflow, valid once the transaction commits.
+   */
+  async enqueuePortableInTransaction<T = unknown>(
+    client: ClientBase,
+    options: ClientEnqueueOptions,
+    positionalArgs: unknown[],
+    namedArgs?: { [key: string]: unknown },
+  ): Promise<WorkflowHandle<T>> {
+    const internalStatus = await this.#buildEnqueueStatus(options, positionalArgs, namedArgs, 'portable');
+    const finalID = await this.#enqueueInTransaction(client, internalStatus, options);
+    return new ClientHandle<T>(this.systemDatabase, finalID);
+  }
+
+  async #enqueueInTransaction(
+    client: ClientBase,
+    internalStatus: WorkflowStatusInternal,
+    options: ClientEnqueueOptions,
+  ): Promise<string> {
+    if (options.duplicationPolicy === 'return-existing') {
+      // A unique violation aborts the caller's transaction, so recovering the existing ID would need a new one.
+      throw new DBOSError("`duplicationPolicy: 'return-existing'` is not supported in a caller-owned transaction");
+    }
+    await this.systemDatabase.initWorkflowStatus(internalStatus, null, client);
+    return internalStatus.workflowUUID;
   }
 
   /**
@@ -587,6 +617,39 @@ export class DBOSClient {
       topic,
       sermsg.serialization,
       idempotencyKey,
+    );
+  }
+
+  /**
+   * Sends a message to a workflow within a transaction the caller owns, so the message commits or rolls back
+   * with the caller's own writes.
+   *
+   * `client` must be a `pg` client with an open transaction on the DBOS system database. The caller must commit
+   * the transaction: the destination workflow cannot receive the message until the transaction commits.
+   *
+   * @param client - A `pg` client with an open transaction on the system database.
+   * @param destinationID - The ID of the destination workflow.
+   * @param message - The message to send. This can be any serializable object.
+   * @param topic - An optional topic to send the message to. If not provided, the default topic will be used.
+   * @param idempotencyKey - An optional idempotency key to ensure that the message is only sent once per destination.
+   * @returns A Promise that resolves when the message has been written to the caller's transaction.
+   */
+  async sendInTransaction<T>(
+    client: ClientBase,
+    destinationID: string,
+    message: T,
+    topic?: string,
+    idempotencyKey?: string,
+    options?: ClientSendOptions,
+  ): Promise<void> {
+    const sermsg = await serializeValue(message, this.serializer, options?.serializationType);
+    await this.systemDatabase.sendDirect(
+      destinationID,
+      sermsg.serializedValue,
+      topic,
+      sermsg.serialization,
+      idempotencyKey,
+      client,
     );
   }
 
@@ -713,11 +776,16 @@ export class DBOSClient {
    * yielding each value in order until the stream is closed or the workflow terminates.
    * @param workflowID - The ID of the workflow that wrote to the stream
    * @param key - The stream key to read from
+   * @param options - Optional settings, including the offset to start reading from
    * @returns An async generator that yields each value in the stream until the stream is closed
    */
-  async *readStream<T>(workflowID: string, key: string): AsyncGenerator<T, void, unknown> {
+  async *readStream<T>(
+    workflowID: string,
+    key: string,
+    options: ReadStreamOptions = {},
+  ): AsyncGenerator<T, void, unknown> {
+    let offset = resolveStreamOffset(options);
     const payload = `${workflowID}::${key}`;
-    let offset = 0;
     let finalRead = false;
 
     while (true) {

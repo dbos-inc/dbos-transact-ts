@@ -387,6 +387,7 @@ describe('dbos-config', () => {
         schedulerPollingIntervalMs: undefined,
         serializer: DBOSJSON,
         useListenNotify: true,
+        runMigrations: true,
         telemetry: {
           logs: {
             logLevel: 'info',
@@ -474,6 +475,7 @@ describe('dbos-config', () => {
         schedulerPollingIntervalMs: undefined,
         serializer: DBOSJSON,
         useListenNotify: true,
+        runMigrations: true,
         telemetry: {
           logs: {
             logLevel: 'info',
@@ -504,6 +506,7 @@ describe('dbos-config', () => {
         schedulerPollingIntervalMs: undefined,
         serializer: DBOSJSON,
         useListenNotify: true,
+        runMigrations: true,
         telemetry: {
           logs: {
             logLevel: 'info',
@@ -532,6 +535,7 @@ describe('dbos-config', () => {
         schedulerPollingIntervalMs: undefined,
         serializer: DBOSJSON,
         useListenNotify: true,
+        runMigrations: true,
         telemetry: {
           logs: {
             logLevel: 'info',
@@ -555,6 +559,7 @@ describe('dbos-config', () => {
       systemDatabaseSchemaName: 'dbos',
       serializer: DBOSJSON,
       useListenNotify: true,
+      runMigrations: true,
       telemetry: {
         logs: {
           logLevel: 'info',

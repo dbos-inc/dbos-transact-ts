@@ -3,11 +3,11 @@ import { generateDBOSTestConfig, setUpDBOSTestSysDb, Event } from './helpers';
 import { randomUUID } from 'node:crypto';
 import { StatusString } from '../src/workflow';
 import { DBOSConfig } from '../src/dbos-executor';
-import { Client, Pool } from 'pg';
+import { Client, Pool, PoolClient } from 'pg';
 import { DBOSWorkflowCancelledError, DBOSAwaitedWorkflowCancelledError, DBOSInitializationError } from '../src/error';
 import assert from 'node:assert';
 import { DBOSClient } from '../dist/src';
-import { dropPGDatabase, ensurePGDatabase } from '../src/database_utils';
+import { deriveDatabaseUrl, dropPGDatabase, ensurePGDatabase, getDatabaseNameFromUrl } from '../src/database_utils';
 import { sleepConfig } from '../src/utils';
 
 const silentDropLogger = { warn: () => {} };
@@ -502,6 +502,10 @@ describe('dbos-tests', () => {
       await expect(handle.getResult()).rejects.toThrow(new DBOSWorkflowCancelledError(workflowID));
       const status = await DBOS.getWorkflowStatus(workflowID);
       expect(status?.status).toBe(StatusString.CANCELLED);
+      // A parent cancelled before it awaits its child stops waiting for it, so let the child's own deadline settle it.
+      await expect(DBOS.retrieveWorkflow(childID).getResult()).rejects.toThrow(
+        new DBOSAwaitedWorkflowCancelledError(childID),
+      );
       const childStatus = await DBOS.getWorkflowStatus(childID);
       expect(childStatus?.status).toBe(StatusString.CANCELLED);
       expect(childStatus?.deadlineEpochMS).toBeGreaterThan(status?.deadlineEpochMS as number);
@@ -1082,6 +1086,9 @@ describe('custom-pool-test', () => {
     // Launching with a custom pool but nonexistent database should fail
     await expect(DBOS.launch()).rejects.toThrow(DBOSInitializationError);
     await DBOS.shutdown();
+    // A pool DBOS was given is the caller's to close, even after a failed launch
+    assert(!pool.ending && !pool.ended);
+    await pool.end();
     // Create the system database, launch should succeed with a custom pool but fake URL
     await ensurePGDatabase(baseConfig.systemDatabaseUrl!, { info: () => {}, warn: () => {} });
     pool = new Pool({ connectionString: systemDatabaseURL });
@@ -1093,17 +1100,252 @@ describe('custom-pool-test', () => {
     DBOS.setConfig(config);
     await DBOS.launch();
 
-    const message = 'message';
-    const handle = await DBOS.startWorkflow(workflow)();
-    await DBOS.send(handle.workflowID, message);
-    assert.equal(await handle.getResult(), message);
+    try {
+      const message = 'message';
+      const handle = await DBOS.startWorkflow(workflow)();
+      await DBOS.send(handle.workflowID, message);
+      assert.equal(await handle.getResult(), message);
 
-    const client = await DBOSClient.create({
-      systemDatabaseUrl: config.systemDatabaseUrl!,
-      systemDatabasePool: config.systemDatabasePool,
-    });
-    const clientHandle = client.retrieveWorkflow(handle.workflowID);
-    assert.equal(await clientHandle.getResult(), message);
+      const client = await DBOSClient.create({
+        systemDatabaseUrl: config.systemDatabaseUrl!,
+        systemDatabasePool: config.systemDatabasePool,
+      });
+      const clientHandle = client.retrieveWorkflow(handle.workflowID);
+      assert.equal(await clientHandle.getResult(), message);
+
+      // Destroying the client must leave the shared pool open for the runtime still using it
+      await client.destroy();
+      const secondHandle = await DBOS.startWorkflow(workflow)();
+      await DBOS.send(secondHandle.workflowID, message);
+      assert.equal(await secondHandle.getResult(), message);
+
+      await DBOS.shutdown();
+      await pool.query('SELECT 1');
+    } finally {
+      // Shutdown leaves this pool open, and DBOS never gave it an error listener, so a failure above must
+      // not hand it to the next describe, whose DROP DATABASE ... WITH (FORCE) would kill its connections.
+      await DBOS.shutdown();
+      pool.on('error', () => {});
+      await pool.end();
+    }
+  });
+});
+
+describe('custom-pool-lifecycle', () => {
+  let config: DBOSConfig;
+  let systemDatabaseUrl: string;
+
+  beforeAll(async () => {
+    config = generateDBOSTestConfig();
+    systemDatabaseUrl = config.systemDatabaseUrl!;
+    await setUpDBOSTestSysDb(config);
+  });
+
+  test('destroy ends polling waits instead of leaving them running on the caller pool', async () => {
+    const pool = new Pool({ connectionString: systemDatabaseUrl });
+    try {
+      const client = await DBOSClient.create({ systemDatabaseUrl, systemDatabasePool: pool });
+      await client.registerQueue('custom-pool-lifecycle-queue');
+      // Nothing is launched to dequeue it, so this wait would otherwise poll forever.
+      const handle = await client.enqueue<() => Promise<string>>({
+        workflowName: 'neverRuns',
+        queueName: 'custom-pool-lifecycle-queue',
+      });
+      const pending = handle.getResult();
+      await client.destroy();
+
+      await expect(pending).rejects.toThrow('The system database has been shut down');
+      // The caller's pool is still theirs to use.
+      await pool.query('SELECT 1');
+    } finally {
+      await pool.end();
+    }
+  });
+
+  test('never instruments the caller pool, so there is nothing to unpick on destroy', async () => {
+    const pool = new Pool({ connectionString: systemDatabaseUrl });
+    const events = ['error', 'connect', 'acquire', 'release', 'remove'] as const;
+    try {
+      const before = events.map((e) => pool.listenerCount(e));
+
+      const clients: DBOSClient[] = [];
+      for (let i = 0; i < 3; i++) {
+        clients.push(await DBOSClient.create({ systemDatabaseUrl, systemDatabasePool: pool }));
+      }
+      expect(events.map((e) => pool.listenerCount(e))).toEqual(before);
+
+      // Opening a real connection is what would fire a 'connect' hook, so the leak needs one to show up.
+      const connection = await pool.connect();
+      try {
+        // Stock pg leaves a checked-out client with no 'error' listener of its own; DBOS must not add one.
+        expect(connection.listenerCount('error')).toBe(0);
+
+        for (const client of clients) {
+          await client.destroy();
+        }
+
+        // What destroy() does control on a pool it does not own: leave it open and usable.
+        expect(events.map((e) => pool.listenerCount(e))).toEqual(before);
+        expect(pool.ended).toBe(false);
+        expect((await pool.query('SELECT 1')).rowCount).toBe(1);
+      } finally {
+        connection.release();
+      }
+    } finally {
+      await pool.end();
+    }
+  });
+
+  test('many clients share one caller pool while others are created and destroyed', async () => {
+    // A pool smaller than the number of concurrent clients, so they genuinely contend for connections.
+    const pool = new Pool({ connectionString: systemDatabaseUrl, max: 5 });
+    const events = ['error', 'connect', 'acquire', 'release', 'remove'] as const;
+    try {
+      const before = events.map((e) => pool.listenerCount(e));
+
+      // This one stays up throughout, and must be unaffected by its peers coming and going.
+      const survivor = await DBOSClient.create({ systemDatabaseUrl, systemDatabasePool: pool });
+
+      // One name, so the contention is on a single row and the work leaves a single row behind.
+      const queueName = 'custom-pool-shared-queue';
+
+      // Each worker creates, queries, and destroys on its own schedule, so creates and destroys interleave.
+      const churn = Array.from({ length: 8 }, async (_, i) => {
+        const client = await DBOSClient.create({ systemDatabaseUrl, systemDatabasePool: pool });
+        try {
+          // A write, so the connection is held through borrowClient; pool.query() never borrows.
+          await client.registerQueue(queueName);
+          await client.listQueues();
+          if (i % 2 === 0) {
+            await client.listQueues();
+          }
+        } finally {
+          await client.destroy();
+        }
+      });
+      const survivorWork = Array.from({ length: 8 }, () => survivor.registerQueue(queueName));
+      await Promise.all([...churn, ...survivorWork]);
+
+      // Guards the premise: the work above really did contend for several connections at once.
+      expect(pool.totalCount).toBeGreaterThan(1);
+
+      // Peers being destroyed mid-flight left the survivor able to keep using the shared pool.
+      await expect(survivor.registerQueue(queueName)).resolves.toBeDefined();
+      await survivor.destroy();
+
+      expect(events.map((e) => pool.listenerCount(e))).toEqual(before);
+      // The leak a shared pool actually punishes: every connection handed out must have come back.
+      expect(pool.waitingCount).toBe(0);
+      expect(pool.idleCount).toBe(pool.totalCount);
+
+      // All idle per the assertion above, so taking exactly that many never waits on the pool.
+      const idleAtRest = pool.idleCount;
+      const drained: PoolClient[] = [];
+      try {
+        for (let i = 0; i < idleAtRest; i++) {
+          drained.push(await pool.connect());
+        }
+        // pg strips its own idle listener on acquire, so anything left is one borrowClient kept.
+        expect(drained.map((c) => c.listenerCount('error'))).toEqual(drained.map(() => 0));
+      } finally {
+        drained.forEach((c) => c.release());
+      }
+
+      expect((await pool.query('SELECT 1')).rowCount).toBe(1);
+    } finally {
+      await pool.end();
+    }
+  });
+});
+
+describe('run-migrations-flag', () => {
+  let config: DBOSConfig;
+  // A throwaway system database, so a failed verification never touches the shared test one.
+  let unmigratedUrl: string;
+
+  beforeAll(async () => {
+    config = generateDBOSTestConfig();
+    await setUpDBOSTestSysDb(config);
+    unmigratedUrl = deriveDatabaseUrl(config.systemDatabaseUrl!, 'dbostest_unmigrated_sys');
+  });
+
+  afterEach(async () => {
+    await DBOS.shutdown();
+    await dropPGDatabase(unmigratedUrl, silentDropLogger);
+  });
+
+  test('launches against an already-migrated system database', async () => {
+    const workflow = DBOS.registerWorkflow(() => Promise.resolve('migrated'), { name: 'run-migrations-false-test' });
+    DBOS.setConfig({ ...config, runMigrations: false });
+    await DBOS.launch();
+
+    assert.equal(await workflow(), 'migrated');
+  });
+
+  test('throws when the system database is not migrated', async () => {
+    // The database exists but holds no DBOS schema, so it is at version 0.
+    await ensurePGDatabase(unmigratedUrl, { info: () => {}, warn: () => {} });
+    DBOS.setConfig({ ...config, systemDatabaseUrl: unmigratedUrl, runMigrations: false });
+
+    const error = await DBOS.launch().then(
+      () => undefined,
+      (e: unknown) => e,
+    );
+    expect(error).toBeInstanceOf(DBOSInitializationError);
+    expect((error as Error).message).toMatch(/is at schema version 0, but this version of DBOS requires/);
+
+    // Verification must not have migrated it on the way past.
+    const dbClient = new Client({ connectionString: unmigratedUrl });
+    try {
+      await dbClient.connect();
+      const { rows } = await dbClient.query<{ schema_name: string }>(
+        `SELECT schema_name FROM information_schema.schemata WHERE schema_name = 'dbos'`,
+      );
+      expect(rows).toHaveLength(0);
+    } finally {
+      await dbClient.end();
+    }
+  });
+
+  test('accepts a system database ahead of this build', async () => {
+    // Migrate the throwaway database, then push it past this build, as a newer peer would.
+    DBOS.setConfig({ ...config, systemDatabaseUrl: unmigratedUrl });
+    await DBOS.launch();
+    await DBOS.shutdown();
+
+    const dbClient = new Client({ connectionString: unmigratedUrl });
+    try {
+      await dbClient.connect();
+      const { rows } = await dbClient.query<{ version: string }>(
+        'UPDATE dbos.dbos_migrations SET version = version + 1000 RETURNING version',
+      );
+      const aheadVersion = rows[0].version;
+
+      DBOS.setConfig({ ...config, systemDatabaseUrl: unmigratedUrl, runMigrations: false });
+      await DBOS.launch();
+
+      // Verification accepts the newer schema and leaves the version untouched.
+      const after = await dbClient.query<{ version: string }>('SELECT version FROM dbos.dbos_migrations');
+      expect(after.rows[0].version).toBe(aheadVersion);
+    } finally {
+      await dbClient.end();
+    }
+  });
+
+  test('does not create a missing system database', async () => {
+    DBOS.setConfig({ ...config, systemDatabaseUrl: unmigratedUrl, runMigrations: false });
+    await expect(DBOS.launch()).rejects.toThrow(DBOSInitializationError);
+
+    const dbClient = new Client({ connectionString: deriveDatabaseUrl(unmigratedUrl, 'postgres') });
+    try {
+      await dbClient.connect();
+      const { rowCount } = await dbClient.query('SELECT 1 FROM pg_database WHERE datname = $1', [
+        getDatabaseNameFromUrl(unmigratedUrl),
+      ]);
+      expect(rowCount).toBe(0);
+    } finally {
+      await dbClient.end();
+    }
   });
 });
 

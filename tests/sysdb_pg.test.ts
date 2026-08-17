@@ -9,6 +9,8 @@ import { sleepms } from '../src/utils';
 import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
 
 import { randomUUID } from 'node:crypto';
+import { Client, Pool } from 'pg';
+import { clearDebugTriggers, DEBUG_TRIGGER_INITWF_COMMIT, setDebugTrigger } from '../src/debugpoint';
 
 // We cover:  Things that wait within the DB: getResult, Send/Recv, Get/set event
 //
@@ -609,5 +611,85 @@ describe('sysdb-notifications-lifecycle', () => {
     await sleepms(1500);
     expect(systemDatabase.notificationsClient).toBeNull();
     expect(systemDatabase.reconnectTimeout).toBeNull();
+  });
+
+  test('late-client-error-after-shutdown-on-a-caller-pool', async () => {
+    // The caller-pool twin of the test above. Shutdown releases the notifications client back to a pool
+    // DBOS never gave an 'error' listener, so a late teardown error has to die on the client.
+    const pool = new Pool({ connectionString: config.systemDatabaseUrl });
+    try {
+      // Deliberately no pool.on('error'): this is the bare pool a caller hands over.
+      DBOS.setConfig({ ...config, systemDatabasePool: pool });
+      await DBOS.launch();
+      // Guards the premise twice over: this really is running on the caller's pool, and a caller pool
+      // gets notifications too, since useListenNotify defaults on.
+      expect(sysDB().pool).toBe(pool);
+      const client = sysDB().notificationsClient;
+      expect(client).not.toBeNull();
+
+      await DBOS.shutdown();
+
+      expect(() => client!.emit('error', new Error('synthetic late server error'))).not.toThrow();
+      expect((await pool.query('SELECT 1')).rowCount).toBe(1);
+    } finally {
+      // Shut down before ending the pool: while DBOS is up it holds the notifications client checked
+      // out, and pool.end() waits on that if an assertion above threw before the shutdown.
+      await DBOS.shutdown();
+      DBOS.setConfig(config);
+      // The assertions above are done, so guard the teardown: end() closes connections DBOS opened on a
+      // pool this test deliberately left without an error handler.
+      pool.on('error', () => {});
+      await pool.end();
+    }
+  });
+
+  test('connection-death-while-dbos-holds-it-on-a-caller-pool', async () => {
+    const appName = `dbos_borrowed_${randomUUID().slice(0, 8)}`;
+    // max 1, so the only backend under this name is the one DBOS is holding: killing by name cannot
+    // also take out an idle connection, whose error is the caller's to handle and not what this covers.
+    const pool = new Pool({ connectionString: config.systemDatabaseUrl, application_name: appName, max: 1 });
+    const killer = new Client({ connectionString: config.systemDatabaseUrl });
+    // The listener a caller is told to attach. It covers idle connections and by construction cannot
+    // cover one DBOS has checked out, which is the window this test exercises.
+    pool.on('error', () => {});
+
+    const uncaught: Error[] = [];
+    const onUncaught = (e: Error) => uncaught.push(e);
+    process.on('uncaughtException', onUncaught);
+
+    try {
+      await killer.connect();
+      const client = await DBOSClient.create({
+        systemDatabaseUrl: config.systemDatabaseUrl!,
+        systemDatabasePool: pool,
+      });
+      const queueName = `borrowed-client-queue-${appName}`;
+      try {
+        await client.registerQueue(queueName);
+        // Fires while the enqueue still holds its connection, so the backend dies underneath DBOS.
+        setDebugTrigger(DEBUG_TRIGGER_INITWF_COMMIT, {
+          asyncCallback: async () => {
+            clearDebugTriggers();
+            await killer.query('SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE application_name = $1', [
+              appName,
+            ]);
+            // Let the socket close land: an unguarded client would throw from its own 'error' emit.
+            await sleepms(500);
+          },
+        });
+        await client.enqueue<() => Promise<void>>({ workflowName: 'neverRuns', queueName });
+      } finally {
+        clearDebugTriggers();
+        await client.destroy();
+      }
+
+      expect(uncaught).toEqual([]);
+      // The caller's pool is still theirs to use after a connection died under DBOS.
+      expect((await pool.query('SELECT 1')).rowCount).toBe(1);
+    } finally {
+      process.off('uncaughtException', onUncaught);
+      await pool.end();
+      await killer.end();
+    }
   });
 });

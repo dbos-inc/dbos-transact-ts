@@ -38,7 +38,7 @@ import { WorkflowQueue } from './wfqueue';
 import { randomUUID } from 'crypto';
 import { getClientConfig } from './utils';
 import { ensurePGDatabase, maskDatabaseUrl } from './database_utils';
-import { runSysMigrationsPg } from './sysdb_migrations/migration_runner';
+import { getCurrentSysDBVersion, runSysMigrationsPg } from './sysdb_migrations/migration_runner';
 import { allMigrations } from './sysdb_migrations/internal/migrations';
 import {
   DEBUG_TRIGGER_STEP_COMMIT,
@@ -395,6 +395,61 @@ export async function grantDbosSchemaPermissions(
   }
 }
 
+/**
+ * Check out a connection carrying our own error handler, so a socket death while we hold it is
+ * logged instead of thrown at an emitter with no listener. `release()` takes the handler back off,
+ * so nothing we attach outlives the checkout and the pool itself is never touched.
+ */
+async function borrowClient(pool: Pool, onError: (err: Error) => void): Promise<PoolClient> {
+  const client = await pool.connect();
+  // Nothing awaits between the checkout and this attach, nor between the removal and release()
+  // below, so there is no turn of the event loop in which we hold the connection unguarded.
+  client.on('error', onError);
+  const release = client.release.bind(client);
+  client.release = (err?: Error | boolean) => {
+    client.removeListener('error', onError);
+    release(err);
+  };
+  return client;
+}
+
+/** Connect to the system database without creating it. The caller releases the client. */
+async function connectToSystemDatabase(sysDbUrl: string, logger: GlobalLogger, customPool?: Pool): Promise<ClientBase> {
+  if (customPool) {
+    return await borrowClient(customPool, (err: Error) =>
+      logger.warn(`Unexpected error in system database client: ${err}`),
+    );
+  }
+  const sysClient = new Client(getClientConfig(sysDbUrl));
+  // An 'error' event with no listener would take down the process.
+  sysClient.on('error', (err: Error) => logger.warn(`Unexpected error in system database client: ${err}`));
+  try {
+    await sysClient.connect();
+  } catch (e) {
+    await sysClient.end().catch(() => {});
+    throw new DBOSInitializationError(
+      `Unable to connect to system database at ${maskDatabaseUrl(sysDbUrl)}: ${(e as Error).message}`,
+      e instanceof Error ? e : undefined,
+    );
+  }
+  return sysClient;
+}
+
+async function releaseSystemDatabaseClient(client: ClientBase, customPool?: Pool): Promise<void> {
+  try {
+    if (customPool) {
+      (client as PoolClient).release();
+    } else {
+      await (client as Client).end();
+    }
+  } catch (e) {}
+}
+
+async function isCockroachDB(client: ClientBase): Promise<boolean> {
+  const versionRes = await client.query<{ version: string }>('SELECT version() AS version');
+  return /cockroachdb/i.test(versionRes.rows[0]?.version ?? '');
+}
+
 export async function ensureSystemDatabase(
   sysDbUrl: string,
   logger: GlobalLogger,
@@ -402,44 +457,49 @@ export async function ensureSystemDatabase(
   schemaName: string = 'dbos',
   useListenNotify: boolean = true,
 ) {
-  let client: ClientBase | null = null;
-  if (customPool) {
-    // If a custom pool is passed in, assume the database already exists and create
-    // a client to run migrations.
-    client = await customPool.connect();
-  } else {
-    // Otherwise, create the system database if it does not exist.
+  if (!customPool) {
+    // A custom pool means the database already exists; otherwise, create it if it does not.
     await ensurePGDatabase(sysDbUrl, logger);
-    const sysClient = new Client(getClientConfig(sysDbUrl));
-    // An 'error' event with no listener would take down the process.
-    sysClient.on('error', (err: Error) => logger.warn(`Unexpected error in system database client: ${err}`));
-    try {
-      await sysClient.connect();
-    } catch (e) {
-      await sysClient.end().catch(() => {});
-      throw new DBOSInitializationError(
-        `Unable to connect to system database at ${maskDatabaseUrl(sysDbUrl)}: ${(e as Error).message}`,
-        e instanceof Error ? e : undefined,
-      );
-    }
-    client = sysClient;
   }
+  const client = await connectToSystemDatabase(sysDbUrl, logger, customPool);
 
   try {
-    const versionRes = await client.query<{ version: string }>('SELECT version() AS version');
-    const isCockroach = /cockroachdb/i.test(versionRes.rows[0]?.version ?? '');
+    const isCockroach = await isCockroachDB(client);
     await runSysMigrationsPg(client, allMigrations(schemaName, { useListenNotify, isCockroach }), schemaName, {
       onWarn: (e: string) => logger.info(e),
       isCockroach,
     });
   } finally {
-    try {
-      if (customPool) {
-        (client as PoolClient).release();
-      } else {
-        await (client as Client).end();
-      }
-    } catch (e) {}
+    await releaseSystemDatabaseClient(client, customPool);
+  }
+}
+
+/** Check the system database is migrated to the version this build requires, creating and changing nothing. */
+export async function verifySystemDatabase(
+  sysDbUrl: string,
+  logger: GlobalLogger,
+  customPool?: Pool,
+  schemaName: string = 'dbos',
+  useListenNotify: boolean = true,
+) {
+  const client = await connectToSystemDatabase(sysDbUrl, logger, customPool);
+
+  try {
+    const isCockroach = await isCockroachDB(client);
+    const requiredVersion = allMigrations(schemaName, { useListenNotify, isCockroach }).length;
+    const currentVersion = await getCurrentSysDBVersion(client, schemaName);
+    // A database ahead of this build belongs to a newer peer, which the migration runner also tolerates.
+    if (currentVersion < requiredVersion) {
+      throw new DBOSInitializationError(
+        `System database ${maskDatabaseUrl(sysDbUrl)} is at schema version ${currentVersion}, but this version ` +
+          `of DBOS requires ${requiredVersion}. This process is configured with runMigrations disabled, so it ` +
+          `will not migrate it: either migrate the system database out of band (\`npx dbos schema\`) or launch ` +
+          `with runMigrations enabled.`,
+      );
+    }
+    logger.debug(`System database schema version ${currentVersion} satisfies the required version ${requiredVersion}`);
+  } finally {
+    await releaseSystemDatabaseClient(client, customPool);
   }
 }
 
@@ -780,6 +840,9 @@ export class SystemDatabase {
   // Per-partition-key created_at cursors: keep per-key queue order monotonic across batches
   readonly #batchCreatedAtCursors: Map<string, number> = new Map();
 
+  // Set by destroy(), so polling waits end instead of running on against a pool that outlives this handle.
+  #destroyed: boolean = false;
+
   constructor(
     readonly systemDatabaseUrl: string,
     readonly logger: GlobalLogger,
@@ -816,14 +879,22 @@ export class SystemDatabase {
     const pollingLimit = pollingConcurrency ?? Math.max(1, Math.floor(effectivePoolSize / 2));
     this.pollLimiter = new Semaphore(pollingLimit);
 
-    this.pool.on('error', (err: Error) => {
-      this.logger.warn(`Unexpected error in pool: ${err}`);
-    });
-    this.pool.on('connect', (client: PoolClient) => {
-      client.on('error', (err: Error) => {
-        this.logger.warn(`Unexpected error in idle client: ${err}`);
+    // Only ever attach listeners to a pool we own; a caller's pool is theirs to instrument. Idle
+    // connections are all this covers, since #connect guards the ones we are holding.
+    if (!this.customPool) {
+      this.pool.on('error', (err: Error) => {
+        this.logger.warn(`Unexpected error in pool: ${err}`);
       });
-    });
+    }
+  }
+
+  readonly #onClientError = (err: Error) => {
+    this.logger.warn(`Unexpected error on a system database connection: ${err}`);
+  };
+
+  /** Check out a pool connection guarded for as long as we hold it. See {@link borrowClient}. */
+  #connect(): Promise<PoolClient> {
+    return borrowClient(this.pool, this.#onClientError);
   }
   getSerializer(): DBOSSerializer {
     return this.serializer;
@@ -901,8 +972,10 @@ export class SystemDatabase {
     );
   }
 
-  async init() {
-    await ensureSystemDatabase(
+  /** Migrates the system database, or, when `runMigrations` is false, verifies it is already migrated. */
+  async init(runMigrations: boolean = true) {
+    const migrateOrVerify = runMigrations ? ensureSystemDatabase : verifySystemDatabase;
+    await migrateOrVerify(
       this.systemDatabaseUrl,
       this.logger,
       this.customPool ? this.pool : undefined,
@@ -921,6 +994,7 @@ export class SystemDatabase {
   async destroy() {
     // Set synchronously, before any await, so no reconnect is scheduled or published after this point.
     this.#notificationsStopped = true;
+    this.#destroyed = true;
     if (this.reconnectTimeout) {
       clearTimeout(this.reconnectTimeout);
       this.reconnectTimeout = null;
@@ -935,12 +1009,32 @@ export class SystemDatabase {
     if (this.notificationsClient) {
       this.#retireNotificationsClient(this.notificationsClient);
     }
-    await this.pool.end();
+    // We attached nothing to the pool object itself, so there is nothing to unpick; only close one we own.
+    if (!this.customPool) {
+      await this.pool.end();
+    }
   }
 
   // ==================== Workflow Status ====================
-  @dbRetry()
+  /** Runs on `client` if given, joining its transaction; otherwise in its own retried transaction. */
   async initWorkflowStatus(
+    initStatus: WorkflowStatusInternal,
+    ownerXid: string | null,
+    client?: ClientBase,
+  ): Promise<{
+    status: string;
+    shouldExecuteOnThisExecutor: boolean;
+    deadlineEpochMS?: number;
+    serialization: SysDBSerializationFormat | null;
+  }> {
+    if (client !== undefined) {
+      return await this.#initWorkflowStatusInternal(client, initStatus, ownerXid);
+    }
+    return await this.initWorkflowStatusStandalone(initStatus, ownerXid);
+  }
+
+  @dbRetry()
+  private async initWorkflowStatusStandalone(
     initStatus: WorkflowStatusInternal,
     ownerXid: string | null,
   ): Promise<{
@@ -949,45 +1043,14 @@ export class SystemDatabase {
     deadlineEpochMS?: number;
     serialization: SysDBSerializationFormat | null;
   }> {
-    const client = await this.pool.connect();
+    const client = await this.#connect();
     let shouldCommit = false;
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
-
-      const resRow = await this.insertWorkflowStatus(client, initStatus, ownerXid);
-      if (resRow.name !== initStatus.workflowName) {
-        const msg = `Workflow already exists with a different function name: ${resRow.name}, but the provided function name is: ${initStatus.workflowName}`;
-        throw new DBOSConflictingWorkflowError(initStatus.workflowUUID, msg);
-      } else if (resRow.class_name !== initStatus.workflowClassName) {
-        const msg = `Workflow already exists with a different class name: ${resRow.class_name}, but the provided class name is: ${initStatus.workflowClassName}`;
-        throw new DBOSConflictingWorkflowError(initStatus.workflowUUID, msg);
-      } else if ((resRow.config_name || '') !== (initStatus.workflowConfigName || '')) {
-        const msg = `Workflow already exists with a different class configuration: ${resRow.config_name}, but the provided class configuration is: ${initStatus.workflowConfigName}`;
-        throw new DBOSConflictingWorkflowError(initStatus.workflowUUID, msg);
-      } else if ((resRow.queue_name ?? undefined) !== (initStatus.queueName ?? undefined)) {
-        // This is a warning because a different queue name is not necessarily an error.
-        this.logger.warn(
-          `Workflow (${initStatus.workflowUUID}) already exists in queue: ${resRow.queue_name}, but the provided queue name is: ${initStatus.queueName}. The queue is not updated. ${new Error().stack}`,
-        );
-      }
-
-      const status = resRow.status;
-      const deadlineEpochMS = resRow.workflow_deadline_epoch_ms ?? undefined;
-
+      const result = await this.#initWorkflowStatusInternal(client, initStatus, ownerXid);
       // If there is an existing DB record and we aren't here to recover it, leave it be.
-      if (ownerXid !== resRow.owner_xid) {
-        return { status, deadlineEpochMS, shouldExecuteOnThisExecutor: false, serialization: resRow.serialization };
-      }
-
-      // Upsert above already set executor assignment
-      shouldCommit = true;
-
-      return {
-        status,
-        deadlineEpochMS,
-        shouldExecuteOnThisExecutor: true,
-        serialization: resRow.serialization,
-      };
+      shouldCommit = result.shouldExecuteOnThisExecutor;
+      return result;
     } finally {
       try {
         if (shouldCommit) {
@@ -1000,6 +1063,45 @@ export class SystemDatabase {
         client.release();
       }
     }
+  }
+
+  async #initWorkflowStatusInternal(
+    client: ClientBase,
+    initStatus: WorkflowStatusInternal,
+    ownerXid: string | null,
+  ): Promise<{
+    status: string;
+    shouldExecuteOnThisExecutor: boolean;
+    deadlineEpochMS?: number;
+    serialization: SysDBSerializationFormat | null;
+  }> {
+    const resRow = await this.insertWorkflowStatus(client, initStatus, ownerXid);
+    if (resRow.name !== initStatus.workflowName) {
+      const msg = `Workflow already exists with a different function name: ${resRow.name}, but the provided function name is: ${initStatus.workflowName}`;
+      throw new DBOSConflictingWorkflowError(initStatus.workflowUUID, msg);
+    } else if (resRow.class_name !== initStatus.workflowClassName) {
+      const msg = `Workflow already exists with a different class name: ${resRow.class_name}, but the provided class name is: ${initStatus.workflowClassName}`;
+      throw new DBOSConflictingWorkflowError(initStatus.workflowUUID, msg);
+    } else if ((resRow.config_name || '') !== (initStatus.workflowConfigName || '')) {
+      const msg = `Workflow already exists with a different class configuration: ${resRow.config_name}, but the provided class configuration is: ${initStatus.workflowConfigName}`;
+      throw new DBOSConflictingWorkflowError(initStatus.workflowUUID, msg);
+    } else if ((resRow.queue_name ?? undefined) !== (initStatus.queueName ?? undefined)) {
+      // This is a warning because a different queue name is not necessarily an error.
+      this.logger.warn(
+        `Workflow (${initStatus.workflowUUID}) already exists in queue: ${resRow.queue_name}, but the provided queue name is: ${initStatus.queueName}. The queue is not updated. ${new Error().stack}`,
+      );
+    }
+
+    const status = resRow.status;
+    const deadlineEpochMS = resRow.workflow_deadline_epoch_ms ?? undefined;
+
+    // The upsert above already set executor assignment for a row we own.
+    return {
+      status,
+      deadlineEpochMS,
+      shouldExecuteOnThisExecutor: ownerXid === resRow.owner_xid,
+      serialization: resRow.serialization,
+    };
   }
 
   /** Move claimed workflows that exhausted their attempts off the queue, leaving rows others have moved on alone. */
@@ -1132,7 +1234,7 @@ export class SystemDatabase {
       'schedule_name',
       'application_name',
     ];
-    const client = await this.pool.connect();
+    const client = await this.#connect();
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
       // Chunk to stay well under the bind-parameter limit.
@@ -1202,7 +1304,7 @@ export class SystemDatabase {
 
   @dbRetry()
   async recordWorkflowOutput(workflowID: string, status: WorkflowStatusInternal): Promise<boolean> {
-    const client = await this.pool.connect();
+    const client = await this.#connect();
     try {
       return await this.#recordWorkflowOutcome(client, workflowID, StatusString.SUCCESS, { output: status.output });
     } finally {
@@ -1212,7 +1314,7 @@ export class SystemDatabase {
 
   @dbRetry()
   async recordWorkflowError(workflowID: string, status: WorkflowStatusInternal): Promise<boolean> {
-    const client = await this.pool.connect();
+    const client = await this.#connect();
     try {
       return await this.#recordWorkflowOutcome(client, workflowID, StatusString.ERROR, { error: status.error });
     } finally {
@@ -1301,7 +1403,7 @@ export class SystemDatabase {
     };
 
     if (callerID && callerFN) {
-      const client = await this.pool.connect();
+      const client = await this.#connect();
       try {
         // Check if the operation has been done before for OAOO (only do this inside a workflow).
         const json = await this.#runAndRecordResult(client, DBOS_FUNCNAME_GETSTATUS, callerID, callerFN, funcGetStatus);
@@ -1352,7 +1454,7 @@ export class SystemDatabase {
       resetStartedAtEpochMs?: boolean;
     },
   ): Promise<void> {
-    const client = await this.pool.connect();
+    const client = await this.#connect();
     try {
       await this.updateWorkflowStatus(client, workflowID, status, {
         update: {
@@ -1373,7 +1475,7 @@ export class SystemDatabase {
     workflowID: string,
     functionID: number,
   ): Promise<SystemDatabaseStoredResult | undefined> {
-    const client = await this.pool.connect();
+    const client = await this.#connect();
     try {
       return await this.#getOperationResultAndThrowIfCancelled(client, workflowID, functionID);
     } finally {
@@ -1411,7 +1513,7 @@ export class SystemDatabase {
       serialization?: string | null;
     } = {},
   ): Promise<void> {
-    const client = await this.pool.connect();
+    const client = await this.#connect();
     try {
       await this.recordOperationResultInternal(
         client,
@@ -1435,7 +1537,7 @@ export class SystemDatabase {
     functionName: string,
     callback: (client: PoolClient) => Promise<string | null>,
   ): Promise<SystemDatabaseStoredResult | undefined> {
-    const client = await this.pool.connect();
+    const client = await this.#connect();
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
       const existing = await this.#getOperationResultAndThrowIfCancelled(client, workflowID, functionID);
@@ -1607,7 +1709,7 @@ export class SystemDatabase {
 
   @dbRetry()
   private async debounceDelayedWorkflowStandalone(params: DebounceParams): Promise<DebounceResult> {
-    const client = await this.pool.connect();
+    const client = await this.#connect();
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
       const result = await this.#debounceDelayedWorkflowInternal(client, params);
@@ -1840,7 +1942,7 @@ export class SystemDatabase {
       throw new Error('originalWorkflowIDs, forkedWorkflowIDs, and startSteps must have the same length');
     }
 
-    const client = await this.pool.connect();
+    const client = await this.#connect();
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
 
@@ -2043,7 +2145,7 @@ export class SystemDatabase {
 
     const exportedWorkflows: ExportedWorkflow[] = [];
 
-    const client = await this.pool.connect();
+    const client = await this.#connect();
     try {
       for (const wfID of workflowIDs) {
         // Export workflow_status
@@ -2123,7 +2225,7 @@ export class SystemDatabase {
   }
 
   async importWorkflow(workflows: ExportedWorkflow[]): Promise<void> {
-    const client = await this.pool.connect();
+    const client = await this.#connect();
     try {
       await client.query('BEGIN');
 
@@ -2310,6 +2412,10 @@ export class SystemDatabase {
    * control-plane work hits the pool directly and bypasses the limiter.
    */
   #pollWithLimiter<T>(query: () => Promise<T>): Promise<T> {
+    // Closing our own pool used to end these waits; a caller's pool stays open, so end them here.
+    if (this.#destroyed) {
+      return Promise.reject(new DBOSError('The system database has been shut down'));
+    }
     return this.pollLimiter.runExclusive(query);
   }
 
@@ -2471,7 +2577,7 @@ export class SystemDatabase {
   ): Promise<void> {
     topic = topic ?? this.nullTopic;
     const messageUUID = idempotencyKey ? `${idempotencyKey}::${destinationID}` : randomUUID();
-    const client: PoolClient = await this.pool.connect();
+    const client: PoolClient = await this.#connect();
 
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
@@ -2499,8 +2605,34 @@ export class SystemDatabase {
     }
   }
 
-  @dbRetry()
+  /** Runs on `client` if given, joining its transaction; otherwise on the pool with retries. */
   async sendDirect(
+    destinationID: string,
+    message: string | null,
+    topic: string | undefined,
+    serialization: string | null,
+    idempotencyKey?: string,
+    client?: ClientBase,
+  ): Promise<void> {
+    if (client !== undefined) {
+      return await this.#sendDirectInternal(client, destinationID, message, topic, serialization, idempotencyKey);
+    }
+    return await this.sendDirectStandalone(destinationID, message, topic, serialization, idempotencyKey);
+  }
+
+  @dbRetry()
+  private async sendDirectStandalone(
+    destinationID: string,
+    message: string | null,
+    topic: string | undefined,
+    serialization: string | null,
+    idempotencyKey?: string,
+  ): Promise<void> {
+    return await this.#sendDirectInternal(this.pool, destinationID, message, topic, serialization, idempotencyKey);
+  }
+
+  async #sendDirectInternal(
+    db: ClientBase | Pool,
     destinationID: string,
     message: string | null,
     topic: string | undefined,
@@ -2511,7 +2643,7 @@ export class SystemDatabase {
     // Same per-destination scoping as send() above.
     const messageUUID = idempotencyKey ? `${idempotencyKey}::${destinationID}` : randomUUID();
     try {
-      await this.pool.query(
+      await db.query(
         `INSERT INTO "${this.schemaName}".notifications (destination_uuid, topic, message, serialization, message_uuid)
          VALUES ($1, $2, $3, $4, $5)
          ON CONFLICT (message_uuid) DO NOTHING;`,
@@ -2601,7 +2733,7 @@ export class SystemDatabase {
     // Transactionally consume and return the message if it's in the DB, otherwise return null.
     let message: string | null = null;
     let serialization: string | null = null;
-    const client = await this.pool.connect();
+    const client = await this.#connect();
     try {
       await client.query(`BEGIN ISOLATION LEVEL READ COMMITTED`);
       const finalRecvRows = (
@@ -2662,7 +2794,7 @@ export class SystemDatabase {
     message: string | null,
     serialization: string | null,
   ): Promise<void> {
-    const client: PoolClient = await this.pool.connect();
+    const client: PoolClient = await this.#connect();
 
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
@@ -2885,7 +3017,7 @@ export class SystemDatabase {
     serializedValue: string,
     serialization: string | null,
   ): Promise<void> {
-    const client: PoolClient = await this.pool.connect();
+    const client: PoolClient = await this.#connect();
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
 
@@ -2928,7 +3060,7 @@ export class SystemDatabase {
     serialization: string | null,
     functionName: string,
   ): Promise<void> {
-    const client: PoolClient = await this.pool.connect();
+    const client: PoolClient = await this.#connect();
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
 
@@ -3082,7 +3214,7 @@ export class SystemDatabase {
       }
       try {
         // One statement: one round trip, one async-notify queue-lock acquisition; unnest emits one notification per payload.
-        const client = await this.pool.connect();
+        const client = await this.#connect();
         try {
           await client.query(`SELECT pg_notify($1, p) FROM unnest($2::text[]) AS p`, [channel, Array.from(batch)]);
         } finally {
@@ -3098,7 +3230,7 @@ export class SystemDatabase {
   // ==================== Observability: Workflow Communications ====================
 
   async getAllEvents(workflowID: string): Promise<Record<string, unknown>> {
-    const client = await this.pool.connect();
+    const client = await this.#connect();
     try {
       const result = await client.query<{ key: string; value: string; serialization: string | null }>(
         `SELECT key, value, serialization FROM "${this.schemaName}".workflow_events
@@ -3118,7 +3250,7 @@ export class SystemDatabase {
   async getAllNotifications(
     workflowID: string,
   ): Promise<{ topic: string | null; message: unknown; createdAtEpochMs: number; consumed: boolean }[]> {
-    const client = await this.pool.connect();
+    const client = await this.#connect();
     try {
       const result = await client.query<{
         topic: string;
@@ -3147,7 +3279,7 @@ export class SystemDatabase {
   }
 
   async getAllStreamEntries(workflowID: string): Promise<Record<string, unknown[]>> {
-    const client = await this.pool.connect();
+    const client = await this.#connect();
     try {
       const result = await client.query<{ key: string; value: string; serialization: string | null }>(
         `SELECT key, value, serialization FROM "${this.schemaName}".streams
@@ -3247,7 +3379,7 @@ export class SystemDatabase {
       partitionParams.push(queuePartitionKey);
     }
 
-    const client = await this.pool.connect();
+    const client = await this.#connect();
     try {
       // Default to READ COMMITTED except with global concurrency limits or rate limits
       if (queue.concurrency !== undefined || queue.rateLimit !== undefined) {
@@ -3431,7 +3563,7 @@ export class SystemDatabase {
       );
     }
     // workerConcurrency needs no handling here: dispatch routes 0 (the pause-dequeue idiom) to the fallback path, and validation caps any other value at concurrency=1, which the PENDING gate already enforces globally.
-    const client = await this.pool.connect();
+    const client = await this.#connect();
     try {
       await client.query('BEGIN');
 
@@ -4378,7 +4510,7 @@ export class SystemDatabase {
   }
 
   async applySchedules(schedules: WorkflowScheduleInternal[]): Promise<void> {
-    const client = await this.pool.connect();
+    const client = await this.#connect();
     try {
       await client.query('BEGIN');
       for (const sched of schedules) {
@@ -4446,7 +4578,7 @@ export class SystemDatabase {
    */
   async createApplicationVersion(versionName: string, applicationName?: string): Promise<void> {
     const owner = applicationName ?? this.appName;
-    const client = await this.pool.connect();
+    const client = await this.#connect();
     try {
       await client.query('BEGIN');
       // Claim a pre-upgrade row in place, so the version is not recreated or retimed.
@@ -4493,7 +4625,7 @@ export class SystemDatabase {
     applicationName?: string,
   ): Promise<void> {
     const owner = applicationName ?? this.appName;
-    const client = await this.pool.connect();
+    const client = await this.#connect();
     try {
       await client.query('BEGIN');
       const resolved = await this.#resolveRowOwner(
@@ -4629,7 +4761,7 @@ export class SystemDatabase {
           application_name = COALESCE("${this.schemaName}".queues.application_name, EXCLUDED.application_name)`
       : `ON CONFLICT (name) DO NOTHING`;
     const owner = record.applicationName ?? this.appName;
-    const client = await this.pool.connect();
+    const client = await this.#connect();
     try {
       await client.query('BEGIN');
       const existed = await client.query<{ name: string }>(
@@ -4780,7 +4912,7 @@ export class SystemDatabase {
     }
 
     // Never a merge: queue, schedule, and version names are globally unique whatever their owner, so this cannot collide.
-    const client = await this.pool.connect();
+    const client = await this.#connect();
     let queues: number, schedules: number, versions: number, inFlight: number;
     try {
       await client.query('BEGIN');
@@ -4834,7 +4966,7 @@ export class SystemDatabase {
 
   // ==================== Internal ====================
   private async insertWorkflowStatus(
-    client: PoolClient,
+    client: ClientBase,
     initStatus: WorkflowStatusInternal,
     ownerXid: string | null,
   ): Promise<InsertWorkflowResult> {
@@ -5196,7 +5328,7 @@ export class SystemDatabase {
     // Round once so the deadline stays integral: completed_at_epoch_ms is BIGINT and rejects fractional values.
     const endTimeMs = startTimeMs + Math.ceil(durationMS);
 
-    const client = await this.pool.connect();
+    const client = await this.#connect();
     try {
       const res = await this.#getOperationResultAndThrowIfCancelled(client, workflowID, functionID);
       if (res) {
@@ -5238,13 +5370,17 @@ export class SystemDatabase {
       this.notificationsClient = null;
     }
     client.removeAllListeners();
-    // Errors can still arrive while release() tears the connection down; a bare emit would crash the process.
+    // Cover the release() call itself, which tears the connection down and can surface a socket error.
     client.on('error', () => {});
     try {
       client.release(true);
     } catch (e) {
       this.logger.warn(`Error releasing notifications client: ${String(e)}`);
     }
+    // release() re-attached pg's idle listener, which would forward this dead client's error on to the
+    // pool. A caller's pool may have no 'error' listener at all, so this client's death has to stay ours.
+    client.removeAllListeners('error');
+    client.on('error', (e: Error) => this.logger.warn(`Error on retired notifications client: ${e}`));
   }
 
   // Shutdown can begin during any await in the setup below; releasing the client instead of carrying on
@@ -5271,7 +5407,7 @@ export class SystemDatabase {
 
       let acquired: PoolClient | null = null;
       try {
-        const client = await this.pool.connect();
+        const client = await this.#connect();
         acquired = client;
         if (this.#abandonIfStopped(client)) return;
 
