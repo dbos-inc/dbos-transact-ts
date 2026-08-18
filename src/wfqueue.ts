@@ -122,7 +122,7 @@ function hasPartitionLimits(limits: PartitionLimits): boolean {
 }
 
 /**
- * True for the deprecated `partitionQueue` spelling, under which `concurrency`,
+ * True for the deprecated `partitionQueue` mode, under which `concurrency`,
  * `workerConcurrency`, and `rateLimit` all apply per partition.
  */
 function isLegacyPartitioned(q: WorkflowQueue): boolean {
@@ -409,7 +409,7 @@ export class WorkflowQueue {
     ) {
       throw new Error('workerConcurrency must be greater than or equal to partitionWorkerConcurrency');
     }
-    // Under the deprecated partitionQueue spelling concurrency is itself a per-partition limit, so these compare like with like.
+    // Under the deprecated partitionQueue mode concurrency is itself a per-partition limit, so these compare like with like.
     const queueConcurrency = globalConcurrency ?? concurrency;
     if (workerConcurrency !== undefined && queueConcurrency !== undefined && workerConcurrency > queueConcurrency) {
       throw new Error('concurrency must be greater than or equal to workerConcurrency');
@@ -445,7 +445,7 @@ export class WorkflowQueue {
       rateLimitMax: params.rateLimit ? params.rateLimit.limitPerPeriod : null,
       rateLimitPeriodSec: params.rateLimit ? params.rateLimit.periodSec : null,
       priorityEnabled: params.priorityEnabled ?? false,
-      // Any per-partition limit implies partitioning, whichever spelling was used.
+      // Any per-partition limit implies partitioning, whichever mode was used.
       partitionQueue: (params.partitionQueue ?? false) || hasPartitionLimits(params),
       partitionConcurrency: params.partitionConcurrency ?? null,
       partitionWorkerConcurrency: params.partitionWorkerConcurrency ?? null,
