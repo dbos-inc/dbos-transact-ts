@@ -153,7 +153,7 @@ export function resolveQueueLimits(q: WorkflowQueue): ResolvedQueueLimits {
  * its workflows are already running or claimed.
  */
 function workerBudget(limits: ResolvedQueueLimits, running: number): number {
-  if (limits.partitionWorkerConcurrency === 0) {
+  if (limits.partitionWorkerConcurrency !== undefined && limits.partitionWorkerConcurrency <= 0) {
     // Zero per partition pauses this worker; the batched sweep enforces no per-partition worker limit of its own.
     return 0;
   }
@@ -162,6 +162,12 @@ function workerBudget(limits: ResolvedQueueLimits, running: number): number {
     return Infinity;
   }
   return Math.max(0, limits.workerConcurrency - running);
+}
+
+/** 40001 serialization_failure or 55P03 lock_not_available: a peer is claiming the same rows. */
+function isContentionError(e: unknown): boolean {
+  const code = (e as NodeJS.ErrnoException).code;
+  return code === '40001' || code === '55P03';
 }
 
 /** Fisher-Yates copy, so a sweep visits partitions in a different order each poll. */
@@ -246,10 +252,11 @@ function applyRecord(q: WorkflowQueue, record: QueueRecord): void {
   q.workerConcurrency = record.workerConcurrency ?? undefined;
   q.rateLimit = rateLimitFromRecord(record.rateLimitMax, record.rateLimitPeriodSec);
   q.priorityEnabled = record.priorityEnabled;
-  q.partitionQueue = record.partitionQueue;
   q.partitionConcurrency = record.partitionConcurrency ?? undefined;
   q.partitionWorkerConcurrency = record.partitionWorkerConcurrency ?? undefined;
   q.partitionRateLimit = rateLimitFromRecord(record.partitionRateLimitMax, record.partitionRateLimitPeriodSec);
+  // Partitioning is inferred from the limits, so a row whose flag disagrees with them heals on read.
+  q.partitionQueue = record.partitionQueue || hasPartitionLimits(q);
   q.minPollingIntervalMs = record.pollingIntervalSec * 1000;
   q.applicationName = record.applicationName;
 }
@@ -1011,14 +1018,21 @@ class WFQueueRunner {
         let claimed = 0;
         for (const partitionKey of partitionKeys) {
           if (workerBudget(limits, running + claimed) <= 0) break;
-          const partitionWfids = await sysdb.findAndMarkStartableWorkflows(
-            queue,
-            exec.executorID,
-            globalParams.appVersion,
-            partitionKey,
-            running + claimed,
-            sysdb.countRunningWorkflowsForPartition(queue.name, partitionKey),
-          );
+          let partitionWfids: string[];
+          try {
+            partitionWfids = await sysdb.findAndMarkStartableWorkflows(
+              queue,
+              exec.executorID,
+              globalParams.appVersion,
+              partitionKey,
+              running + claimed,
+              sysdb.countRunningWorkflowsForPartition(queue.name, partitionKey),
+            );
+          } catch (e) {
+            // Lock held or claim raced by another worker: skip just this partition, no queue-wide backoff.
+            if (isContentionError(e)) continue;
+            throw e;
+          }
           claimed += partitionWfids.length;
           await dispatch(partitionWfids);
           await debugTriggerPoint(DEBUG_TRIGGER_BETWEEN_PARTITION_DISPATCHES);
@@ -1027,8 +1041,7 @@ class WFQueueRunner {
     } catch (e) {
       const err = e as Error;
       // Handle serialization errors and lock contention with backoff
-      if ('code' in err && (err.code === '40001' || err.code === '55P03')) {
-        // 40001: serialization_failure, 55P03: lock_not_available
+      if (isContentionError(err)) {
         contentionDetected = true;
         exec.logger.warn(`Contention detected in queue ${queue.name}.`);
       } else {

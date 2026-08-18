@@ -3858,6 +3858,7 @@ describe('partition-queue-limits', () => {
     scopeState.unblock.set();
     onePassState.unblock.set();
     await DBOS.shutdown();
+    jest.restoreAllMocks();
   });
 
   test('rejects limits that could never bind, or that mix a deprecated option with its replacement', () => {
@@ -4028,6 +4029,63 @@ describe('partition-queue-limits', () => {
     expect(await queueEntriesAreCleanedUp()).toBe(true);
   }, 30000);
 
+  test('skips only the contended partition and serves the rest in the same sweep', async () => {
+    const partitions = [0, 1, 2, 3].map((i) => `partition-${i}`);
+    const pollingIntervalMs = 3000;
+    onePassState.unblock = new Event();
+    onePassState.started = [];
+
+    const queueName = `contention_skip_${randomUUID()}`;
+    const handles: WorkflowHandle<string>[] = [];
+    for (const partition of partitions) {
+      handles.push(
+        await DBOS.startWorkflow(onePassWorkflow, { queueName, enqueueOptions: { queuePartitionKey: partition } })(
+          partition,
+        ),
+      );
+    }
+
+    // Fail the first partition this queue sweeps, as a peer winning the claim race would.
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    const realSingle = sysdb.findAndMarkStartableWorkflows.bind(sysdb);
+    let poisoned = false;
+    jest.spyOn(sysdb, 'findAndMarkStartableWorkflows').mockImplementation((queue, ...rest) => {
+      if (queue.name === queueName && !poisoned) {
+        poisoned = true;
+        const err = new Error('could not obtain lock on row in relation "workflow_status"') as NodeJS.ErrnoException;
+        err.code = '55P03';
+        return Promise.reject(err);
+      }
+      return realSingle(queue, ...rest);
+    });
+
+    await DBOS.registerQueue(queueName, {
+      workerConcurrency: partitions.length,
+      partitionWorkerConcurrency: 1,
+      minPollingIntervalMs: pollingIntervalMs,
+      onConflict: 'always_update',
+    });
+
+    try {
+      await retryUntilSuccess(() => {
+        expect(poisoned).toBe(true);
+      });
+      // The survivors belong to that same sweep, so they land well inside one polling
+      // interval. Abandoning the sweep would defer them to the next poll, which
+      // contention backoff pushes further out still.
+      await retryUntilSuccess(() => {
+        expect(onePassState.started.length).toBe(partitions.length - 1);
+      }, pollingIntervalMs / 2);
+    } finally {
+      onePassState.unblock.set();
+    }
+
+    for (const handle of handles) {
+      expect(await handle.getResult()).toBeTruthy();
+    }
+    expect(await queueEntriesAreCleanedUp()).toBe(true);
+  }, 30000);
+
   test('binds a per-partition rate limit and a queue-wide rate limit at once', async () => {
     const queueLimit = 3;
     const partitions = [0, 1, 2, 3].map((i) => `p${i}`);
@@ -4099,22 +4157,84 @@ describe('partition-queue-limits', () => {
     // The deprecated flag cannot be cleared while the limits are what partition the queue.
     await expect(queue.setPartitionQueue(false)).rejects.toThrow('partitioned by its partition limits');
 
-    // Clearing every per-partition limit un-partitions it again.
+    // The queue stays partitioned while any one limit remains.
     await queue.setPartitionConcurrency(undefined);
     await queue.setPartitionWorkerConcurrency(undefined);
+    expect((await DBOS.retrieveQueue(queueName))!.partitionQueue).toBe(true);
     await queue.setPartitionRateLimit(undefined);
     expect((await DBOS.retrieveQueue(queueName))!.partitionQueue).toBe(false);
 
-    // On a legacy queue every limit applies per partition, so re-scoping writes are refused.
+    // On a legacy queue all three limits apply per partition, so re-scoping writes are refused.
     const legacyName = `partition_legacy_${randomUUID()}`;
-    const legacy = await DBOS.registerQueue(legacyName, { partitionQueue: true, concurrency: 1 });
+    const legacy = await DBOS.registerQueue(legacyName, {
+      partitionQueue: true,
+      concurrency: 4,
+      workerConcurrency: 2,
+      rateLimit: { limitPerPeriod: 3, periodSec: 1 },
+    });
     expect(await legacy.getGlobalConcurrency()).toBeUndefined();
-    expect(await legacy.getPartitionConcurrency()).toBe(1);
+    expect(await legacy.getWorkerConcurrency()).toBeUndefined();
+    expect(await legacy.getRateLimit()).toBeUndefined();
+    expect(await legacy.getPartitionConcurrency()).toBe(4);
+    expect(await legacy.getPartitionWorkerConcurrency()).toBe(2);
+    expect(await legacy.getPartitionRateLimit()).toEqual({ limitPerPeriod: 3, periodSec: 1 });
+    // The raw deprecated getter still reports the stored column.
+    expect(await legacy.getConcurrency()).toBe(4);
     await expect(legacy.setGlobalConcurrency(5)).rejects.toThrow('deprecated partitionQueue option');
     await expect(legacy.setPartitionConcurrency(1)).rejects.toThrow('deprecated partitionQueue option');
 
     await DBOS.deleteQueue(queueName);
     await DBOS.deleteQueue(legacyName);
+  });
+
+  test('persists and clears the partition columns through register/retrieve/list', async () => {
+    const queueName = `partition_roundtrip_${randomUUID()}`;
+    await DBOS.registerQueue(queueName, {
+      globalConcurrency: 9,
+      partitionConcurrency: 3,
+      partitionWorkerConcurrency: 2,
+      partitionRateLimit: { limitPerPeriod: 4, periodSec: 2.5 },
+    });
+
+    // The registration INSERT is a different code path from the setters' UPDATE.
+    for (const q of [
+      await DBOS.retrieveQueue(queueName),
+      (await DBOS.listQueues()).find((x) => x.name === queueName),
+    ]) {
+      expect(q).toBeDefined();
+      expect(q!.concurrency).toBe(9);
+      expect(q!.partitionConcurrency).toBe(3);
+      expect(q!.partitionWorkerConcurrency).toBe(2);
+      expect(q!.partitionRateLimit).toEqual({ limitPerPeriod: 4, periodSec: 2.5 });
+      // Any per-partition limit partitions the queue, without the deprecated flag.
+      expect(q!.partitionQueue).toBe(true);
+    }
+
+    // always_update overwrites every column, including clearing the partition limits
+    // and the flag they derived.
+    await DBOS.registerQueue(queueName, { globalConcurrency: 9, onConflict: 'always_update' });
+    const cleared = await DBOS.retrieveQueue(queueName);
+    expect(cleared!.partitionConcurrency).toBeUndefined();
+    expect(cleared!.partitionWorkerConcurrency).toBeUndefined();
+    expect(cleared!.partitionRateLimit).toBeUndefined();
+    expect(cleared!.partitionQueue).toBe(false);
+
+    await DBOS.deleteQueue(queueName);
+  });
+
+  test('accepts a priority on a queue that never opted in, since priority is always enabled', async () => {
+    const queueName = `always_priority_${randomUUID()}`;
+    // No priorityEnabled: this used to throw at enqueue time.
+    const q = new WorkflowQueue(queueName, { concurrency: 1, ...testPolling });
+    expect(q.priorityEnabled).toBe(false);
+
+    const handle = await DBOS.startWorkflow(limiterWorkflow, {
+      queueName,
+      enqueueOptions: { priority: 5 },
+    })('prioritized');
+    expect((await handle.getStatus())?.priority).toBe(5);
+    await DBOS.cancelWorkflow(handle.workflowID);
+    wfQueueRunner.wfQueuesByName.delete(queueName);
   });
 });
 

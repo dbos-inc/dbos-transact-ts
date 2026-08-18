@@ -1853,10 +1853,9 @@ export class DBOS {
     const funcId = isChild ? (startWfFuncId ?? functionIDGetIncrement()) : undefined;
 
     // All enqueue-option validation lives here. Param-only checks
-    // (priority range, dedup-with-partition) always run; queue-config
-    // checks (partition flag, priority-enabled flag) run only for queues
-    // in this executor's in-memory map. Database-backed queues skip the
-    // queue-config checks to avoid an extra roundtrip on every enqueue.
+    // (priority range, dedup-with-partition) always run; the partition-flag
+    // checks run only for queues in this executor's in-memory map.
+    // Database-backed queues skip them to avoid an extra roundtrip on every enqueue.
     if (queueName) {
       const queuePartitionKey = params.enqueueOptions?.queuePartitionKey;
       const priority = params.enqueueOptions?.priority;

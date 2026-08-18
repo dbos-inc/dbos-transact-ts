@@ -257,6 +257,9 @@ export class DBOSAdminServer {
               concurrency: q.concurrency,
               workerConcurrency: q.workerConcurrency,
               rateLimit: q.rateLimit,
+              partitionConcurrency: q.partitionConcurrency,
+              partitionWorkerConcurrency: q.partitionWorkerConcurrency,
+              partitionRateLimit: q.partitionRateLimit,
             });
           }
         } catch (e) {
@@ -268,6 +271,9 @@ export class DBOSAdminServer {
             concurrency: q.concurrency,
             workerConcurrency: q.workerConcurrency,
             rateLimit: q.rateLimit,
+            partitionConcurrency: q.partitionConcurrency,
+            partitionWorkerConcurrency: q.partitionWorkerConcurrency,
+            partitionRateLimit: q.partitionRateLimit,
           });
         });
         sendJson(res, 200, [...merged.values()]);
