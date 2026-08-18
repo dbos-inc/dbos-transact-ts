@@ -176,9 +176,9 @@ function getKafkaQueue(): WorkflowQueue {
 }
 
 function getKafkaOrderedQueue(): WorkflowQueue {
-  // One shared partitioned queue: concurrency=1 is enforced per partition key, so execution is
-  // serial per key and parallel across keys.
-  return getOrCreateQueue(KAFKA_ORDERED_QUEUE_NAME, { partitionQueue: true, concurrency: 1 });
+  // One shared partitioned queue: a per-partition concurrency of 1 makes execution
+  // serial per partition key and parallel across keys.
+  return getOrCreateQueue(KAFKA_ORDERED_QUEUE_NAME, { partitionConcurrency: 1 });
 }
 
 function partitionKeyFor(

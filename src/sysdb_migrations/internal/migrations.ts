@@ -909,5 +909,15 @@ $$ LANGUAGE plpgsql;`,
     WHERE "application_name" IS NULL`,
       ],
     },
+    // Any of these being set partitions the queue; each applies per partition.
+    {
+      name: '108_queue_partition_limits',
+      pg: [
+        `ALTER TABLE "${schemaName}"."queues" ADD COLUMN IF NOT EXISTS "partition_concurrency" INT4 DEFAULT NULL`,
+        `ALTER TABLE "${schemaName}"."queues" ADD COLUMN IF NOT EXISTS "partition_worker_concurrency" INT4 DEFAULT NULL`,
+        `ALTER TABLE "${schemaName}"."queues" ADD COLUMN IF NOT EXISTS "partition_rate_limit_max" INT4 DEFAULT NULL`,
+        `ALTER TABLE "${schemaName}"."queues" ADD COLUMN IF NOT EXISTS "partition_rate_limit_period_sec" DOUBLE PRECISION DEFAULT NULL`,
+      ],
+    },
   ];
 }

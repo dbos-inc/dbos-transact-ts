@@ -1876,9 +1876,6 @@ export class DBOS {
             `You can only use a partition key on a partition-enabled queue. Key ${queuePartitionKey} was used with non-partitioned queue ${queueName}`,
           );
         }
-        if (priority !== undefined && !inMem.priorityEnabled) {
-          throw Error(`Priority is not enabled for queue ${queueName}. Setting priority will not have any effect.`);
-        }
       }
     } else {
       // Only the queue machinery reads these, and a stored dedup ID becomes a unique-constraint violation once anything assigns the row a queue name; applicationVersion is excluded because it still selects recovery executors.
