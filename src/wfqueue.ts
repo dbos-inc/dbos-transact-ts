@@ -497,6 +497,7 @@ export class WorkflowQueue {
   async setWorkerConcurrency(value: number | undefined): Promise<void> {
     requireDatabaseBacked(this);
     await refreshFromDb(this);
+    requireNotLegacyPartitioned(this, 'workerConcurrency');
     if (value !== undefined) {
       if (this.concurrency !== undefined && value > this.concurrency) {
         throw new Error('workerConcurrency must be less than or equal to concurrency');
@@ -514,6 +515,9 @@ export class WorkflowQueue {
     if (value !== undefined && (value.limitPerPeriod === undefined || value.periodSec === undefined)) {
       throw new Error('rateLimit must specify both limitPerPeriod and periodSec');
     }
+    // Refresh so the check below sees the partition limits currently stored in the database.
+    await refreshFromDb(this);
+    requireNotLegacyPartitioned(this, 'rateLimit');
     await sysDBFor(this).updateQueue(this.name, {
       rateLimitMax: value ? value.limitPerPeriod : null,
       rateLimitPeriodSec: value ? value.periodSec : null,

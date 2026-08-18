@@ -2394,18 +2394,13 @@ describe('database-backed-queue-crud', () => {
     expect(await queue.getPartitionRateLimit()).toEqual({ limitPerPeriod: 7, periodSec: 2.0 });
     await expect(queue.setGlobalConcurrency(5)).rejects.toThrow('deprecated partitionQueue option');
     await expect(queue.setPartitionConcurrency(1)).rejects.toThrow('deprecated partitionQueue option');
+    // The queue-wide setters are refused too: here they would write a per-partition limit.
+    await expect(queue.setWorkerConcurrency(1)).rejects.toThrow('deprecated partitionQueue option');
+    await expect(queue.setRateLimit(undefined)).rejects.toThrow('deprecated partitionQueue option');
+    expect((await DBOS.retrieveQueue(queueName))!.rateLimit).toEqual({ limitPerPeriod: 7, periodSec: 2.0 });
 
-    // Cross-validation: workerConcurrency cannot exceed concurrency.
-    await expect(queue.setWorkerConcurrency(100)).rejects.toThrow(
-      'workerConcurrency must be less than or equal to concurrency',
-    );
     // Polling interval must be positive.
     await expect(queue.setMinPollingIntervalMs(0)).rejects.toThrow('minPollingIntervalMs must be positive');
-
-    // Rate limit can be cleared.
-    await queue.setRateLimit(undefined);
-    const cleared = await DBOS.retrieveQueue(queueName);
-    expect(cleared!.rateLimit).toBeUndefined();
 
     // Per-partition limits are set on their own queue, since they and partitionQueue mode
     // are mutually exclusive. Setting one partitions the queue; the queue stays partitioned
@@ -2428,6 +2423,14 @@ describe('database-backed-queue-crud', () => {
     expect((await DBOS.retrieveQueue(partName))!.partitionQueue).toBe(true);
     await part.setPartitionRateLimit(undefined);
     expect((await DBOS.retrieveQueue(partName))!.partitionQueue).toBe(false);
+
+    // Off partitionQueue mode the queue-wide setters apply, so they cross-validate and clear.
+    await expect(part.setWorkerConcurrency(100)).rejects.toThrow(
+      'workerConcurrency must be less than or equal to concurrency',
+    );
+    await part.setRateLimit({ limitPerPeriod: 7, periodSec: 2.0 });
+    await part.setRateLimit(undefined);
+    expect((await DBOS.retrieveQueue(partName))!.rateLimit).toBeUndefined();
     await DBOS.deleteQueue(partName);
 
     // In-memory queues do not support setters.
