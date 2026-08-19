@@ -598,12 +598,23 @@ export class DBOS {
    *   Functions may then be registered before the next call to DBOS.launch().
    *   Decorated / registered functions created prior to `clearRegistry` may no longer be used.
    *     Fresh wrappers may be created from the original functions.
-   * @param options.workflowCompletionTimeoutSec
+   * @param options.workflowCompletionTimeoutMS
    *   How long to wait, after background processing stops, for workflows running in this process
    *   to complete. If they do not finish in time, shutdown proceeds without them.
-   *   Defaults is to not wait.
+   *   Default is to not wait.
    */
-  static async shutdown(options?: { deregister?: boolean; workflowCompletionTimeoutSec?: number }) {
+  static async shutdown(options?: { deregister?: boolean; workflowCompletionTimeoutMS?: number }) {
+    // Validate before tearing anything down, so a bad timeout leaves DBOS running.
+    const drainTimeoutMS = options?.workflowCompletionTimeoutMS;
+    if (
+      drainTimeoutMS !== undefined &&
+      (!Number.isFinite(drainTimeoutMS) || drainTimeoutMS < 0 || drainTimeoutMS > sleepConfig.maxTimeoutMS)
+    ) {
+      throw new DBOSError(
+        `Invalid workflowCompletionTimeoutMS '${drainTimeoutMS}': must be between 0 and ${sleepConfig.maxTimeoutMS} ms. Omit it to shut down without waiting.`,
+      );
+    }
+
     // Stop the admin server
     if (DBOS.adminServer) {
       DBOS.adminServer.close();
@@ -614,7 +625,7 @@ export class DBOS {
     // Conductor stays connected for the drain, so it can still observe and cancel those workflows.
     if (DBOSExecutor.globalInstance) {
       await DBOSExecutor.globalInstance.deactivateEventReceivers();
-      await DBOSExecutor.globalInstance.awaitRunningWorkflows(options?.workflowCompletionTimeoutSec);
+      await DBOSExecutor.globalInstance.awaitRunningWorkflows(drainTimeoutMS);
     }
 
     // Stop the conductor

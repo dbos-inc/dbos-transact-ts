@@ -2377,7 +2377,11 @@ export class SystemDatabase {
     // Need to await for the workflow and capture errors.
     const awaitWorkflowPromise = workflowPromise
       .catch((error) => {
-        this.logger.debug('Captured error in awaitWorkflowPromise: ' + error);
+        if (this.#destroyed) {
+          this.logger.warn(`Workflow ${workflowID} was abandoned by shutdown: ${error}`);
+        } else {
+          this.logger.debug('Captured error in awaitWorkflowPromise: ' + error);
+        }
       })
       .finally(() => {
         onSettled();
@@ -2422,16 +2426,14 @@ export class SystemDatabase {
       if (this.runningWorkflowMap.size > 0) {
         this.logger.info('Waiting for pending workflows to finish.');
       }
-      // Each pass picks up workflows a draining workflow started, and awaits any given ID only once.
-      const awaited = new Set<string>();
+      // Each pass picks up workflows a draining workflow started, and awaits any given run only once.
+      const awaited = new Set<Promise<unknown>>();
       for (;;) {
-        const pending = Array.from(this.runningWorkflowMap)
-          .filter(([workflowID]) => !awaited.has(workflowID))
-          .map(([workflowID, entry]) => {
-            awaited.add(workflowID);
-            return entry.promise;
-          });
+        const pending = Array.from(this.runningWorkflowMap.values(), (entry) => entry.promise).filter(
+          (promise) => !awaited.has(promise),
+        );
         if (pending.length === 0) break;
+        for (const promise of pending) awaited.add(promise);
         let timer: ReturnType<typeof setTimeout> | undefined;
         const timedOut = await Promise.race([
           Promise.allSettled(pending).then(() => false),

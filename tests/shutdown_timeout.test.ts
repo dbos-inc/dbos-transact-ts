@@ -89,7 +89,7 @@ describe('shutdown-workflow-completion-timeout', () => {
     await started.wait();
 
     const startTime = Date.now();
-    await DBOS.shutdown({ workflowCompletionTimeoutSec: 1 });
+    await DBOS.shutdown({ workflowCompletionTimeoutMS: 1000 });
     const elapsed = Date.now() - startTime;
 
     expect(elapsed).toBeGreaterThanOrEqual(900);
@@ -105,7 +105,7 @@ describe('shutdown-workflow-completion-timeout', () => {
     await parentStarted.wait();
 
     let shutdownDone = false;
-    const shutdownPromise = DBOS.shutdown({ workflowCompletionTimeoutSec: 30 }).then(() => {
+    const shutdownPromise = DBOS.shutdown({ workflowCompletionTimeoutMS: 30000 }).then(() => {
       shutdownDone = true;
     });
 
@@ -137,7 +137,7 @@ describe('shutdown-workflow-completion-timeout', () => {
     };
     DBOS.conductor = fakeConductor as unknown as Conductor;
 
-    const shutdownPromise = DBOS.shutdown({ workflowCompletionTimeoutSec: 30 });
+    const shutdownPromise = DBOS.shutdown({ workflowCompletionTimeoutMS: 30000 });
     await sleepms(500);
     expect(stopSawWorkflowDone).toBeUndefined();
 

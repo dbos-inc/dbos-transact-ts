@@ -437,9 +437,9 @@ export class DBOSExecutor {
     this.logger.info('DBOS launched!');
   }
 
-  /** Wait for workflows running in this process to finish, for at most `timeoutSec` if one is given. */
-  async awaitRunningWorkflows(timeoutSec?: number) {
-    await this.systemDatabase.awaitRunningWorkflows(timeoutSec === undefined ? undefined : timeoutSec * 1000);
+  /** Wait up to `timeoutMS` for workflows running in this process to finish. Without a timeout, do not wait. */
+  async awaitRunningWorkflows(timeoutMS?: number) {
+    await this.systemDatabase.awaitRunningWorkflows(timeoutMS);
   }
 
   async destroy() {
