@@ -415,6 +415,8 @@ export class DBOS {
   ///////
   static adminServer: Server | undefined = undefined;
   static conductor: Conductor | undefined = undefined;
+  // Blocks launch/shutdown overlap: `initialized` goes false before the drain, so it cannot do this job.
+  static #shuttingDown: boolean = false;
 
   /**
    * Set configuration of `DBOS` prior to `launch`
@@ -438,6 +440,10 @@ export class DBOS {
    * @param options - Launch options for connecting to DBOS Conductor
    */
   static async launch(options?: DBOSLaunchOptions): Promise<void> {
+    if (DBOS.#shuttingDown) {
+      throw new DBOSError('Cannot call DBOS.launch while DBOS.shutdown is in progress.');
+    }
+
     const configFile = await readConfigFile();
 
     let internalConfig = DBOS.#dbosConfig ? translateDbosConfig(DBOS.#dbosConfig) : getDbosConfig(configFile);
@@ -616,52 +622,62 @@ export class DBOS {
       );
     }
 
-    // Mark uninitialized before any teardown, so callers guarding on isInitialized() do not re-enter.
-    if (DBOSExecutor.globalInstance) {
-      DBOSExecutor.globalInstance.initialized = false;
-    }
+    // Tear down the executor this call started with, not whatever the global points at later.
+    const executor = DBOSExecutor.globalInstance;
 
-    // Stop the admin server
-    if (DBOS.adminServer) {
-      DBOS.adminServer.close();
-      DBOS.adminServer = undefined;
-    }
-
-    // Stop background processing, then drain the workflows still running in this process.
-    // Conductor stays connected for the drain, so it can still observe and cancel those workflows.
-    if (DBOSExecutor.globalInstance) {
-      await DBOSExecutor.globalInstance.deactivateEventReceivers();
-      await DBOSExecutor.globalInstance.awaitRunningWorkflows(drainTimeoutMS);
-    }
-
-    // Stop the conductor
-    if (DBOS.conductor) {
-      DBOS.conductor.stop();
-      while (!DBOS.conductor.isClosed) {
-        await sleepms(500);
+    DBOS.#shuttingDown = true;
+    try {
+      // Report uninitialized for the whole teardown; #shuttingDown is what blocks a relaunch.
+      if (executor) {
+        executor.initialized = false;
       }
-      DBOS.conductor = undefined;
+
+      // Stop the admin server
+      if (DBOS.adminServer) {
+        DBOS.adminServer.close();
+        DBOS.adminServer = undefined;
+      }
+
+      // Stop background processing, then drain the workflows still running in this process.
+      // Conductor stays connected for the drain, so it can still observe and cancel those workflows.
+      if (executor) {
+        await executor.deactivateEventReceivers();
+        await executor.awaitRunningWorkflows(drainTimeoutMS);
+      }
+
+      // Stop the conductor
+      if (DBOS.conductor) {
+        DBOS.conductor.stop();
+        while (!DBOS.conductor.isClosed) {
+          await sleepms(500);
+        }
+        DBOS.conductor = undefined;
+      }
+
+      // Disconnect the executor from the databases
+      if (executor) {
+        await executor.destroy();
+        if (DBOSExecutor.globalInstance === executor) {
+          DBOSExecutor.globalInstance = undefined;
+        }
+      }
+
+      for (const [_n, ds] of transactionalDataSources) {
+        await ds.destroy();
+      }
+
+      // Reset the global app name, version and executor ID
+      globalParams.appVersion = process.env.DBOS__APPVERSION || '';
+      globalParams.wasComputed = false;
+      globalParams.appID = process.env.DBOS__APPID || '';
+      globalParams.executorID = process.env.DBOS__VMID || 'local';
+      // Set at launch from the config, so a relaunch under another name must not inherit this one.
+      globalParams.appName = undefined;
+
+      recordDBOSShutdown();
+    } finally {
+      DBOS.#shuttingDown = false;
     }
-
-    // Disconnect the executor from the databases
-    if (DBOSExecutor.globalInstance) {
-      await DBOSExecutor.globalInstance.destroy();
-      DBOSExecutor.globalInstance = undefined;
-    }
-
-    for (const [_n, ds] of transactionalDataSources) {
-      await ds.destroy();
-    }
-
-    // Reset the global app name, version and executor ID
-    globalParams.appVersion = process.env.DBOS__APPVERSION || '';
-    globalParams.wasComputed = false;
-    globalParams.appID = process.env.DBOS__APPID || '';
-    globalParams.executorID = process.env.DBOS__VMID || 'local';
-    // Set at launch from the config, so a relaunch under another name must not inherit this one.
-    globalParams.appName = undefined;
-
-    recordDBOSShutdown();
 
     if (options?.deregister) {
       DBOS.clearRegistry();
