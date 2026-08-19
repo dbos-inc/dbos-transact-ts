@@ -2377,11 +2377,8 @@ export class SystemDatabase {
     // Need to await for the workflow and capture errors.
     const awaitWorkflowPromise = workflowPromise
       .catch((error) => {
-        if (this.#destroyed) {
-          this.logger.warn(`Workflow ${workflowID} was abandoned by shutdown: ${error}`);
-        } else {
-          this.logger.debug('Captured error in awaitWorkflowPromise: ' + error);
-        }
+        const outcome = this.#destroyed ? 'was abandoned by shutdown' : 'failed';
+        this.logger.debug(`Workflow ${workflowID} ${outcome}: ${error}`);
       })
       .finally(() => {
         onSettled();
