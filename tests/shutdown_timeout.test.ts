@@ -1,6 +1,7 @@
 import { DBOS } from '../src/';
 import { DBOSConfig } from '../src/dbos-executor';
 import { generateDBOSTestConfig, setUpDBOSTestSysDb, Event } from './helpers';
+import { sleepms } from '../src/utils';
 
 const started = new Event();
 const release = new Event();
@@ -11,6 +12,31 @@ const blockingWorkflow = DBOS.registerWorkflow(
     await release.wait();
   },
   { name: 'shutdownTimeoutBlockingWorkflow' },
+);
+
+const childStarted = new Event();
+const releaseChild = new Event();
+let childFinished = false;
+
+const childWorkflow = DBOS.registerWorkflow(
+  async () => {
+    childStarted.set();
+    await releaseChild.wait();
+    childFinished = true;
+  },
+  { name: 'shutdownTimeoutChildWorkflow' },
+);
+
+const parentStarted = new Event();
+const releaseParent = new Event();
+
+const parentWorkflow = DBOS.registerWorkflow(
+  async () => {
+    parentStarted.set();
+    await releaseParent.wait();
+    await DBOS.startWorkflow(childWorkflow)();
+  },
+  { name: 'shutdownTimeoutParentWorkflow' },
 );
 
 describe('shutdown-workflow-completion-timeout', () => {
@@ -40,6 +66,29 @@ describe('shutdown-workflow-completion-timeout', () => {
 
     release.set();
     await handle.getResult().catch(() => {});
+  }, 20000);
+
+  test('shutdown-waits-for-a-child-started-during-the-drain', async () => {
+    await DBOS.launch();
+    await DBOS.startWorkflow(parentWorkflow)();
+    await parentStarted.wait();
+
+    let shutdownDone = false;
+    const shutdownPromise = DBOS.shutdown({ workflowCompletionTimeoutSec: 30 }).then(() => {
+      shutdownDone = true;
+    });
+
+    // The parent starts its child only after the drain is already under way.
+    await sleepms(500);
+    releaseParent.set();
+    await childStarted.wait();
+    await sleepms(500);
+    expect(shutdownDone).toBe(false);
+    expect(childFinished).toBe(false);
+
+    releaseChild.set();
+    await shutdownPromise;
+    expect(childFinished).toBe(true);
   }, 20000);
 
   test('shutdown-returns-when-workflows-complete-before-timeout', async () => {
