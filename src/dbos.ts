@@ -601,7 +601,7 @@ export class DBOS {
    * @param options.workflowCompletionTimeoutSec
    *   How long to wait, after background processing stops, for workflows running in this process
    *   to complete. If they do not finish in time, shutdown proceeds without them.
-   *   Defaults to waiting indefinitely.
+   *   Defaults is to not wait.
    */
   static async shutdown(options?: { deregister?: boolean; workflowCompletionTimeoutSec?: number }) {
     // Stop the admin server

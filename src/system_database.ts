@@ -2415,41 +2415,38 @@ export class SystemDatabase {
     return count;
   }
 
-  /** Wait for locally-running workflows to finish, for at most `timeoutMS` if one is given. */
+  /** Wait up to `timeoutMS` for locally-running workflows to finish. Without a timeout, do not wait at all. */
   async awaitRunningWorkflows(timeoutMS?: number): Promise<void> {
-    const deadline = timeoutMS === undefined ? undefined : Date.now() + timeoutMS;
-    if (this.runningWorkflowMap.size > 0) {
-      this.logger.info('Waiting for pending workflows to finish.');
+    if (timeoutMS !== undefined && timeoutMS > 0) {
+      const deadline = Date.now() + timeoutMS;
+      if (this.runningWorkflowMap.size > 0) {
+        this.logger.info('Waiting for pending workflows to finish.');
+      }
+      // Each pass picks up workflows a draining workflow started, and awaits any given ID only once.
+      const awaited = new Set<string>();
+      for (;;) {
+        const pending = Array.from(this.runningWorkflowMap)
+          .filter(([workflowID]) => !awaited.has(workflowID))
+          .map(([workflowID, entry]) => {
+            awaited.add(workflowID);
+            return entry.promise;
+          });
+        if (pending.length === 0) break;
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const timedOut = await Promise.race([
+          Promise.allSettled(pending).then(() => false),
+          new Promise<boolean>((resolve) => {
+            timer = setTimeout(() => resolve(true), Math.max(0, deadline - Date.now()));
+          }),
+        ]);
+        clearTimeout(timer);
+        if (timedOut) break;
+      }
     }
-    // Each pass picks up workflows a draining workflow started, and awaits any given ID only once.
-    const awaited = new Set<string>();
-    for (;;) {
-      const pending = Array.from(this.runningWorkflowMap)
-        .filter(([workflowID]) => !awaited.has(workflowID))
-        .map(([workflowID, entry]) => {
-          awaited.add(workflowID);
-          return entry.promise;
-        });
-      if (pending.length === 0) break;
-      const allPending = Promise.allSettled(pending);
-      if (deadline === undefined) {
-        await allPending;
-        continue;
-      }
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      const timedOut = await Promise.race([
-        allPending.then(() => false),
-        new Promise<boolean>((resolve) => {
-          timer = setTimeout(() => resolve(true), Math.max(0, deadline - Date.now()));
-        }),
-      ]);
-      clearTimeout(timer);
-      if (timedOut) {
-        this.logger.warn(
-          `Shutting down while ${this.runningWorkflowMap.size} workflows are still running: ${Array.from(this.runningWorkflowMap.keys()).join(', ')}`,
-        );
-        break;
-      }
+    if (this.runningWorkflowMap.size > 0) {
+      this.logger.warn(
+        `Shutting down while ${this.runningWorkflowMap.size} workflows are still running: ${Array.from(this.runningWorkflowMap.keys()).join(', ')}`,
+      );
     }
     if (this.workflowEventsMap.map.size > 0) {
       this.logger.warn('Workflow events map is not empty - shutdown is not clean.');

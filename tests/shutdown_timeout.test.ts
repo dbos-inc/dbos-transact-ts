@@ -28,6 +28,19 @@ const blockingWorkflow2 = DBOS.registerWorkflow(
   { name: 'shutdownConductorOrderWorkflow' },
 );
 
+const started3 = new Event();
+const release3 = new Event();
+let workflow3Done = false;
+
+const blockingWorkflow3 = DBOS.registerWorkflow(
+  async () => {
+    started3.set();
+    await release3.wait();
+    workflow3Done = true;
+  },
+  { name: 'shutdownDefaultNoWaitWorkflow' },
+);
+
 const childStarted = new Event();
 const releaseChild = new Event();
 let childFinished = false;
@@ -64,6 +77,10 @@ describe('shutdown-workflow-completion-timeout', () => {
 
   afterAll(() => {
     release.set();
+    release2.set();
+    release3.set();
+    releaseParent.set();
+    releaseChild.set();
   });
 
   test('shutdown-waits-for-workflow-then-times-out', async () => {
@@ -130,10 +147,17 @@ describe('shutdown-workflow-completion-timeout', () => {
     expect(DBOS.conductor).toBeUndefined();
   }, 20000);
 
-  test('shutdown-returns-when-workflows-complete-before-timeout', async () => {
+  test('shutdown-does-not-wait-when-no-timeout-is-given', async () => {
     await DBOS.launch();
+    const handle = await DBOS.startWorkflow(blockingWorkflow3)();
+    await started3.wait();
+
     const startTime = Date.now();
-    await DBOS.shutdown({ workflowCompletionTimeoutSec: 30 });
-    expect(Date.now() - startTime).toBeLessThan(10000);
+    await DBOS.shutdown();
+    expect(Date.now() - startTime).toBeLessThan(1000);
+    expect(workflow3Done).toBe(false);
+
+    release3.set();
+    await handle.getResult().catch(() => {});
   }, 20000);
 });
