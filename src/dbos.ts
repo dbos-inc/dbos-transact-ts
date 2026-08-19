@@ -616,6 +616,11 @@ export class DBOS {
       );
     }
 
+    // Mark uninitialized before any teardown, so callers guarding on isInitialized() do not re-enter.
+    if (DBOSExecutor.globalInstance) {
+      DBOSExecutor.globalInstance.initialized = false;
+    }
+
     // Stop the admin server
     if (DBOS.adminServer) {
       DBOS.adminServer.close();
