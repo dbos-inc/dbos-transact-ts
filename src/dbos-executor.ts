@@ -437,9 +437,13 @@ export class DBOSExecutor {
     this.logger.info('DBOS launched!');
   }
 
+  /** Wait up to `timeoutMS` for workflows running in this process to finish. Without a timeout, do not wait. */
+  async awaitRunningWorkflows(timeoutMS?: number) {
+    await this.systemDatabase.awaitRunningWorkflows(timeoutMS);
+  }
+
   async destroy() {
     try {
-      await this.systemDatabase.awaitRunningWorkflows();
       await this.systemDatabase.destroy();
       await this.logger.destroy();
     } catch (err) {
@@ -789,19 +793,17 @@ export class DBOSExecutor {
       exec: DBOSExecutor,
     ): Promise<{ recorded: boolean; reviveError: () => Promise<Error> }> {
       // Record the error.
-      const e = err as Error & { dbos_already_logged?: boolean };
-      const sererr = await serializeResErrorWithSerializer(e, eserializer, ires.serialization ?? null);
+      const sererr = await serializeResErrorWithSerializer(err, eserializer, ires.serialization ?? null);
       internalStatus.error = sererr.serializedValue;
       internalStatus.status = StatusString.ERROR;
       releaseRunningWorkflow();
       const recorded = await exec.systemDatabase.recordWorkflowError(workflowID, internalStatus);
       if (recorded) {
-        exec.logger.error(e);
-        e.dbos_already_logged = true;
+        exec.logger.error(err);
       } else {
-        exec.logger.debug(e);
+        exec.logger.debug(err);
       }
-      span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
+      span.setStatus({ code: SpanStatusCode.ERROR, message: err.message });
       return {
         recorded,
         // deserializeResError can throw directly if the serialized error represents a portable workflow error.

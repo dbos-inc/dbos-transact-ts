@@ -415,6 +415,8 @@ export class DBOS {
   ///////
   static adminServer: Server | undefined = undefined;
   static conductor: Conductor | undefined = undefined;
+  // Blocks launch/shutdown overlap: `initialized` goes false before the drain, so it cannot do this job.
+  static #shuttingDown: boolean = false;
 
   /**
    * Set configuration of `DBOS` prior to `launch`
@@ -438,6 +440,10 @@ export class DBOS {
    * @param options - Launch options for connecting to DBOS Conductor
    */
   static async launch(options?: DBOSLaunchOptions): Promise<void> {
+    if (DBOS.#shuttingDown) {
+      throw new DBOSError('Cannot call DBOS.launch while DBOS.shutdown is in progress.');
+    }
+
     const configFile = await readConfigFile();
 
     let internalConfig = DBOS.#dbosConfig ? translateDbosConfig(DBOS.#dbosConfig) : getDbosConfig(configFile);
@@ -589,8 +595,9 @@ export class DBOS {
   /**
    * Shut down DBOS processing:
    *   Stops receiving external workflow requests
+   *   Stops workflow processing, optionally waiting for workflows running here to finish
    *   Disconnects from administration / Conductor
-   *   Stops workflow processing and disconnects from databases
+   *   Disconnects from the databases
    * @param options Optional shutdown options.
    * @param options.deregister
    *   If true, clear the DBOS workflow, queue, instance, data source, listener, and other registries.
@@ -598,43 +605,79 @@ export class DBOS {
    *   Functions may then be registered before the next call to DBOS.launch().
    *   Decorated / registered functions created prior to `clearRegistry` may no longer be used.
    *     Fresh wrappers may be created from the original functions.
+   * @param options.workflowCompletionTimeoutMS
+   *   How long to wait, after background processing stops, for workflows running in this process
+   *   to complete. If they do not finish in time, shutdown proceeds without them.
+   *   Default is to not wait.
    */
-  static async shutdown(options?: { deregister?: boolean }) {
-    // Stop the admin server
-    if (DBOS.adminServer) {
-      DBOS.adminServer.close();
-      DBOS.adminServer = undefined;
+  static async shutdown(options?: { deregister?: boolean; workflowCompletionTimeoutMS?: number }) {
+    // Validate before tearing anything down, so a bad timeout leaves DBOS running.
+    const drainTimeoutMS = options?.workflowCompletionTimeoutMS;
+    if (
+      drainTimeoutMS !== undefined &&
+      (!Number.isFinite(drainTimeoutMS) || drainTimeoutMS < 0 || drainTimeoutMS > sleepConfig.maxTimeoutMS)
+    ) {
+      throw new DBOSError(
+        `Invalid workflowCompletionTimeoutMS '${drainTimeoutMS}': must be between 0 and ${sleepConfig.maxTimeoutMS} ms. Omit it to shut down without waiting.`,
+      );
     }
 
-    // Stop the conductor
-    if (DBOS.conductor) {
-      DBOS.conductor.stop();
-      while (!DBOS.conductor.isClosed) {
-        await sleepms(500);
+    // Tear down the executor this call started with, not whatever the global points at later.
+    const executor = DBOSExecutor.globalInstance;
+
+    DBOS.#shuttingDown = true;
+    try {
+      // Report uninitialized for the whole teardown; #shuttingDown is what blocks a relaunch.
+      if (executor) {
+        executor.initialized = false;
       }
-      DBOS.conductor = undefined;
+
+      // Stop the admin server
+      if (DBOS.adminServer) {
+        DBOS.adminServer.close();
+        DBOS.adminServer = undefined;
+      }
+
+      // Stop background processing, then drain the workflows still running in this process.
+      // Conductor stays connected for the drain, so it can still observe and cancel those workflows.
+      if (executor) {
+        await executor.deactivateEventReceivers();
+        await executor.awaitRunningWorkflows(drainTimeoutMS);
+      }
+
+      // Stop the conductor
+      if (DBOS.conductor) {
+        DBOS.conductor.stop();
+        while (!DBOS.conductor.isClosed) {
+          await sleepms(500);
+        }
+        DBOS.conductor = undefined;
+      }
+
+      // Disconnect the executor from the databases
+      if (executor) {
+        await executor.destroy();
+        if (DBOSExecutor.globalInstance === executor) {
+          DBOSExecutor.globalInstance = undefined;
+        }
+      }
+
+      for (const [_n, ds] of transactionalDataSources) {
+        await ds.destroy();
+      }
+
+      // Reset the global app name, version and executor ID
+      globalParams.appVersion = process.env.DBOS__APPVERSION || '';
+      globalParams.wasComputed = false;
+      globalParams.appID = process.env.DBOS__APPID || '';
+      globalParams.executorID = process.env.DBOS__VMID || 'local';
+      // Set at launch from the config, so a relaunch under another name must not inherit this one.
+      globalParams.appName = undefined;
+
+      recordDBOSShutdown();
+    } finally {
+      DBOS.#shuttingDown = false;
     }
-
-    // Stop the executor
-    if (DBOSExecutor.globalInstance) {
-      await DBOSExecutor.globalInstance.deactivateEventReceivers();
-      await DBOSExecutor.globalInstance.destroy();
-      DBOSExecutor.globalInstance = undefined;
-    }
-
-    for (const [_n, ds] of transactionalDataSources) {
-      await ds.destroy();
-    }
-
-    // Reset the global app name, version and executor ID
-    globalParams.appVersion = process.env.DBOS__APPVERSION || '';
-    globalParams.wasComputed = false;
-    globalParams.appID = process.env.DBOS__APPID || '';
-    globalParams.executorID = process.env.DBOS__VMID || 'local';
-    // Set at launch from the config, so a relaunch under another name must not inherit this one.
-    globalParams.appName = undefined;
-
-    recordDBOSShutdown();
 
     if (options?.deregister) {
       DBOS.clearRegistry();

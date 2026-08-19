@@ -22,7 +22,8 @@ describe('cf-scheduled-wf-tests-simple', () => {
   });
 
   afterEach(async () => {
-    await DBOS.shutdown();
+    // scheduledDefault sleeps 2s, so let the in-flight runs finish instead of stranding them.
+    await DBOS.shutdown({ workflowCompletionTimeoutMS: 10000 });
   });
 
   test('wf-scheduled', async () => {
@@ -277,7 +278,8 @@ describe('decorator-free-scheduled', () => {
   });
 
   afterEach(async () => {
-    await DBOS.shutdown();
+    // scheduledDefault sleeps 2s, so let the in-flight runs finish instead of stranding them.
+    await DBOS.shutdown({ workflowCompletionTimeoutMS: 10000 });
   });
 
   test('free-func-scheduled', async () => {

@@ -2377,7 +2377,8 @@ export class SystemDatabase {
     // Need to await for the workflow and capture errors.
     const awaitWorkflowPromise = workflowPromise
       .catch((error) => {
-        this.logger.debug('Captured error in awaitWorkflowPromise: ' + error);
+        const outcome = this.#destroyed ? 'was abandoned by shutdown' : 'failed';
+        this.logger.debug(`Workflow ${workflowID} ${outcome}: ${error}`);
       })
       .finally(() => {
         onSettled();
@@ -2415,10 +2416,36 @@ export class SystemDatabase {
     return count;
   }
 
-  async awaitRunningWorkflows(): Promise<void> {
+  /** Wait up to `timeoutMS` for locally-running workflows to finish. Without a timeout, do not wait at all. */
+  async awaitRunningWorkflows(timeoutMS?: number): Promise<void> {
+    if (timeoutMS !== undefined && timeoutMS > 0) {
+      const deadline = Date.now() + timeoutMS;
+      if (this.runningWorkflowMap.size > 0) {
+        this.logger.info('Waiting for pending workflows to finish.');
+      }
+      // Each pass picks up workflows a draining workflow started, and awaits any given run only once.
+      const awaited = new Set<Promise<unknown>>();
+      for (;;) {
+        const pending = Array.from(this.runningWorkflowMap.values(), (entry) => entry.promise).filter(
+          (promise) => !awaited.has(promise),
+        );
+        if (pending.length === 0) break;
+        for (const promise of pending) awaited.add(promise);
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const timedOut = await Promise.race([
+          Promise.allSettled(pending).then(() => false),
+          new Promise<boolean>((resolve) => {
+            timer = setTimeout(() => resolve(true), Math.max(0, deadline - Date.now()));
+          }),
+        ]);
+        clearTimeout(timer);
+        if (timedOut) break;
+      }
+    }
     if (this.runningWorkflowMap.size > 0) {
-      this.logger.info('Waiting for pending workflows to finish.');
-      await Promise.allSettled(Array.from(this.runningWorkflowMap.values(), (entry) => entry.promise));
+      this.logger.warn(
+        `Shutting down while ${this.runningWorkflowMap.size} workflows are still running: ${Array.from(this.runningWorkflowMap.keys()).join(', ')}`,
+      );
     }
     if (this.workflowEventsMap.map.size > 0) {
       this.logger.warn('Workflow events map is not empty - shutdown is not clean.');
