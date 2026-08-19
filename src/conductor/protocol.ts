@@ -991,6 +991,10 @@ export interface QueueOutput {
   partition_queue: boolean;
   polling_interval_sec: number;
   application_name: string | null;
+  partition_concurrency?: number | null;
+  partition_worker_concurrency?: number | null;
+  partition_rate_limit_max?: number | null;
+  partition_rate_limit_period_sec?: number | null;
 }
 
 export interface ListQueuesBody {

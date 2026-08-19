@@ -130,6 +130,11 @@ export interface queues {
   rate_limit_period_sec: number | null;
   priority_enabled: boolean;
   partition_queue: boolean;
+  // Any of these being set partitions the queue; each applies per partition.
+  partition_concurrency: number | null;
+  partition_worker_concurrency: number | null;
+  partition_rate_limit_max: number | null;
+  partition_rate_limit_period_sec: number | null;
   polling_interval_sec: number;
   created_at: number;
   updated_at: number;

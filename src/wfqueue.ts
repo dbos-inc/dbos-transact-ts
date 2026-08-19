@@ -16,9 +16,19 @@ import { globalParams, INTERNAL_QUEUE_NAME } from './utils';
  */
 export function logQueue(logger: GlobalLogger, q: WorkflowQueue): void {
   const opts: string[] = [];
-  if (q.concurrency !== undefined) opts.push(`concurrency=${q.concurrency}`);
+  if (q.concurrency !== undefined) {
+    // On a partitioned queue the queue-wide scope is worth naming explicitly.
+    opts.push(`${hasPartitionLimits(q) ? 'global_concurrency' : 'concurrency'}=${q.concurrency}`);
+  }
   if (q.workerConcurrency !== undefined) opts.push(`worker_concurrency=${q.workerConcurrency}`);
   if (q.rateLimit !== undefined) opts.push(`limit=${q.rateLimit.limitPerPeriod}/${q.rateLimit.periodSec}s`);
+  if (q.partitionConcurrency !== undefined) opts.push(`partition_concurrency=${q.partitionConcurrency}`);
+  if (q.partitionWorkerConcurrency !== undefined) {
+    opts.push(`partition_worker_concurrency=${q.partitionWorkerConcurrency}`);
+  }
+  if (q.partitionRateLimit !== undefined) {
+    opts.push(`partition_limit=${q.partitionRateLimit.limitPerPeriod}/${q.partitionRateLimit.periodSec}s`);
+  }
   if (q.priorityEnabled) opts.push('priority');
   if (q.partitionQueue) opts.push('partitioned');
   const optsStr = opts.length > 0 ? ` (${opts.join(', ')})` : '';
@@ -40,21 +50,32 @@ export interface QueueRateLimit {
 
 /**
  * Limit the number of concurrent workflows running for a queue.
- * This limit may be per worker or global
+ *
+ * Queue-wide limits bound the queue as a whole. Setting any `partition` limit
+ * additionally partitions the queue, so every enqueue must supply a partition
+ * key, and that limit is then enforced separately within each partition.
  */
 export interface QueueParameters {
   /** If defined, this limits the number of running workflows for a single DBOS process */
   workerConcurrency?: number;
   /** If defined, this limits the number of running workflows globally in the app */
-  concurrency?: number;
+  globalConcurrency?: number;
   /** If set, this limits the rate at which queued workflows are started */
   rateLimit?: QueueRateLimit;
-  /** If set, this queue supports priority */
-  priorityEnabled?: boolean;
-  /** If set, this queue supports partitioning */
-  partitionQueue?: boolean;
+  /** If defined, this limits the number of running workflows globally within each partition */
+  partitionConcurrency?: number;
+  /** If defined, this limits the number of running workflows on a single DBOS process within each partition */
+  partitionWorkerConcurrency?: number;
+  /** If set, this limits the rate at which queued workflows are started within each partition */
+  partitionRateLimit?: QueueRateLimit;
   /** Base (minimum) polling interval in ms for this queue's dispatch loop (default 1000) */
   minPollingIntervalMs?: number;
+  /** @deprecated Use `globalConcurrency`. */
+  concurrency?: number;
+  /** @deprecated Priority is always enabled. */
+  priorityEnabled?: boolean;
+  /** @deprecated Use the partition limits, any of which partitions the queue. */
+  partitionQueue?: boolean;
 }
 
 /**
@@ -73,6 +94,90 @@ export type QueueConflictResolution = 'update_if_latest_version' | 'always_updat
 export interface RegisterQueueOptions extends QueueParameters {
   /** How to behave when a queue with the same name already exists. */
   onConflict?: QueueConflictResolution;
+}
+
+/** A queue's limits, each resolved to the scope it is enforced at. */
+export interface ResolvedQueueLimits {
+  globalConcurrency?: number;
+  workerConcurrency?: number;
+  rateLimit?: QueueRateLimit;
+  partitionConcurrency?: number;
+  partitionWorkerConcurrency?: number;
+  partitionRateLimit?: QueueRateLimit;
+}
+
+/** The per-partition limits, any of which partitions a queue. */
+type PartitionLimits = Pick<
+  QueueParameters,
+  'partitionConcurrency' | 'partitionWorkerConcurrency' | 'partitionRateLimit'
+>;
+
+/** True when any per-partition limit is set, which is what partitions a queue. */
+function hasPartitionLimits(limits: PartitionLimits): boolean {
+  return (
+    limits.partitionConcurrency !== undefined ||
+    limits.partitionWorkerConcurrency !== undefined ||
+    limits.partitionRateLimit !== undefined
+  );
+}
+
+/**
+ * True for the deprecated `partitionQueue` mode, under which `concurrency`,
+ * `workerConcurrency`, and `rateLimit` all apply per partition.
+ */
+function isLegacyPartitioned(q: WorkflowQueue): boolean {
+  return q.partitionQueue && !hasPartitionLimits(q);
+}
+
+/** Resolve every limit on a queue to the scope it is actually enforced at. */
+export function resolveQueueLimits(q: WorkflowQueue): ResolvedQueueLimits {
+  if (isLegacyPartitioned(q)) {
+    return {
+      partitionConcurrency: q.concurrency,
+      partitionWorkerConcurrency: q.workerConcurrency,
+      partitionRateLimit: q.rateLimit,
+    };
+  }
+  return {
+    globalConcurrency: q.concurrency,
+    workerConcurrency: q.workerConcurrency,
+    rateLimit: q.rateLimit,
+    partitionConcurrency: q.partitionConcurrency,
+    partitionWorkerConcurrency: q.partitionWorkerConcurrency,
+    partitionRateLimit: q.partitionRateLimit,
+  };
+}
+
+/**
+ * Room left under this worker's queue-wide concurrency limit, given how many of
+ * its workflows are already running or claimed.
+ */
+function workerBudget(limits: ResolvedQueueLimits, running: number): number {
+  if (limits.partitionWorkerConcurrency !== undefined && limits.partitionWorkerConcurrency <= 0) {
+    // Zero per partition pauses this worker; the batched sweep enforces no per-partition worker limit of its own.
+    return 0;
+  }
+  if (limits.workerConcurrency === undefined) {
+    // A non-zero per-partition worker limit is enforced per partition instead.
+    return Infinity;
+  }
+  return Math.max(0, limits.workerConcurrency - running);
+}
+
+/** 40001 serialization_failure or 55P03 lock_not_available: a peer is claiming the same rows. */
+function isContentionError(e: unknown): boolean {
+  const code = (e as NodeJS.ErrnoException).code;
+  return code === '40001' || code === '55P03';
+}
+
+/** Fisher-Yates copy, so a sweep visits partitions in a different order each poll. */
+function shuffled<T>(items: T[]): T[] {
+  const result = [...items];
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result;
 }
 
 /**
@@ -102,6 +207,60 @@ function sysDBFor(q: WorkflowQueue): SystemDatabase {
   return exec.systemDatabase;
 }
 
+/** Reject a write that would silently re-scope the other limits on a legacy queue. */
+function requireNotLegacyPartitioned(q: WorkflowQueue, field: string): void {
+  if (isLegacyPartitioned(q)) {
+    throw new Error(
+      `Cannot set ${field} on queue ${q.name}: it is registered with the deprecated partitionQueue option, ` +
+        `under which concurrency, workerConcurrency, and rateLimit apply per partition. ` +
+        `Re-register the queue with the partition limits instead.`,
+    );
+  }
+}
+
+/** Validate a new queue-wide concurrency against the queue's other cached limits. */
+function checkConcurrencyBounds(q: WorkflowQueue, value: number | undefined): void {
+  if (value === undefined) return;
+  if (q.workerConcurrency !== undefined && q.workerConcurrency > value) {
+    throw new Error('workerConcurrency must be less than or equal to concurrency');
+  }
+  if (q.partitionConcurrency !== undefined && q.partitionConcurrency > value) {
+    throw new Error('partitionConcurrency must be less than or equal to globalConcurrency');
+  }
+  if (q.partitionWorkerConcurrency !== undefined && q.partitionWorkerConcurrency > value) {
+    throw new Error('partitionWorkerConcurrency must be less than or equal to concurrency');
+  }
+}
+
+/** Whether the queue is still partitioned once these limits take these values. */
+function partitionedAfter(q: WorkflowQueue, overrides: PartitionLimits): boolean {
+  return hasPartitionLimits({
+    partitionConcurrency: q.partitionConcurrency,
+    partitionWorkerConcurrency: q.partitionWorkerConcurrency,
+    partitionRateLimit: q.partitionRateLimit,
+    ...overrides,
+  });
+}
+
+function rateLimitFromRecord(max: number | null, periodSec: number | null): QueueRateLimit | undefined {
+  return max !== null && periodSec !== null ? { limitPerPeriod: max, periodSec } : undefined;
+}
+
+/** Copy a persisted row's configuration onto a queue instance. */
+function applyRecord(q: WorkflowQueue, record: QueueRecord): void {
+  q.concurrency = record.concurrency ?? undefined;
+  q.workerConcurrency = record.workerConcurrency ?? undefined;
+  q.rateLimit = rateLimitFromRecord(record.rateLimitMax, record.rateLimitPeriodSec);
+  q.priorityEnabled = record.priorityEnabled;
+  q.partitionConcurrency = record.partitionConcurrency ?? undefined;
+  q.partitionWorkerConcurrency = record.partitionWorkerConcurrency ?? undefined;
+  q.partitionRateLimit = rateLimitFromRecord(record.partitionRateLimitMax, record.partitionRateLimitPeriodSec);
+  // Partitioning is inferred from the limits, so a row whose flag disagrees with them heals on read.
+  q.partitionQueue = record.partitionQueue || hasPartitionLimits(q);
+  q.minPollingIntervalMs = record.pollingIntervalSec * 1000;
+  q.applicationName = record.applicationName;
+}
+
 /**
  * Re-read the queue's row from the database and update the cached fields on
  * `q` in place. No-op for in-memory queues. Throws if the row has been
@@ -113,16 +272,7 @@ async function refreshFromDb(q: WorkflowQueue): Promise<void> {
   if (record === null) {
     throw new Error(`Queue '${q.name}' was not found in the database.`);
   }
-  q.concurrency = record.concurrency ?? undefined;
-  q.workerConcurrency = record.workerConcurrency ?? undefined;
-  q.rateLimit =
-    record.rateLimitMax !== null && record.rateLimitPeriodSec !== null
-      ? { limitPerPeriod: record.rateLimitMax, periodSec: record.rateLimitPeriodSec }
-      : undefined;
-  q.priorityEnabled = record.priorityEnabled;
-  q.partitionQueue = record.partitionQueue;
-  q.minPollingIntervalMs = record.pollingIntervalSec * 1000;
-  q.applicationName = record.applicationName;
+  applyRecord(q, record);
 }
 
 /**
@@ -142,6 +292,9 @@ export class WorkflowQueue {
   workerConcurrency?: number;
   priorityEnabled: boolean = false;
   partitionQueue: boolean = false;
+  partitionConcurrency?: number;
+  partitionWorkerConcurrency?: number;
+  partitionRateLimit?: QueueRateLimit;
   minPollingIntervalMs?: number;
   /** Owner from the queues table; undefined for in-memory and unclaimed queues. */
   applicationName?: string;
@@ -189,11 +342,15 @@ export class WorkflowQueue {
     }
     WorkflowQueue.validateQueueParams(params);
 
-    this.concurrency = params.concurrency;
+    this.concurrency = params.globalConcurrency ?? params.concurrency;
     this.rateLimit = params.rateLimit;
     this.workerConcurrency = params.workerConcurrency;
     this.priorityEnabled = params.priorityEnabled ?? false;
-    this.partitionQueue = params.partitionQueue ?? false;
+    this.partitionConcurrency = params.partitionConcurrency;
+    this.partitionWorkerConcurrency = params.partitionWorkerConcurrency;
+    this.partitionRateLimit = params.partitionRateLimit;
+    // Partitioning is inferred from any per-partition limit; the deprecated flag tracks it.
+    this.partitionQueue = (params.partitionQueue ?? false) || hasPartitionLimits(params);
     this.minPollingIntervalMs = params.minPollingIntervalMs;
 
     if (wfQueueRunner.wfQueuesByName.has(name)) {
@@ -204,9 +361,72 @@ export class WorkflowQueue {
 
   /** Throws if any combination of queue parameters is invalid. */
   static validateQueueParams(params: QueueParameters): void {
-    const { concurrency, workerConcurrency, rateLimit, minPollingIntervalMs } = params;
-    if (workerConcurrency !== undefined && concurrency !== undefined && workerConcurrency > concurrency) {
+    const {
+      concurrency,
+      globalConcurrency,
+      workerConcurrency,
+      rateLimit,
+      partitionConcurrency,
+      partitionWorkerConcurrency,
+      partitionRateLimit,
+      partitionQueue,
+      minPollingIntervalMs,
+    } = params;
+    if (concurrency !== undefined && globalConcurrency !== undefined) {
+      throw new Error('concurrency is deprecated in favor of globalConcurrency; set only one of them');
+    }
+    if (partitionQueue && hasPartitionLimits(params)) {
+      throw new Error('partitionQueue is deprecated in favor of the partition limits; set only one of them');
+    }
+    if (partitionQueue && globalConcurrency !== undefined) {
+      throw new Error(
+        'partitionQueue applies every limit per partition, so it cannot be combined with globalConcurrency; use partitionConcurrency instead',
+      );
+    }
+    if (partitionConcurrency !== undefined && partitionConcurrency < 1) {
+      throw new Error('partitionConcurrency must be at least 1');
+    }
+    if (partitionWorkerConcurrency !== undefined && partitionWorkerConcurrency < 1) {
+      throw new Error('partitionWorkerConcurrency must be at least 1');
+    }
+    if (
+      partitionRateLimit !== undefined &&
+      (partitionRateLimit.limitPerPeriod === undefined || partitionRateLimit.periodSec === undefined)
+    ) {
+      throw new Error('partitionRateLimit must specify both limitPerPeriod and periodSec');
+    }
+    if (
+      partitionWorkerConcurrency !== undefined &&
+      partitionConcurrency !== undefined &&
+      partitionWorkerConcurrency > partitionConcurrency
+    ) {
+      throw new Error('partitionConcurrency must be greater than or equal to partitionWorkerConcurrency');
+    }
+    if (
+      partitionWorkerConcurrency !== undefined &&
+      workerConcurrency !== undefined &&
+      partitionWorkerConcurrency > workerConcurrency
+    ) {
+      throw new Error('workerConcurrency must be greater than or equal to partitionWorkerConcurrency');
+    }
+    // Under the deprecated partitionQueue mode concurrency is itself a per-partition limit, so these compare like with like.
+    const queueConcurrency = globalConcurrency ?? concurrency;
+    if (workerConcurrency !== undefined && queueConcurrency !== undefined && workerConcurrency > queueConcurrency) {
       throw new Error('concurrency must be greater than or equal to workerConcurrency');
+    }
+    if (
+      partitionConcurrency !== undefined &&
+      queueConcurrency !== undefined &&
+      partitionConcurrency > queueConcurrency
+    ) {
+      throw new Error('globalConcurrency must be greater than or equal to partitionConcurrency');
+    }
+    if (
+      partitionWorkerConcurrency !== undefined &&
+      queueConcurrency !== undefined &&
+      partitionWorkerConcurrency > queueConcurrency
+    ) {
+      throw new Error('concurrency must be greater than or equal to partitionWorkerConcurrency');
     }
     if (minPollingIntervalMs !== undefined && minPollingIntervalMs <= 0) {
       throw new Error('minPollingIntervalMs must be positive');
@@ -220,12 +440,17 @@ export class WorkflowQueue {
   static recordFromParams(name: string, params: QueueParameters): QueueRecord {
     return {
       name,
-      concurrency: params.concurrency ?? null,
+      concurrency: params.globalConcurrency ?? params.concurrency ?? null,
       workerConcurrency: params.workerConcurrency ?? null,
       rateLimitMax: params.rateLimit ? params.rateLimit.limitPerPeriod : null,
       rateLimitPeriodSec: params.rateLimit ? params.rateLimit.periodSec : null,
       priorityEnabled: params.priorityEnabled ?? false,
-      partitionQueue: params.partitionQueue ?? false,
+      // Any per-partition limit implies partitioning, whichever mode was used.
+      partitionQueue: (params.partitionQueue ?? false) || hasPartitionLimits(params),
+      partitionConcurrency: params.partitionConcurrency ?? null,
+      partitionWorkerConcurrency: params.partitionWorkerConcurrency ?? null,
+      partitionRateLimitMax: params.partitionRateLimit ? params.partitionRateLimit.limitPerPeriod : null,
+      partitionRateLimitPeriodSec: params.partitionRateLimit ? params.partitionRateLimit.periodSec : null,
       pollingIntervalSec: (params.minPollingIntervalMs ?? 1000) / 1000,
     };
   }
@@ -241,37 +466,45 @@ export class WorkflowQueue {
     // in `wfQueuesByName`) and strip `readonly` so we can set the fields here.
     const q = Object.create(WorkflowQueue.prototype) as { -readonly [K in keyof WorkflowQueue]: WorkflowQueue[K] };
     q.name = record.name;
-    q.concurrency = record.concurrency ?? undefined;
-    q.workerConcurrency = record.workerConcurrency ?? undefined;
-    q.rateLimit =
-      record.rateLimitMax !== null && record.rateLimitPeriodSec !== null
-        ? { limitPerPeriod: record.rateLimitMax, periodSec: record.rateLimitPeriodSec }
-        : undefined;
-    q.priorityEnabled = record.priorityEnabled;
-    q.partitionQueue = record.partitionQueue;
-    q.minPollingIntervalMs = record.pollingIntervalSec * 1000;
-    q.applicationName = record.applicationName;
     q.databaseBacked = true;
     q.clientBound = clientSystemDatabase !== undefined;
+    applyRecord(q as WorkflowQueue, record);
     if (clientSystemDatabase !== undefined) {
       clientSystemDatabases.set(q as WorkflowQueue, clientSystemDatabase);
     }
     return q as WorkflowQueue;
   }
 
+  /** @deprecated Use `setGlobalConcurrency`. */
   async setConcurrency(value: number | undefined): Promise<void> {
     requireDatabaseBacked(this);
-    if (value !== undefined && this.workerConcurrency !== undefined && this.workerConcurrency > value) {
-      throw new Error('workerConcurrency must be less than or equal to concurrency');
-    }
+    // Refresh so the cross-field checks see the limits currently stored in the database.
+    await refreshFromDb(this);
+    checkConcurrencyBounds(this, value);
+    await sysDBFor(this).updateQueue(this.name, { concurrency: value ?? null });
+    this.concurrency = value;
+  }
+
+  async setGlobalConcurrency(value: number | undefined): Promise<void> {
+    requireDatabaseBacked(this);
+    await refreshFromDb(this);
+    requireNotLegacyPartitioned(this, 'globalConcurrency');
+    checkConcurrencyBounds(this, value);
     await sysDBFor(this).updateQueue(this.name, { concurrency: value ?? null });
     this.concurrency = value;
   }
 
   async setWorkerConcurrency(value: number | undefined): Promise<void> {
     requireDatabaseBacked(this);
-    if (value !== undefined && this.concurrency !== undefined && value > this.concurrency) {
-      throw new Error('workerConcurrency must be less than or equal to concurrency');
+    await refreshFromDb(this);
+    requireNotLegacyPartitioned(this, 'workerConcurrency');
+    if (value !== undefined) {
+      if (this.concurrency !== undefined && value > this.concurrency) {
+        throw new Error('workerConcurrency must be less than or equal to concurrency');
+      }
+      if (this.partitionWorkerConcurrency !== undefined && this.partitionWorkerConcurrency > value) {
+        throw new Error('partitionWorkerConcurrency must be less than or equal to workerConcurrency');
+      }
     }
     await sysDBFor(this).updateQueue(this.name, { workerConcurrency: value ?? null });
     this.workerConcurrency = value;
@@ -282,6 +515,9 @@ export class WorkflowQueue {
     if (value !== undefined && (value.limitPerPeriod === undefined || value.periodSec === undefined)) {
       throw new Error('rateLimit must specify both limitPerPeriod and periodSec');
     }
+    // Refresh so the check below sees the partition limits currently stored in the database.
+    await refreshFromDb(this);
+    requireNotLegacyPartitioned(this, 'rateLimit');
     await sysDBFor(this).updateQueue(this.name, {
       rateLimitMax: value ? value.limitPerPeriod : null,
       rateLimitPeriodSec: value ? value.periodSec : null,
@@ -289,14 +525,92 @@ export class WorkflowQueue {
     this.rateLimit = value;
   }
 
+  async setPartitionConcurrency(value: number | undefined): Promise<void> {
+    requireDatabaseBacked(this);
+    if (value !== undefined && value < 1) {
+      throw new Error('partitionConcurrency must be at least 1');
+    }
+    await refreshFromDb(this);
+    requireNotLegacyPartitioned(this, 'partitionConcurrency');
+    if (value !== undefined) {
+      if (this.concurrency !== undefined && value > this.concurrency) {
+        throw new Error('partitionConcurrency must be less than or equal to globalConcurrency');
+      }
+      if (this.partitionWorkerConcurrency !== undefined && this.partitionWorkerConcurrency > value) {
+        throw new Error('partitionConcurrency must be greater than or equal to partitionWorkerConcurrency');
+      }
+    }
+    // Partitioning is inferred from the limits, so the deprecated flag follows them.
+    const partitioned = partitionedAfter(this, { partitionConcurrency: value });
+    await sysDBFor(this).updateQueue(this.name, {
+      partitionConcurrency: value ?? null,
+      partitionQueue: partitioned,
+    });
+    this.partitionConcurrency = value;
+    this.partitionQueue = partitioned;
+  }
+
+  async setPartitionWorkerConcurrency(value: number | undefined): Promise<void> {
+    requireDatabaseBacked(this);
+    if (value !== undefined && value < 1) {
+      throw new Error('partitionWorkerConcurrency must be at least 1');
+    }
+    await refreshFromDb(this);
+    requireNotLegacyPartitioned(this, 'partitionWorkerConcurrency');
+    if (value !== undefined) {
+      if (this.partitionConcurrency !== undefined && value > this.partitionConcurrency) {
+        throw new Error('partitionWorkerConcurrency must be less than or equal to partitionConcurrency');
+      }
+      if (this.workerConcurrency !== undefined && value > this.workerConcurrency) {
+        throw new Error('partitionWorkerConcurrency must be less than or equal to workerConcurrency');
+      }
+      if (this.concurrency !== undefined && value > this.concurrency) {
+        throw new Error('partitionWorkerConcurrency must be less than or equal to concurrency');
+      }
+    }
+    const partitioned = partitionedAfter(this, { partitionWorkerConcurrency: value });
+    await sysDBFor(this).updateQueue(this.name, {
+      partitionWorkerConcurrency: value ?? null,
+      partitionQueue: partitioned,
+    });
+    this.partitionWorkerConcurrency = value;
+    this.partitionQueue = partitioned;
+  }
+
+  async setPartitionRateLimit(value: QueueRateLimit | undefined): Promise<void> {
+    requireDatabaseBacked(this);
+    if (value !== undefined && (value.limitPerPeriod === undefined || value.periodSec === undefined)) {
+      throw new Error('partitionRateLimit must specify both limitPerPeriod and periodSec');
+    }
+    await refreshFromDb(this);
+    requireNotLegacyPartitioned(this, 'partitionRateLimit');
+    const partitioned = partitionedAfter(this, { partitionRateLimit: value });
+    await sysDBFor(this).updateQueue(this.name, {
+      partitionRateLimitMax: value ? value.limitPerPeriod : null,
+      partitionRateLimitPeriodSec: value ? value.periodSec : null,
+      partitionQueue: partitioned,
+    });
+    this.partitionRateLimit = value;
+    this.partitionQueue = partitioned;
+  }
+
+  /** @deprecated Priority is always enabled. */
   async setPriorityEnabled(value: boolean): Promise<void> {
     requireDatabaseBacked(this);
     await sysDBFor(this).updateQueue(this.name, { priorityEnabled: value });
     this.priorityEnabled = value;
   }
 
+  /** @deprecated Use the partition limit setters. */
   async setPartitionQueue(value: boolean): Promise<void> {
     requireDatabaseBacked(this);
+    // Refresh so the check below sees the partition limits currently stored in the database.
+    await refreshFromDb(this);
+    if (hasPartitionLimits(this)) {
+      throw new Error(
+        `Cannot set partitionQueue on queue ${this.name}: it is partitioned by its partition limits. Clear those instead.`,
+      );
+    }
     await sysDBFor(this).updateQueue(this.name, { partitionQueue: value });
     this.partitionQueue = value;
   }
@@ -310,26 +624,49 @@ export class WorkflowQueue {
     this.minPollingIntervalMs = value;
   }
 
+  /** @deprecated Use `getGlobalConcurrency`. */
   async getConcurrency(): Promise<number | undefined> {
     await refreshFromDb(this);
     return this.concurrency;
   }
 
+  async getGlobalConcurrency(): Promise<number | undefined> {
+    await refreshFromDb(this);
+    return resolveQueueLimits(this).globalConcurrency;
+  }
+
   async getWorkerConcurrency(): Promise<number | undefined> {
     await refreshFromDb(this);
-    return this.workerConcurrency;
+    return resolveQueueLimits(this).workerConcurrency;
   }
 
   async getRateLimit(): Promise<QueueRateLimit | undefined> {
     await refreshFromDb(this);
-    return this.rateLimit;
+    return resolveQueueLimits(this).rateLimit;
   }
 
+  async getPartitionConcurrency(): Promise<number | undefined> {
+    await refreshFromDb(this);
+    return resolveQueueLimits(this).partitionConcurrency;
+  }
+
+  async getPartitionWorkerConcurrency(): Promise<number | undefined> {
+    await refreshFromDb(this);
+    return resolveQueueLimits(this).partitionWorkerConcurrency;
+  }
+
+  async getPartitionRateLimit(): Promise<QueueRateLimit | undefined> {
+    await refreshFromDb(this);
+    return resolveQueueLimits(this).partitionRateLimit;
+  }
+
+  /** @deprecated Priority is always enabled. */
   async getPriorityEnabled(): Promise<boolean> {
     await refreshFromDb(this);
     return this.priorityEnabled;
   }
 
+  /** @deprecated Use the partition limit getters. */
   async getPartitionQueue(): Promise<boolean> {
     await refreshFromDb(this);
     return this.partitionQueue;
@@ -647,48 +984,68 @@ class WFQueueRunner {
       }
       await exec.dispatchDequeuedWorkflows(wfids);
     };
+    const limits = resolveQueueLimits(queue);
+    const sysdb = exec.systemDatabase;
     // Dequeue workflows for this queue, either in one batched sweep across partitions or one partition at a time.
     try {
-      if (
-        queue.partitionQueue &&
-        queue.concurrency === 1 &&
-        queue.rateLimit === undefined &&
-        queue.workerConcurrency !== 0
-      ) {
-        // Batched path: one transaction claims every partition's head (valid only for concurrency=1, see findAndMarkStartablePartitionedWorkflows).
-        const wfids = await exec.systemDatabase.findAndMarkStartablePartitionedWorkflows(
-          queue,
-          exec.executorID,
-          globalParams.appVersion,
-        );
-        await dispatch(wfids);
-      } else if (queue.partitionQueue) {
-        // Every other partitioned config sweeps one partition at a time.
-        const partitionKeys = await exec.systemDatabase.getQueuePartitions(queue.name);
-        for (const partitionKey of partitionKeys) {
-          const partitionWfids = await exec.systemDatabase.findAndMarkStartableWorkflows(
-            queue,
-            exec.executorID,
-            globalParams.appVersion,
-            partitionKey,
-          );
-          await dispatch(partitionWfids);
-          await debugTriggerPoint(DEBUG_TRIGGER_BETWEEN_PARTITION_DISPATCHES);
-        }
-      } else {
-        const wfids = await exec.systemDatabase.findAndMarkStartableWorkflows(
+      if (!queue.partitionQueue) {
+        const wfids = await sysdb.findAndMarkStartableWorkflows(
           queue,
           exec.executorID,
           globalParams.appVersion,
           undefined,
+          sysdb.countRunningWorkflowsForQueue(queue.name),
         );
         await dispatch(wfids);
+      } else if (
+        limits.partitionConcurrency === 1 &&
+        limits.globalConcurrency === undefined &&
+        limits.rateLimit === undefined &&
+        limits.partitionRateLimit === undefined
+      ) {
+        // Batched path: one transaction claims every partition's head (see findAndMarkStartablePartitionedWorkflows).
+        const maxTasks = workerBudget(limits, sysdb.countRunningWorkflowsForQueue(queue.name));
+        if (maxTasks > 0) {
+          const wfids = await sysdb.findAndMarkStartablePartitionedWorkflows(
+            queue,
+            exec.executorID,
+            globalParams.appVersion,
+            maxTasks,
+          );
+          await dispatch(wfids);
+        }
+      } else {
+        // Every other partitioned config sweeps one partition at a time, in random order to prevent starvation.
+        const partitionKeys = shuffled(await sysdb.getQueuePartitions(queue.name));
+        // Snapshot once: dispatch is asynchronous, so re-reading would count this sweep's own claims twice.
+        const running = sysdb.countRunningWorkflowsForQueue(queue.name);
+        let claimed = 0;
+        for (const partitionKey of partitionKeys) {
+          if (workerBudget(limits, running + claimed) <= 0) break;
+          let partitionWfids: string[];
+          try {
+            partitionWfids = await sysdb.findAndMarkStartableWorkflows(
+              queue,
+              exec.executorID,
+              globalParams.appVersion,
+              partitionKey,
+              running + claimed,
+              sysdb.countRunningWorkflowsForPartition(queue.name, partitionKey),
+            );
+          } catch (e) {
+            // Lock held or claim raced by another worker: skip just this partition, no queue-wide backoff.
+            if (isContentionError(e)) continue;
+            throw e;
+          }
+          claimed += partitionWfids.length;
+          await dispatch(partitionWfids);
+          await debugTriggerPoint(DEBUG_TRIGGER_BETWEEN_PARTITION_DISPATCHES);
+        }
       }
     } catch (e) {
       const err = e as Error;
       // Handle serialization errors and lock contention with backoff
-      if ('code' in err && (err.code === '40001' || err.code === '55P03')) {
-        // 40001: serialization_failure, 55P03: lock_not_available
+      if (isContentionError(err)) {
         contentionDetected = true;
         exec.logger.warn(`Contention detected in queue ${queue.name}.`);
       } else {

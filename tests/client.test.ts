@@ -1413,6 +1413,23 @@ describe('DBOSClient', () => {
       expect(retrieved!.priorityEnabled).toBe(true);
       expect(retrieved!.minPollingIntervalMs).toBe(2500);
 
+      // Partition limits persist through the client's own registration path.
+      const partitionedName = `test_client_partition_queue_${randomUUID()}`;
+      await client.registerQueue(partitionedName, {
+        globalConcurrency: 6,
+        partitionConcurrency: 2,
+        partitionWorkerConcurrency: 1,
+        partitionRateLimit: { limitPerPeriod: 3, periodSec: 2 },
+      });
+      const partitioned = await client.retrieveQueue(partitionedName);
+      expect(partitioned!.concurrency).toBe(6);
+      expect(partitioned!.partitionConcurrency).toBe(2);
+      expect(partitioned!.partitionWorkerConcurrency).toBe(1);
+      expect(partitioned!.partitionRateLimit).toEqual({ limitPerPeriod: 3, periodSec: 2 });
+      // Any per-partition limit partitions the queue, without the deprecated flag.
+      expect(partitioned!.partitionQueue).toBe(true);
+      await client.deleteQueue(partitionedName);
+
       // Setters write through the client's database; the launched DBOS
       // executor sees the same row.
       await retrieved!.setConcurrency(8);

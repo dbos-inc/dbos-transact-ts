@@ -34,7 +34,7 @@ import {
   sleepms,
 } from './utils';
 import { GlobalLogger } from './telemetry/logs';
-import { WorkflowQueue } from './wfqueue';
+import { QueueRateLimit, resolveQueueLimits, WorkflowQueue } from './wfqueue';
 import { randomUUID } from 'crypto';
 import { getClientConfig } from './utils';
 import { ensurePGDatabase, maskDatabaseUrl } from './database_utils';
@@ -143,6 +143,11 @@ export interface QueueRecord {
   rateLimitPeriodSec: number | null;
   priorityEnabled: boolean;
   partitionQueue: boolean;
+  // Any of these being set partitions the queue; each applies per partition.
+  partitionConcurrency: number | null;
+  partitionWorkerConcurrency: number | null;
+  partitionRateLimitMax: number | null;
+  partitionRateLimitPeriodSec: number | null;
   pollingIntervalSec: number;
   // Owner from the queues table; undefined for in-memory and pre-upgrade queues.
   applicationName?: string;
@@ -158,11 +163,17 @@ const QUEUE_COLUMN_BY_FIELD: Record<keyof QueueRecordUpdate, string> = {
   rateLimitPeriodSec: 'rate_limit_period_sec',
   priorityEnabled: 'priority_enabled',
   partitionQueue: 'partition_queue',
+  partitionConcurrency: 'partition_concurrency',
+  partitionWorkerConcurrency: 'partition_worker_concurrency',
+  partitionRateLimitMax: 'partition_rate_limit_max',
+  partitionRateLimitPeriodSec: 'partition_rate_limit_period_sec',
   pollingIntervalSec: 'polling_interval_sec',
 };
 
 const QUEUE_COLUMNS =
-  'name, concurrency, worker_concurrency, rate_limit_max, rate_limit_period_sec, priority_enabled, partition_queue, polling_interval_sec, application_name';
+  'name, concurrency, worker_concurrency, rate_limit_max, rate_limit_period_sec, priority_enabled, partition_queue, ' +
+  'partition_concurrency, partition_worker_concurrency, partition_rate_limit_max, partition_rate_limit_period_sec, ' +
+  'polling_interval_sec, application_name';
 
 function queueRecordFromRow(row: queues): QueueRecord {
   return {
@@ -173,6 +184,10 @@ function queueRecordFromRow(row: queues): QueueRecord {
     rateLimitPeriodSec: row.rate_limit_period_sec,
     priorityEnabled: row.priority_enabled,
     partitionQueue: row.partition_queue,
+    partitionConcurrency: row.partition_concurrency,
+    partitionWorkerConcurrency: row.partition_worker_concurrency,
+    partitionRateLimitMax: row.partition_rate_limit_max,
+    partitionRateLimitPeriodSec: row.partition_rate_limit_period_sec,
     pollingIntervalSec: row.polling_interval_sec,
     applicationName: row.application_name ?? undefined,
   };
@@ -2382,7 +2397,17 @@ export class SystemDatabase {
     this.runningWorkflowMap.delete(workflowID);
   }
 
-  countRunningWorkflowsForQueue(queueName: string, queuePartitionKey?: string): number {
+  /** Workflows this worker is running for a queue, across every partition of it. */
+  countRunningWorkflowsForQueue(queueName: string): number {
+    let count = 0;
+    for (const entry of this.runningWorkflowMap.values()) {
+      if (entry.queueName === queueName) count++;
+    }
+    return count;
+  }
+
+  /** Workflows this worker is running for one partition of a queue. */
+  countRunningWorkflowsForPartition(queueName: string, queuePartitionKey?: string): number {
     let count = 0;
     for (const entry of this.runningWorkflowMap.values()) {
       if (entry.queueName === queueName && entry.queuePartitionKey === queuePartitionKey) count++;
@@ -3366,41 +3391,38 @@ export class SystemDatabase {
     executorID: string,
     appVersion: string,
     queuePartitionKey?: string,
+    localRunningCount: number = 0,
+    partitionLocalRunningCount: number = 0,
   ): Promise<string[]> {
-    const limiterPeriodMS = queue.rateLimit ? queue.rateLimit.periodSec * 1000 : 0;
     const claimedIDs: string[] = [];
-    const localRunningForQueue = this.countRunningWorkflowsForQueue(queue.name, queuePartitionKey);
-
-    // Build partition key filter
-    let partitionFilter = '';
-    const partitionParams: string[] = [];
-    if (queuePartitionKey !== undefined) {
-      partitionFilter = `AND queue_partition_key = $PARTITION`;
-      partitionParams.push(queuePartitionKey);
-    }
+    const limits = resolveQueueLimits(queue);
+    const partitionParams: string[] = queuePartitionKey !== undefined ? [queuePartitionKey] : [];
+    // Shares a concurrency or rate limit budget with other executors.
+    const hasSharedBudget =
+      limits.globalConcurrency !== undefined ||
+      limits.partitionConcurrency !== undefined ||
+      limits.rateLimit !== undefined ||
+      limits.partitionRateLimit !== undefined;
+    // Shares that budget across partitions too, so sweeps of different partitions read disjoint rows and could each spend it.
+    const hasWriteSkew =
+      queuePartitionKey !== undefined && (limits.globalConcurrency !== undefined || limits.rateLimit !== undefined);
 
     const client = await this.#connect();
     try {
-      // Default to READ COMMITTED except with global concurrency limits or rate limits
-      if (queue.concurrency !== undefined || queue.rateLimit !== undefined) {
-        await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ');
+      // Default to READ COMMITTED except with a budget shared across executors
+      if (hasSharedBudget) {
+        await client.query(`BEGIN ISOLATION LEVEL ${hasWriteSkew ? 'SERIALIZABLE' : 'REPEATABLE READ'}`);
       } else {
         await client.query('BEGIN');
       }
 
-      // If there is a rate limit, compute how many functions have started in its period.
-      let numRecentQueries = 0;
-      if (queue.rateLimit) {
-        const params: unknown[] = [
-          queue.name,
-          StatusString.ENQUEUED,
-          StatusString.DELAYED,
-          limiterPeriodMS,
-          ...partitionParams,
-        ];
+      /** Slots left in a rate limit's rolling window, at the scope that limit applies to. */
+      const rateLimitRemaining = async (rateLimit: QueueRateLimit, partitionScoped: boolean): Promise<number> => {
+        const params: unknown[] = [queue.name, StatusString.ENQUEUED, StatusString.DELAYED, rateLimit.periodSec * 1000];
         // Count only what this application would dequeue, matching the select below.
         const scope = this.#appNameFilter('application_name', this.appName, params);
-        const countResult = await client.query<{ count: string }>(
+        const partitionFilter = partitionScoped ? `AND queue_partition_key = $${params.push(queuePartitionKey)}` : '';
+        const { rows } = await client.query<{ count: string }>(
           `SELECT COUNT(*) FROM "${this.schemaName}".workflow_status
            WHERE queue_name = $1
              AND rate_limited = TRUE
@@ -3408,53 +3430,75 @@ export class SystemDatabase {
              -- Database clock on both sides, as the claim stamps started_at_epoch_ms with it.
              AND started_at_epoch_ms > (EXTRACT(epoch FROM now()) * 1000)::bigint - $4
              AND ${scope}
-             ${partitionFilter.replace('$PARTITION', '$5')}`,
+             ${partitionFilter}`,
           params,
         );
-        numRecentQueries = Number(countResult.rows[0].count);
-        if (numRecentQueries >= queue.rateLimit.limitPerPeriod) {
-          await client.query('COMMIT');
-          return claimedIDs;
-        }
-      }
+        return rateLimit.limitPerPeriod - Number(rows[0].count);
+      };
 
-      // Dequeue functions eligible for this worker and ordered by the time at which they were enqueued.
-      // If there is a global or local concurrency limit N, select only the N oldest enqueued
-      // functions, else select all of them.
+      /**
+       * Workflows already running, which peer workers count against too. Kept as its own query per
+       * scope: the partition-scoped predicate rides idx_workflow_status_partition_dequeue_v2, which
+       * a queue-wide scan loses.
+       */
+      const pendingCount = async (partitionScoped: boolean): Promise<number> => {
+        const params: unknown[] = [queue.name, StatusString.PENDING];
+        const scope = this.#appNameFilter('application_name', this.appName, params);
+        const partitionFilter = partitionScoped ? `AND queue_partition_key = $${params.push(queuePartitionKey)}` : '';
+        const { rows } = await client.query<{ count: string }>(
+          `SELECT COUNT(*) FROM "${this.schemaName}".workflow_status
+           WHERE queue_name = $1 AND status = $2 AND ${scope} ${partitionFilter}`,
+          params,
+        );
+        return Number(rows[0]?.count ?? 0);
+      };
 
+      // Compute maxTasks, the number of workflows startable under every flow control limit on this queue.
       let maxTasks = Infinity;
 
-      if (queue.rateLimit) {
-        // Bound the claim by the limiter's remaining slots so a backlogged queue locks only what it can start.
-        maxTasks = Math.max(0, queue.rateLimit.limitPerPeriod - numRecentQueries);
-      }
-
-      if (queue.workerConcurrency !== undefined) {
+      if (limits.workerConcurrency !== undefined) {
         // Use the in-memory registry for this worker's running count — avoids a DB round trip.
-        maxTasks = Math.min(maxTasks, Math.max(0, queue.workerConcurrency - localRunningForQueue));
+        maxTasks = Math.min(maxTasks, Math.max(0, limits.workerConcurrency - localRunningCount));
+      }
+      if (limits.partitionWorkerConcurrency !== undefined) {
+        maxTasks = Math.min(maxTasks, Math.max(0, limits.partitionWorkerConcurrency - partitionLocalRunningCount));
+      }
+      if (maxTasks <= 0) {
+        await client.query('COMMIT');
+        return claimedIDs;
       }
 
-      if (queue.concurrency !== undefined) {
+      if (limits.rateLimit !== undefined) {
+        // Bound the claim by the limiter's remaining slots so a backlogged queue locks only what it can start.
+        maxTasks = Math.min(maxTasks, await rateLimitRemaining(limits.rateLimit, false));
+      }
+      if (limits.partitionRateLimit !== undefined) {
+        maxTasks = Math.min(maxTasks, await rateLimitRemaining(limits.partitionRateLimit, true));
+      }
+      if (maxTasks <= 0) {
+        await client.query('COMMIT');
+        return claimedIDs;
+      }
+
+      if (limits.globalConcurrency !== undefined) {
         // Global concurrency still requires a DB query since other workers may be running workflows too.
-        const params: unknown[] = [queue.name, StatusString.PENDING, ...partitionParams];
-        const scope = this.#appNameFilter('application_name', this.appName, params);
-        const runningTasksResult = await client.query<{ task_count: string }>(
-          `SELECT COUNT(*) as task_count
-           FROM "${this.schemaName}".workflow_status
-           WHERE queue_name = $1 AND status = $2 AND ${scope}
-             ${partitionFilter.replace('$PARTITION', '$3')}`,
-          params,
-        );
-        const totalRunningTasks = Number(runningTasksResult.rows[0]?.task_count ?? 0);
-        if (totalRunningTasks > queue.concurrency) {
+        const totalRunningTasks = await pendingCount(false);
+        if (totalRunningTasks > limits.globalConcurrency) {
           this.logger.warn(
-            `Total running tasks (${totalRunningTasks}) exceeds the global concurrency limit (${queue.concurrency})`,
+            `Total running tasks (${totalRunningTasks}) exceeds the global concurrency limit (${limits.globalConcurrency})`,
           );
         }
-        const availableTasks = Math.max(0, queue.concurrency - totalRunningTasks);
-        maxTasks = Math.min(maxTasks, availableTasks);
+        maxTasks = Math.min(maxTasks, Math.max(0, limits.globalConcurrency - totalRunningTasks));
       }
-
+      if (limits.partitionConcurrency !== undefined) {
+        const partitionRunningTasks = await pendingCount(true);
+        if (partitionRunningTasks > limits.partitionConcurrency) {
+          this.logger.warn(
+            `Total running tasks (${partitionRunningTasks}) on partition ${queuePartitionKey} of queue ${queue.name} exceeds the partition concurrency limit (${limits.partitionConcurrency})`,
+          );
+        }
+        maxTasks = Math.min(maxTasks, Math.max(0, limits.partitionConcurrency - partitionRunningTasks));
+      }
       // Return immediately if there are no available tasks due to flow control limits
       if (maxTasks <= 0) {
         await client.query('COMMIT');
@@ -3470,8 +3514,7 @@ export class SystemDatabase {
 
       // A limit shared across processes needs a consistent view of the table: NOWAIT makes an
       // overlapping dequeuer abort rather than claim the next rows and spend the same budget twice.
-      const sharedBudget = queue.concurrency !== undefined || queue.rateLimit !== undefined;
-      const lockMode = sharedBudget ? 'FOR UPDATE NOWAIT' : 'FOR UPDATE SKIP LOCKED';
+      const lockMode = hasSharedBudget ? 'FOR UPDATE NOWAIT' : 'FOR UPDATE SKIP LOCKED';
       const limitClause = maxTasks !== Infinity ? `LIMIT ${maxTasks}` : '';
 
       const selectParams: unknown[] = [StatusString.ENQUEUED, queue.name, appVersion, ...partitionParams];
@@ -3483,7 +3526,7 @@ export class SystemDatabase {
           AND queue_name = $2
           AND ${versionClause}
           AND ${selectScope}
-          ${partitionFilter.replace('$PARTITION', '$4')}
+          ${queuePartitionKey !== undefined ? 'AND queue_partition_key = $4' : ''}
         ORDER BY priority ASC, created_at ASC
         ${limitClause}
         ${lockMode}
@@ -3502,7 +3545,7 @@ export class SystemDatabase {
           StatusString.PENDING,
           executorID,
           appVersion,
-          queue.rateLimit !== undefined,
+          limits.rateLimit !== undefined || limits.partitionRateLimit !== undefined,
           workflowIDs,
           StatusString.ENQUEUED,
           // Claim an unclaimed row for this application; a nameless dequeuer leaves ownership untouched.
@@ -3548,21 +3591,28 @@ export class SystemDatabase {
     return claimedIDs;
   }
 
-  /** Max heads admitted per sweep: bounds dispatch, not the partition walk; lowest keys win, so higher keys can wait under sustained load. */
+  /** Max heads admitted per sweep: bounds dispatch, not the partition walk; an unconstrained sweep takes the lowest keys, so higher keys can wait under sustained load. */
   partitionedDequeueSweepCap: number = 8192;
 
-  /** Dequeue each partition's head-of-line workflow in one transaction, at most {@link partitionedDequeueSweepCap} per sweep; only valid for concurrency=1, no-limiter queues. */
+  /** Dequeue each partition's head-of-line workflow in one transaction, at most {@link partitionedDequeueSweepCap} per sweep; only valid for partition-concurrency-1 queues with no queue-wide limit. */
   async findAndMarkStartablePartitionedWorkflows(
     queue: WorkflowQueue,
     executorID: string,
     appVersion: string,
+    maxTasks: number = Infinity,
   ): Promise<string[]> {
-    if (queue.concurrency !== 1 || queue.rateLimit !== undefined) {
+    const limits = resolveQueueLimits(queue);
+    if (
+      limits.partitionConcurrency !== 1 ||
+      limits.globalConcurrency !== undefined ||
+      limits.rateLimit !== undefined ||
+      limits.partitionRateLimit !== undefined
+    ) {
       throw new DBOSError(
-        `Batched partitioned dequeue requires a queue with concurrency 1 and no rate limit: ${queue.name}`,
+        `Batched partitioned dequeue requires a queue with partition concurrency 1 and no queue-wide concurrency or rate limit: ${queue.name}`,
       );
     }
-    // workerConcurrency needs no handling here: dispatch routes 0 (the pause-dequeue idiom) to the fallback path, and validation caps any other value at concurrency=1, which the PENDING gate already enforces globally.
+    // partitionWorkerConcurrency needs no handling here: any value above 0 is capped at partition concurrency 1, which the PENDING gate already enforces globally, and 0 makes the caller's maxTasks 0.
     const client = await this.#connect();
     try {
       await client.query('BEGIN');
@@ -3574,12 +3624,16 @@ export class SystemDatabase {
           ? `(application_version = $${n} OR application_version IS NULL)`
           : `application_version = $${n}`;
 
+      // This worker's own budget bounds the sweep alongside the cap.
+      const sweepLimit = Math.min(this.partitionedDequeueSweepCap, maxTasks);
+      // When the worker's budget is the binding constraint, probe partitions in random order to prevent starvation.
+      const sweepOrder = sweepLimit < this.partitionedDequeueSweepCap ? 'random()' : 'partitions.pk ASC';
       const candidateParams: unknown[] = [
         queue.name,
         StatusString.ENQUEUED,
         appVersion,
         StatusString.PENDING,
-        this.partitionedDequeueSweepCap,
+        sweepLimit,
       ];
       const candidateScope = this.#appNameFilter('application_name', this.appName, candidateParams);
 
@@ -3596,30 +3650,36 @@ export class SystemDatabase {
             FROM partitions
             WHERE partitions.pk IS NOT NULL)
          )
+         , chosen AS (
+           SELECT partitions.pk
+           FROM partitions
+           WHERE partitions.pk IS NOT NULL
+             -- Unscoped by design: a mutual-exclusion probe must block on any owner's row.
+             AND NOT EXISTS (
+               SELECT 1
+               FROM "${this.schemaName}".workflow_status
+               WHERE queue_name = $1 AND status = $4
+                 AND queue_partition_key IS NOT NULL AND queue_partition_key = partitions.pk
+             )
+           ORDER BY ${sweepOrder}
+           LIMIT $5
+         )
          SELECT head.workflow_uuid
-         FROM partitions
+         FROM chosen
          -- LATERAL plans as a tight nested loop; a correlated scalar subquery runs as a slower per-row SubPlan.
          JOIN LATERAL (
            SELECT workflow_uuid
            FROM "${this.schemaName}".workflow_status
            WHERE queue_name = $1 AND status = $2
-             AND queue_partition_key = partitions.pk
+             AND queue_partition_key = chosen.pk
              AND ${versionClause(3)}
              AND ${candidateScope}
            -- workflow_uuid totalizes the head order (same head for every worker under created_at ties) and the index's trailing workflow_uuid keeps this a pure top-1 probe.
            ORDER BY priority ASC, created_at ASC, workflow_uuid ASC
            LIMIT 1
          ) head ON TRUE
-         WHERE partitions.pk IS NOT NULL
-           -- Unscoped by design: a mutual-exclusion probe must block on any owner's row.
-           AND NOT EXISTS (
-             SELECT 1
-             FROM "${this.schemaName}".workflow_status
-             WHERE queue_name = $1 AND status = $4
-               AND queue_partition_key IS NOT NULL AND queue_partition_key = partitions.pk
-           )
-         ORDER BY partitions.pk ASC
-         LIMIT $5`,
+         -- Which partitions were chosen is settled above; order the result so the claim, and the dispatch it feeds, are deterministic.
+         ORDER BY chosen.pk ASC`,
         candidateParams,
       );
       const candidateIDs = candidateResult.rows.map((row) => row.workflow_uuid);
@@ -4755,6 +4815,10 @@ export class SystemDatabase {
           rate_limit_period_sec = EXCLUDED.rate_limit_period_sec,
           priority_enabled = EXCLUDED.priority_enabled,
           partition_queue = EXCLUDED.partition_queue,
+          partition_concurrency = EXCLUDED.partition_concurrency,
+          partition_worker_concurrency = EXCLUDED.partition_worker_concurrency,
+          partition_rate_limit_max = EXCLUDED.partition_rate_limit_max,
+          partition_rate_limit_period_sec = EXCLUDED.partition_rate_limit_period_sec,
           polling_interval_sec = EXCLUDED.polling_interval_sec,
           updated_at = EXCLUDED.updated_at,
           -- Claim only an unclaimed row, so a registration landing between the check above and this write keeps the name it just took.
@@ -4773,8 +4837,10 @@ export class SystemDatabase {
       await client.query(
         `INSERT INTO "${this.schemaName}".queues
           (name, concurrency, worker_concurrency, rate_limit_max, rate_limit_period_sec,
-           priority_enabled, partition_queue, polling_interval_sec, updated_at, application_name)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+           priority_enabled, partition_queue, partition_concurrency, partition_worker_concurrency,
+           partition_rate_limit_max, partition_rate_limit_period_sec,
+           polling_interval_sec, updated_at, application_name)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
          ${onConflict}`,
         [
           record.name,
@@ -4784,6 +4850,10 @@ export class SystemDatabase {
           record.rateLimitPeriodSec,
           record.priorityEnabled,
           record.partitionQueue,
+          record.partitionConcurrency,
+          record.partitionWorkerConcurrency,
+          record.partitionRateLimitMax,
+          record.partitionRateLimitPeriodSec,
           record.pollingIntervalSec,
           now,
           resolvedOwner ?? null,

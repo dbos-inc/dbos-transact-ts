@@ -30,7 +30,7 @@ export type KafkaOrdering = 'none' | 'partition' | 'topic';
 
 /** Queue for ordering="none" consumers that don't name their own queue. */
 const KAFKA_QUEUE_NAME = '_dbos_kafkajs_queue';
-/** Shared partitioned queue for ordered consumers: concurrency=1 is enforced per partition key. */
+/** Shared partitioned queue for ordered consumers: a per-partition concurrency of 1. */
 const KAFKA_ORDERED_QUEUE_NAME = '_dbos_kafkajs_ordered_queue';
 
 const DEFAULT_BATCH_SIZE = 250;
@@ -107,9 +107,9 @@ function getKafkaQueue(): WorkflowQueue {
 }
 
 function getKafkaOrderedQueue(): WorkflowQueue {
-  // One shared partitioned queue: concurrency=1 is enforced per partition key, so execution is
-  // serial per key and parallel across keys.
-  return getOrCreateQueue(KAFKA_ORDERED_QUEUE_NAME, { partitionQueue: true, concurrency: 1 });
+  // One shared partitioned queue: a per-partition concurrency of 1 makes execution
+  // serial per partition key and parallel across keys.
+  return getOrCreateQueue(KAFKA_ORDERED_QUEUE_NAME, { partitionConcurrency: 1 });
 }
 
 function partitionKeyFor(

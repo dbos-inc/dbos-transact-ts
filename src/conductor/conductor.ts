@@ -860,6 +860,10 @@ export class Conductor {
                 partition_queue: q.partitionQueue,
                 polling_interval_sec: q.pollingIntervalSec,
                 application_name: q.applicationName ?? null,
+                partition_concurrency: q.partitionConcurrency,
+                partition_worker_concurrency: q.partitionWorkerConcurrency,
+                partition_rate_limit_max: q.partitionRateLimitMax,
+                partition_rate_limit_period_sec: q.partitionRateLimitPeriodSec,
               }));
             } catch (e) {
               errorMsg = `Exception encountered when listing queues: ${(e as Error).message}`;
@@ -884,6 +888,10 @@ export class Conductor {
                   partition_queue: queue.partitionQueue,
                   polling_interval_sec: queue.pollingIntervalSec,
                   application_name: queue.applicationName ?? null,
+                  partition_concurrency: queue.partitionConcurrency,
+                  partition_worker_concurrency: queue.partitionWorkerConcurrency,
+                  partition_rate_limit_max: queue.partitionRateLimitMax,
+                  partition_rate_limit_period_sec: queue.partitionRateLimitPeriodSec,
                 };
               }
             } catch (e) {
