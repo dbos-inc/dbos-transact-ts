@@ -2961,6 +2961,8 @@ describe('bounded-lane dispatcher', () => {
       systemDatabase: {
         listQueues: () => Promise.resolve([]),
         getQueuePartitions: () => Promise.resolve([]),
+        // pollQueue reads this worker's running count before every dequeue.
+        countRunningWorkflowsForQueue: () => 0,
         transitionDelayedWorkflows: async () => {
           await hooks.onTransition?.();
         },
