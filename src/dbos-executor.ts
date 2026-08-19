@@ -437,10 +437,13 @@ export class DBOSExecutor {
     this.logger.info('DBOS launched!');
   }
 
-  async destroy(options?: { workflowCompletionTimeoutSec?: number }) {
-    const timeoutSec = options?.workflowCompletionTimeoutSec;
+  /** Wait for workflows running in this process to finish, for at most `timeoutSec` if one is given. */
+  async awaitRunningWorkflows(timeoutSec?: number) {
+    await this.systemDatabase.awaitRunningWorkflows(timeoutSec === undefined ? undefined : timeoutSec * 1000);
+  }
+
+  async destroy() {
     try {
-      await this.systemDatabase.awaitRunningWorkflows(timeoutSec === undefined ? undefined : timeoutSec * 1000);
       await this.systemDatabase.destroy();
       await this.logger.destroy();
     } catch (err) {

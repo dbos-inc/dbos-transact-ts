@@ -610,6 +610,13 @@ export class DBOS {
       DBOS.adminServer = undefined;
     }
 
+    // Stop background processing, then drain the workflows still running in this process.
+    // Conductor stays connected for the drain, so it can still observe and cancel those workflows.
+    if (DBOSExecutor.globalInstance) {
+      await DBOSExecutor.globalInstance.deactivateEventReceivers();
+      await DBOSExecutor.globalInstance.awaitRunningWorkflows(options?.workflowCompletionTimeoutSec);
+    }
+
     // Stop the conductor
     if (DBOS.conductor) {
       DBOS.conductor.stop();
@@ -619,12 +626,9 @@ export class DBOS {
       DBOS.conductor = undefined;
     }
 
-    // Stop the executor
+    // Disconnect the executor from the databases
     if (DBOSExecutor.globalInstance) {
-      await DBOSExecutor.globalInstance.deactivateEventReceivers();
-      await DBOSExecutor.globalInstance.destroy({
-        workflowCompletionTimeoutSec: options?.workflowCompletionTimeoutSec,
-      });
+      await DBOSExecutor.globalInstance.destroy();
       DBOSExecutor.globalInstance = undefined;
     }
 

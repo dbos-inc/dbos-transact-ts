@@ -2,6 +2,7 @@ import { DBOS } from '../src/';
 import { DBOSConfig } from '../src/dbos-executor';
 import { generateDBOSTestConfig, setUpDBOSTestSysDb, Event } from './helpers';
 import { sleepms } from '../src/utils';
+import { Conductor } from '../src/conductor/conductor';
 
 const started = new Event();
 const release = new Event();
@@ -12,6 +13,19 @@ const blockingWorkflow = DBOS.registerWorkflow(
     await release.wait();
   },
   { name: 'shutdownTimeoutBlockingWorkflow' },
+);
+
+const started2 = new Event();
+const release2 = new Event();
+let workflow2Done = false;
+
+const blockingWorkflow2 = DBOS.registerWorkflow(
+  async () => {
+    started2.set();
+    await release2.wait();
+    workflow2Done = true;
+  },
+  { name: 'shutdownConductorOrderWorkflow' },
 );
 
 const childStarted = new Event();
@@ -89,6 +103,31 @@ describe('shutdown-workflow-completion-timeout', () => {
     releaseChild.set();
     await shutdownPromise;
     expect(childFinished).toBe(true);
+  }, 20000);
+
+  test('conductor-disconnects-after-the-drain', async () => {
+    await DBOS.launch();
+    await DBOS.startWorkflow(blockingWorkflow2)();
+    await started2.wait();
+
+    let stopSawWorkflowDone: boolean | undefined = undefined;
+    const fakeConductor = {
+      isClosed: false,
+      stop() {
+        stopSawWorkflowDone = workflow2Done;
+        this.isClosed = true;
+      },
+    };
+    DBOS.conductor = fakeConductor as unknown as Conductor;
+
+    const shutdownPromise = DBOS.shutdown({ workflowCompletionTimeoutSec: 30 });
+    await sleepms(500);
+    expect(stopSawWorkflowDone).toBeUndefined();
+
+    release2.set();
+    await shutdownPromise;
+    expect(stopSawWorkflowDone).toBe(true);
+    expect(DBOS.conductor).toBeUndefined();
   }, 20000);
 
   test('shutdown-returns-when-workflows-complete-before-timeout', async () => {
