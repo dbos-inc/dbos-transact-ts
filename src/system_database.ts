@@ -2415,10 +2415,28 @@ export class SystemDatabase {
     return count;
   }
 
-  async awaitRunningWorkflows(): Promise<void> {
+  /** Wait for locally-running workflows to finish, for at most `timeoutMS` if one is given. */
+  async awaitRunningWorkflows(timeoutMS?: number): Promise<void> {
     if (this.runningWorkflowMap.size > 0) {
       this.logger.info('Waiting for pending workflows to finish.');
-      await Promise.allSettled(Array.from(this.runningWorkflowMap.values(), (entry) => entry.promise));
+      const allRunning = Promise.allSettled(Array.from(this.runningWorkflowMap.values(), (entry) => entry.promise));
+      if (timeoutMS === undefined) {
+        await allRunning;
+      } else {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const timedOut = await Promise.race([
+          allRunning.then(() => false),
+          new Promise<boolean>((resolve) => {
+            timer = setTimeout(() => resolve(true), timeoutMS);
+          }),
+        ]);
+        clearTimeout(timer);
+        if (timedOut) {
+          this.logger.warn(
+            `Shutting down while ${this.runningWorkflowMap.size} workflows are still running: ${Array.from(this.runningWorkflowMap.keys()).join(', ')}`,
+          );
+        }
+      }
     }
     if (this.workflowEventsMap.map.size > 0) {
       this.logger.warn('Workflow events map is not empty - shutdown is not clean.');

@@ -598,8 +598,12 @@ export class DBOS {
    *   Functions may then be registered before the next call to DBOS.launch().
    *   Decorated / registered functions created prior to `clearRegistry` may no longer be used.
    *     Fresh wrappers may be created from the original functions.
+   * @param options.workflowCompletionTimeoutSec
+   *   How long to wait, after background processing stops, for workflows running in this process
+   *   to complete. If they do not finish in time, shutdown proceeds without them.
+   *   Defaults to waiting indefinitely.
    */
-  static async shutdown(options?: { deregister?: boolean }) {
+  static async shutdown(options?: { deregister?: boolean; workflowCompletionTimeoutSec?: number }) {
     // Stop the admin server
     if (DBOS.adminServer) {
       DBOS.adminServer.close();
@@ -618,7 +622,9 @@ export class DBOS {
     // Stop the executor
     if (DBOSExecutor.globalInstance) {
       await DBOSExecutor.globalInstance.deactivateEventReceivers();
-      await DBOSExecutor.globalInstance.destroy();
+      await DBOSExecutor.globalInstance.destroy({
+        workflowCompletionTimeoutSec: options?.workflowCompletionTimeoutSec,
+      });
       DBOSExecutor.globalInstance = undefined;
     }
 
