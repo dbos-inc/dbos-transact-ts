@@ -1,5 +1,5 @@
 import { DBOS } from '../src/';
-import { DBOSConfig } from '../src/dbos-executor';
+import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import { generateDBOSTestConfig, setUpDBOSTestSysDb, Event } from './helpers';
 import { sleepms } from '../src/utils';
 import { Conductor } from '../src/conductor/conductor';
@@ -75,6 +75,12 @@ describe('shutdown-workflow-completion-timeout', () => {
     DBOS.setConfig(config);
   });
 
+  afterEach(async () => {
+    if (DBOS.isInitialized()) {
+      await DBOS.shutdown();
+    }
+  });
+
   afterAll(() => {
     release.set();
     release2.set();
@@ -88,15 +94,17 @@ describe('shutdown-workflow-completion-timeout', () => {
     const handle = await DBOS.startWorkflow(blockingWorkflow)();
     await started.wait();
 
-    const startTime = Date.now();
-    await DBOS.shutdown({ workflowCompletionTimeoutMS: 1000 });
-    const elapsed = Date.now() - startTime;
+    try {
+      const startTime = Date.now();
+      await DBOS.shutdown({ workflowCompletionTimeoutMS: 1000 });
+      const elapsed = Date.now() - startTime;
 
-    expect(elapsed).toBeGreaterThanOrEqual(900);
-    expect(elapsed).toBeLessThan(10000);
-
-    release.set();
-    await handle.getResult().catch(() => {});
+      expect(elapsed).toBeGreaterThanOrEqual(900);
+      expect(elapsed).toBeLessThan(10000);
+    } finally {
+      release.set();
+      await handle.getResult().catch(() => {});
+    }
   }, 20000);
 
   test('shutdown-waits-for-a-child-started-during-the-drain', async () => {
@@ -104,22 +112,39 @@ describe('shutdown-workflow-completion-timeout', () => {
     await DBOS.startWorkflow(parentWorkflow)();
     await parentStarted.wait();
 
-    let shutdownDone = false;
-    const shutdownPromise = DBOS.shutdown({ workflowCompletionTimeoutMS: 30000 }).then(() => {
-      shutdownDone = true;
+    // The drain logs this synchronously, in the same turn as its first snapshot of the
+    // running workflows, so releasing the parent afterwards guarantees the child registers later.
+    let drainStarted = false;
+    const logger = DBOSExecutor.globalInstance!.systemDatabase.logger;
+    const infoSpy = jest.spyOn(logger, 'info').mockImplementation((logEntry: unknown) => {
+      if (typeof logEntry === 'string' && logEntry.includes('Waiting for pending workflows')) {
+        drainStarted = true;
+      }
     });
 
-    // The parent starts its child only after the drain is already under way.
-    await sleepms(500);
-    releaseParent.set();
-    await childStarted.wait();
-    await sleepms(500);
-    expect(shutdownDone).toBe(false);
-    expect(childFinished).toBe(false);
+    try {
+      let shutdownDone = false;
+      const shutdownPromise = DBOS.shutdown({ workflowCompletionTimeoutMS: 30000 }).then(() => {
+        shutdownDone = true;
+      });
 
-    releaseChild.set();
-    await shutdownPromise;
-    expect(childFinished).toBe(true);
+      while (!drainStarted) {
+        await sleepms(10);
+      }
+      releaseParent.set();
+      await childStarted.wait();
+      await sleepms(500);
+      expect(shutdownDone).toBe(false);
+      expect(childFinished).toBe(false);
+
+      releaseChild.set();
+      await shutdownPromise;
+      expect(childFinished).toBe(true);
+    } finally {
+      infoSpy.mockRestore();
+      releaseParent.set();
+      releaseChild.set();
+    }
   }, 20000);
 
   test('conductor-disconnects-after-the-drain', async () => {
@@ -138,11 +163,13 @@ describe('shutdown-workflow-completion-timeout', () => {
     DBOS.conductor = fakeConductor as unknown as Conductor;
 
     const shutdownPromise = DBOS.shutdown({ workflowCompletionTimeoutMS: 30000 });
-    await sleepms(500);
-    expect(stopSawWorkflowDone).toBeUndefined();
-
-    release2.set();
-    await shutdownPromise;
+    try {
+      await sleepms(500);
+      expect(stopSawWorkflowDone).toBeUndefined();
+    } finally {
+      release2.set();
+      await shutdownPromise;
+    }
     expect(stopSawWorkflowDone).toBe(true);
     expect(DBOS.conductor).toBeUndefined();
   }, 20000);
@@ -152,12 +179,14 @@ describe('shutdown-workflow-completion-timeout', () => {
     const handle = await DBOS.startWorkflow(blockingWorkflow3)();
     await started3.wait();
 
-    const startTime = Date.now();
-    await DBOS.shutdown();
-    expect(Date.now() - startTime).toBeLessThan(1000);
-    expect(workflow3Done).toBe(false);
-
-    release3.set();
-    await handle.getResult().catch(() => {});
+    try {
+      const startTime = Date.now();
+      await DBOS.shutdown();
+      expect(Date.now() - startTime).toBeLessThan(1000);
+      expect(workflow3Done).toBe(false);
+    } finally {
+      release3.set();
+      await handle.getResult().catch(() => {});
+    }
   }, 20000);
 });

@@ -589,8 +589,9 @@ export class DBOS {
   /**
    * Shut down DBOS processing:
    *   Stops receiving external workflow requests
+   *   Stops workflow processing, optionally waiting for workflows running here to finish
    *   Disconnects from administration / Conductor
-   *   Stops workflow processing and disconnects from databases
+   *   Disconnects from the databases
    * @param options Optional shutdown options.
    * @param options.deregister
    *   If true, clear the DBOS workflow, queue, instance, data source, listener, and other registries.
