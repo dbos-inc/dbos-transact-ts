@@ -58,11 +58,7 @@ export const globalParams = {
   dbosVersion: loadDbosVersion(), // The version of the DBOS library
   dbosCloud: process.env.DBOS__CLOUD === 'true', // Whether running in DBOS Cloud
 };
-export const sleepms = (ms: number) =>
-  new Promise((r) => {
-    // Unref'd: a pending sleep must not keep the process alive after DBOS shuts down.
-    setTimeout(r, ms).unref();
-  });
+export const sleepms = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // Node.js setTimeout uses a 32-bit signed integer for the delay, so the max is 2^31 - 1 ms (~24.8 days).
 export const sleepConfig = {
