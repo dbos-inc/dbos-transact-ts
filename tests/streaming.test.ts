@@ -1202,6 +1202,48 @@ describe('dbos-streaming-tests', () => {
     }
   });
 
+  test('abandoned-reader-leaves-no-listener', async () => {
+    // Registration is scoped to a single read attempt and released in a finally, so a reader
+    // suspended at a value holds no listener and an abandoned one cannot leak one. Python instead
+    // registers once for the whole read, so it must aclose() the generator to release it.
+    const streamKey = 'listener_lifetime_stream';
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    const writerWorkflow = DBOS.registerWorkflow(
+      async () => {
+        await DBOS.writeStream(streamKey, 'v0');
+        await DBOS.writeStream(streamKey, 'v1');
+        // Stay active so a reader is suspended mid-stream rather than exhausted.
+        await released;
+      },
+      { name: 'listener-lifetime-writer' },
+    );
+    await DBOS.launch();
+
+    const wfid = randomUUID();
+    const handle = await DBOS.withNextWorkflowID(wfid, async () => {
+      return DBOS.startWorkflow(writerWorkflow, {})();
+    });
+    try {
+      const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+      const payload = `${wfid}::${streamKey}`;
+      const reader = DBOS.readStream<string>(wfid, streamKey);
+      expect((await reader.next()).value).toBe('v0');
+      expect(sysdb.streamsMap.map.get(payload)).toBeUndefined();
+      expect((await reader.next()).value).toBe('v1');
+      // Abandoning the reader closes it; `yield*` forwards that to the inner generator.
+      await reader.return(undefined);
+      expect(sysdb.streamsMap.map.get(payload)).toBeUndefined();
+      expect(await reader.next()).toEqual({ value: undefined, done: true });
+    } finally {
+      release();
+      await handle.getResult();
+    }
+  });
+
   test('read-stream-timeout', async () => {
     // The timeout is per value and the polling interval is per call. The writer stays active and
     // silent, so only the timeout can end a wait, and a value delivered in between restarts the
@@ -1270,6 +1312,16 @@ describe('dbos-streaming-tests', () => {
       await expect(DBOS.readStream(wfid, streamKey, { timeoutSeconds: -1 }).next()).rejects.toThrow(
         'timeoutSeconds must not be negative',
       );
+
+      // A zero or negative interval would never wait, so the reader would spin on the database.
+      for (const bad of [0, -1, Number.POSITIVE_INFINITY, Number.NaN]) {
+        await expect(DBOS.readStream(wfid, streamKey, { pollingIntervalMs: bad }).next()).rejects.toThrow(
+          'pollingIntervalMs must be a positive finite number',
+        );
+        await expect(DBOS.readStreamOffset(wfid, streamKey, 0, { pollingIntervalMs: bad })).rejects.toThrow(
+          'pollingIntervalMs must be a positive finite number',
+        );
+      }
     } finally {
       // Restore the shared config so a disabled listener does not leak into a later test.
       config.useListenNotify = priorUseListenNotify;
@@ -1777,6 +1829,15 @@ describe('dbos-client-streaming-tests', () => {
     await expect(client.readStreamOffset(wfid, streamKey, 5, { timeoutSeconds: 30 })).rejects.toThrow(
       DBOSStreamTimeoutError,
     );
+
+    for (const bad of [0, -1, Number.POSITIVE_INFINITY, Number.NaN]) {
+      await expect(client.readStream(wfid, streamKey, { pollingIntervalMs: bad }).next()).rejects.toThrow(
+        'pollingIntervalMs must be a positive finite number',
+      );
+      await expect(client.readStreamOffset(wfid, streamKey, 0, { pollingIntervalMs: bad })).rejects.toThrow(
+        'pollingIntervalMs must be a positive finite number',
+      );
+    }
   });
 
   test('client-read-stream-timeout', async () => {
