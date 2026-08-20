@@ -1,5 +1,10 @@
 import { DBOSLocalCtx, functionIDGetIncrementForCtx, getCurrentContextStore, isInWorkflowCtx } from './context';
-import { DBOSNonExistentWorkflowError, DBOSStreamTimeoutError, DBOSUnexpectedStepError } from './error';
+import {
+  DBOSNonExistentWorkflowError,
+  DBOSStreamNondeterminismError,
+  DBOSStreamTimeoutError,
+  DBOSUnexpectedStepError,
+} from './error';
 import {
   deserializeResError,
   deserializeValue,
@@ -47,10 +52,13 @@ class StreamReadCheckpointer {
   #replaying = true;
   #startedAtEpochMs = 0;
   #lastCancelCheckMs = Date.now();
+  // Whether this reader currently holds a reserved step that is not yet recorded.
+  #inFlight = false;
 
   constructor(
     private readonly sysdb: SystemDatabase,
     private readonly serializer: DBOSSerializer,
+    private readonly key: string,
     private readonly functionName: string,
   ) {}
 
@@ -67,9 +75,26 @@ class StreamReadCheckpointer {
     if (this.#ctx === undefined) {
       return undefined;
     }
+    // Sequential reads record before they yield and so never overlap; an overlap means the reads
+    // are concurrent and their step IDs depend on scheduling. Every read shares one function name,
+    // so the step-name guard would not catch the resulting swap on replay.
+    if ((this.#ctx.activeStreamReads ?? 0) > 0) {
+      throw new DBOSStreamNondeterminismError(this.#ctx.workflowId!, this.key);
+    }
+    this.#ctx.activeStreamReads = (this.#ctx.activeStreamReads ?? 0) + 1;
+    this.#inFlight = true;
     // Started when the read began, so the recorded step spans the wait for the value.
     this.#startedAtEpochMs = Date.now();
     return functionIDGetIncrementForCtx(this.#ctx);
+  }
+
+  /** Release the reserved step once its outcome is settled. Idempotent. */
+  end(): void {
+    if (!this.#inFlight) return;
+    this.#inFlight = false;
+    if (this.#ctx !== undefined) {
+      this.#ctx.activeStreamReads = (this.#ctx.activeStreamReads ?? 1) - 1;
+    }
   }
 
   /** Return the value recorded for this step, or noRecordedValue to read it live. */
@@ -124,6 +149,7 @@ class StreamReadCheckpointer {
       Date.now(),
       { output: serval.serializedValue, serialization: serval.serialization },
     );
+    this.end();
   }
 
   /**
@@ -144,6 +170,7 @@ class StreamReadCheckpointer {
       Date.now(),
       { error: sererr.serializedValue, serialization: sererr.serialization },
     );
+    this.end();
   }
 }
 
@@ -157,92 +184,99 @@ export async function* readStreamCore<T>(
 ): AsyncGenerator<T, void, unknown> {
   const { pollingIntervalMs, timeoutMS, functionName } = params;
   let offset = params.offset;
-  const checkpointer = params.checkpoint ? new StreamReadCheckpointer(sysdb, serializer, functionName) : undefined;
+  const checkpointer = params.checkpoint ? new StreamReadCheckpointer(sysdb, serializer, key, functionName) : undefined;
   const payload = `${workflowID}::${key}`;
   let finalRead = false;
 
-  while (true) {
-    // One step per delivered value, reserved before the read so it spans the wait.
-    const functionID = checkpointer?.begin();
-    await checkpointer?.checkCancelled();
-    // The timeout is per value: the clock restarts every time one is delivered.
-    const deadline = timeoutMS !== undefined ? Date.now() + timeoutMS : undefined;
-    const recorded = checkpointer ? await checkpointer.replay(functionID) : noRecordedValue;
-    if (recorded !== noRecordedValue) {
-      if (isStreamClosedSentinel(recorded)) {
+  try {
+    while (true) {
+      // One step per delivered value, reserved before the read so it spans the wait.
+      const functionID = checkpointer?.begin();
+      await checkpointer?.checkCancelled();
+      // The timeout is per value: the clock restarts every time one is delivered.
+      const deadline = timeoutMS !== undefined ? Date.now() + timeoutMS : undefined;
+      const recorded = checkpointer ? await checkpointer.replay(functionID) : noRecordedValue;
+      if (recorded !== noRecordedValue) {
+        // Settled from history, so the step is no longer in flight.
+        checkpointer?.end();
+        if (isStreamClosedSentinel(recorded)) {
+          return;
+        }
+        yield recorded as T;
+        offset += 1;
+        continue;
+      }
+
+      let value: { serializedValue: string; serialization: string | null } | undefined;
+      while (true) {
+        // Register a listener before reading so a notification arriving between the
+        // read and the wait below is not lost; a fresh promise per iteration gives
+        // the "clear before reading" semantics.
+        let resolveNotification: () => void;
+        const messagePromise = new Promise<void>((resolve) => {
+          resolveNotification = resolve;
+        });
+        const cbr = sysdb.streamsMap.registerCallback(payload, resolveNotification!);
+        try {
+          // One round trip for both the value and the workflow's status.
+          const read = await sysdb.readStreamValue(workflowID, key, offset);
+          if (read.status === null) {
+            throw new DBOSNonExistentWorkflowError(`Workflow ${workflowID} does not exist`);
+          }
+          value = read.value;
+          if (value !== undefined || finalRead) {
+            break;
+          }
+          // No value yet: stop if the workflow is done, else wait for a notification (bounded by the poll interval so termination is noticed).
+          if (!isWorkflowActive(read.status)) {
+            // Cancel/timeout set a terminal status while the workflow may still be writing, so drain to the first empty offset before stopping.
+            finalRead = true;
+            continue;
+          }
+          let waitMs = pollingIntervalMs;
+          if (deadline !== undefined) {
+            const remaining = deadline - Date.now();
+            if (remaining <= 0) {
+              const error = new DBOSStreamTimeoutError(workflowID, key, timeoutMS);
+              await checkpointer?.recordTimeout(functionID, error);
+              throw error;
+            }
+            waitMs = Math.min(remaining, pollingIntervalMs);
+          }
+          await checkpointer?.checkCancelled();
+          const { promise, cancel } = cancellableSleep(waitMs);
+          try {
+            await Promise.race([messagePromise, promise]);
+          } finally {
+            cancel();
+          }
+        } finally {
+          sysdb.streamsMap.deregisterCallback(cbr);
+        }
+      }
+
+      if (value === undefined) {
+        // The end is recorded too, so a replay stops exactly where this read did.
+        await checkpointer?.record(functionID, DBOS_STREAM_CLOSED_SENTINEL);
         return;
       }
-      yield recorded as T;
-      offset += 1;
-      continue;
-    }
-
-    let value: { serializedValue: string; serialization: string | null } | undefined;
-    while (true) {
-      // Register a listener before reading so a notification arriving between the
-      // read and the wait below is not lost; a fresh promise per iteration gives
-      // the "clear before reading" semantics.
-      let resolveNotification: () => void;
-      const messagePromise = new Promise<void>((resolve) => {
-        resolveNotification = resolve;
-      });
-      const cbr = sysdb.streamsMap.registerCallback(payload, resolveNotification!);
-      try {
-        // One round trip for both the value and the workflow's status.
-        const read = await sysdb.readStreamValue(workflowID, key, offset);
-        if (read.status === null) {
-          throw new DBOSNonExistentWorkflowError(`Workflow ${workflowID} does not exist`);
-        }
-        value = read.value;
-        if (value !== undefined || finalRead) {
-          break;
-        }
-        // No value yet: stop if the workflow is done, else wait for a notification (bounded by the poll interval so termination is noticed).
-        if (!isWorkflowActive(read.status)) {
-          // Cancel/timeout set a terminal status while the workflow may still be writing, so drain to the first empty offset before stopping.
-          finalRead = true;
-          continue;
-        }
-        let waitMs = pollingIntervalMs;
-        if (deadline !== undefined) {
-          const remaining = deadline - Date.now();
-          if (remaining <= 0) {
-            const error = new DBOSStreamTimeoutError(workflowID, key, timeoutMS);
-            await checkpointer?.recordTimeout(functionID, error);
-            throw error;
-          }
-          waitMs = Math.min(remaining, pollingIntervalMs);
-        }
-        await checkpointer?.checkCancelled();
-        const { promise, cancel } = cancellableSleep(waitMs);
-        try {
-          await Promise.race([messagePromise, promise]);
-        } finally {
-          cancel();
-        }
-      } finally {
-        sysdb.streamsMap.deregisterCallback(cbr);
+      // Tested after deserializing, as the replay branch above must, so the two never disagree about
+      // where the stream ends. The legacy marker is short-circuited because it does not parse.
+      const deserialized = isLegacyClosedSentinel(value.serializedValue)
+        ? DBOS_STREAM_CLOSED_SENTINEL
+        : await deserializeValue(value.serializedValue, value.serialization, serializer);
+      if (isStreamClosedSentinel(deserialized)) {
+        await checkpointer?.record(functionID, DBOS_STREAM_CLOSED_SENTINEL);
+        return;
       }
+      // Recorded before the yield, so a crash after the workflow acts on the value still replays it.
+      await checkpointer?.record(functionID, deserialized);
+      yield deserialized as T;
+      offset += 1;
     }
-
-    if (value === undefined) {
-      // The end is recorded too, so a replay stops exactly where this read did.
-      await checkpointer?.record(functionID, DBOS_STREAM_CLOSED_SENTINEL);
-      return;
-    }
-    // Tested after deserializing, as the replay branch above must, so the two never disagree about
-    // where the stream ends. The legacy marker is short-circuited because it does not parse.
-    const deserialized = isLegacyClosedSentinel(value.serializedValue)
-      ? DBOS_STREAM_CLOSED_SENTINEL
-      : await deserializeValue(value.serializedValue, value.serialization, serializer);
-    if (isStreamClosedSentinel(deserialized)) {
-      await checkpointer?.record(functionID, DBOS_STREAM_CLOSED_SENTINEL);
-      return;
-    }
-    // Recorded before the yield, so a crash after the workflow acts on the value still replays it.
-    await checkpointer?.record(functionID, deserialized);
-    yield deserialized as T;
-    offset += 1;
+  } finally {
+    // Release the reserved step if the read was abandoned or threw mid-flight.
+    checkpointer?.end();
   }
 }
 

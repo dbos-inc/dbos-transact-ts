@@ -871,6 +871,7 @@ export class DBOSExecutor {
                 workflowId: workflowID,
                 logger: this.ctxLogger,
                 curWFFunctionId: undefined,
+                activeStreamReads: 0,
                 serializationType,
               },
               () => {

@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { DBOSClient } from '../src/client';
 import {
   DBOSNonExistentWorkflowError,
+  DBOSStreamNondeterminismError,
   DBOSStreamTimeoutError,
   getDBOSErrorCode,
   isStreamTimeoutError,
@@ -1187,6 +1188,72 @@ describe('dbos-streaming-tests', () => {
     // The bulk fetch the conductor uses agrees too.
     expect(await DBOSExecutor.globalInstance!.systemDatabase.getAllStreamEntries(wfid)).toEqual({
       [streamKey]: ['v0'],
+    });
+  });
+
+  test('concurrent-reads-in-one-workflow-are-rejected', async () => {
+    // Two checkpointed reads at once would take step IDs in whatever order the database answers,
+    // and both record under the same step name, so a replay could hand one reader the other's
+    // values with nothing to detect it. Fail fast instead. Sequential reads are unaffected, and a
+    // read from a step is not checkpointed so it does not participate.
+    const keyA = 'concurrent_a';
+    const keyB = 'concurrent_b';
+
+    const writerWorkflow = DBOS.registerWorkflow(
+      async () => {
+        await DBOS.writeStream(keyA, 'a0');
+        await DBOS.closeStream(keyA);
+        await DBOS.writeStream(keyB, 'b0');
+        await DBOS.closeStream(keyB);
+      },
+      { name: 'concurrent-reads-writer' },
+    );
+
+    const drain = async (targetID: string, key: string) => {
+      const seen: unknown[] = [];
+      for await (const value of DBOS.readStream(targetID, key)) {
+        seen.push(value);
+      }
+      return seen;
+    };
+
+    const concurrentReader = DBOS.registerWorkflow(
+      async (targetID: string) => Promise.all([drain(targetID, keyA), drain(targetID, keyB)]),
+      { name: 'concurrent-reads-reader' },
+    );
+
+    const sequentialReader = DBOS.registerWorkflow(
+      async (targetID: string) => [await drain(targetID, keyA), await drain(targetID, keyB)],
+      { name: 'sequential-reads-reader' },
+    );
+
+    const readBothInStep = DBOS.registerStep(
+      async (targetID: string) => Promise.all([drain(targetID, keyA), drain(targetID, keyB)]),
+      { name: 'concurrent-reads-in-step' },
+    );
+    const stepReader = DBOS.registerWorkflow(async (targetID: string) => readBothInStep(targetID), {
+      name: 'concurrent-reads-step-reader',
+    });
+
+    await DBOS.launch();
+
+    const wfid = randomUUID();
+    await DBOS.withNextWorkflowID(wfid, async () => {
+      await writerWorkflow();
+    });
+
+    await DBOS.withNextWorkflowID(randomUUID(), async () => {
+      await expect(concurrentReader(wfid)).rejects.toThrow(DBOSStreamNondeterminismError);
+    });
+
+    // The rejected read releases its reservation, so later reads in a fresh workflow still work.
+    await DBOS.withNextWorkflowID(randomUUID(), async () => {
+      expect(await sequentialReader(wfid)).toEqual([['a0'], ['b0']]);
+    });
+
+    // Reads inside a step are not checkpointed, so concurrency there is allowed.
+    await DBOS.withNextWorkflowID(randomUUID(), async () => {
+      expect(await stepReader(wfid)).toEqual([['a0'], ['b0']]);
     });
   });
 

@@ -243,6 +243,24 @@ export class DBOSStreamTimeoutError extends DBOSError {
   }
 }
 
+export const StreamNondeterminism = 34;
+/** Exception raised when concurrent stream reads would make replay depend on scheduling. */
+export class DBOSStreamNondeterminismError extends DBOSError {
+  constructor(
+    readonly workflowID: string,
+    readonly key: string,
+  ) {
+    super(
+      `Cannot deterministically read stream ${key} in workflow ${workflowID}: another stream read ` +
+        `in the same workflow is still in progress, so which read records which value would depend ` +
+        `on task scheduling. Read streams from sequential workflow code, or read them from a step.`,
+      StreamNondeterminism,
+    );
+    // Error serialization records err.name, which is otherwise 'Error'.
+    this.name = 'DBOSStreamNondeterminismError';
+  }
+}
+
 /**
  * True if `e` is a stream-read timeout, including the portable-serialization
  * replay form, which carries only the original type name.
