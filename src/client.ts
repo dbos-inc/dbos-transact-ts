@@ -36,6 +36,7 @@ import {
   resolveTimeoutSeconds,
   resolveDelayEpochMS,
   resolveStreamOffset,
+  resolveStreamPollingIntervalMs,
   resolveStreamTimeoutMS,
   ReadStreamOffsetOptions,
 } from './dbos';
@@ -788,7 +789,7 @@ export class DBOSClient {
     // A client never runs inside a workflow, so its reads are not checkpointed.
     yield* readStreamCore<T>(this.systemDatabase, this.serializer, workflowID, key, {
       offset: resolveStreamOffset(options),
-      pollingIntervalMs: resolvePollingIntervalMs(options) ?? this.systemDatabase.dbPollingIntervalStreamMs,
+      pollingIntervalMs: resolveStreamPollingIntervalMs(options) ?? this.systemDatabase.dbPollingIntervalStreamMs,
       timeoutMS: resolveStreamTimeoutMS(options),
       functionName: DBOS_FUNCNAME_READSTREAM,
       checkpoint: false,
@@ -813,7 +814,7 @@ export class DBOSClient {
   ): Promise<T> {
     return await readStreamOffsetCore<T>(this.systemDatabase, this.serializer, workflowID, key, {
       offset: resolveStreamOffset({ ...options, offset }),
-      pollingIntervalMs: resolvePollingIntervalMs(options) ?? this.systemDatabase.dbPollingIntervalStreamMs,
+      pollingIntervalMs: resolveStreamPollingIntervalMs(options) ?? this.systemDatabase.dbPollingIntervalStreamMs,
       timeoutMS: resolveStreamTimeoutMS(options),
       functionName: DBOS_FUNCNAME_READSTREAM,
       checkpoint: false,

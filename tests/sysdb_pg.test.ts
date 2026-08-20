@@ -562,6 +562,21 @@ describe('sysdb-no-listen-notify', () => {
           'pollingIntervalMs must be a positive finite number',
         );
       }
+
+      // Stream reads additionally refuse a sub-millisecond interval, which would spin on the database.
+      const tooSmall = 0.5;
+      await expect(DBOS.readStream(randomUUID(), 'key', { pollingIntervalMs: tooSmall }).next()).rejects.toThrow(
+        'pollingIntervalMs must be at least 1 millisecond',
+      );
+      await expect(DBOS.readStreamOffset(randomUUID(), 'key', 0, { pollingIntervalMs: tooSmall })).rejects.toThrow(
+        'pollingIntervalMs must be at least 1 millisecond',
+      );
+      await expect(client.readStream(randomUUID(), 'key', { pollingIntervalMs: tooSmall }).next()).rejects.toThrow(
+        'pollingIntervalMs must be at least 1 millisecond',
+      );
+      await expect(client.readStreamOffset(randomUUID(), 'key', 0, { pollingIntervalMs: tooSmall })).rejects.toThrow(
+        'pollingIntervalMs must be at least 1 millisecond',
+      );
     } finally {
       await client.destroy();
     }

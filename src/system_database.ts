@@ -2494,7 +2494,8 @@ export class SystemDatabase {
    * under the polling limiter so it counts against the same concurrency budget
    * as the rest of the loop's reads.
    */
-  async #checkIfCanceledLimited(workflowID: string): Promise<void> {
+  /** Cancellation check for polling waits: goes through the limiter so readers cannot starve the pool. */
+  async checkIfCanceledLimited(workflowID: string): Promise<void> {
     await this.#pollWithLimiter(() => this.#checkIfCanceled(this.pool, workflowID));
   }
 
@@ -2523,7 +2524,7 @@ export class SystemDatabase {
     }
 
     while (true) {
-      if (callerID) await this.#checkIfCanceledLimited(callerID);
+      if (callerID) await this.checkIfCanceledLimited(callerID);
       let rows: workflow_status[];
       try {
         ({ rows } = await this.#pollWithLimiter(() =>
@@ -2570,7 +2571,7 @@ export class SystemDatabase {
     const pollIntervalMs = pollingIntervalMs ?? this.dbPollingIntervalResultMs;
 
     while (true) {
-      if (callerID) await this.#checkIfCanceledLimited(callerID);
+      if (callerID) await this.checkIfCanceledLimited(callerID);
 
       const { rows } = await this.#pollWithLimiter(() =>
         this.pool.query<workflow_status>(
@@ -2598,7 +2599,7 @@ export class SystemDatabase {
     while (remainingWorkflowIds.size > 0) {
       const currentWorkflowIds = [...remainingWorkflowIds];
 
-      if (callerID) await this.#checkIfCanceledLimited(callerID);
+      if (callerID) await this.checkIfCanceledLimited(callerID);
 
       const { rows } = await this.#pollWithLimiter(() =>
         this.pool.query<{ workflow_uuid: string }>(
@@ -2768,7 +2769,7 @@ export class SystemDatabase {
       const cbr = this.notificationsMap.registerCallback(payload, resolveNotification!);
 
       try {
-        await this.#checkIfCanceledLimited(workflowID);
+        await this.checkIfCanceledLimited(workflowID);
 
         // Check if the key is already in the DB, then wait for the notification if it isn't.
         const initRecvRows = (
@@ -2965,7 +2966,7 @@ export class SystemDatabase {
       const cbr = this.workflowEventsMap.registerCallback(payloadKey, resolveNotification!);
 
       try {
-        if (callerWorkflow?.workflowID) await this.#checkIfCanceledLimited(callerWorkflow?.workflowID);
+        if (callerWorkflow?.workflowID) await this.checkIfCanceledLimited(callerWorkflow?.workflowID);
         // Check if the key is already in the DB, then wait for the notification if it isn't.
         const initRecvRows = (
           await this.#pollWithLimiter(() =>

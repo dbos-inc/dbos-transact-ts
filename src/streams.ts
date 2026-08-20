@@ -128,7 +128,9 @@ class StreamReadCheckpointer {
     const now = Date.now();
     if (now - this.#lastCancelCheckMs < STREAM_CANCEL_CHECK_INTERVAL_MS) return;
     this.#lastCancelCheckMs = now;
-    await this.sysdb.checkIfCanceled(this.#ctx.workflowId!);
+    // Through the limiter, as the stream read itself is: a fan-out of readers must not check out
+    // every pool client and starve control-plane operations.
+    await this.sysdb.checkIfCanceledLimited(this.#ctx.workflowId!);
   }
 
   /**

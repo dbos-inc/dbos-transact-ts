@@ -330,6 +330,17 @@ export function resolveStreamOffset(options: ReadStreamOptions): number {
   return offset;
 }
 
+/** A stream read waits this long at minimum between polls; anything less would spin on the database. */
+const MIN_STREAM_POLLING_INTERVAL_MS = 1;
+
+export function resolveStreamPollingIntervalMs(options: ReadStreamOptions): number | undefined {
+  const interval = resolvePollingIntervalMs(options);
+  if (interval !== undefined && interval < MIN_STREAM_POLLING_INTERVAL_MS) {
+    throw new DBOSError(`pollingIntervalMs must be at least ${MIN_STREAM_POLLING_INTERVAL_MS} millisecond`);
+  }
+  return interval;
+}
+
 export function resolveStreamTimeoutMS(options: ReadStreamOptions): number | undefined {
   const timeoutSeconds = options.timeoutSeconds;
   if (timeoutSeconds === undefined) return undefined;
@@ -1730,7 +1741,7 @@ export class DBOS {
     const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
     yield* readStreamCore<T>(sysdb, sysdb.getSerializer(), workflowID, key, {
       offset: resolveStreamOffset(options),
-      pollingIntervalMs: resolvePollingIntervalMs(options) ?? sysdb.dbPollingIntervalStreamMs,
+      pollingIntervalMs: resolveStreamPollingIntervalMs(options) ?? sysdb.dbPollingIntervalStreamMs,
       timeoutMS: resolveStreamTimeoutMS(options),
       functionName: DBOS_FUNCNAME_READSTREAM,
       checkpoint: true,
@@ -1759,7 +1770,7 @@ export class DBOS {
     const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
     return await readStreamOffsetCore<T>(sysdb, sysdb.getSerializer(), workflowID, key, {
       offset: resolveStreamOffset({ ...options, offset }),
-      pollingIntervalMs: resolvePollingIntervalMs(options) ?? sysdb.dbPollingIntervalStreamMs,
+      pollingIntervalMs: resolveStreamPollingIntervalMs(options) ?? sysdb.dbPollingIntervalStreamMs,
       timeoutMS: resolveStreamTimeoutMS(options),
       functionName: DBOS_FUNCNAME_READSTREAMOFFSET,
       checkpoint: true,
