@@ -77,6 +77,8 @@ export const DBOS_FUNCNAME_SLEEP = 'DBOS.sleep';
 export const DBOS_FUNCNAME_GETSTATUS = 'getStatus';
 export const DBOS_FUNCNAME_WRITESTREAM = 'DBOS.writeStream';
 export const DBOS_FUNCNAME_CLOSESTREAM = 'DBOS.closeStream';
+export const DBOS_FUNCNAME_READSTREAM = 'DBOS.readStream';
+export const DBOS_FUNCNAME_READSTREAMOFFSET = 'DBOS.readStreamOffset';
 export const DEFAULT_POOL_SIZE = 10;
 
 export const DBOS_STREAM_CLOSED_SENTINEL = '__DBOS_STREAM_CLOSED__';
@@ -824,6 +826,7 @@ export class SystemDatabase {
   notificationsClient: PoolClient | null = null;
   dbPollingIntervalResultMs: number = 1000;
   dbPollingIntervalEventMs: number = 10000;
+  dbPollingIntervalStreamMs: number = 1000;
   shouldUseDBNotifications: boolean = true;
   readonly notificationsMap: NotificationMap<void> = new NotificationMap();
   readonly workflowEventsMap: NotificationMap<void> = new NotificationMap();
@@ -3155,7 +3158,7 @@ export class SystemDatabase {
     }
   }
 
-  async closeStream(workflowID: string, functionID: number, key: string): Promise<void> {
+  async closeStreamFromWorkflow(workflowID: string, functionID: number, key: string): Promise<void> {
     await this.writeStreamFromWorkflow(
       workflowID,
       functionID,
@@ -3164,6 +3167,10 @@ export class SystemDatabase {
       'portable_json',
       DBOS_FUNCNAME_CLOSESTREAM,
     );
+  }
+
+  async closeStreamFromStep(workflowID: string, stepID: number, key: string): Promise<void> {
+    await this.writeStreamFromStep(workflowID, stepID, key, DBOS_STREAM_CLOSED_SENTINEL, 'portable_json');
   }
 
   // Read the value at `offset` and the workflow's status in one query: status null = no such workflow, value undefined = nothing at that offset.

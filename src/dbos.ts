@@ -20,7 +20,6 @@ import { DBOSSpan, getActiveSpan, installTraceContextManager, isTraceContextWork
 import {
   GetWorkflowsInput,
   InternalWFHandle,
-  isWorkflowActive,
   RetrievedHandle,
   StepInfo,
   ListWorkflowStepsOptions,
@@ -43,7 +42,6 @@ import {
   DBOSUnexpectedStepError,
   DBOSInvalidQueuePriorityError,
   DBOSQueueDuplicatedError,
-  DBOSNonExistentWorkflowError,
 } from './error';
 import {
   getDbosConfig,
@@ -93,7 +91,7 @@ import {
   clearAllRegistrations,
   getRegisteredFunctionFullName,
 } from './decorators';
-import { cancellableSleep, defaultEnableOTLP, globalParams, sleepConfig, sleepms } from './utils';
+import { defaultEnableOTLP, globalParams, sleepConfig, sleepms } from './utils';
 import {
   deserializeValue,
   JSONValue,
@@ -111,12 +109,14 @@ import { Conductor } from './conductor/conductor';
 import {
   DuplicationPolicy,
   EnqueueOptions,
-  DBOS_STREAM_CLOSED_SENTINEL,
   DBOS_FUNCNAME_WRITESTREAM,
+  DBOS_FUNCNAME_READSTREAM,
+  DBOS_FUNCNAME_READSTREAMOFFSET,
   WorkflowScheduleInternal,
   WorkflowScheduleUpdate,
   VersionInfo,
 } from './system_database';
+import { readStreamCore, readStreamOffsetCore } from './streams';
 import { PoolClient } from 'pg';
 import {
   WorkflowSchedule,
@@ -201,10 +201,20 @@ export interface WriteStreamOptions {
 /**
  * Options for `DBOS.readStream` and client `readStream`
  */
-export interface ReadStreamOptions {
+export interface ReadStreamOptions extends PollingOptions {
   /** Offset to start reading from (defaults to 0, the start of the stream) */
   offset?: number;
+  /**
+   * How long to wait for each value before throwing `DBOSStreamTimeoutError`, in seconds.
+   * The clock restarts every time a value is delivered. Defaults to waiting indefinitely.
+   */
+  timeoutSeconds?: number;
 }
+
+/**
+ * Options for `DBOS.readStreamOffset`, which takes its offset as an argument.
+ */
+export type ReadStreamOffsetOptions = Omit<ReadStreamOptions, 'offset'>;
 
 /**
  * Options for DBOS operations that poll the system database while waiting.
@@ -315,6 +325,15 @@ export function resolveStreamOffset(options: ReadStreamOptions): number {
     throw new DBOSError('offset must be a non-negative integer');
   }
   return offset;
+}
+
+export function resolveStreamTimeoutMS(options: ReadStreamOptions): number | undefined {
+  const timeoutSeconds = options.timeoutSeconds;
+  if (timeoutSeconds === undefined) return undefined;
+  if (!Number.isFinite(timeoutSeconds) || timeoutSeconds < 0) {
+    throw new DBOSError('timeoutSeconds must not be negative');
+  }
+  return timeoutSeconds * 1000;
 }
 
 export function resolveDelayEpochMS(options: number | SetWorkflowDelayOptions): number {
@@ -1670,23 +1689,23 @@ export class DBOS {
   }
 
   /**
-   * Close a stream by writing a sentinel value.
+   * Close a stream by writing a sentinel value. May be called from a workflow or a step.
    * @param key - The stream key/name within the workflow
    */
   static async closeStream(key: string): Promise<void> {
     ensureDBOSIsLaunched('closeStream');
-    if (DBOS.isWithinWorkflow()) {
-      if (DBOS.isInWorkflow()) {
-        // Reserve the function ID synchronously, before any await.
-        const functionID: number = functionIDGetIncrement();
-        return await DBOSExecutor.globalInstance!.systemDatabase.closeStream(DBOS.workflowID!, functionID, key);
-      } else {
-        throw new DBOSInvalidWorkflowTransitionError(
-          'Invalid call to `DBOS.closeStream` outside of a workflow or step',
-        );
-      }
+    if (DBOS.isInWorkflow()) {
+      // Reserve the function ID synchronously, before any await.
+      const functionID: number = functionIDGetIncrement();
+      return await DBOSExecutor.globalInstance!.systemDatabase.closeStreamFromWorkflow(
+        DBOS.workflowID!,
+        functionID,
+        key,
+      );
+    } else if (DBOS.isInStep()) {
+      return await DBOSExecutor.globalInstance!.systemDatabase.closeStreamFromStep(DBOS.workflowID!, DBOS.stepID!, key);
     } else {
-      throw new DBOSInvalidWorkflowTransitionError('Invalid call to `DBOS.closeStream` outside of a workflow');
+      throw new DBOSInvalidWorkflowTransitionError('Invalid call to `DBOS.closeStream` outside of a workflow or step');
     }
   }
 
@@ -1705,54 +1724,42 @@ export class DBOS {
     options: ReadStreamOptions = {},
   ): AsyncGenerator<T, void, unknown> {
     ensureDBOSIsLaunched('readStream');
-    let offset = resolveStreamOffset(options);
     const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
-    const payload = `${workflowID}::${key}`;
-    let finalRead = false;
+    yield* readStreamCore<T>(sysdb, sysdb.getSerializer(), workflowID, key, {
+      offset: resolveStreamOffset(options),
+      pollingIntervalMs: resolvePollingIntervalMs(options) ?? sysdb.dbPollingIntervalStreamMs,
+      timeoutMS: resolveStreamTimeoutMS(options),
+      functionName: DBOS_FUNCNAME_READSTREAM,
+      checkpoint: true,
+    });
+  }
 
-    while (true) {
-      // Register a listener before reading so a notification arriving between the
-      // read and the wait below is not lost; a fresh promise per iteration gives
-      // the "clear before reading" semantics.
-      let resolveNotification: () => void;
-      const messagePromise = new Promise<void>((resolve) => {
-        resolveNotification = resolve;
-      });
-      const cbr = sysdb.streamsMap.registerCallback(payload, resolveNotification!);
-      try {
-        // One round trip for both the value and the workflow's status.
-        const { status, value } = await sysdb.readStreamValue(workflowID, key, offset);
-        if (status === null) {
-          throw new DBOSNonExistentWorkflowError(`Workflow ${workflowID} does not exist`);
-        }
-        if (value !== undefined) {
-          if (value.serializedValue === DBOS_STREAM_CLOSED_SENTINEL) {
-            return;
-          }
-          yield (await deserializeValue(value.serializedValue, value.serialization, sysdb.getSerializer())) as T;
-          offset += 1;
-          // More may be buffered; read the next offset before waiting.
-          continue;
-        }
-        if (finalRead) {
-          break;
-        }
-        // No value yet: stop if the workflow is done, else wait for a notification (bounded by the poll interval so termination is noticed).
-        if (!isWorkflowActive(status)) {
-          // Cancel/timeout set a terminal status while the workflow may still be writing, so drain to the first empty offset before stopping.
-          finalRead = true;
-          continue;
-        }
-        const { promise, cancel } = cancellableSleep(1000); // 1 second polling fallback
-        try {
-          await Promise.race([messagePromise, promise]);
-        } finally {
-          cancel();
-        }
-      } finally {
-        sysdb.streamsMap.deregisterCallback(cbr);
-      }
-    }
+  /**
+   * Read the single value at one offset of a stream, waiting for it to be written.
+   * Called from a workflow, this is one checkpointed step: a replay returns the recorded
+   * value or re-raises the recorded timeout.
+   * @param workflowID - The workflow instance ID that owns the stream
+   * @param key - The stream key/name within the workflow
+   * @param offset - The offset to read
+   * @param options - Optional settings, including how long to wait for the value
+   * @returns The value at the offset
+   * @throws DBOSStreamTimeoutError - If the timeout passes, or the stream ends before reaching the offset
+   */
+  static async readStreamOffset<T>(
+    workflowID: string,
+    key: string,
+    offset: number,
+    options: ReadStreamOffsetOptions = {},
+  ): Promise<T> {
+    ensureDBOSIsLaunched('readStreamOffset');
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    return await readStreamOffsetCore<T>(sysdb, sysdb.getSerializer(), workflowID, key, {
+      offset: resolveStreamOffset({ ...options, offset }),
+      pollingIntervalMs: resolvePollingIntervalMs(options) ?? sysdb.dbPollingIntervalStreamMs,
+      timeoutMS: resolveStreamTimeoutMS(options),
+      functionName: DBOS_FUNCNAME_READSTREAMOFFSET,
+      checkpoint: true,
+    });
   }
 
   /**

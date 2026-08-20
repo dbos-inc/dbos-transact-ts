@@ -3,8 +3,8 @@ import { generateDBOSTestConfig, reexecuteWorkflowById, setUpDBOSTestSysDb } fro
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import { randomUUID } from 'node:crypto';
 import { DBOSClient } from '../src/client';
-import { DBOSNonExistentWorkflowError } from '../src/error';
-import { deserializeValue } from '../src/serialization';
+import { DBOSNonExistentWorkflowError, DBOSStreamTimeoutError, getDBOSErrorCode, StreamTimeout } from '../src/error';
+import { deserializeValue, serializeValue } from '../src/serialization';
 import { DBOS_STREAMS_CHANNEL } from '../src/system_database';
 
 describe('dbos-streaming-tests', () => {
@@ -565,6 +565,13 @@ describe('dbos-streaming-tests', () => {
       { name: 'step-that-writes-and-fails', retriesAllowed: true, maxAttempts: 4, intervalSeconds: 0 },
     );
 
+    const stepThatCloses = DBOS.registerStep(
+      async (streamKey: string) => {
+        await DBOS.closeStream(streamKey);
+      },
+      { name: 'step-that-closes' },
+    );
+
     const workflowWithFailingStep = DBOS.registerWorkflow(
       async () => {
         // This step will fail 3 times, then succeed on the 4th attempt
@@ -575,8 +582,8 @@ describe('dbos-streaming-tests', () => {
         // Also write directly from workflow
         await DBOS.writeStream('retry_stream', 'from_workflow');
 
-        // Close the stream
-        await DBOS.closeStream('retry_stream');
+        // Close the stream from a step, as a workflow may
+        await stepThatCloses('retry_stream');
       },
       { name: 'workflow-with-failing-step' },
     );
@@ -928,6 +935,389 @@ describe('dbos-streaming-tests', () => {
     expect(result).toBe('hello_trigger');
     expect(latency).toBeLessThan(3000);
   });
+
+  test('workflow-read-stream-checkpointing', async () => {
+    // A workflow reading a stream records one step per value, so a replay re-yields what it read
+    // rather than re-reading a stream that has moved on. Reads from a step are not recorded.
+    const streamKey = 'checkpointed_stream';
+    const testValues: unknown[] = ['a', null, { k: 'v' }, 42];
+    let readerCalls = 0;
+    let crashingReaderAttempts = 0;
+    let stepCalls = 0;
+
+    const writerWorkflow = DBOS.registerWorkflow(
+      async () => {
+        for (const value of testValues) {
+          await DBOS.writeStream(streamKey, value);
+        }
+        // Left unclosed: a reader stops once the writer goes terminal.
+      },
+      { name: 'checkpoint-writer' },
+    );
+
+    const readerWorkflow = DBOS.registerWorkflow(
+      async (targetID: string) => {
+        readerCalls += 1;
+        const seen: unknown[] = [];
+        for await (const value of DBOS.readStream(targetID, streamKey)) {
+          seen.push(value);
+        }
+        return seen;
+      },
+      { name: 'checkpoint-reader' },
+    );
+
+    const crashingReaderWorkflow = DBOS.registerWorkflow(
+      async (targetID: string) => {
+        crashingReaderAttempts += 1;
+        const seen: unknown[] = [];
+        for await (const value of DBOS.readStream(targetID, streamKey)) {
+          seen.push(value);
+          if (crashingReaderAttempts === 1 && seen.length === 2) {
+            throw new Error('reader crashed');
+          }
+        }
+        return seen;
+      },
+      { name: 'checkpoint-crashing-reader' },
+    );
+
+    const countingStep = DBOS.registerStep(
+      async () => {
+        stepCalls += 1;
+        return Promise.resolve(stepCalls);
+      },
+      { name: 'checkpoint-counting-step' },
+    );
+
+    const partialReaderWorkflow = DBOS.registerWorkflow(
+      async (targetID: string) => {
+        const seen: unknown[] = [];
+        for await (const value of DBOS.readStream(targetID, streamKey)) {
+          seen.push(value);
+          if (seen.length === 2) break;
+        }
+        return [seen, await countingStep()];
+      },
+      { name: 'checkpoint-partial-reader' },
+    );
+
+    const readInStep = DBOS.registerStep(
+      async (targetID: string) => {
+        const seen: unknown[] = [];
+        for await (const value of DBOS.readStream(targetID, streamKey)) {
+          seen.push(value);
+        }
+        return seen;
+      },
+      { name: 'checkpoint-read-in-step' },
+    );
+
+    const stepReaderWorkflow = DBOS.registerWorkflow(async (targetID: string) => readInStep(targetID), {
+      name: 'checkpoint-step-reader',
+    });
+
+    await DBOS.launch();
+
+    const writerID = randomUUID();
+    await DBOS.withNextWorkflowID(writerID, async () => {
+      await writerWorkflow();
+    });
+
+    // One step per value, including the null, plus one recording that the stream ended.
+    const readerID = randomUUID();
+    await DBOS.withNextWorkflowID(readerID, async () => {
+      expect(await readerWorkflow(writerID)).toEqual(testValues);
+    });
+    expect((await DBOS.listWorkflowSteps(readerID))!.map((step) => step.name)).toEqual(
+      new Array(testValues.length + 1).fill('DBOS.readStream'),
+    );
+
+    // A reader that failed partway records only what it delivered, then reads on from there.
+    const crashingReaderID = randomUUID();
+    await DBOS.withNextWorkflowID(crashingReaderID, async () => {
+      await expect(crashingReaderWorkflow(writerID)).rejects.toThrow('reader crashed');
+    });
+    expect((await DBOS.listWorkflowSteps(crashingReaderID))!.length).toBe(2);
+    expect(await (await reexecuteWorkflowById(crashingReaderID)).getResult()).toEqual(testValues);
+    expect(crashingReaderAttempts).toBe(2);
+
+    // Each value consumes a function ID, so a step after a half-read stream still replays.
+    const partialReaderID = randomUUID();
+    await DBOS.withNextWorkflowID(partialReaderID, async () => {
+      expect(await partialReaderWorkflow(writerID)).toEqual([testValues.slice(0, 2), 1]);
+    });
+    expect(await (await reexecuteWorkflowById(partialReaderID)).getResult()).toEqual([testValues.slice(0, 2), 1]);
+    expect(stepCalls).toBe(1);
+
+    // A read inside a step is covered by that step's own checkpoint.
+    const stepReaderID = randomUUID();
+    await DBOS.withNextWorkflowID(stepReaderID, async () => {
+      expect(await stepReaderWorkflow(writerID)).toEqual(testValues);
+    });
+    const stepReaderSteps = (await DBOS.listWorkflowSteps(stepReaderID))!;
+    expect(stepReaderSteps.length).toBe(1);
+    expect(stepReaderSteps[0].name).not.toBe('DBOS.readStream');
+
+    // Extend the stream now the readers are done, so a live re-read would see more than they did.
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    for (const value of ['d', 'e']) {
+      const serval = await serializeValue(value, sysdb.getSerializer(), undefined);
+      await sysdb.writeStreamFromStep(writerID, 100, streamKey, serval.serializedValue!, serval.serialization);
+    }
+    const liveValues: unknown[] = [];
+    for await (const value of DBOS.readStream(writerID, streamKey)) {
+      liveValues.push(value);
+    }
+    expect(liveValues).toEqual([...testValues, 'd', 'e']);
+
+    expect(await (await reexecuteWorkflowById(readerID)).getResult()).toEqual(testValues);
+    expect(readerCalls).toBe(2);
+  });
+
+  test('read-stream-timeout', async () => {
+    // The timeout is per value and the polling interval is per call. The writer stays active and
+    // silent, so only the timeout can end a wait, and a value delivered in between restarts the
+    // clock rather than counting against a single overall deadline. Notifications are off and the
+    // configured fallback is far longer than the test can wait, so nothing is delivered unless the
+    // per-call interval is honored.
+    const streamKey = 'timeout_stream';
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    const writerWorkflow = DBOS.registerWorkflow(
+      async () => {
+        // Stay active and silent so a reader waits rather than draining to the end.
+        await released;
+      },
+      { name: 'timeout-writer' },
+    );
+
+    const priorUseListenNotify = config.useListenNotify;
+    config.useListenNotify = false;
+    DBOS.setConfig(config);
+    try {
+      await DBOS.launch();
+      const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+      sysdb.dbPollingIntervalStreamMs = 30000;
+
+      const wfid = randomUUID();
+      const handle = await DBOS.withNextWorkflowID(wfid, async () => {
+        return DBOS.startWorkflow(writerWorkflow, {})();
+      });
+
+      const insertLater = (value: string, delayMs: number) =>
+        setTimeout(() => {
+          void (async () => {
+            const serval = await serializeValue(value, sysdb.getSerializer(), undefined);
+            await sysdb.writeStreamFromStep(wfid, 100, streamKey, serval.serializedValue!, serval.serialization);
+          })();
+        }, delayMs);
+
+      await expect(DBOS.readStream(wfid, streamKey, { timeoutSeconds: 0.3 }).next()).rejects.toThrow(
+        DBOSStreamTimeoutError,
+      );
+
+      // Two values, each arriving within the timeout but together exceeding it: a per-value clock
+      // delivers both, a single overall deadline would raise on the second.
+      const timers = [insertLater('v0', 500), insertLater('v1', 1000)];
+      const reader = DBOS.readStream<string>(wfid, streamKey, { timeoutSeconds: 0.75, pollingIntervalMs: 50 });
+      expect([(await reader.next()).value, (await reader.next()).value]).toEqual(['v0', 'v1']);
+      await reader.return(undefined);
+      timers.forEach((timer) => clearTimeout(timer));
+
+      // A terminal writer drains to the end of the stream rather than timing out.
+      release();
+      await handle.getResult();
+      const drained: string[] = [];
+      for await (const value of DBOS.readStream<string>(wfid, streamKey, {
+        timeoutSeconds: 0.3,
+        pollingIntervalMs: 50,
+      })) {
+        drained.push(value);
+      }
+      expect(drained).toEqual(['v0', 'v1']);
+
+      await expect(DBOS.readStream(wfid, streamKey, { timeoutSeconds: -1 }).next()).rejects.toThrow(
+        'timeoutSeconds must not be negative',
+      );
+    } finally {
+      // Restore the shared config so a disabled listener does not leak into a later test.
+      config.useListenNotify = priorUseListenNotify;
+      release();
+    }
+  });
+
+  test('workflow-read-stream-timeout-is-checkpointed', async () => {
+    // A timeout is an outcome, not a failure of the read, so it is recorded: a replayed reader
+    // raises it again straight from its checkpoint instead of waiting out the timeout a second time.
+    const streamKey = 'timeout_checkpoint_stream';
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let attempts = 0;
+
+    const writerWorkflow = DBOS.registerWorkflow(
+      async () => {
+        await DBOS.writeStream(streamKey, 'only');
+        // Stay active and silent so the reader times out waiting for a second value.
+        await released;
+      },
+      { name: 'timeout-checkpoint-writer' },
+    );
+
+    const readWithTimeout = async (targetID: string) => {
+      const seen: unknown[] = [];
+      try {
+        for await (const value of DBOS.readStream(targetID, streamKey, { timeoutSeconds: 3 })) {
+          seen.push(value);
+        }
+      } catch (e) {
+        if (getDBOSErrorCode(e as Error) !== StreamTimeout) throw e;
+        seen.push('timed out');
+      }
+      return seen;
+    };
+
+    const readerWorkflow = DBOS.registerWorkflow(
+      async (targetID: string) => {
+        attempts += 1;
+        return readWithTimeout(targetID);
+      },
+      { name: 'timeout-checkpoint-reader' },
+    );
+
+    // A portable workflow records the timeout under the app's serializer too, so its replay rebuilds
+    // the exact error rather than the PortableWorkflowError that portable serialization would flatten
+    // it into.
+    const portableReaderWorkflow = DBOS.registerWorkflow(async (targetID: string) => readWithTimeout(targetID), {
+      name: 'timeout-checkpoint-portable-reader',
+      serialization: 'portable',
+    });
+
+    await DBOS.launch();
+
+    const wfid = randomUUID();
+    const handle = await DBOS.withNextWorkflowID(wfid, async () => {
+      return DBOS.startWorkflow(writerWorkflow, {})();
+    });
+    try {
+      const readerID = randomUUID();
+      await DBOS.withNextWorkflowID(readerID, async () => {
+        expect(await readerWorkflow(wfid)).toEqual(['only', 'timed out']);
+      });
+
+      // The delivered value and the timeout that followed it, one step each, the timeout recorded
+      // as the step's error rather than as an output.
+      const steps = (await DBOS.listWorkflowSteps(readerID))!;
+      expect(steps.map((step) => step.name)).toEqual(['DBOS.readStream', 'DBOS.readStream']);
+      expect(steps[0].error).toBeNull();
+      expect(steps[0].output).toBe('only');
+      expect(steps[1].output).toBeNull();
+      expect(getDBOSErrorCode(steps[1].error!)).toBe(StreamTimeout);
+
+      // Replays from the checkpoint: the writer is still silent, so a live re-read would wait out
+      // the full timeout again before raising.
+      const start = Date.now();
+      expect(await (await reexecuteWorkflowById(readerID)).getResult()).toEqual(['only', 'timed out']);
+      expect(attempts).toBe(2);
+      expect(Date.now() - start).toBeLessThan(2500);
+
+      const portableID = randomUUID();
+      await DBOS.withNextWorkflowID(portableID, async () => {
+        expect(await portableReaderWorkflow(wfid)).toEqual(['only', 'timed out']);
+      });
+      expect(await (await reexecuteWorkflowById(portableID)).getResult()).toEqual(['only', 'timed out']);
+    } finally {
+      release();
+      await handle.getResult();
+    }
+  });
+
+  test('read-stream-offset-api', async () => {
+    // readStreamOffset returns the one value at an offset, waiting for it and throwing if it never
+    // arrives -- because the timeout passed or because the stream ended short of it. From a workflow
+    // it is one checkpointed step, so a replay returns the recorded value or re-throws.
+    const streamKey = 'offset_api_stream';
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let readerCalls = 0;
+
+    const writerWorkflow = DBOS.registerWorkflow(
+      async () => {
+        await DBOS.writeStream(streamKey, 'v0');
+        await DBOS.writeStream(streamKey, 'v1');
+        // Stay active so a read past the end waits rather than giving up immediately.
+        await released;
+        await DBOS.closeStream(streamKey);
+      },
+      { name: 'offset-api-writer' },
+    );
+
+    const readerWorkflow = DBOS.registerWorkflow(
+      async (targetID: string) => {
+        readerCalls += 1;
+        const seen: unknown[] = [await DBOS.readStreamOffset(targetID, streamKey, 1)];
+        try {
+          await DBOS.readStreamOffset(targetID, streamKey, 5, { timeoutSeconds: 0.3 });
+        } catch (e) {
+          if (getDBOSErrorCode(e as Error) !== StreamTimeout) throw e;
+          seen.push('timed out');
+        }
+        return seen;
+      },
+      { name: 'offset-api-reader' },
+    );
+
+    await DBOS.launch();
+
+    const wfid = randomUUID();
+    const handle = await DBOS.withNextWorkflowID(wfid, async () => {
+      return DBOS.startWorkflow(writerWorkflow, {})();
+    });
+    try {
+      // A value already written comes back without waiting.
+      expect(await DBOS.readStreamOffset(wfid, streamKey, 0)).toBe('v0');
+
+      // An offset the stream has not reached waits, then throws.
+      await expect(DBOS.readStreamOffset(wfid, streamKey, 5, { timeoutSeconds: 0.3 })).rejects.toThrow(
+        DBOSStreamTimeoutError,
+      );
+      await expect(DBOS.readStreamOffset(wfid, streamKey, 0, { timeoutSeconds: -1 })).rejects.toThrow(
+        'timeoutSeconds must not be negative',
+      );
+
+      // One step per read, the timed-out one recorded as an error, and a replay repeats both without
+      // waiting out the timeout again.
+      const readerID = randomUUID();
+      await DBOS.withNextWorkflowID(readerID, async () => {
+        expect(await readerWorkflow(wfid)).toEqual(['v1', 'timed out']);
+      });
+      const steps = (await DBOS.listWorkflowSteps(readerID))!;
+      expect(steps.map((step) => step.name)).toEqual(['DBOS.readStreamOffset', 'DBOS.readStreamOffset']);
+      expect(steps[0].output).toBe('v1');
+      expect(steps[1].output).toBeNull();
+      expect(getDBOSErrorCode(steps[1].error!)).toBe(StreamTimeout);
+
+      expect(await (await reexecuteWorkflowById(readerID)).getResult()).toEqual(['v1', 'timed out']);
+      expect(readerCalls).toBe(2);
+    } finally {
+      release();
+      await handle.getResult();
+    }
+
+    // A closed stream gives up on an offset it never reached, rather than waiting out a timeout.
+    const start = Date.now();
+    await expect(DBOS.readStreamOffset(wfid, streamKey, 5, { timeoutSeconds: 30 })).rejects.toThrow(
+      DBOSStreamTimeoutError,
+    );
+    expect(Date.now() - start).toBeLessThan(2000);
+  });
 });
 
 describe('dbos-client-streaming-tests', () => {
@@ -1196,13 +1586,66 @@ describe('dbos-client-streaming-tests', () => {
   });
 
   test('client-read-stream-nonexistent-workflow', async () => {
-    // A stream on an unknown workflow ends the client's generator quietly (the in-process reader raises instead).
+    // A stream on an unknown workflow raises rather than reading as empty, from a client as well as in-process.
     await DBOS.launch();
-    const values: unknown[] = [];
-    for await (const value of client.readStream(randomUUID(), 's')) {
-      values.push(value);
+    await expect(client.readStream(randomUUID(), 's').next()).rejects.toThrow(DBOSNonExistentWorkflowError);
+    await expect(DBOS.readStream(randomUUID(), 's').next()).rejects.toThrow(DBOSNonExistentWorkflowError);
+  });
+
+  test('client-read-stream-offset-api', async () => {
+    // The client reads a single offset too, waiting for it and throwing if the stream ends short of it.
+    const streamKey = 'client_offset_api_stream';
+    const writerWorkflow = DBOS.registerWorkflow(
+      async () => {
+        await DBOS.writeStream(streamKey, 'v0');
+        await DBOS.writeStream(streamKey, 'v1');
+        await DBOS.closeStream(streamKey);
+      },
+      { name: 'client-offset-api-writer' },
+    );
+    await DBOS.launch();
+
+    const wfid = randomUUID();
+    await DBOS.withNextWorkflowID(wfid, async () => {
+      await writerWorkflow();
+    });
+
+    expect(await client.readStreamOffset(wfid, streamKey, 0)).toBe('v0');
+    expect(await client.readStreamOffset(wfid, streamKey, 1)).toBe('v1');
+    await expect(client.readStreamOffset(wfid, streamKey, 5, { timeoutSeconds: 30 })).rejects.toThrow(
+      DBOSStreamTimeoutError,
+    );
+  });
+
+  test('client-read-stream-timeout', async () => {
+    // The client takes the same per-value timeout as the in-process reader.
+    const streamKey = 'client_timeout_stream';
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const writerWorkflow = DBOS.registerWorkflow(
+      async () => {
+        await DBOS.writeStream(streamKey, 'only');
+        // Stay active so a reader waits rather than draining to the end.
+        await released;
+      },
+      { name: 'client-timeout-writer' },
+    );
+    await DBOS.launch();
+
+    const wfid = randomUUID();
+    const handle = await DBOS.withNextWorkflowID(wfid, async () => {
+      return DBOS.startWorkflow(writerWorkflow, {})();
+    });
+    try {
+      const reader = client.readStream<string>(wfid, streamKey, { timeoutSeconds: 0.3, pollingIntervalMs: 50 });
+      expect((await reader.next()).value).toBe('only');
+      await expect(reader.next()).rejects.toThrow(DBOSStreamTimeoutError);
+    } finally {
+      release();
+      await handle.getResult();
     }
-    expect(values).toEqual([]);
   });
 
   test('client-read-stream-is-one-round-trip-per-value', async () => {

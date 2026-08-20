@@ -8,7 +8,7 @@ import {
   type ApplicationRowCounts,
   type DebounceParams,
   type DebounceResult,
-  DBOS_STREAM_CLOSED_SENTINEL,
+  DBOS_FUNCNAME_READSTREAM,
   DEFAULT_POOL_SIZE,
 } from './system_database';
 
@@ -16,7 +16,6 @@ import { DLogger, GlobalLogger } from './telemetry/logs';
 import { randomUUID } from 'node:crypto';
 import {
   type GetWorkflowsInput,
-  isWorkflowActive,
   StatusString,
   type StepInfo,
   type ListWorkflowStepsOptions,
@@ -25,7 +24,6 @@ import {
   type WorkflowStatus,
   validateWorkflowAttributes,
 } from './workflow';
-import { cancellableSleep } from './utils';
 import {
   type GetEventOptions,
   type PollingOptions,
@@ -38,7 +36,10 @@ import {
   resolveTimeoutSeconds,
   resolveDelayEpochMS,
   resolveStreamOffset,
+  resolveStreamTimeoutMS,
+  ReadStreamOffsetOptions,
 } from './dbos';
+import { readStreamCore, readStreamOffsetCore } from './streams';
 import {
   DBOSJSON,
   DBOSSerializer,
@@ -784,56 +785,38 @@ export class DBOSClient {
     key: string,
     options: ReadStreamOptions = {},
   ): AsyncGenerator<T, void, unknown> {
-    let offset = resolveStreamOffset(options);
-    const payload = `${workflowID}::${key}`;
-    let finalRead = false;
+    // A client never runs inside a workflow, so its reads are not checkpointed.
+    yield* readStreamCore<T>(this.systemDatabase, this.serializer, workflowID, key, {
+      offset: resolveStreamOffset(options),
+      pollingIntervalMs: resolvePollingIntervalMs(options) ?? this.systemDatabase.dbPollingIntervalStreamMs,
+      timeoutMS: resolveStreamTimeoutMS(options),
+      functionName: DBOS_FUNCNAME_READSTREAM,
+      checkpoint: false,
+    });
+  }
 
-    while (true) {
-      // Register a listener before reading so a notification arriving between the
-      // read and the wait below is not lost; a fresh promise per iteration gives
-      // the "clear before reading" semantics. The client does not run a
-      // notification listener thread, so this is never signaled and the wait
-      // always falls back to the polling interval below.
-      let resolveNotification: () => void;
-      const messagePromise = new Promise<void>((resolve) => {
-        resolveNotification = resolve;
-      });
-      const cbr = this.systemDatabase.streamsMap.registerCallback(payload, resolveNotification!);
-      try {
-        // One round trip for both the value and the workflow's status.
-        const { status, value } = await this.systemDatabase.readStreamValue(workflowID, key, offset);
-        if (status === null) {
-          // An unknown workflow ends the generator quietly (the in-process reader raises instead).
-          break;
-        }
-        if (value !== undefined) {
-          if (value.serializedValue === DBOS_STREAM_CLOSED_SENTINEL) {
-            return;
-          }
-          yield (await deserializeValue(value.serializedValue, value.serialization, this.serializer)) as T;
-          offset += 1;
-          // More may be buffered; read the next offset before waiting.
-          continue;
-        }
-        if (finalRead) {
-          break;
-        }
-        // No value yet: stop if the workflow is done, else wait for a notification (bounded by the poll interval so termination is noticed).
-        if (!isWorkflowActive(status)) {
-          // Cancel/timeout set a terminal status while the workflow may still be writing, so drain to the first empty offset before stopping.
-          finalRead = true;
-          continue;
-        }
-        const { promise, cancel } = cancellableSleep(1000); // 1 second polling fallback
-        try {
-          await Promise.race([messagePromise, promise]);
-        } finally {
-          cancel();
-        }
-      } finally {
-        this.systemDatabase.streamsMap.deregisterCallback(cbr);
-      }
-    }
+  /**
+   * Read the single value at one offset of a stream, waiting for it to be written.
+   * @param workflowID - The ID of the workflow that wrote to the stream
+   * @param key - The stream key to read from
+   * @param offset - The offset to read
+   * @param options - Optional settings, including how long to wait for the value
+   * @returns The value at the offset
+   * @throws DBOSStreamTimeoutError - If the timeout passes, or the stream ends before reaching the offset
+   */
+  async readStreamOffset<T>(
+    workflowID: string,
+    key: string,
+    offset: number,
+    options: ReadStreamOffsetOptions = {},
+  ): Promise<T> {
+    return await readStreamOffsetCore<T>(this.systemDatabase, this.serializer, workflowID, key, {
+      offset: resolveStreamOffset({ ...options, offset }),
+      pollingIntervalMs: resolvePollingIntervalMs(options) ?? this.systemDatabase.dbPollingIntervalStreamMs,
+      timeoutMS: resolveStreamTimeoutMS(options),
+      functionName: DBOS_FUNCNAME_READSTREAM,
+      checkpoint: false,
+    });
   }
 
   // ---------------------------------------------------------------------------

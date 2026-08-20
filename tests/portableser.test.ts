@@ -50,6 +50,17 @@ const portWorkflow = DBOS.registerWorkflow(
   },
 );
 
+// Sends to itself so the message stays unconsumed and its format can be snooped.
+const portableDirectWorkflow = DBOS.registerWorkflow(
+  async () => {
+    await DBOS.setEvent('defstat', { status: 'Happy' });
+    await DBOS.writeStream('defstream', { stream: 'OhYeah' });
+    await DBOS.send(DBOS.workflowID!, { message: 'Hello!' }, 'default');
+    return 'direct';
+  },
+  { name: 'workflowPortableDirect', serialization: 'portable' },
+);
+
 class PortableWorkflow {
   static lastWfid: string | undefined = undefined;
 
@@ -362,6 +373,24 @@ describe('portable-serizlization-tests', () => {
       expect((e as PortableWorkflowError).name).toBe('Error');
       expect((e as object).constructor.name).toBe('PortableWorkflowError');
     }
+  });
+
+  test('test-portable-direct-invocation', async () => {
+    // Called directly rather than started or enqueued: the body must write in the declared format
+    // too, not just the workflow row.
+    const directID = randomUUID();
+    await DBOS.withNextWorkflowID(directID, async () => {
+      expect(await portableDirectWorkflow()).toBe('direct');
+    });
+
+    const wfser = await systemDBClient.query<workflow_status>(
+      'SELECT * FROM dbos.workflow_status where workflow_uuid = $1',
+      [directID],
+    );
+    expect(wfser.rows[0].serialization).toBe(DBOSPortableJSON.name());
+    await checkEvtSer(directID, 'defstat', DBOSPortableJSON.name());
+    await checkStreamSer(directID, 'defstream', DBOSPortableJSON.name());
+    await checkMsgSer(directID, 'default', DBOSPortableJSON.name());
   });
 
   test('test-setevent-reset-updates-serialization', async () => {

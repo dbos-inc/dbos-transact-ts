@@ -224,6 +224,24 @@ export class DBOSInvalidWorkflowInputError extends DBOSError {
   }
 }
 
+export const StreamTimeout = 33;
+/** Exception raised when no value arrives on a stream within its timeout, or the stream ends before reaching a requested offset. */
+export class DBOSStreamTimeoutError extends DBOSError {
+  constructor(
+    readonly workflowID: string,
+    readonly key: string,
+    readonly timeoutMS?: number,
+  ) {
+    // No timeout means the stream ended without reaching the value, so none ever will.
+    super(
+      `No value arrived on stream ${key} of workflow ${workflowID}${timeoutMS !== undefined ? ` within ${timeoutMS}ms` : ''}`,
+      StreamTimeout,
+    );
+    // Error serialization records err.name, which is otherwise 'Error'; a replayed timeout is matched on it.
+    this.name = 'DBOSStreamTimeoutError';
+  }
+}
+
 export function getDBOSErrorCode(e: Error): number | undefined {
   if (e && typeof e === 'object' && 'dbosErrorCode' in e) {
     const code = (e as Record<string, unknown>).dbosErrorCode;
