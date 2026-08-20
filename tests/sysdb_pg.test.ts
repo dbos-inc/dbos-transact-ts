@@ -529,6 +529,12 @@ describe('sysdb-no-listen-notify', () => {
         await expect(DBOS.retrieveWorkflow(randomUUID()).getResult({ pollingIntervalMs })).rejects.toThrow(
           'pollingIntervalMs must be a positive finite number',
         );
+        await expect(DBOS.readStream(randomUUID(), 'key', { pollingIntervalMs }).next()).rejects.toThrow(
+          'pollingIntervalMs must be a positive finite number',
+        );
+        await expect(DBOS.readStreamOffset(randomUUID(), 'key', 0, { pollingIntervalMs })).rejects.toThrow(
+          'pollingIntervalMs must be a positive finite number',
+        );
         const invalidRecvHandle = await DBOS.startWorkflow(PGSDBTests).doRecvWithOptions(
           'invalid',
           0,
@@ -547,6 +553,12 @@ describe('sysdb-no-listen-notify', () => {
           'pollingIntervalMs must be a positive finite number',
         );
         await expect(client.waitAll([client.retrieveWorkflow(randomUUID())], { pollingIntervalMs })).rejects.toThrow(
+          'pollingIntervalMs must be a positive finite number',
+        );
+        await expect(client.readStream(randomUUID(), 'key', { pollingIntervalMs }).next()).rejects.toThrow(
+          'pollingIntervalMs must be a positive finite number',
+        );
+        await expect(client.readStreamOffset(randomUUID(), 'key', 0, { pollingIntervalMs })).rejects.toThrow(
           'pollingIntervalMs must be a positive finite number',
         );
       }

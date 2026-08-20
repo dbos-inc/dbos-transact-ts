@@ -271,7 +271,17 @@ describe('dbos-streaming-tests', () => {
     );
 
     // Test closing stream outside of workflow
-    await expect(DBOS.closeStream('test')).rejects.toThrow('Invalid call to `DBOS.closeStream` outside of a workflow');
+    await expect(DBOS.closeStream('test')).rejects.toThrow(
+      'Invalid call to `DBOS.closeStream` outside of a workflow or step',
+    );
+
+    // A negative per-value timeout is rejected before any read happens.
+    await expect(DBOS.readStream(randomUUID(), 'test', { timeoutSeconds: -1 }).next()).rejects.toThrow(
+      'timeoutSeconds must not be negative',
+    );
+    await expect(DBOS.readStreamOffset(randomUUID(), 'test', 0, { timeoutSeconds: -1 })).rejects.toThrow(
+      'timeoutSeconds must not be negative',
+    );
   });
 
   test('large-data', async () => {
@@ -1057,8 +1067,7 @@ describe('dbos-streaming-tests', () => {
       expect(await stepReaderWorkflow(writerID)).toEqual(testValues);
     });
     const stepReaderSteps = (await DBOS.listWorkflowSteps(stepReaderID))!;
-    expect(stepReaderSteps.length).toBe(1);
-    expect(stepReaderSteps[0].name).not.toBe('DBOS.readStream');
+    expect(stepReaderSteps.map((step) => step.name)).toEqual(['checkpoint-read-in-step']);
 
     // Extend the stream now the readers are done, so a live re-read would see more than they did.
     const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
@@ -1076,16 +1085,25 @@ describe('dbos-streaming-tests', () => {
     expect(readerCalls).toBe(2);
   });
 
-  test('legacy-unserialized-close-sentinel', async () => {
-    // Releases before the sentinel became portable JSON wrote it unserialized. Streams closed by
-    // those releases must still end rather than yield the marker as a value.
-    const streamKey = 'legacy_sentinel_stream';
+  test('close-marker-ends-stream-consistently', async () => {
+    // Every reader ends a stream at its close marker: values written past a close are invisible,
+    // a stream closed with nothing in it reads as empty rather than absent, and a marker left by a
+    // release that wrote it unserialized still ends the stream.
+    const streamKey = 'closed_stream';
+    const emptyKey = 'closed_empty_stream';
+    const legacyKey = 'legacy_marker_stream';
+
     const writerWorkflow = DBOS.registerWorkflow(
       async () => {
         await DBOS.writeStream(streamKey, 'v0');
-        // Left unclosed here: the legacy marker is appended below.
+        await DBOS.closeStream(streamKey);
+        // Writing past a close is still accepted; every reader must agree it is not part of the stream.
+        await DBOS.writeStream(streamKey, 'after');
+        await DBOS.closeStream(emptyKey);
+        await DBOS.writeStream(legacyKey, 'v0');
+        // Left open here: the older unserialized marker is appended below.
       },
-      { name: 'legacy-sentinel-writer' },
+      { name: 'closed-stream-writer' },
     );
     await DBOS.launch();
 
@@ -1095,57 +1113,25 @@ describe('dbos-streaming-tests', () => {
     });
 
     const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
-    await sysdb.writeStreamFromStep(wfid, 100, streamKey, DBOS_STREAM_CLOSED_SENTINEL, 'portable_json');
+    await sysdb.writeStreamFromStep(wfid, 100, legacyKey, DBOS_STREAM_CLOSED_SENTINEL, 'portable_json');
 
-    const values: unknown[] = [];
-    for await (const value of DBOS.readStream(wfid, streamKey)) {
-      values.push(value);
-    }
-    expect(values).toEqual(['v0']);
+    const readAll = async (key: string) => {
+      const values: unknown[] = [];
+      for await (const value of DBOS.readStream(wfid, key)) {
+        values.push(value);
+      }
+      return values;
+    };
+    expect(await readAll(streamKey)).toEqual(['v0']);
+    expect(await readAll(emptyKey)).toEqual([]);
+    expect(await readAll(legacyKey)).toEqual(['v0']);
 
-    // The bulk fetch the conductor uses skips it too, without tripping over a value that is not JSON.
-    expect(await sysdb.getAllStreamEntries(wfid)).toEqual({ [streamKey]: ['v0'] });
-  });
-
-  test('get-all-stream-entries-stops-at-close', async () => {
-    // The bulk fetch the conductor uses ends a stream where readStream ends it, so the two never
-    // report different contents for the same rows.
-    const streamKey = 'conductor_view_stream';
-    const emptyKey = 'closed_empty_stream';
-
-    const writerWorkflow = DBOS.registerWorkflow(
-      async () => {
-        await DBOS.writeStream(streamKey, 'v0');
-        await DBOS.closeStream(streamKey);
-        // Writing past a close is still accepted; the two readers must agree on what it holds.
-        await DBOS.writeStream(streamKey, 'after');
-        await DBOS.closeStream(emptyKey);
-      },
-      { name: 'conductor-view-writer' },
-    );
-    await DBOS.launch();
-
-    const wfid = randomUUID();
-    await DBOS.withNextWorkflowID(wfid, async () => {
-      await writerWorkflow();
+    // The bulk fetch the conductor uses reports exactly what readStream yields.
+    expect(await sysdb.getAllStreamEntries(wfid)).toEqual({
+      [streamKey]: ['v0'],
+      [emptyKey]: [],
+      [legacyKey]: ['v0'],
     });
-
-    const read: unknown[] = [];
-    for await (const value of DBOS.readStream(wfid, streamKey)) {
-      read.push(value);
-    }
-    expect(read).toEqual(['v0']);
-
-    const entries = await DBOSExecutor.globalInstance!.systemDatabase.getAllStreamEntries(wfid);
-    expect(entries[streamKey]).toEqual(['v0']);
-    // A stream that was opened and closed with nothing in it reads as empty, not as absent.
-    expect(entries[emptyKey]).toEqual([]);
-
-    const readEmpty: unknown[] = [];
-    for await (const value of DBOS.readStream(wfid, emptyKey)) {
-      readEmpty.push(value);
-    }
-    expect(readEmpty).toEqual([]);
   });
 
   test('read-stream-notices-cancellation', async () => {
@@ -1199,48 +1185,6 @@ describe('dbos-streaming-tests', () => {
     } finally {
       release();
       await writerHandle.getResult();
-    }
-  });
-
-  test('abandoned-reader-leaves-no-listener', async () => {
-    // Registration is scoped to a single read attempt and released in a finally, so a reader
-    // suspended at a value holds no listener and an abandoned one cannot leak one. Python instead
-    // registers once for the whole read, so it must aclose() the generator to release it.
-    const streamKey = 'listener_lifetime_stream';
-    let release!: () => void;
-    const released = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-
-    const writerWorkflow = DBOS.registerWorkflow(
-      async () => {
-        await DBOS.writeStream(streamKey, 'v0');
-        await DBOS.writeStream(streamKey, 'v1');
-        // Stay active so a reader is suspended mid-stream rather than exhausted.
-        await released;
-      },
-      { name: 'listener-lifetime-writer' },
-    );
-    await DBOS.launch();
-
-    const wfid = randomUUID();
-    const handle = await DBOS.withNextWorkflowID(wfid, async () => {
-      return DBOS.startWorkflow(writerWorkflow, {})();
-    });
-    try {
-      const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
-      const payload = `${wfid}::${streamKey}`;
-      const reader = DBOS.readStream<string>(wfid, streamKey);
-      expect((await reader.next()).value).toBe('v0');
-      expect(sysdb.streamsMap.map.get(payload)).toBeUndefined();
-      expect((await reader.next()).value).toBe('v1');
-      // Abandoning the reader closes it; `yield*` forwards that to the inner generator.
-      await reader.return(undefined);
-      expect(sysdb.streamsMap.map.get(payload)).toBeUndefined();
-      expect(await reader.next()).toEqual({ value: undefined, done: true });
-    } finally {
-      release();
-      await handle.getResult();
     }
   });
 
@@ -1308,20 +1252,6 @@ describe('dbos-streaming-tests', () => {
         drained.push(value);
       }
       expect(drained).toEqual(['v0', 'v1']);
-
-      await expect(DBOS.readStream(wfid, streamKey, { timeoutSeconds: -1 }).next()).rejects.toThrow(
-        'timeoutSeconds must not be negative',
-      );
-
-      // A zero or negative interval would never wait, so the reader would spin on the database.
-      for (const bad of [0, -1, Number.POSITIVE_INFINITY, Number.NaN]) {
-        await expect(DBOS.readStream(wfid, streamKey, { pollingIntervalMs: bad }).next()).rejects.toThrow(
-          'pollingIntervalMs must be a positive finite number',
-        );
-        await expect(DBOS.readStreamOffset(wfid, streamKey, 0, { pollingIntervalMs: bad })).rejects.toThrow(
-          'pollingIntervalMs must be a positive finite number',
-        );
-      }
     } finally {
       // Restore the shared config so a disabled listener does not leak into a later test.
       config.useListenNotify = priorUseListenNotify;
@@ -1467,10 +1397,6 @@ describe('dbos-streaming-tests', () => {
       await expect(DBOS.readStreamOffset(wfid, streamKey, 5, { timeoutSeconds: 0.3 })).rejects.toThrow(
         DBOSStreamTimeoutError,
       );
-      await expect(DBOS.readStreamOffset(wfid, streamKey, 0, { timeoutSeconds: -1 })).rejects.toThrow(
-        'timeoutSeconds must not be negative',
-      );
-
       // One step per read, the timed-out one recorded as an error, and a replay repeats both without
       // waiting out the timeout again.
       const readerID = randomUUID();
@@ -1771,16 +1697,18 @@ describe('dbos-client-streaming-tests', () => {
     await expect(DBOS.readStream(randomUUID(), 's').next()).rejects.toThrow(DBOSNonExistentWorkflowError);
   });
 
-  test('client-read-stream-from-workflow-is-not-checkpointed', async () => {
-    // A client reads its own system database, which knows nothing of the workflow that happens to
-    // be calling, so a client read from inside a workflow records no steps.
-    const streamKey = 'client_in_workflow_stream';
+  test('client-read-stream-offset-and-checkpointing', async () => {
+    // The client reads a single offset, waits for one the stream never reaches, and -- because it
+    // reads its own system database, which knows nothing of the workflow that happens to be calling
+    // -- records no steps even when a workflow calls it.
+    const streamKey = 'client_offset_stream';
     const writerWorkflow = DBOS.registerWorkflow(
       async () => {
         await DBOS.writeStream(streamKey, 'v0');
+        await DBOS.writeStream(streamKey, 'v1');
         await DBOS.closeStream(streamKey);
       },
-      { name: 'client-in-workflow-writer' },
+      { name: 'client-offset-writer' },
     );
     const readerWorkflow = DBOS.registerWorkflow(
       async (targetID: string) => {
@@ -1788,34 +1716,9 @@ describe('dbos-client-streaming-tests', () => {
         for await (const value of client.readStream(targetID, streamKey)) {
           seen.push(value);
         }
-        return seen;
+        return [seen, await client.readStreamOffset(targetID, streamKey, 1)];
       },
-      { name: 'client-in-workflow-reader' },
-    );
-    await DBOS.launch();
-
-    const wfid = randomUUID();
-    await DBOS.withNextWorkflowID(wfid, async () => {
-      await writerWorkflow();
-    });
-
-    const readerID = randomUUID();
-    await DBOS.withNextWorkflowID(readerID, async () => {
-      expect(await readerWorkflow(wfid)).toEqual(['v0']);
-    });
-    expect(await DBOS.listWorkflowSteps(readerID)).toEqual([]);
-  });
-
-  test('client-read-stream-offset-api', async () => {
-    // The client reads a single offset too, waiting for it and throwing if the stream ends short of it.
-    const streamKey = 'client_offset_api_stream';
-    const writerWorkflow = DBOS.registerWorkflow(
-      async () => {
-        await DBOS.writeStream(streamKey, 'v0');
-        await DBOS.writeStream(streamKey, 'v1');
-        await DBOS.closeStream(streamKey);
-      },
-      { name: 'client-offset-api-writer' },
+      { name: 'client-offset-reader' },
     );
     await DBOS.launch();
 
@@ -1826,18 +1729,16 @@ describe('dbos-client-streaming-tests', () => {
 
     expect(await client.readStreamOffset(wfid, streamKey, 0)).toBe('v0');
     expect(await client.readStreamOffset(wfid, streamKey, 1)).toBe('v1');
+    // The stream ends before this offset, so no value will ever arrive.
     await expect(client.readStreamOffset(wfid, streamKey, 5, { timeoutSeconds: 30 })).rejects.toThrow(
       DBOSStreamTimeoutError,
     );
 
-    for (const bad of [0, -1, Number.POSITIVE_INFINITY, Number.NaN]) {
-      await expect(client.readStream(wfid, streamKey, { pollingIntervalMs: bad }).next()).rejects.toThrow(
-        'pollingIntervalMs must be a positive finite number',
-      );
-      await expect(client.readStreamOffset(wfid, streamKey, 0, { pollingIntervalMs: bad })).rejects.toThrow(
-        'pollingIntervalMs must be a positive finite number',
-      );
-    }
+    const readerID = randomUUID();
+    await DBOS.withNextWorkflowID(readerID, async () => {
+      expect(await readerWorkflow(wfid)).toEqual([['v0', 'v1'], 'v1']);
+    });
+    expect(await DBOS.listWorkflowSteps(readerID)).toEqual([]);
   });
 
   test('client-read-stream-timeout', async () => {

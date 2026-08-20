@@ -397,13 +397,6 @@ describe('portable-serizlization-tests', () => {
     );
     expect(rows.rows.map((row) => row.value)).toEqual(['{"stream":"OhYeah"}', '"__DBOS_STREAM_CLOSED__"']);
     expect(rows.rows.map((row) => row.serialization)).toEqual([DBOSPortableJSON.name(), DBOSPortableJSON.name()]);
-
-    // The reader stops at the marker rather than yielding it.
-    const values: unknown[] = [];
-    for await (const value of DBOS.readStream(wfid, 'closedstream')) {
-      values.push(value);
-    }
-    expect(values).toEqual([{ stream: 'OhYeah' }]);
   });
 
   test('test-portable-direct-invocation', async () => {
