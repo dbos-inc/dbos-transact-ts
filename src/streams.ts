@@ -25,6 +25,9 @@ export interface StreamReadParams {
 // Returned by StreamReadCheckpointer.replay when a step has no recorded result and must be read live.
 const noRecordedValue = Symbol('noRecordedValue');
 
+// How often a reader re-checks its own workflow for cancellation while it reads.
+const STREAM_CANCEL_CHECK_INTERVAL_MS = 1000;
+
 /**
  * Checkpoints the values a workflow reads from a stream, one step per value.
  *
@@ -38,6 +41,7 @@ class StreamReadCheckpointer {
   // Function IDs are allocated in order, so the first miss proves every later one misses too.
   #replaying = true;
   #startedAtEpochMs = 0;
+  #lastCancelCheckMs = Date.now();
 
   constructor(
     private readonly sysdb: SystemDatabase,
@@ -82,6 +86,19 @@ class StreamReadCheckpointer {
       throw await deserializeResError(recorded.error, recorded.serialization ?? null, this.serializer);
     }
     return await deserializeValue(recorded.output ?? null, recorded.serialization ?? null, this.serializer);
+  }
+
+  /**
+   * Throw if the reading workflow has been cancelled, probing at most once an interval.
+   *
+   * The replay probe stops querying once past the frontier, so nothing else would notice.
+   */
+  async checkCancelled(): Promise<void> {
+    if (this.#ctx === undefined) return;
+    const now = Date.now();
+    if (now - this.#lastCancelCheckMs < STREAM_CANCEL_CHECK_INTERVAL_MS) return;
+    this.#lastCancelCheckMs = now;
+    await this.sysdb.checkIfCanceled(this.#ctx.workflowId!);
   }
 
   /**
@@ -142,6 +159,7 @@ export async function* readStreamCore<T>(
   while (true) {
     // One step per delivered value, reserved before the read so it spans the wait.
     const functionID = checkpointer?.begin();
+    await checkpointer?.checkCancelled();
     // The timeout is per value: the clock restarts every time one is delivered.
     const deadline = timeoutMS !== undefined ? Date.now() + timeoutMS : undefined;
     const recorded = checkpointer ? await checkpointer.replay(functionID) : noRecordedValue;
@@ -190,6 +208,7 @@ export async function* readStreamCore<T>(
           }
           waitMs = Math.min(remaining, pollingIntervalMs);
         }
+        await checkpointer?.checkCancelled();
         const { promise, cancel } = cancellableSleep(waitMs);
         try {
           await Promise.race([messagePromise, promise]);

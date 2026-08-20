@@ -6,6 +6,7 @@ import { DBOSClient } from '../src/client';
 import { DBOSNonExistentWorkflowError, DBOSStreamTimeoutError, getDBOSErrorCode, StreamTimeout } from '../src/error';
 import { deserializeValue, serializeValue } from '../src/serialization';
 import { DBOS_STREAM_CLOSED_SENTINEL, DBOS_STREAMS_CHANNEL } from '../src/system_database';
+import { DBOSWorkflowCancelledError } from '../src/error';
 
 describe('dbos-streaming-tests', () => {
   let config: DBOSConfig;
@@ -1106,6 +1107,101 @@ describe('dbos-streaming-tests', () => {
     expect(await sysdb.getAllStreamEntries(wfid)).toEqual({ [streamKey]: ['v0'] });
   });
 
+  test('get-all-stream-entries-stops-at-close', async () => {
+    // The bulk fetch the conductor uses ends a stream where readStream ends it, so the two never
+    // report different contents for the same rows.
+    const streamKey = 'conductor_view_stream';
+    const emptyKey = 'closed_empty_stream';
+
+    const writerWorkflow = DBOS.registerWorkflow(
+      async () => {
+        await DBOS.writeStream(streamKey, 'v0');
+        await DBOS.closeStream(streamKey);
+        // Writing past a close is still accepted; the two readers must agree on what it holds.
+        await DBOS.writeStream(streamKey, 'after');
+        await DBOS.closeStream(emptyKey);
+      },
+      { name: 'conductor-view-writer' },
+    );
+    await DBOS.launch();
+
+    const wfid = randomUUID();
+    await DBOS.withNextWorkflowID(wfid, async () => {
+      await writerWorkflow();
+    });
+
+    const read: unknown[] = [];
+    for await (const value of DBOS.readStream(wfid, streamKey)) {
+      read.push(value);
+    }
+    expect(read).toEqual(['v0']);
+
+    const entries = await DBOSExecutor.globalInstance!.systemDatabase.getAllStreamEntries(wfid);
+    expect(entries[streamKey]).toEqual(['v0']);
+    // A stream that was opened and closed with nothing in it reads as empty, not as absent.
+    expect(entries[emptyKey]).toEqual([]);
+
+    const readEmpty: unknown[] = [];
+    for await (const value of DBOS.readStream(wfid, emptyKey)) {
+      readEmpty.push(value);
+    }
+    expect(readEmpty).toEqual([]);
+  });
+
+  test('read-stream-notices-cancellation', async () => {
+    // A reader waiting on a live producer observes its own cancellation, rather than blocking
+    // until the producer finishes.
+    const streamKey = 'cancel_stream';
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let entered!: () => void;
+    const hasEntered = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+
+    const writerWorkflow = DBOS.registerWorkflow(
+      async () => {
+        await DBOS.writeStream(streamKey, 'v0');
+        // Stay active and silent so the reader waits rather than draining to the end.
+        await released;
+      },
+      { name: 'cancel-stream-writer' },
+    );
+
+    const readerWorkflow = DBOS.registerWorkflow(
+      async (targetID: string) => {
+        const seen: unknown[] = [];
+        for await (const value of DBOS.readStream(targetID, streamKey)) {
+          seen.push(value);
+          entered();
+        }
+        return seen;
+      },
+      { name: 'cancel-stream-reader' },
+    );
+    await DBOS.launch();
+
+    const wfid = randomUUID();
+    const writerHandle = await DBOS.withNextWorkflowID(wfid, async () => {
+      return DBOS.startWorkflow(writerWorkflow, {})();
+    });
+    try {
+      const readerID = randomUUID();
+      const readerHandle = await DBOS.withNextWorkflowID(readerID, async () => {
+        return DBOS.startWorkflow(readerWorkflow, {})(wfid);
+      });
+      await hasEntered;
+      await DBOS.cancelWorkflow(readerID);
+      // A local handle propagates the workflow's own error rather than the awaiter's variant.
+      await expect(readerHandle.getResult()).rejects.toThrow(DBOSWorkflowCancelledError);
+    } finally {
+      release();
+      await writerHandle.getResult();
+    }
+  });
+
   test('read-stream-timeout', async () => {
     // The timeout is per value and the polling interval is per call. The writer stays active and
     // silent, so only the timeout can end a wait, and a value delivered in between restarts the
@@ -1621,6 +1717,41 @@ describe('dbos-client-streaming-tests', () => {
     await DBOS.launch();
     await expect(client.readStream(randomUUID(), 's').next()).rejects.toThrow(DBOSNonExistentWorkflowError);
     await expect(DBOS.readStream(randomUUID(), 's').next()).rejects.toThrow(DBOSNonExistentWorkflowError);
+  });
+
+  test('client-read-stream-from-workflow-is-not-checkpointed', async () => {
+    // A client reads its own system database, which knows nothing of the workflow that happens to
+    // be calling, so a client read from inside a workflow records no steps.
+    const streamKey = 'client_in_workflow_stream';
+    const writerWorkflow = DBOS.registerWorkflow(
+      async () => {
+        await DBOS.writeStream(streamKey, 'v0');
+        await DBOS.closeStream(streamKey);
+      },
+      { name: 'client-in-workflow-writer' },
+    );
+    const readerWorkflow = DBOS.registerWorkflow(
+      async (targetID: string) => {
+        const seen: unknown[] = [];
+        for await (const value of client.readStream(targetID, streamKey)) {
+          seen.push(value);
+        }
+        return seen;
+      },
+      { name: 'client-in-workflow-reader' },
+    );
+    await DBOS.launch();
+
+    const wfid = randomUUID();
+    await DBOS.withNextWorkflowID(wfid, async () => {
+      await writerWorkflow();
+    });
+
+    const readerID = randomUUID();
+    await DBOS.withNextWorkflowID(readerID, async () => {
+      expect(await readerWorkflow(wfid)).toEqual(['v0']);
+    });
+    expect(await DBOS.listWorkflowSteps(readerID)).toEqual([]);
   });
 
   test('client-read-stream-offset-api', async () => {

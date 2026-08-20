@@ -3361,15 +3361,19 @@ export class SystemDatabase {
         [workflowID],
       );
       const streams: Record<string, unknown[]> = {};
+      const closed = new Set<string>();
       for (const row of result.rows) {
+        if (closed.has(row.key)) {
+          continue;
+        }
         if (isStreamClosedSentinel(row.value)) {
+          // End the stream where readStream does, so the two never disagree.
+          closed.add(row.key);
+          streams[row.key] ??= [];
           continue;
         }
         const value = await safeParse(this.serializer, row.value, row.serialization);
-        if (!streams[row.key]) {
-          streams[row.key] = [];
-        }
-        streams[row.key].push(value);
+        (streams[row.key] ??= []).push(value);
       }
       return streams;
     } finally {
