@@ -7,7 +7,12 @@ import {
   serializeResError,
   serializeValue,
 } from './serialization';
-import { DBOS_STREAM_CLOSED_SENTINEL, isStreamClosedSentinel, SystemDatabase } from './system_database';
+import {
+  DBOS_STREAM_CLOSED_SENTINEL,
+  isLegacyClosedSentinel,
+  isStreamClosedSentinel,
+  SystemDatabase,
+} from './system_database';
 import { cancellableSleep } from './utils';
 import { isWorkflowActive } from './workflow';
 
@@ -164,7 +169,7 @@ export async function* readStreamCore<T>(
     const deadline = timeoutMS !== undefined ? Date.now() + timeoutMS : undefined;
     const recorded = checkpointer ? await checkpointer.replay(functionID) : noRecordedValue;
     if (recorded !== noRecordedValue) {
-      if (recorded === DBOS_STREAM_CLOSED_SENTINEL) {
+      if (isStreamClosedSentinel(recorded)) {
         return;
       }
       yield recorded as T;
@@ -220,15 +225,23 @@ export async function* readStreamCore<T>(
       }
     }
 
-    if (value === undefined || isStreamClosedSentinel(value.serializedValue)) {
+    if (value === undefined) {
       // The end is recorded too, so a replay stops exactly where this read did.
       await checkpointer?.record(functionID, DBOS_STREAM_CLOSED_SENTINEL);
       return;
     }
-    const deserialized = (await deserializeValue(value.serializedValue, value.serialization, serializer)) as T;
+    // Tested after deserializing, as the replay branch above must, so the two never disagree about
+    // where the stream ends. The legacy marker is short-circuited because it does not parse.
+    const deserialized = isLegacyClosedSentinel(value.serializedValue)
+      ? DBOS_STREAM_CLOSED_SENTINEL
+      : await deserializeValue(value.serializedValue, value.serialization, serializer);
+    if (isStreamClosedSentinel(deserialized)) {
+      await checkpointer?.record(functionID, DBOS_STREAM_CLOSED_SENTINEL);
+      return;
+    }
     // Recorded before the yield, so a crash after the workflow acts on the value still replays it.
     await checkpointer?.record(functionID, deserialized);
-    yield deserialized;
+    yield deserialized as T;
     offset += 1;
   }
 }

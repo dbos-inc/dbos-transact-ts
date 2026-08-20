@@ -1134,6 +1134,55 @@ describe('dbos-streaming-tests', () => {
     });
   });
 
+  test('value-equal-to-close-marker-ends-stream-on-both-reads', async () => {
+    // A value that is the close marker ends the stream wherever it is tested, so a live read and a
+    // replayed read agree. The marker is compared after deserializing, so the app serializer's
+    // encoding of the string does not change the answer.
+    const streamKey = 'marker_valued_stream';
+    let readerCalls = 0;
+
+    const writerWorkflow = DBOS.registerWorkflow(
+      async () => {
+        await DBOS.writeStream(streamKey, 'v0');
+        await DBOS.writeStream(streamKey, DBOS_STREAM_CLOSED_SENTINEL);
+        await DBOS.writeStream(streamKey, 'after');
+        await DBOS.closeStream(streamKey);
+      },
+      { name: 'marker-valued-writer' },
+    );
+
+    const readerWorkflow = DBOS.registerWorkflow(
+      async (targetID: string) => {
+        readerCalls += 1;
+        const seen: unknown[] = [];
+        for await (const value of DBOS.readStream(targetID, streamKey)) {
+          seen.push(value);
+        }
+        return seen;
+      },
+      { name: 'marker-valued-reader' },
+    );
+    await DBOS.launch();
+
+    const wfid = randomUUID();
+    await DBOS.withNextWorkflowID(wfid, async () => {
+      await writerWorkflow();
+    });
+
+    const readerID = randomUUID();
+    await DBOS.withNextWorkflowID(readerID, async () => {
+      expect(await readerWorkflow(wfid)).toEqual(['v0']);
+    });
+    // The replay must stop where the live read did, not one value later.
+    expect(await (await reexecuteWorkflowById(readerID)).getResult()).toEqual(['v0']);
+    expect(readerCalls).toBe(2);
+
+    // The bulk fetch the conductor uses agrees too.
+    expect(await DBOSExecutor.globalInstance!.systemDatabase.getAllStreamEntries(wfid)).toEqual({
+      [streamKey]: ['v0'],
+    });
+  });
+
   test('read-stream-notices-cancellation', async () => {
     // A reader waiting on a live producer observes its own cancellation, rather than blocking
     // until the producer finishes.
