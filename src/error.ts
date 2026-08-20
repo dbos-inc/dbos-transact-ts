@@ -1,4 +1,5 @@
 import {} from 'serialize-error';
+import { PortableWorkflowError } from '../schemas/system_db_schema';
 
 export function isDataValidationError(e: Error) {
   const dbosErrorCode = (e as DBOSError)?.dbosErrorCode;
@@ -240,6 +241,19 @@ export class DBOSStreamTimeoutError extends DBOSError {
     // Error serialization records err.name, which is otherwise 'Error'; a replayed timeout is matched on it.
     this.name = 'DBOSStreamTimeoutError';
   }
+}
+
+/**
+ * True if `e` is a stream-read timeout, including the portable-serialization
+ * replay form, which carries only the original type name.
+ *
+ * A replayed error is revived as a plain `Error`, so `instanceof` does not hold; match on this.
+ */
+export function isStreamTimeoutError(e: unknown): boolean {
+  if (e instanceof Error && getDBOSErrorCode(e) === StreamTimeout) {
+    return true;
+  }
+  return e instanceof PortableWorkflowError && e.name === DBOSStreamTimeoutError.name;
 }
 
 export function getDBOSErrorCode(e: Error): number | undefined {

@@ -802,7 +802,8 @@ export class DBOSClient {
    * @param offset - The offset to read
    * @param options - Optional settings, including how long to wait for the value
    * @returns The value at the offset
-   * @throws DBOSStreamTimeoutError - If the timeout passes, or the stream ends before reaching the offset
+   * @throws DBOSStreamTimeoutError - If the timeout passes, or the stream ends before reaching the offset.
+   *   A replayed error is revived as a plain `Error`, so match it with `isStreamTimeoutError`, not `instanceof`.
    */
   async readStreamOffset<T>(
     workflowID: string,

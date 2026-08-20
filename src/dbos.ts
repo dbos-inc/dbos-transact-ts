@@ -207,6 +207,9 @@ export interface ReadStreamOptions extends PollingOptions {
   /**
    * How long to wait for each value before throwing `DBOSStreamTimeoutError`, in seconds.
    * The clock restarts every time a value is delivered. Defaults to waiting indefinitely.
+   *
+   * A replayed error is revived as a plain `Error`, so match it with `isStreamTimeoutError`,
+   * not `instanceof`.
    */
   timeoutSeconds?: number;
 }
@@ -1743,7 +1746,8 @@ export class DBOS {
    * @param offset - The offset to read
    * @param options - Optional settings, including how long to wait for the value
    * @returns The value at the offset
-   * @throws DBOSStreamTimeoutError - If the timeout passes, or the stream ends before reaching the offset
+   * @throws DBOSStreamTimeoutError - If the timeout passes, or the stream ends before reaching the offset.
+   *   A replayed error is revived as a plain `Error`, so match it with `isStreamTimeoutError`, not `instanceof`.
    */
   static async readStreamOffset<T>(
     workflowID: string,

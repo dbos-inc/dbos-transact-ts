@@ -1,9 +1,16 @@
 import { DBOS } from '../src/';
 import { generateDBOSTestConfig, reexecuteWorkflowById, setUpDBOSTestSysDb } from './helpers';
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
+import { PortableWorkflowError } from '../schemas/system_db_schema';
 import { randomUUID } from 'node:crypto';
 import { DBOSClient } from '../src/client';
-import { DBOSNonExistentWorkflowError, DBOSStreamTimeoutError, getDBOSErrorCode, StreamTimeout } from '../src/error';
+import {
+  DBOSNonExistentWorkflowError,
+  DBOSStreamTimeoutError,
+  getDBOSErrorCode,
+  isStreamTimeoutError,
+  StreamTimeout,
+} from '../src/error';
 import { deserializeValue, serializeValue } from '../src/serialization';
 import { DBOS_STREAM_CLOSED_SENTINEL, DBOS_STREAMS_CHANNEL } from '../src/system_database';
 import { DBOSWorkflowCancelledError } from '../src/error';
@@ -1334,7 +1341,7 @@ describe('dbos-streaming-tests', () => {
           seen.push(value);
         }
       } catch (e) {
-        if (getDBOSErrorCode(e as Error) !== StreamTimeout) throw e;
+        if (!isStreamTimeoutError(e)) throw e;
         seen.push('timed out');
       }
       return seen;
@@ -1355,6 +1362,17 @@ describe('dbos-streaming-tests', () => {
       name: 'timeout-checkpoint-portable-reader',
       serialization: 'portable',
     });
+
+    // Lets the timeout escape instead of catching it, so an awaiter sees the portable revival.
+    // timeoutSeconds 0 expires on the first read with no value, right after 'only' is delivered.
+    const escapingPortableReader = DBOS.registerWorkflow(
+      async (targetID: string) => {
+        for await (const value of DBOS.readStream(targetID, streamKey, { timeoutSeconds: 0 })) {
+          void value;
+        }
+      },
+      { name: 'timeout-checkpoint-escaping-portable-reader', serialization: 'portable' },
+    );
 
     await DBOS.launch();
 
@@ -1389,6 +1407,16 @@ describe('dbos-streaming-tests', () => {
         expect(await portableReaderWorkflow(wfid)).toEqual(['only', 'timed out']);
       });
       expect(await (await reexecuteWorkflowById(portableID)).getResult()).toEqual(['only', 'timed out']);
+
+      // A timeout that escapes a portable workflow is revived as a PortableWorkflowError, which
+      // carries the type name but no error code -- the form isStreamTimeoutError exists to match.
+      const escaped = await escapingPortableReader(wfid).then(
+        () => undefined,
+        (e: unknown) => e,
+      );
+      expect(escaped).toBeInstanceOf(PortableWorkflowError);
+      expect(getDBOSErrorCode(escaped as Error)).toBeUndefined();
+      expect(isStreamTimeoutError(escaped)).toBe(true);
     } finally {
       release();
       await handle.getResult();
@@ -1424,7 +1452,7 @@ describe('dbos-streaming-tests', () => {
         try {
           await DBOS.readStreamOffset(targetID, streamKey, 5, { timeoutSeconds: 0.3 });
         } catch (e) {
-          if (getDBOSErrorCode(e as Error) !== StreamTimeout) throw e;
+          if (!isStreamTimeoutError(e)) throw e;
           seen.push('timed out');
         }
         return seen;
