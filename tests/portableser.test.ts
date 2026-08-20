@@ -50,6 +50,14 @@ const portWorkflow = DBOS.registerWorkflow(
   },
 );
 
+const closeStreamWorkflow = DBOS.registerWorkflow(
+  async () => {
+    await DBOS.writeStream('closedstream', { stream: 'OhYeah' });
+    await DBOS.closeStream('closedstream');
+  },
+  { name: 'workflowCloseStream', serialization: 'portable' },
+);
+
 // Sends to itself so the message stays unconsumed and its format can be snooped.
 const portableDirectWorkflow = DBOS.registerWorkflow(
   async () => {
@@ -373,6 +381,29 @@ describe('portable-serizlization-tests', () => {
       expect((e as PortableWorkflowError).name).toBe('Error');
       expect((e as object).constructor.name).toBe('PortableWorkflowError');
     }
+  });
+
+  test('test-close-stream-sentinel-is-portable', async () => {
+    // The marker that ends a stream is written as portable JSON, byte-identical to what Python and
+    // Java write, so a reader in any language recognizes a stream the others closed.
+    const wfid = randomUUID();
+    await DBOS.withNextWorkflowID(wfid, async () => {
+      await closeStreamWorkflow();
+    });
+
+    const rows = await systemDBClient.query<streams>(
+      `SELECT * FROM dbos.streams where workflow_uuid = $1 and key=$2 ORDER BY "offset";`,
+      [wfid, 'closedstream'],
+    );
+    expect(rows.rows.map((row) => row.value)).toEqual(['{"stream":"OhYeah"}', '"__DBOS_STREAM_CLOSED__"']);
+    expect(rows.rows.map((row) => row.serialization)).toEqual([DBOSPortableJSON.name(), DBOSPortableJSON.name()]);
+
+    // The reader stops at the marker rather than yielding it.
+    const values: unknown[] = [];
+    for await (const value of DBOS.readStream(wfid, 'closedstream')) {
+      values.push(value);
+    }
+    expect(values).toEqual([{ stream: 'OhYeah' }]);
   });
 
   test('test-portable-direct-invocation', async () => {

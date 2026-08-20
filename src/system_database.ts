@@ -82,6 +82,14 @@ export const DBOS_FUNCNAME_READSTREAMOFFSET = 'DBOS.readStreamOffset';
 export const DEFAULT_POOL_SIZE = 10;
 
 export const DBOS_STREAM_CLOSED_SENTINEL = '__DBOS_STREAM_CLOSED__';
+// The sentinel as it is stored: portable JSON, the same bytes every language writes and reads.
+export const DBOS_STREAM_CLOSED_SENTINEL_SERIALIZED = DBOSPortableJSON.stringify(DBOS_STREAM_CLOSED_SENTINEL);
+
+/** Whether a stored stream value is the marker a closed stream ends with. */
+export function isStreamClosedSentinel(serializedValue: string): boolean {
+  // Releases before the portable form wrote the sentinel unserialized; both forms end a stream.
+  return serializedValue === DBOS_STREAM_CLOSED_SENTINEL_SERIALIZED || serializedValue === DBOS_STREAM_CLOSED_SENTINEL;
+}
 
 // LISTEN/NOTIFY channels. Streams and workflow_events are pushed by the notifier loop off the write path; notifications fires from an in-transaction DB trigger so recv is never woken before its row commits.
 export const DBOS_NOTIFICATIONS_CHANNEL = 'dbos_notifications_channel';
@@ -3163,14 +3171,20 @@ export class SystemDatabase {
       workflowID,
       functionID,
       key,
-      DBOS_STREAM_CLOSED_SENTINEL,
-      'portable_json',
+      DBOS_STREAM_CLOSED_SENTINEL_SERIALIZED,
+      DBOSPortableJSON.name(),
       DBOS_FUNCNAME_CLOSESTREAM,
     );
   }
 
   async closeStreamFromStep(workflowID: string, stepID: number, key: string): Promise<void> {
-    await this.writeStreamFromStep(workflowID, stepID, key, DBOS_STREAM_CLOSED_SENTINEL, 'portable_json');
+    await this.writeStreamFromStep(
+      workflowID,
+      stepID,
+      key,
+      DBOS_STREAM_CLOSED_SENTINEL_SERIALIZED,
+      DBOSPortableJSON.name(),
+    );
   }
 
   // Read the value at `offset` and the workflow's status in one query: status null = no such workflow, value undefined = nothing at that offset.
@@ -3348,10 +3362,10 @@ export class SystemDatabase {
       );
       const streams: Record<string, unknown[]> = {};
       for (const row of result.rows) {
-        const value = await safeParse(this.serializer, row.value, row.serialization);
-        if (value === DBOS_STREAM_CLOSED_SENTINEL) {
+        if (isStreamClosedSentinel(row.value)) {
           continue;
         }
+        const value = await safeParse(this.serializer, row.value, row.serialization);
         if (!streams[row.key]) {
           streams[row.key] = [];
         }

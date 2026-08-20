@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { DBOSClient } from '../src/client';
 import { DBOSNonExistentWorkflowError, DBOSStreamTimeoutError, getDBOSErrorCode, StreamTimeout } from '../src/error';
 import { deserializeValue, serializeValue } from '../src/serialization';
-import { DBOS_STREAMS_CHANNEL } from '../src/system_database';
+import { DBOS_STREAM_CLOSED_SENTINEL, DBOS_STREAMS_CHANNEL } from '../src/system_database';
 
 describe('dbos-streaming-tests', () => {
   let config: DBOSConfig;
@@ -1073,6 +1073,37 @@ describe('dbos-streaming-tests', () => {
 
     expect(await (await reexecuteWorkflowById(readerID)).getResult()).toEqual(testValues);
     expect(readerCalls).toBe(2);
+  });
+
+  test('legacy-unserialized-close-sentinel', async () => {
+    // Releases before the sentinel became portable JSON wrote it unserialized. Streams closed by
+    // those releases must still end rather than yield the marker as a value.
+    const streamKey = 'legacy_sentinel_stream';
+    const writerWorkflow = DBOS.registerWorkflow(
+      async () => {
+        await DBOS.writeStream(streamKey, 'v0');
+        // Left unclosed here: the legacy marker is appended below.
+      },
+      { name: 'legacy-sentinel-writer' },
+    );
+    await DBOS.launch();
+
+    const wfid = randomUUID();
+    await DBOS.withNextWorkflowID(wfid, async () => {
+      await writerWorkflow();
+    });
+
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    await sysdb.writeStreamFromStep(wfid, 100, streamKey, DBOS_STREAM_CLOSED_SENTINEL, 'portable_json');
+
+    const values: unknown[] = [];
+    for await (const value of DBOS.readStream(wfid, streamKey)) {
+      values.push(value);
+    }
+    expect(values).toEqual(['v0']);
+
+    // The bulk fetch the conductor uses skips it too, without tripping over a value that is not JSON.
+    expect(await sysdb.getAllStreamEntries(wfid)).toEqual({ [streamKey]: ['v0'] });
   });
 
   test('read-stream-timeout', async () => {

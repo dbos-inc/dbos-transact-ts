@@ -7,7 +7,7 @@ import {
   serializeResError,
   serializeValue,
 } from './serialization';
-import { DBOS_STREAM_CLOSED_SENTINEL, SystemDatabase } from './system_database';
+import { DBOS_STREAM_CLOSED_SENTINEL, isStreamClosedSentinel, SystemDatabase } from './system_database';
 import { cancellableSleep } from './utils';
 import { isWorkflowActive } from './workflow';
 
@@ -201,7 +201,7 @@ export async function* readStreamCore<T>(
       }
     }
 
-    if (value === undefined || value.serializedValue === DBOS_STREAM_CLOSED_SENTINEL) {
+    if (value === undefined || isStreamClosedSentinel(value.serializedValue)) {
       // The end is recorded too, so a replay stops exactly where this read did.
       await checkpointer?.record(functionID, DBOS_STREAM_CLOSED_SENTINEL);
       return;
