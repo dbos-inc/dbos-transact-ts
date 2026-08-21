@@ -1,4 +1,5 @@
 import {} from 'serialize-error';
+import { PortableWorkflowError } from '../schemas/system_db_schema';
 
 export function isDataValidationError(e: Error) {
   const dbosErrorCode = (e as DBOSError)?.dbosErrorCode;
@@ -222,6 +223,55 @@ export class DBOSInvalidWorkflowInputError extends DBOSError {
       InvalidWorkflowInput,
     );
   }
+}
+
+export const StreamTimeout = 33;
+/** Exception raised when no value arrives on a stream within its timeout, or the stream ends before reaching a requested offset. */
+export class DBOSStreamTimeoutError extends DBOSError {
+  constructor(
+    readonly workflowID: string,
+    readonly key: string,
+    readonly timeoutMS?: number,
+  ) {
+    // No timeout means the stream ended without reaching the value, so none ever will.
+    super(
+      `No value arrived on stream ${key} of workflow ${workflowID}${timeoutMS !== undefined ? ` within ${timeoutMS}ms` : ''}`,
+      StreamTimeout,
+    );
+    // Error serialization records err.name, which is otherwise 'Error'; a replayed timeout is matched on it.
+    this.name = 'DBOSStreamTimeoutError';
+  }
+}
+
+export const StreamNondeterminism = 34;
+/** Exception raised when concurrent stream reads would make replay depend on scheduling. */
+export class DBOSStreamNondeterminismError extends DBOSError {
+  constructor(
+    readonly workflowID: string,
+    readonly key: string,
+  ) {
+    super(
+      `Cannot deterministically read stream ${key} in workflow ${workflowID}: another stream read ` +
+        `in the same workflow is still in progress, so which read records which value would depend ` +
+        `on task scheduling. Read streams from sequential workflow code, or read them from a step.`,
+      StreamNondeterminism,
+    );
+    // Error serialization records err.name, which is otherwise 'Error'.
+    this.name = 'DBOSStreamNondeterminismError';
+  }
+}
+
+/**
+ * True if `e` is a stream-read timeout, including the portable-serialization
+ * replay form, which carries only the original type name.
+ *
+ * A replayed error is revived as a plain `Error`, so `instanceof` does not hold; match on this.
+ */
+export function isStreamTimeoutError(e: unknown): boolean {
+  if (e instanceof Error && getDBOSErrorCode(e) === StreamTimeout) {
+    return true;
+  }
+  return e instanceof PortableWorkflowError && e.name === DBOSStreamTimeoutError.name;
 }
 
 export function getDBOSErrorCode(e: Error): number | undefined {

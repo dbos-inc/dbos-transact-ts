@@ -77,9 +77,26 @@ export const DBOS_FUNCNAME_SLEEP = 'DBOS.sleep';
 export const DBOS_FUNCNAME_GETSTATUS = 'getStatus';
 export const DBOS_FUNCNAME_WRITESTREAM = 'DBOS.writeStream';
 export const DBOS_FUNCNAME_CLOSESTREAM = 'DBOS.closeStream';
+export const DBOS_FUNCNAME_READSTREAM = 'DBOS.readStream';
+export const DBOS_FUNCNAME_READSTREAMOFFSET = 'DBOS.readStreamOffset';
 export const DEFAULT_POOL_SIZE = 10;
 
 export const DBOS_STREAM_CLOSED_SENTINEL = '__DBOS_STREAM_CLOSED__';
+// The sentinel as it is stored: portable JSON, the same bytes every language writes and reads.
+export const DBOS_STREAM_CLOSED_SENTINEL_SERIALIZED = DBOSPortableJSON.stringify(DBOS_STREAM_CLOSED_SENTINEL);
+
+/** Whether a stream value is the marker a closed stream ends with. Takes the deserialized value. */
+export function isStreamClosedSentinel(value: unknown): boolean {
+  return typeof value === 'string' && value === DBOS_STREAM_CLOSED_SENTINEL;
+}
+
+/**
+ * Whether a stored value is the marker as releases before the portable form wrote it: unserialized,
+ * so no deserializer parses it. Callers must test this before deserializing.
+ */
+export function isLegacyClosedSentinel(serializedValue: string): boolean {
+  return serializedValue === DBOS_STREAM_CLOSED_SENTINEL;
+}
 
 // LISTEN/NOTIFY channels. Streams and workflow_events are pushed by the notifier loop off the write path; notifications fires from an in-transaction DB trigger so recv is never woken before its row commits.
 export const DBOS_NOTIFICATIONS_CHANNEL = 'dbos_notifications_channel';
@@ -824,6 +841,7 @@ export class SystemDatabase {
   notificationsClient: PoolClient | null = null;
   dbPollingIntervalResultMs: number = 1000;
   dbPollingIntervalEventMs: number = 10000;
+  dbPollingIntervalStreamMs: number = 1000;
   shouldUseDBNotifications: boolean = true;
   readonly notificationsMap: NotificationMap<void> = new NotificationMap();
   readonly workflowEventsMap: NotificationMap<void> = new NotificationMap();
@@ -2476,7 +2494,8 @@ export class SystemDatabase {
    * under the polling limiter so it counts against the same concurrency budget
    * as the rest of the loop's reads.
    */
-  async #checkIfCanceledLimited(workflowID: string): Promise<void> {
+  /** Cancellation check for polling waits: goes through the limiter so readers cannot starve the pool. */
+  async checkIfCanceledLimited(workflowID: string): Promise<void> {
     await this.#pollWithLimiter(() => this.#checkIfCanceled(this.pool, workflowID));
   }
 
@@ -2505,7 +2524,7 @@ export class SystemDatabase {
     }
 
     while (true) {
-      if (callerID) await this.#checkIfCanceledLimited(callerID);
+      if (callerID) await this.checkIfCanceledLimited(callerID);
       let rows: workflow_status[];
       try {
         ({ rows } = await this.#pollWithLimiter(() =>
@@ -2552,7 +2571,7 @@ export class SystemDatabase {
     const pollIntervalMs = pollingIntervalMs ?? this.dbPollingIntervalResultMs;
 
     while (true) {
-      if (callerID) await this.#checkIfCanceledLimited(callerID);
+      if (callerID) await this.checkIfCanceledLimited(callerID);
 
       const { rows } = await this.#pollWithLimiter(() =>
         this.pool.query<workflow_status>(
@@ -2580,7 +2599,7 @@ export class SystemDatabase {
     while (remainingWorkflowIds.size > 0) {
       const currentWorkflowIds = [...remainingWorkflowIds];
 
-      if (callerID) await this.#checkIfCanceledLimited(callerID);
+      if (callerID) await this.checkIfCanceledLimited(callerID);
 
       const { rows } = await this.#pollWithLimiter(() =>
         this.pool.query<{ workflow_uuid: string }>(
@@ -2750,7 +2769,7 @@ export class SystemDatabase {
       const cbr = this.notificationsMap.registerCallback(payload, resolveNotification!);
 
       try {
-        await this.#checkIfCanceledLimited(workflowID);
+        await this.checkIfCanceledLimited(workflowID);
 
         // Check if the key is already in the DB, then wait for the notification if it isn't.
         const initRecvRows = (
@@ -2947,7 +2966,7 @@ export class SystemDatabase {
       const cbr = this.workflowEventsMap.registerCallback(payloadKey, resolveNotification!);
 
       try {
-        if (callerWorkflow?.workflowID) await this.#checkIfCanceledLimited(callerWorkflow?.workflowID);
+        if (callerWorkflow?.workflowID) await this.checkIfCanceledLimited(callerWorkflow?.workflowID);
         // Check if the key is already in the DB, then wait for the notification if it isn't.
         const initRecvRows = (
           await this.#pollWithLimiter(() =>
@@ -3069,37 +3088,29 @@ export class SystemDatabase {
     serializedValue: string,
     serialization: string | null,
   ): Promise<void> {
-    const client: PoolClient = await this.#connect();
-    try {
-      await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
-
-      // Find the maximum offset for this workflow_uuid and key combination
-      const maxOffsetResult = await client.query(
-        `SELECT MAX("offset") FROM "${this.schemaName}".streams
-         WHERE workflow_uuid = $1 AND key = $2`,
-        [workflowID, key],
-      );
-
-      // Next offset is max + 1, or 0 if no records exist
-      const maxOffset = (maxOffsetResult.rows[0] as { max: number | null }).max;
-      const nextOffset = maxOffset !== null ? maxOffset + 1 : 0;
-
-      // Insert the new stream entry
-      await client.query(
-        `INSERT INTO "${this.schemaName}".streams (workflow_uuid, key, value, "offset", function_id, serialization)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [workflowID, key, serializedValue, nextOffset, functionID, serialization],
-      );
-
-      await client.query('COMMIT');
+    while (true) {
+      try {
+        // Derives the first unused offset inside the insert; two writers can still pick the same one.
+        await this.pool.query(
+          `INSERT INTO "${this.schemaName}".streams (workflow_uuid, key, value, "offset", function_id, serialization)
+           SELECT $1::text, $2::text, $3::text, COALESCE(MAX(s."offset"), -1) + 1, $4::int, $5::text
+           FROM "${this.schemaName}".streams s
+           WHERE s.workflow_uuid = $1 AND s.key = $2`,
+          [workflowID, key, serializedValue, functionID, serialization],
+        );
+      } catch (e) {
+        // Only an offset conflict resolves on retry; anything else would spin forever.
+        if (e instanceof DatabaseError && e.code === '23505') {
+          this.logger.warn(`Stream offset conflict for workflow ${workflowID}, key ${key}; retrying`);
+          await sleepms(100);
+          continue;
+        }
+        this.logger.error(e);
+        throw e;
+      }
       // Notify only after commit, so a woken reader sees the value.
       this.#signalNotification(DBOS_STREAMS_CHANNEL, `${workflowID}::${key}`);
-    } catch (e) {
-      this.logger.error(e);
-      await client.query('ROLLBACK');
-      throw e;
-    } finally {
-      client.release();
+      return;
     }
   }
 
@@ -3114,55 +3125,67 @@ export class SystemDatabase {
   ): Promise<void> {
     const client: PoolClient = await this.#connect();
     try {
-      await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
-
-      // Only a real insert (not a replay) should wake readers.
-      let didWrite = false;
-      await this.#runAndRecordResult(client, functionName, workflowID, functionID, async () => {
-        // Find the maximum offset for this workflow_uuid and key combination
-        const maxOffsetResult = await client.query(
-          `SELECT MAX("offset") FROM "${this.schemaName}".streams
-           WHERE workflow_uuid = $1 AND key = $2`,
-          [workflowID, key],
-        );
-
-        // Next offset is max + 1, or 0 if no records exist
-        const maxOffset = (maxOffsetResult.rows[0] as { max: number | null }).max;
-        const nextOffset = maxOffset !== null ? maxOffset + 1 : 0;
-
-        // Insert the new stream entry
-        await client.query(
-          `INSERT INTO "${this.schemaName}".streams (workflow_uuid, key, value, "offset", function_id, serialization)
-           VALUES ($1, $2, $3, $4, $5, $6)`,
-          [workflowID, key, serializedValue, nextOffset, functionID, serialization],
-        );
-
-        didWrite = true;
-        return undefined;
-      });
-
-      await client.query('COMMIT');
-      // Notify only after commit, so a woken reader sees the value.
-      if (didWrite) {
-        this.#signalNotification(DBOS_STREAMS_CHANNEL, `${workflowID}::${key}`);
+      while (true) {
+        // Only a real insert (not a replay) should wake readers.
+        let didWrite = false;
+        try {
+          await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
+          await this.#runAndRecordResult(client, functionName, workflowID, functionID, async () => {
+            // Derives the first unused offset inside the insert; two writers can still pick the same one.
+            await client.query(
+              `INSERT INTO "${this.schemaName}".streams (workflow_uuid, key, value, "offset", function_id, serialization)
+               SELECT $1::text, $2::text, $3::text, COALESCE(MAX(s."offset"), -1) + 1, $4::int, $5::text
+               FROM "${this.schemaName}".streams s
+               WHERE s.workflow_uuid = $1 AND s.key = $2`,
+              [workflowID, key, serializedValue, functionID, serialization],
+            );
+            didWrite = true;
+            return undefined;
+          });
+          await client.query('COMMIT');
+        } catch (e) {
+          // Only an offset conflict resolves on retry; anything else would spin forever.
+          const offsetConflict = e instanceof DatabaseError && e.code === '23505';
+          // Log before touching the connection again: a failing ROLLBACK is what would propagate.
+          if (!offsetConflict) this.logger.error(e);
+          // Roll back before waiting, so a retry does not hold an aborted transaction open.
+          await client.query('ROLLBACK');
+          if (offsetConflict) {
+            this.logger.warn(`Stream offset conflict for workflow ${workflowID}, key ${key}; retrying`);
+            await sleepms(100);
+            continue;
+          }
+          throw e;
+        }
+        // Notify only after commit, so a woken reader sees the value.
+        if (didWrite) {
+          this.#signalNotification(DBOS_STREAMS_CHANNEL, `${workflowID}::${key}`);
+        }
+        return;
       }
-    } catch (e) {
-      this.logger.error(e);
-      await client.query('ROLLBACK');
-      throw e;
     } finally {
       client.release();
     }
   }
 
-  async closeStream(workflowID: string, functionID: number, key: string): Promise<void> {
+  async closeStreamFromWorkflow(workflowID: string, functionID: number, key: string): Promise<void> {
     await this.writeStreamFromWorkflow(
       workflowID,
       functionID,
       key,
-      DBOS_STREAM_CLOSED_SENTINEL,
-      'portable_json',
+      DBOS_STREAM_CLOSED_SENTINEL_SERIALIZED,
+      DBOSPortableJSON.name(),
       DBOS_FUNCNAME_CLOSESTREAM,
+    );
+  }
+
+  async closeStreamFromStep(workflowID: string, stepID: number, key: string): Promise<void> {
+    await this.writeStreamFromStep(
+      workflowID,
+      stepID,
+      key,
+      DBOS_STREAM_CLOSED_SENTINEL_SERIALIZED,
+      DBOSPortableJSON.name(),
     );
   }
 
@@ -3340,15 +3363,20 @@ export class SystemDatabase {
         [workflowID],
       );
       const streams: Record<string, unknown[]> = {};
+      const closed = new Set<string>();
       for (const row of result.rows) {
-        const value = await safeParse(this.serializer, row.value, row.serialization);
-        if (value === DBOS_STREAM_CLOSED_SENTINEL) {
+        if (closed.has(row.key)) {
           continue;
         }
-        if (!streams[row.key]) {
-          streams[row.key] = [];
+        // safeParse yields the raw string for the legacy unserialized marker, which does not parse.
+        const value = await safeParse(this.serializer, row.value, row.serialization);
+        if (isStreamClosedSentinel(value)) {
+          // End the stream where readStream does, so the two never disagree.
+          closed.add(row.key);
+          streams[row.key] ??= [];
+          continue;
         }
-        streams[row.key].push(value);
+        (streams[row.key] ??= []).push(value);
       }
       return streams;
     } finally {

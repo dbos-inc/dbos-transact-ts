@@ -36,6 +36,7 @@ export interface DBOSLocalCtx extends DBOSContextOptions {
   parentCtx?: DBOSLocalCtx;
   workflowId?: string;
   curWFFunctionId?: number; // If currently in a WF, the current call number / ID
+  activeStreamReads?: number; // Checkpointed stream reads that have reserved a step but not yet recorded it
   presetID?: boolean;
   deadlineEpochMS?: number;
   inRecovery?: boolean;
@@ -52,13 +53,14 @@ export function isWithinWorkflowCtx(ctx: DBOSLocalCtx) {
 
 function isInStepCtx(ctx: DBOSLocalCtx) {
   if (ctx.workflowId === undefined) return false;
-  if (ctx.curStepFunctionId) return true;
+  // A function ID of 0 is a step like any other, so test for absence rather than truthiness.
+  if (ctx.curStepFunctionId !== undefined) return true;
   return false;
 }
 
 function isInTxnCtx(ctx: DBOSLocalCtx) {
   if (ctx.workflowId === undefined) return false;
-  if (ctx.curTxFunctionId) return true;
+  if (ctx.curTxFunctionId !== undefined) return true;
   return false;
 }
 
@@ -91,6 +93,11 @@ export function getNextWFID(assignedID?: string) {
 export function functionIDGetIncrement(): number {
   const pctx = getCurrentContextStore();
   if (!pctx) throw new DBOSInvalidWorkflowTransitionError(`Attempt to get a call ID number outside of a workflow`);
+  return functionIDGetIncrementForCtx(pctx);
+}
+
+// Take the next call ID from a context held across awaits, where the ambient one may have moved on.
+export function functionIDGetIncrementForCtx(pctx: DBOSLocalCtx): number {
   if (!isInWorkflowCtx(pctx))
     throw new DBOSInvalidWorkflowTransitionError(
       `Attempt to get a call ID number in a workflow that is already in a call`,

@@ -7,6 +7,8 @@ export {
   WaitFirstOptions,
   WaitAllOptions,
   SetWorkflowDelayOptions,
+  ReadStreamOptions,
+  ReadStreamOffsetOptions,
 } from './dbos';
 
 export { DBOSClient } from './client';
