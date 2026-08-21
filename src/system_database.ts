@@ -3144,15 +3144,17 @@ export class SystemDatabase {
           });
           await client.query('COMMIT');
         } catch (e) {
+          // Only an offset conflict resolves on retry; anything else would spin forever.
+          const offsetConflict = e instanceof DatabaseError && e.code === '23505';
+          // Log before touching the connection again: a failing ROLLBACK is what would propagate.
+          if (!offsetConflict) this.logger.error(e);
           // Roll back before waiting, so a retry does not hold an aborted transaction open.
           await client.query('ROLLBACK');
-          // Only an offset conflict resolves on retry; anything else would spin forever.
-          if (e instanceof DatabaseError && e.code === '23505') {
+          if (offsetConflict) {
             this.logger.warn(`Stream offset conflict for workflow ${workflowID}, key ${key}; retrying`);
             await sleepms(100);
             continue;
           }
-          this.logger.error(e);
           throw e;
         }
         // Notify only after commit, so a woken reader sees the value.
