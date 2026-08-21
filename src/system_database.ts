@@ -3088,37 +3088,29 @@ export class SystemDatabase {
     serializedValue: string,
     serialization: string | null,
   ): Promise<void> {
-    const client: PoolClient = await this.#connect();
-    try {
-      await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
-
-      // Find the maximum offset for this workflow_uuid and key combination
-      const maxOffsetResult = await client.query(
-        `SELECT MAX("offset") FROM "${this.schemaName}".streams
-         WHERE workflow_uuid = $1 AND key = $2`,
-        [workflowID, key],
-      );
-
-      // Next offset is max + 1, or 0 if no records exist
-      const maxOffset = (maxOffsetResult.rows[0] as { max: number | null }).max;
-      const nextOffset = maxOffset !== null ? maxOffset + 1 : 0;
-
-      // Insert the new stream entry
-      await client.query(
-        `INSERT INTO "${this.schemaName}".streams (workflow_uuid, key, value, "offset", function_id, serialization)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [workflowID, key, serializedValue, nextOffset, functionID, serialization],
-      );
-
-      await client.query('COMMIT');
+    while (true) {
+      try {
+        // Derives the first unused offset inside the insert; two writers can still pick the same one.
+        await this.pool.query(
+          `INSERT INTO "${this.schemaName}".streams (workflow_uuid, key, value, "offset", function_id, serialization)
+           SELECT $1::text, $2::text, $3::text, COALESCE(MAX(s."offset"), -1) + 1, $4::int, $5::text
+           FROM "${this.schemaName}".streams s
+           WHERE s.workflow_uuid = $1 AND s.key = $2`,
+          [workflowID, key, serializedValue, functionID, serialization],
+        );
+      } catch (e) {
+        // Only an offset conflict resolves on retry; anything else would spin forever.
+        if (e instanceof DatabaseError && e.code === '23505') {
+          this.logger.warn(`Stream offset conflict for workflow ${workflowID}, key ${key}; retrying`);
+          await sleepms(100);
+          continue;
+        }
+        this.logger.error(e);
+        throw e;
+      }
       // Notify only after commit, so a woken reader sees the value.
       this.#signalNotification(DBOS_STREAMS_CHANNEL, `${workflowID}::${key}`);
-    } catch (e) {
-      this.logger.error(e);
-      await client.query('ROLLBACK');
-      throw e;
-    } finally {
-      client.release();
+      return;
     }
   }
 
@@ -3133,42 +3125,42 @@ export class SystemDatabase {
   ): Promise<void> {
     const client: PoolClient = await this.#connect();
     try {
-      await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
-
-      // Only a real insert (not a replay) should wake readers.
-      let didWrite = false;
-      await this.#runAndRecordResult(client, functionName, workflowID, functionID, async () => {
-        // Find the maximum offset for this workflow_uuid and key combination
-        const maxOffsetResult = await client.query(
-          `SELECT MAX("offset") FROM "${this.schemaName}".streams
-           WHERE workflow_uuid = $1 AND key = $2`,
-          [workflowID, key],
-        );
-
-        // Next offset is max + 1, or 0 if no records exist
-        const maxOffset = (maxOffsetResult.rows[0] as { max: number | null }).max;
-        const nextOffset = maxOffset !== null ? maxOffset + 1 : 0;
-
-        // Insert the new stream entry
-        await client.query(
-          `INSERT INTO "${this.schemaName}".streams (workflow_uuid, key, value, "offset", function_id, serialization)
-           VALUES ($1, $2, $3, $4, $5, $6)`,
-          [workflowID, key, serializedValue, nextOffset, functionID, serialization],
-        );
-
-        didWrite = true;
-        return undefined;
-      });
-
-      await client.query('COMMIT');
-      // Notify only after commit, so a woken reader sees the value.
-      if (didWrite) {
-        this.#signalNotification(DBOS_STREAMS_CHANNEL, `${workflowID}::${key}`);
+      while (true) {
+        // Only a real insert (not a replay) should wake readers.
+        let didWrite = false;
+        try {
+          await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
+          await this.#runAndRecordResult(client, functionName, workflowID, functionID, async () => {
+            // Derives the first unused offset inside the insert; two writers can still pick the same one.
+            await client.query(
+              `INSERT INTO "${this.schemaName}".streams (workflow_uuid, key, value, "offset", function_id, serialization)
+               SELECT $1::text, $2::text, $3::text, COALESCE(MAX(s."offset"), -1) + 1, $4::int, $5::text
+               FROM "${this.schemaName}".streams s
+               WHERE s.workflow_uuid = $1 AND s.key = $2`,
+              [workflowID, key, serializedValue, functionID, serialization],
+            );
+            didWrite = true;
+            return undefined;
+          });
+          await client.query('COMMIT');
+        } catch (e) {
+          // Roll back before waiting, so a retry does not hold an aborted transaction open.
+          await client.query('ROLLBACK');
+          // Only an offset conflict resolves on retry; anything else would spin forever.
+          if (e instanceof DatabaseError && e.code === '23505') {
+            this.logger.warn(`Stream offset conflict for workflow ${workflowID}, key ${key}; retrying`);
+            await sleepms(100);
+            continue;
+          }
+          this.logger.error(e);
+          throw e;
+        }
+        // Notify only after commit, so a woken reader sees the value.
+        if (didWrite) {
+          this.#signalNotification(DBOS_STREAMS_CHANNEL, `${workflowID}::${key}`);
+        }
+        return;
       }
-    } catch (e) {
-      this.logger.error(e);
-      await client.query('ROLLBACK');
-      throw e;
     } finally {
       client.release();
     }

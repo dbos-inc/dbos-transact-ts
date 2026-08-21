@@ -639,6 +639,47 @@ describe('dbos-streaming-tests', () => {
     expect(callCount).toBe(4);
   });
 
+  test('concurrent-writes-to-one-key-take-distinct-offsets', async () => {
+    // Concurrent steps derive the same next offset and race for it, so one loses the primary key.
+    // The loser re-derives and appends rather than failing, leaving every value at its own offset.
+    const streamKey = 'contended_stream';
+    const writers = 12;
+
+    const writeStep = DBOS.registerStep(async (value: string) => await DBOS.writeStream(streamKey, value), {
+      name: 'contended-write-step',
+    });
+
+    const writerWorkflow = DBOS.registerWorkflow(
+      async () => {
+        await Promise.all(Array.from({ length: writers }, (_, i) => writeStep(`v${i}`)));
+        await DBOS.closeStream(streamKey);
+      },
+      { name: 'contended-writer' },
+    );
+
+    await DBOS.launch();
+
+    const wfid = randomUUID();
+    await DBOS.withNextWorkflowID(wfid, async () => {
+      await writerWorkflow();
+    });
+
+    const read: string[] = [];
+    for await (const value of DBOS.readStream<string>(wfid, streamKey)) {
+      read.push(value);
+    }
+    // Order is whatever the writers won in, but nothing may be dropped or duplicated.
+    expect(read.slice().sort()).toEqual(Array.from({ length: writers }, (_, i) => `v${i}`).sort());
+
+    // Offsets are dense from 0: a lost race must retry, never skip the offset it failed to take.
+    const offsets = await DBOSExecutor.globalInstance!.systemDatabase.pool.query<{ offset: number }>(
+      `SELECT "offset" FROM dbos.streams WHERE workflow_uuid = $1 AND key = $2 ORDER BY "offset"`,
+      [wfid, streamKey],
+    );
+    // One row per value plus the close marker.
+    expect(offsets.rows.map((row) => Number(row.offset))).toEqual(Array.from({ length: writers + 1 }, (_, i) => i));
+  });
+
   test('read-stream-value-returns-status-and-value', async () => {
     // readStreamValue answers both "is there a value at this offset?" and "is the workflow still running?" in one round trip.
     const writerWorkflow = DBOS.registerWorkflow(
