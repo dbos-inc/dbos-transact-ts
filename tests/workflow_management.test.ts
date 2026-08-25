@@ -7,7 +7,7 @@ import {
   recoverPendingWorkflows,
   reexecuteWorkflowById,
 } from './helpers';
-import { Client } from 'pg';
+import { Client, Pool, PoolClient } from 'pg';
 import { WorkflowHandle, WorkflowStatus } from '../src/workflow';
 import { randomUUID } from 'node:crypto';
 import { globalParams, sleepms } from '../src/utils';
@@ -969,11 +969,40 @@ describe('test-list-queues', () => {
     await expect(DBOS.listWorkflows({})).resolves.toHaveLength(0);
   });
 
-  /** DELETEs against workflow_status, in issue order, captured off the shared pool. */
-  function statusDeletes(calls: unknown[][]): string[] {
-    return calls
-      .map((c) => (typeof c[0] === 'string' ? c[0] : ((c[0] as { text?: string })?.text ?? '')))
-      .filter((text) => /^\s*DELETE/i.test(text) && text.includes('workflow_status'));
+  /**
+   * Intercept workflow_status DELETEs on clients borrowed from the pool. `onDelete` returns an
+   * error to inject in place of the statement, or undefined to let it through.
+   */
+  function interceptStatusDeletes(pool: Pool, onDelete: (sql: string) => Error | undefined) {
+    const realConnect = pool.connect.bind(pool) as (cb?: unknown) => unknown;
+    const patch = (client: PoolClient): PoolClient => {
+      const realQuery = client.query.bind(client) as (...a: unknown[]) => unknown;
+      const realRelease = client.release.bind(client) as (err?: Error | boolean) => void;
+      client.query = ((...args: unknown[]) => {
+        const text = typeof args[0] === 'string' ? args[0] : ((args[0] as { text?: string })?.text ?? '');
+        if (/^\s*DELETE/i.test(text) && text.includes('workflow_status')) {
+          const injected = onDelete(text);
+          if (injected) return Promise.reject(injected);
+        }
+        return realQuery(...args);
+      }) as typeof client.query;
+      // Restored before the client returns to the pool, so no later checkout sees the patch.
+      client.release = ((err?: Error | boolean) => {
+        client.query = realQuery as typeof client.query;
+        client.release = realRelease as typeof client.release;
+        realRelease(err);
+      }) as typeof client.release;
+      return client;
+    };
+    return jest.spyOn(pool, 'connect').mockImplementation(((cb?: unknown) => {
+      if (typeof cb === 'function') {
+        const done = cb as (e: unknown, c: unknown, d: unknown) => void;
+        return realConnect((err: unknown, client: PoolClient, release: unknown) =>
+          done(err, err ? client : patch(client), release),
+        );
+      }
+      return (realConnect() as Promise<PoolClient>).then(patch);
+    }) as unknown as typeof pool.connect);
   }
 
   // 3 = short final batch, 5 = exact multiple, 20 = larger than all eligible rows
@@ -992,12 +1021,13 @@ describe('test-list-queues', () => {
       await sleepms(5);
     }
 
-    const spy = jest.spyOn(sysdb.pool, 'query');
-    let deletes: string[] = [];
+    const deletes: string[] = [];
+    const spy = interceptStatusDeletes(sysdb.pool, (sql) => {
+      deletes.push(sql);
+      return undefined;
+    });
     try {
       await sysdb.garbageCollect(Date.now(), undefined, { batchSize });
-      // Capture before mockRestore(), which clears spy.mock.calls.
-      deletes = statusDeletes(spy.mock.calls as unknown[][]);
     } finally {
       spy.mockRestore();
     }
@@ -1052,15 +1082,10 @@ describe('test-list-queues', () => {
     }
 
     // Let the first delete through, then fail the second
-    const realQuery = sysdb.pool.query.bind(sysdb.pool);
     let deleteCount = 0;
-    const spy = jest.spyOn(sysdb.pool, 'query').mockImplementation(((...args: unknown[]) => {
-      const text = typeof args[0] === 'string' ? args[0] : ((args[0] as { text?: string })?.text ?? '');
-      if (/^\s*DELETE/i.test(text) && text.includes('workflow_status') && ++deleteCount > 1) {
-        return Promise.reject(new Error('injected garbage collection failure'));
-      }
-      return realQuery(...(args as Parameters<typeof realQuery>));
-    }) as typeof sysdb.pool.query);
+    const spy = interceptStatusDeletes(sysdb.pool, () =>
+      ++deleteCount > 1 ? new Error('injected garbage collection failure') : undefined,
+    );
     try {
       await expect(sysdb.garbageCollect(Date.now(), undefined, { batchSize })).rejects.toThrow(
         'injected garbage collection failure',
@@ -1088,22 +1113,17 @@ describe('test-list-queues', () => {
     }
 
     // A deadlock on the first batch is retried, so GC still drains the table
-    const realQuery = sysdb.pool.query.bind(sysdb.pool);
-    let failuresLeft = 2;
-    const codes = ['40001', '40P01'];
-    const retried = jest.spyOn(sysdb.pool, 'query').mockImplementation(((...args: unknown[]) => {
-      const text = typeof args[0] === 'string' ? args[0] : ((args[0] as { text?: string })?.text ?? '');
-      if (/^\s*DELETE/i.test(text) && text.includes('workflow_status') && failuresLeft > 0) {
-        return Promise.reject(Object.assign(new Error('deadlock detected'), { code: codes[--failuresLeft] }));
-      }
-      return realQuery(...(args as Parameters<typeof realQuery>));
-    }) as typeof sysdb.pool.query);
+    const codes = ['40P01', '40001'];
+    let failures = 0;
+    const retried = interceptStatusDeletes(sysdb.pool, () =>
+      failures < codes.length ? Object.assign(new Error('deadlock detected'), { code: codes[failures++] }) : undefined,
+    );
     try {
       await sysdb.garbageCollect(Date.now(), undefined, { batchSize: 2 });
     } finally {
       retried.mockRestore();
     }
-    expect(failuresLeft).toBe(0);
+    expect(failures).toBe(codes.length);
     await expect(DBOS.listWorkflows({})).resolves.toHaveLength(0);
 
     // A non-serialization error propagates on the first attempt
@@ -1111,14 +1131,10 @@ describe('test-list-queues', () => {
       await expect(TestGarbageCollection.testWorkflow(i)).resolves.toBe(i);
     }
     let attempts = 0;
-    const notRetried = jest.spyOn(sysdb.pool, 'query').mockImplementation(((...args: unknown[]) => {
-      const text = typeof args[0] === 'string' ? args[0] : ((args[0] as { text?: string })?.text ?? '');
-      if (/^\s*DELETE/i.test(text) && text.includes('workflow_status')) {
-        attempts++;
-        return Promise.reject(Object.assign(new Error('duplicate key'), { code: '23505' }));
-      }
-      return realQuery(...(args as Parameters<typeof realQuery>));
-    }) as typeof sysdb.pool.query);
+    const notRetried = interceptStatusDeletes(sysdb.pool, () => {
+      attempts++;
+      return Object.assign(new Error('duplicate key'), { code: '23505' });
+    });
     try {
       await expect(sysdb.garbageCollect(Date.now(), undefined, { batchSize: 2 })).rejects.toThrow('duplicate key');
     } finally {

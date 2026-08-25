@@ -4399,32 +4399,40 @@ export class SystemDatabase {
     batchSize: number,
     watermark: number,
   ): Promise<number | undefined> {
-    // The batchSize-th oldest eligible row above the watermark bounds this range
-    const stepParams: unknown[] = [];
-    const stepScope = this.#gcFilter(cutoffEpochTimestampMs, stepParams);
-    stepParams.push(watermark);
-    const stepResult = await this.pool.query<{ created_at: string }>(
-      `SELECT created_at
-         FROM "${this.schemaName}".workflow_status
-        WHERE ${stepScope} AND created_at > $${stepParams.length}
-        ORDER BY created_at
-        LIMIT 1 OFFSET ${batchSize - 1}`,
-      stepParams,
-    );
-    // created_at is a bigint, so node-postgres hands it back as a string.
-    const step = stepResult.rows.length > 0 ? Number(stepResult.rows[0].created_at) : undefined;
+    // Borrowed rather than pool.query'd: that releases with the error, which discards the
+    // connection on a deadlock, so the retry wrapping this would churn the pool per batch.
+    const client = await this.#connect();
+    try {
+      // The batchSize-th oldest eligible row above the watermark bounds this range
+      const stepParams: unknown[] = [];
+      const stepScope = this.#gcFilter(cutoffEpochTimestampMs, stepParams);
+      stepParams.push(watermark);
+      const stepResult = await client.query<{ created_at: string }>(
+        `SELECT created_at
+           FROM "${this.schemaName}".workflow_status
+          WHERE ${stepScope} AND created_at > $${stepParams.length}
+          ORDER BY created_at
+          LIMIT 1 OFFSET ${batchSize - 1}`,
+        stepParams,
+      );
+      // created_at is a bigint, so node-postgres hands it back as a string.
+      const step = stepResult.rows.length > 0 ? Number(stepResult.rows[0].created_at) : undefined;
 
-    const deleteParams: unknown[] = [];
-    let deleteScope = this.#gcFilter(cutoffEpochTimestampMs, deleteParams);
-    if (step !== undefined) {
-      // Inclusive upper bound: created_at ties may push a batch over batchSize, but never split across two.
-      deleteParams.push(watermark, step);
-      deleteScope = `${deleteScope} AND created_at > $${deleteParams.length - 1} AND created_at <= $${deleteParams.length}`;
+      const deleteParams: unknown[] = [];
+      let deleteScope = this.#gcFilter(cutoffEpochTimestampMs, deleteParams);
+      if (step !== undefined) {
+        // Inclusive upper bound: created_at ties may push a batch over batchSize, but never split across two.
+        deleteParams.push(watermark, step);
+        deleteScope = `${deleteScope} AND created_at > $${deleteParams.length - 1} AND created_at <= $${deleteParams.length}`;
+      }
+      // The final batch drops the watermark, so rows that appeared below it are still deleted.
+      await client.query(`DELETE FROM "${this.schemaName}".workflow_status WHERE ${deleteScope}`, deleteParams);
+
+      return step;
+    } finally {
+      // No error argument: a genuinely dead connection is still evicted by the pool's own check.
+      client.release();
     }
-    // The final batch drops the watermark, so rows that appeared below it are still deleted.
-    await this.pool.query(`DELETE FROM "${this.schemaName}".workflow_status WHERE ${deleteScope}`, deleteParams);
-
-    return step;
   }
 
   // Conductor sends cleared retention thresholds as JSON null, so both params must be treated as nullish
@@ -4476,7 +4484,12 @@ export class SystemDatabase {
       await retryOnSerializationError(async () => {
         const deleteParams: unknown[] = [];
         const deleteScope = this.#gcFilter(cutoff, deleteParams);
-        await this.pool.query(`DELETE FROM "${this.schemaName}".workflow_status WHERE ${deleteScope}`, deleteParams);
+        const client = await this.#connect();
+        try {
+          await client.query(`DELETE FROM "${this.schemaName}".workflow_status WHERE ${deleteScope}`, deleteParams);
+        } finally {
+          client.release();
+        }
       });
       return;
     }
