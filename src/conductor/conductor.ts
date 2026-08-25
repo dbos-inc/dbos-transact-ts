@@ -412,6 +412,7 @@ export class Conductor {
               await this.dbosExec.systemDatabase.garbageCollect(
                 retentionMessage.body.gc_cutoff_epoch_ms,
                 retentionMessage.body.gc_rows_threshold,
+                { batchSize: retentionMessage.body.gc_batch_size },
               );
               if (retentionMessage.body.timeout_cutoff_epoch_ms) {
                 await globalTimeout(this.dbosExec.systemDatabase, retentionMessage.body.timeout_cutoff_epoch_ms);

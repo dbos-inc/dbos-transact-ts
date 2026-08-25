@@ -960,6 +960,182 @@ describe('test-list-queues', () => {
     await DBOSExecutor.globalInstance!.systemDatabase.garbageCollect(Date.now(), null);
     await DBOSExecutor.globalInstance!.systemDatabase.garbageCollect(null, 1);
     await DBOSExecutor.globalInstance!.systemDatabase.garbageCollect(null, null);
+
+    // The unbatched path still deletes everything in one statement
+    for (let i = 0; i < numWorkflows; i++) {
+      await expect(TestGarbageCollection.testWorkflow(i)).resolves.toBe(i);
+    }
+    await DBOSExecutor.globalInstance!.systemDatabase.garbageCollect(Date.now(), undefined, { batchSize: null });
+    await expect(DBOS.listWorkflows({})).resolves.toHaveLength(0);
+  });
+
+  /** DELETEs against workflow_status, in issue order, captured off the shared pool. */
+  function statusDeletes(calls: unknown[][]): string[] {
+    return calls
+      .map((c) => (typeof c[0] === 'string' ? c[0] : ((c[0] as { text?: string })?.text ?? '')))
+      .filter((text) => /^\s*DELETE/i.test(text) && text.includes('workflow_status'));
+  }
+
+  // 3 = short final batch, 5 = exact multiple, 20 = larger than all eligible rows
+  test.each([3, 5, 20])('test-garbage-collection-batched (batchSize=%i)', async (batchSize) => {
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    // Earlier tests in this describe share the database, so start from an empty table.
+    await sysdb.garbageCollect(Date.now(), undefined, { batchSize: null });
+
+    const numWorkflows = 10;
+    // The event is a shared latch that earlier tests leave set.
+    TestGarbageCollection.event = new Event();
+    const handle = await DBOS.startWorkflow(TestGarbageCollection).blockedWorkflow();
+    for (let i = 0; i < numWorkflows; i++) {
+      await expect(TestGarbageCollection.testWorkflow(i)).resolves.toBe(i);
+      // Space out created_at so watermark batches split deterministically
+      await sleepms(5);
+    }
+
+    const spy = jest.spyOn(sysdb.pool, 'query');
+    let deletes: string[] = [];
+    try {
+      await sysdb.garbageCollect(Date.now(), undefined, { batchSize });
+      // Capture before mockRestore(), which clears spy.mock.calls.
+      deletes = statusDeletes(spy.mock.calls as unknown[][]);
+    } finally {
+      spy.mockRestore();
+    }
+
+    // One delete per full batch, plus the final remainder delete
+    expect(deletes.length).toBe(Math.floor(numWorkflows / batchSize) + 1);
+
+    // The blocked workflow is PENDING, so it survives
+    const workflows = await DBOS.listWorkflows({});
+    expect(workflows.length).toBe(1);
+    expect(workflows[0].workflowID).toEqual(handle.workflowID);
+
+    TestGarbageCollection.event.set();
+    await expect(handle.getResult()).resolves.toBeTruthy();
+    await sysdb.garbageCollect(Date.now(), undefined, { batchSize });
+    await expect(DBOS.listWorkflows({})).resolves.toHaveLength(0);
+  });
+
+  test('test-garbage-collection-batched-rows-threshold', async () => {
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    await sysdb.garbageCollect(Date.now(), undefined, { batchSize: null });
+
+    const numWorkflows = 10;
+    const rowsThreshold = 4;
+    const workflowIDs: string[] = [];
+    for (let i = 0; i < numWorkflows; i++) {
+      const handle = await DBOS.startWorkflow(TestGarbageCollection).testWorkflow(i);
+      await expect(handle.getResult()).resolves.toBe(i);
+      workflowIDs.push(handle.workflowID);
+      await sleepms(5);
+    }
+
+    await sysdb.garbageCollect(undefined, rowsThreshold, { batchSize: 3 });
+
+    // Exactly the newest rowsThreshold workflows survive
+    const surviving = new Set((await DBOS.listWorkflows({})).map((w) => w.workflowID));
+    expect(surviving).toEqual(new Set(workflowIDs.slice(-rowsThreshold)));
+
+    await sysdb.garbageCollect(Date.now(), undefined, { batchSize: 3 });
+  });
+
+  test('test-garbage-collection-batched-resumable', async () => {
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    await sysdb.garbageCollect(Date.now(), undefined, { batchSize: null });
+
+    const numWorkflows = 10;
+    const batchSize = 3;
+    for (let i = 0; i < numWorkflows; i++) {
+      await expect(TestGarbageCollection.testWorkflow(i)).resolves.toBe(i);
+      // Space out created_at so the first batch deletes exactly batchSize rows
+      await sleepms(5);
+    }
+
+    // Let the first delete through, then fail the second
+    const realQuery = sysdb.pool.query.bind(sysdb.pool);
+    let deleteCount = 0;
+    const spy = jest.spyOn(sysdb.pool, 'query').mockImplementation(((...args: unknown[]) => {
+      const text = typeof args[0] === 'string' ? args[0] : ((args[0] as { text?: string })?.text ?? '');
+      if (/^\s*DELETE/i.test(text) && text.includes('workflow_status') && ++deleteCount > 1) {
+        return Promise.reject(new Error('injected garbage collection failure'));
+      }
+      return realQuery(...(args as Parameters<typeof realQuery>));
+    }) as typeof sysdb.pool.query);
+    try {
+      await expect(sysdb.garbageCollect(Date.now(), undefined, { batchSize })).rejects.toThrow(
+        'injected garbage collection failure',
+      );
+    } finally {
+      spy.mockRestore();
+    }
+
+    // The first batch committed before the failure and was not rolled back
+    await expect(DBOS.listWorkflows({})).resolves.toHaveLength(numWorkflows - batchSize);
+
+    // Re-running completes the deletion
+    await sysdb.garbageCollect(Date.now(), undefined, { batchSize });
+    await expect(DBOS.listWorkflows({})).resolves.toHaveLength(0);
+  });
+
+  test('test-garbage-collection-retries-serialization-errors', async () => {
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    await sysdb.garbageCollect(Date.now(), undefined, { batchSize: null });
+
+    const numWorkflows = 6;
+    for (let i = 0; i < numWorkflows; i++) {
+      await expect(TestGarbageCollection.testWorkflow(i)).resolves.toBe(i);
+      await sleepms(5);
+    }
+
+    // A deadlock on the first batch is retried, so GC still drains the table
+    const realQuery = sysdb.pool.query.bind(sysdb.pool);
+    let failuresLeft = 2;
+    const codes = ['40001', '40P01'];
+    const retried = jest.spyOn(sysdb.pool, 'query').mockImplementation(((...args: unknown[]) => {
+      const text = typeof args[0] === 'string' ? args[0] : ((args[0] as { text?: string })?.text ?? '');
+      if (/^\s*DELETE/i.test(text) && text.includes('workflow_status') && failuresLeft > 0) {
+        return Promise.reject(Object.assign(new Error('deadlock detected'), { code: codes[--failuresLeft] }));
+      }
+      return realQuery(...(args as Parameters<typeof realQuery>));
+    }) as typeof sysdb.pool.query);
+    try {
+      await sysdb.garbageCollect(Date.now(), undefined, { batchSize: 2 });
+    } finally {
+      retried.mockRestore();
+    }
+    expect(failuresLeft).toBe(0);
+    await expect(DBOS.listWorkflows({})).resolves.toHaveLength(0);
+
+    // A non-serialization error propagates on the first attempt
+    for (let i = 0; i < numWorkflows; i++) {
+      await expect(TestGarbageCollection.testWorkflow(i)).resolves.toBe(i);
+    }
+    let attempts = 0;
+    const notRetried = jest.spyOn(sysdb.pool, 'query').mockImplementation(((...args: unknown[]) => {
+      const text = typeof args[0] === 'string' ? args[0] : ((args[0] as { text?: string })?.text ?? '');
+      if (/^\s*DELETE/i.test(text) && text.includes('workflow_status')) {
+        attempts++;
+        return Promise.reject(Object.assign(new Error('duplicate key'), { code: '23505' }));
+      }
+      return realQuery(...(args as Parameters<typeof realQuery>));
+    }) as typeof sysdb.pool.query);
+    try {
+      await expect(sysdb.garbageCollect(Date.now(), undefined, { batchSize: 2 })).rejects.toThrow('duplicate key');
+    } finally {
+      notRetried.mockRestore();
+    }
+    expect(attempts).toBe(1);
+
+    await sysdb.garbageCollect(Date.now(), undefined, { batchSize: null });
+  });
+
+  test('test-garbage-collection-batch-size-validation', async () => {
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    for (const batchSize of [0, -1, 1.5, NaN]) {
+      await expect(sysdb.garbageCollect(Date.now(), undefined, { batchSize })).rejects.toThrow(
+        'batchSize must be a positive integer',
+      );
+    }
   });
 
   class TestGlobalTimeout {
