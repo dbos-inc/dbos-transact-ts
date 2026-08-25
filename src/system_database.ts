@@ -789,13 +789,18 @@ async function retryOnSerializationError<T>(operation: () => Promise<T>): Promis
     try {
       return await operation();
     } catch (e) {
-      if (attempt === maxAttempts || !isSerializationError(e)) {
+      if (!isSerializationError(e)) {
+        throw e;
+      }
+      const message = e instanceof Error ? e.message : String(e);
+      if (attempt === maxAttempts) {
+        DBOSExecutor.globalInstance?.logger.warn(`Garbage collection failed after ${maxAttempts} attempts: ${message}`);
         throw e;
       }
       // Jittered backoff, so peers that collided do not collide again
       const actualBackoff = backoff * (0.5 + Math.random());
-      DBOSExecutor.globalInstance?.logger.debug(
-        `Garbage collection lost a concurrency race: ${e instanceof Error ? e.message : String(e)}. ` +
+      DBOSExecutor.globalInstance?.logger.warn(
+        `Contention or deadlock detected in workflow garbage collection: ${message}. ` +
           `Retrying in ${actualBackoff.toFixed(2)}s (attempt ${attempt})`,
       );
       await sleepms(actualBackoff * 1000);
