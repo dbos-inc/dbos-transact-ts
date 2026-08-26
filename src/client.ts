@@ -243,6 +243,7 @@ export class DBOSClient {
     systemDatabasePollingConcurrency?: number,
     logger?: DLogger,
     applicationName?: string,
+    observabilityQueryTimeoutMs?: number,
   ) {
     this.logger = new GlobalLogger(undefined, logger ? { logger } : undefined);
     this.systemDatabase = new SystemDatabase(
@@ -257,6 +258,7 @@ export class DBOSClient {
       systemDatabasePollingConcurrency,
       undefined,
       applicationName,
+      observabilityQueryTimeoutMs,
     );
   }
 
@@ -270,6 +272,7 @@ export class DBOSClient {
    * @param systemDatabasePollingConcurrency - An optional maximum number of concurrent polling operations. Defaults to half the pool size (minimum 1).
    * @param logger - An optional custom logger to which the client directs all its logging, replacing the built-in console logger.
    * @param applicationName - The application this client acts on behalf of. Always set this when several applications share this system database, so workflows, schedules, and queues created by this client are owned by that application.
+   * @param observabilityQueryTimeoutMs - An optional statement timeout, in milliseconds, for read-only observability queries against the system database. Defaults to 30000. Set to 0 or less to disable the cap.
    * @returns A Promise that resolves with the DBOSClient instance.
    */
   static async create({
@@ -281,6 +284,7 @@ export class DBOSClient {
     systemDatabasePollingConcurrency,
     logger,
     applicationName,
+    observabilityQueryTimeoutMs,
   }: {
     systemDatabaseUrl: string;
     systemDatabasePool?: Pool;
@@ -290,6 +294,7 @@ export class DBOSClient {
     systemDatabasePollingConcurrency?: number;
     logger?: DLogger;
     applicationName?: string;
+    observabilityQueryTimeoutMs?: number;
   }): Promise<DBOSClient> {
     const client = new DBOSClient(
       systemDatabaseUrl,
@@ -300,6 +305,7 @@ export class DBOSClient {
       systemDatabasePollingConcurrency,
       logger,
       applicationName,
+      observabilityQueryTimeoutMs,
     );
     return Promise.resolve(client);
   }
