@@ -3,7 +3,7 @@ import { DBOS, DBOSClient, DBOSConfig } from '../src';
 import { translateDbosConfig } from '../src/config';
 import { DBOSExecutor } from '../src/dbos-executor';
 import { DBOSQueryTimeoutError } from '../src/error';
-import { DBOSJSON } from '../src/serialization';
+import { DBOSJSON, DBOSSerializer } from '../src/serialization';
 import { SystemDatabase } from '../src/system_database';
 import { GlobalLogger } from '../src/telemetry/logs';
 import { getClientConfig } from '../src/utils';
@@ -20,11 +20,15 @@ describe('observability-query-timeout', () => {
   });
 
   /** A second handle on the test system database, so a test can pick its own timeout. */
-  function makeSysDb(observabilityQueryTimeoutMs?: number, poolSize: number = 2): SystemDatabase {
+  function makeSysDb(
+    observabilityQueryTimeoutMs?: number,
+    poolSize: number = 2,
+    serializer: DBOSSerializer = DBOSJSON,
+  ): SystemDatabase {
     return new SystemDatabase(
       systemDatabaseUrl,
       new GlobalLogger(),
-      DBOSJSON,
+      serializer,
       poolSize,
       undefined,
       'dbos',
@@ -37,8 +41,7 @@ describe('observability-query-timeout', () => {
   }
 
   /** Every statement this handle issues, from the connect event on, so nothing predates the listener. */
-  function captureStatements(sysdb: SystemDatabase): string[] {
-    const statements: string[] = [];
+  function captureStatements(sysdb: SystemDatabase, statements: string[] = []): string[] {
     sysdb.pool.on('connect', (client: PoolClient) => {
       const query = client.query.bind(client);
       client.query = ((...args: Parameters<typeof query>) => {
@@ -51,6 +54,13 @@ describe('observability-query-timeout', () => {
   }
 
   const timeoutStatements = (statements: string[]) => statements.filter((s) => s.includes('statement_timeout'));
+
+  /** The capped transaction, reached the way the repo's other tests reach soft-private internals. */
+  type Capped = { observabilityQuery<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> };
+  const capped = (sysdb: SystemDatabase) => sysdb as unknown as Capped;
+
+  const show = async (client: PoolClient, setting: string) =>
+    (await client.query<Record<string, string>>(`SHOW ${setting}`)).rows[0][setting];
 
   const workflow = DBOS.registerWorkflow(async () => await DBOS.runStep(() => Promise.resolve(1), { name: 's' }), {
     name: 'observabilityTimeoutWorkflow',
@@ -121,23 +131,113 @@ describe('observability-query-timeout', () => {
     }
   });
 
-  test('the statement timeout cancels a blocked query', async () => {
-    const sysdb = makeSysDb(300);
+  /** Hold ACCESS EXCLUSIVE on workflow_status, so any read of it blocks until the cap cancels it. */
+  async function whileWorkflowStatusIsLocked<T>(fn: () => Promise<T>): Promise<T> {
     const blocker = new Client(getClientConfig(systemDatabaseUrl));
+    blocker.on('error', () => {});
     await blocker.connect();
     try {
       await blocker.query('BEGIN');
       await blocker.query('LOCK TABLE "dbos".workflow_status IN ACCESS EXCLUSIVE MODE');
-      await expect(sysdb.listWorkflows({})).rejects.toThrow(DBOSQueryTimeoutError);
+      return await fn();
     } finally {
-      await blocker.query('ROLLBACK');
-      await blocker.end();
+      await blocker.query('ROLLBACK').catch(() => {});
+      await blocker.end().catch(() => {});
     }
+  }
+
+  test('the statement timeout cancels a blocked query', async () => {
+    const sysdb = makeSysDb(300);
     try {
+      const error = await whileWorkflowStatusIsLocked(() => sysdb.listWorkflows({}).catch((e: unknown) => e));
+      expect(error).toBeInstanceOf(DBOSQueryTimeoutError);
+      // No cause: dbRetry unwraps cause chains and would retry the underlying 57014 forever.
+      expect((error as { cause?: unknown }).cause).toBeUndefined();
       // The cancelled query leaves its connection usable.
-      await expect(sysdb.listWorkflows({})).resolves.toEqual([]);
+      await expect(sysdb.listWorkflows({})).resolves.toBeDefined();
     } finally {
       await sysdb.destroy();
+    }
+  });
+
+  test('a timed-out query under @dbRetry rejects instead of retrying forever', async () => {
+    const sysdb = makeSysDb(300);
+    const start = new Date(0).toISOString();
+    const end = new Date(Date.now() + 3_600_000).toISOString();
+    try {
+      const error = await whileWorkflowStatusIsLocked(() => sysdb.getMetrics(start, end).catch((e: unknown) => e));
+      expect(error).toBeInstanceOf(DBOSQueryTimeoutError);
+    } finally {
+      await sysdb.destroy();
+    }
+  });
+
+  test('a capped query runs under the cap, at read committed', async () => {
+    const sysdb = makeSysDb();
+    try {
+      const settings = await capped(sysdb).observabilityQuery(async (client) => ({
+        timeout: await show(client, 'statement_timeout'),
+        isolation: await show(client, 'transaction_isolation'),
+      }));
+      expect(settings).toEqual({ timeout: '30s', isolation: 'read committed' });
+    } finally {
+      await sysdb.destroy();
+    }
+  });
+
+  test('a non-timeout failure inside a capped query propagates unchanged', async () => {
+    const sysdb = makeSysDb();
+    try {
+      const error = await capped(sysdb)
+        .observabilityQuery((client) => client.query('SELECT * FROM "dbos".no_such_table'))
+        .catch((e: unknown) => e);
+      expect(error).not.toBeInstanceOf(DBOSQueryTimeoutError);
+      expect((error as { code?: string }).code).toBe('42P01');
+    } finally {
+      await sysdb.destroy();
+    }
+  });
+
+  test('deserialization runs after the transaction commits', async () => {
+    // node-postgres keeps the portal's snapshot alive until commit, so parsing inside would extend the hold the cap bounds.
+    const log: string[] = [];
+    const recording: DBOSSerializer = {
+      name: () => 'recording',
+      stringify: (value) => DBOSJSON.stringify(value),
+      parse: (text) => {
+        log.push('PARSE');
+        return DBOSJSON.parse(text);
+      },
+    };
+    const workflowID = 'observability-timeout-parse-order';
+    const seed = new Client(getClientConfig(systemDatabaseUrl));
+    await seed.connect();
+    try {
+      await seed.query(
+        `INSERT INTO "dbos".workflow_status
+           (workflow_uuid, status, name, authenticated_roles, created_at, updated_at, recovery_attempts)
+         VALUES ($1, 'SUCCESS', 'parseOrderProbe', '[]', 1, 1, 1) ON CONFLICT DO NOTHING`,
+        [workflowID],
+      );
+      // A null serialization routes the value through the handle's own serializer.
+      await seed.query(
+        `INSERT INTO "dbos".workflow_events (workflow_uuid, key, value, serialization) VALUES ($1, 'k', '1', NULL)
+         ON CONFLICT DO NOTHING`,
+        [workflowID],
+      );
+
+      const sysdb = makeSysDb(undefined, 2, recording);
+      captureStatements(sysdb, log);
+      try {
+        await expect(sysdb.getAllEvents(workflowID)).resolves.toEqual({ k: 1 });
+        expect(log).toContain('PARSE');
+        expect(log.indexOf('COMMIT')).toBeLessThan(log.indexOf('PARSE'));
+      } finally {
+        await sysdb.destroy();
+      }
+    } finally {
+      await seed.query(`DELETE FROM "dbos".workflow_status WHERE workflow_uuid = $1`, [workflowID]).catch(() => {});
+      await seed.end();
     }
   });
 
@@ -172,6 +272,23 @@ describe('observability-query-timeout', () => {
     }
   });
 
+  test('an out-of-range statement timeout is rejected', async () => {
+    for (const bad of [2_147_483_648, 1e21]) {
+      expect(() => translateDbosConfig({ ...config, observabilityQueryTimeoutMs: bad })).toThrow(
+        'observabilityQueryTimeoutMs',
+      );
+      expect(() => makeSysDb(bad)).toThrow('observabilityQueryTimeoutMs');
+    }
+    // The largest value PostgreSQL accepts still is.
+    const sysdb = makeSysDb(2_147_483_647);
+    try {
+      expect(sysdb.observabilityQueryTimeoutMs).toBe(2_147_483_647);
+      await expect(sysdb.listWorkflows({})).resolves.toBeDefined();
+    } finally {
+      await sysdb.destroy();
+    }
+  });
+
   test('a configured statement timeout reaches the system database', async () => {
     DBOS.setConfig({ ...config, observabilityQueryTimeoutMs: 5000 });
     await DBOS.launch();
@@ -181,7 +298,7 @@ describe('observability-query-timeout', () => {
 
       // The timeout must not disturb a query that finishes inside it.
       await expect(workflow()).resolves.toBe(1);
-      const workflows = await DBOS.listWorkflows({});
+      const workflows = await DBOS.listWorkflows({ workflowName: 'observabilityTimeoutWorkflow' });
       expect(workflows.length).toBe(1);
       await expect(DBOS.listWorkflowSteps(workflows[0].workflowID)).resolves.toHaveLength(1);
     } finally {
