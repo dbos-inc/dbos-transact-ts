@@ -261,6 +261,16 @@ export class DBOSStreamNondeterminismError extends DBOSError {
   }
 }
 
+export const QueryTimeout = 35;
+/** Exception raised when a read-only observability query exceeds its statement timeout. */
+export class DBOSQueryTimeoutError extends DBOSError {
+  constructor(readonly timeoutMS: number) {
+    super(`This query was cancelled after exceeding its ${timeoutMS}ms statement timeout.`, QueryTimeout);
+    // Error serialization records err.name, which is otherwise 'Error'.
+    this.name = 'DBOSQueryTimeoutError';
+  }
+}
+
 /**
  * True if `e` is a stream-read timeout, including the portable-serialization
  * replay form, which carries only the original type name.

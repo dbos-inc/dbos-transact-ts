@@ -9,6 +9,7 @@ import {
   DBOSQueueDuplicatedError,
   DBOSInitializationError,
   DBOSError,
+  DBOSQueryTimeoutError,
 } from './error';
 import { GetPendingWorkflowsOutput, GetWorkflowsInput, StatusString } from './workflow';
 import {
@@ -105,6 +106,21 @@ export const DBOS_STREAMS_CHANNEL = 'dbos_streams_channel';
 
 // Interval for coalescing LISTEN/NOTIFY notifications off the write path; caps the rate of notifying commits regardless of write throughput.
 export const DEFAULT_NOTIFICATION_COALESCE_MS = 10;
+
+// An introspection query scanning a huge table for minutes holds back xmin, stalling autovacuum database-wide.
+export const DEFAULT_OBSERVABILITY_QUERY_TIMEOUT_MS = 30_000;
+
+// PostgreSQL's statement_timeout is an int32 count of milliseconds; anything larger is rejected.
+const MAX_STATEMENT_TIMEOUT_MS = 2_147_483_647;
+
+/** The timeout is rendered into a `SET LOCAL statement_timeout`, which takes only an in-range integer. */
+export function validateObservabilityQueryTimeoutMs(value: number | undefined): void {
+  if (value !== undefined && (!Number.isFinite(value) || value > MAX_STATEMENT_TIMEOUT_MS)) {
+    throw new Error(
+      `observabilityQueryTimeoutMs must be a finite number no greater than ${MAX_STATEMENT_TIMEOUT_MS}, got ${value}`,
+    );
+  }
+}
 
 export interface WorkflowScheduleInternal {
   scheduleId: string;
@@ -767,6 +783,11 @@ function retriablePostgresException(err: unknown): boolean {
   return false;
 }
 
+/** 57014 is query_canceled, which is how statement_timeout cancels a query. */
+function isStatementTimeout(err: unknown): boolean {
+  return !!err && typeof err === 'object' && (err as AnyErr).code === '57014';
+}
+
 function isSerializationError(err: unknown): boolean {
   for (const e of unwrapErrors(err)) {
     const anyErr = e as AnyErr;
@@ -904,6 +925,8 @@ export class SystemDatabase {
 
   // Interval for coalescing LISTEN/NOTIFY notifications pushed off the write path (Postgres + L/N only).
   readonly notificationCoalesceMs: number = DEFAULT_NOTIFICATION_COALESCE_MS;
+  // Statement timeout for observability reads, in ms; undefined disables the cap.
+  readonly observabilityQueryTimeoutMs: number | undefined;
   // Coalesced NOTIFY payloads keyed by channel, flushed by the notifier loop; soft-private so tests can drive a flush.
   private pendingNotifications: Map<string, Set<string>> = new Map();
   #notifierActive: boolean = false;
@@ -942,10 +965,15 @@ export class SystemDatabase {
     notificationCoalesceMs: number = DEFAULT_NOTIFICATION_COALESCE_MS,
     // The application this handle acts for; undefined writes unclaimed rows.
     readonly appName?: string,
+    observabilityQueryTimeoutMs: number = DEFAULT_OBSERVABILITY_QUERY_TIMEOUT_MS,
   ) {
     this.schemaName = schemaName;
     this.shouldUseDBNotifications = useListenNotify;
     this.notificationCoalesceMs = notificationCoalesceMs;
+    validateObservabilityQueryTimeoutMs(observabilityQueryTimeoutMs);
+    // Floor at 1ms: PostgreSQL reads 0 as "no timeout", the loosest cap rather than the tightest.
+    this.observabilityQueryTimeoutMs =
+      observabilityQueryTimeoutMs > 0 ? Math.max(1, Math.round(observabilityQueryTimeoutMs)) : undefined;
 
     if (systemDatabasePool) {
       this.pool = systemDatabasePool;
@@ -982,6 +1010,39 @@ export class SystemDatabase {
   /** Check out a pool connection guarded for as long as we hold it. See {@link borrowClient}. */
   #connect(): Promise<PoolClient> {
     return borrowClient(this.pool, this.#onClientError);
+  }
+
+  /**
+   * Cap an introspection read with a statement timeout, so one scanning a huge table cannot hold a
+   * snapshot for minutes and stall autovacuum database-wide. Soft-private so tests can assert the cap
+   * from inside the transaction.
+   *
+   * `fn` must only run queries: node-postgres leaves the unnamed portal, and the snapshot registered
+   * with it, alive until commit, so anything else it awaits extends the very hold this bounds.
+   */
+  private async observabilityQuery<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> {
+    const timeoutMs = this.observabilityQueryTimeoutMs;
+    const client = await this.#connect();
+    try {
+      if (timeoutMs === undefined) {
+        return await fn(client);
+      }
+      try {
+        // Never inherit default_transaction_isolation: a repeatable-read snapshot would outlive its statement.
+        await client.query('BEGIN ISOLATION LEVEL READ COMMITTED READ ONLY');
+        // SET LOCAL, so the cap dies with its transaction instead of riding the pooled connection into unrelated queries.
+        await client.query(`SET LOCAL statement_timeout = ${timeoutMs}`);
+        const result = await fn(client);
+        await client.query('COMMIT');
+        return result;
+      } catch (e) {
+        await client.query('ROLLBACK').catch(() => {});
+        // No `cause`: dbRetry walks the cause chain and would retry 57014 forever as an operator intervention.
+        throw isStatementTimeout(e) ? new DBOSQueryTimeoutError(timeoutMs) : e;
+      }
+    } finally {
+      client.release();
+    }
   }
   getSerializer(): DBOSSerializer {
     return this.serializer;
@@ -1581,7 +1642,7 @@ export class SystemDatabase {
       params.push(offset);
       query += ` OFFSET $${params.length}`;
     }
-    const { rows } = await this.pool.query<operation_outputs>(query, params);
+    const { rows } = await this.observabilityQuery((client) => client.query<operation_outputs>(query, params));
     return rows;
   }
 
@@ -3359,29 +3420,25 @@ export class SystemDatabase {
   // ==================== Observability: Workflow Communications ====================
 
   async getAllEvents(workflowID: string): Promise<Record<string, unknown>> {
-    const client = await this.#connect();
-    try {
-      const result = await client.query<{ key: string; value: string; serialization: string | null }>(
+    const { rows } = await this.observabilityQuery((client) =>
+      client.query<{ key: string; value: string; serialization: string | null }>(
         `SELECT key, value, serialization FROM "${this.schemaName}".workflow_events
          WHERE workflow_uuid = $1`,
         [workflowID],
-      );
-      const events: Record<string, unknown> = {};
-      for (const row of result.rows) {
-        events[row.key] = await safeParse(this.serializer, row.value, row.serialization);
-      }
-      return events;
-    } finally {
-      client.release();
+      ),
+    );
+    const events: Record<string, unknown> = {};
+    for (const row of rows) {
+      events[row.key] = await safeParse(this.serializer, row.value, row.serialization);
     }
+    return events;
   }
 
   async getAllNotifications(
     workflowID: string,
   ): Promise<{ topic: string | null; message: unknown; createdAtEpochMs: number; consumed: boolean }[]> {
-    const client = await this.#connect();
-    try {
-      const result = await client.query<{
+    const { rows } = await this.observabilityQuery((client) =>
+      client.query<{
         topic: string;
         message: string;
         serialization: string | null;
@@ -3393,49 +3450,44 @@ export class SystemDatabase {
          WHERE destination_uuid = $1
          ORDER BY created_at_epoch_ms`,
         [workflowID],
-      );
-      return await Promise.all(
-        result.rows.map(async (row) => ({
-          topic: row.topic === this.nullTopic ? null : row.topic,
-          message: await safeParse(this.serializer, row.message, row.serialization),
-          createdAtEpochMs: Number(row.created_at_epoch_ms),
-          consumed: row.consumed,
-        })),
-      );
-    } finally {
-      client.release();
-    }
+      ),
+    );
+    return await Promise.all(
+      rows.map(async (row) => ({
+        topic: row.topic === this.nullTopic ? null : row.topic,
+        message: await safeParse(this.serializer, row.message, row.serialization),
+        createdAtEpochMs: Number(row.created_at_epoch_ms),
+        consumed: row.consumed,
+      })),
+    );
   }
 
   async getAllStreamEntries(workflowID: string): Promise<Record<string, unknown[]>> {
-    const client = await this.#connect();
-    try {
-      const result = await client.query<{ key: string; value: string; serialization: string | null }>(
+    const { rows } = await this.observabilityQuery((client) =>
+      client.query<{ key: string; value: string; serialization: string | null }>(
         `SELECT key, value, serialization FROM "${this.schemaName}".streams
          WHERE workflow_uuid = $1
          ORDER BY key, "offset"`,
         [workflowID],
-      );
-      const streams: Record<string, unknown[]> = {};
-      const closed = new Set<string>();
-      for (const row of result.rows) {
-        if (closed.has(row.key)) {
-          continue;
-        }
-        // safeParse yields the raw string for the legacy unserialized marker, which does not parse.
-        const value = await safeParse(this.serializer, row.value, row.serialization);
-        if (isStreamClosedSentinel(value)) {
-          // End the stream where readStream does, so the two never disagree.
-          closed.add(row.key);
-          streams[row.key] ??= [];
-          continue;
-        }
-        (streams[row.key] ??= []).push(value);
+      ),
+    );
+    const streams: Record<string, unknown[]> = {};
+    const closed = new Set<string>();
+    for (const row of rows) {
+      if (closed.has(row.key)) {
+        continue;
       }
-      return streams;
-    } finally {
-      client.release();
+      // safeParse yields the raw string for the legacy unserialized marker, which does not parse.
+      const value = await safeParse(this.serializer, row.value, row.serialization);
+      if (isStreamClosedSentinel(value)) {
+        // End the stream where readStream does, so the two never disagree.
+        closed.add(row.key);
+        streams[row.key] ??= [];
+        continue;
+      }
+      (streams[row.key] ??= []).push(value);
     }
+    return streams;
   }
 
   // ==================== Queues ====================
@@ -4067,7 +4119,10 @@ export class SystemDatabase {
       ${offsetClause}
     `;
 
-    const result = await this.pool.query<workflow_status>(query, params);
+    // An ID-keyed read is bounded by its ID list, so it takes no cap: a status lookup must not fail its own caller.
+    const result = idKeyed
+      ? await this.pool.query<workflow_status>(query, params)
+      : await this.observabilityQuery((client) => client.query<workflow_status>(query, params));
     return result.rows.map(mapWorkflowStatus);
   }
 
@@ -4236,7 +4291,7 @@ export class SystemDatabase {
       GROUP BY ${groupByClause}
     `;
 
-    const result = await this.pool.query<Record<string, unknown>>(query, params);
+    const result = await this.observabilityQuery((client) => client.query<Record<string, unknown>>(query, params));
 
     const toIntOrNull = (v: unknown): number | null => (v === null || v === undefined ? null : Number(v));
 
@@ -4363,7 +4418,7 @@ export class SystemDatabase {
       GROUP BY ${groupByClause}
     `;
 
-    const result = await this.pool.query<Record<string, unknown>>(query, params);
+    const result = await this.observabilityQuery((client) => client.query<Record<string, unknown>>(query, params));
 
     const toIntOrNull = (v: unknown): number | null => (v === null || v === undefined ? null : Number(v));
 
@@ -4539,19 +4594,29 @@ export class SystemDatabase {
     const startEpochMs = new Date(startTime).getTime();
     const endEpochMs = new Date(endTime).getTime();
 
-    const metrics: MetricData[] = [];
-
-    // Query workflow metrics
     const workflowParams: unknown[] = [startEpochMs, endEpochMs];
     const workflowScope = this.#observabilityFilter('application_name', applicationName, workflowParams);
-    const workflowResult = await this.pool.query<{ name: string; count: string }>(
-      `SELECT name, COUNT(workflow_uuid) as count
-       FROM "${this.schemaName}".workflow_status
-       WHERE created_at >= $1 AND created_at < $2 AND ${workflowScope}
-       GROUP BY name`,
-      workflowParams,
-    );
+    const stepParams: unknown[] = [startEpochMs, endEpochMs];
+    const stepScope = this.#observabilityFilter('application_name', applicationName, stepParams);
 
+    const [workflowResult, stepResult] = await this.observabilityQuery(async (client) => [
+      await client.query<{ name: string; count: string }>(
+        `SELECT name, COUNT(workflow_uuid) as count
+         FROM "${this.schemaName}".workflow_status
+         WHERE created_at >= $1 AND created_at < $2 AND ${workflowScope}
+         GROUP BY name`,
+        workflowParams,
+      ),
+      await client.query<{ function_name: string; count: string }>(
+        `SELECT function_name, COUNT(*) as count
+         FROM "${this.schemaName}".operation_outputs
+         WHERE completed_at_epoch_ms >= $1 AND completed_at_epoch_ms < $2 AND ${stepScope}
+         GROUP BY function_name`,
+        stepParams,
+      ),
+    ]);
+
+    const metrics: MetricData[] = [];
     for (const row of workflowResult.rows) {
       metrics.push({
         metricType: 'workflow_count',
@@ -4559,18 +4624,6 @@ export class SystemDatabase {
         value: Number(row.count),
       });
     }
-
-    // Query step metrics
-    const stepParams: unknown[] = [startEpochMs, endEpochMs];
-    const stepScope = this.#observabilityFilter('application_name', applicationName, stepParams);
-    const stepResult = await this.pool.query<{ function_name: string; count: string }>(
-      `SELECT function_name, COUNT(*) as count
-       FROM "${this.schemaName}".operation_outputs
-       WHERE completed_at_epoch_ms >= $1 AND completed_at_epoch_ms < $2 AND ${stepScope}
-       GROUP BY function_name`,
-      stepParams,
-    );
-
     for (const row of stepResult.rows) {
       metrics.push({
         metricType: 'step_count',
@@ -4578,7 +4631,6 @@ export class SystemDatabase {
         value: Number(row.count),
       });
     }
-
     return metrics;
   }
 
@@ -4905,12 +4957,14 @@ export class SystemDatabase {
   async listApplicationVersions(): Promise<VersionInfo[]> {
     const params: unknown[] = [];
     const scope = this.#appNameFilter('application_name', this.appName, params);
-    const { rows } = await this.pool.query<application_versions>(
-      `SELECT version_id, version_name, version_timestamp, created_at, application_name
-       FROM "${this.schemaName}".application_versions
-       WHERE ${scope}
-       ORDER BY version_timestamp DESC`,
-      params,
+    const { rows } = await this.observabilityQuery((client) =>
+      client.query<application_versions>(
+        `SELECT version_id, version_name, version_timestamp, created_at, application_name
+         FROM "${this.schemaName}".application_versions
+         WHERE ${scope}
+         ORDER BY version_timestamp DESC`,
+        params,
+      ),
     );
     return rows.map(mapVersionInfo);
   }

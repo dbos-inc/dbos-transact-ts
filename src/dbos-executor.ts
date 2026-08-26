@@ -180,6 +180,11 @@ export interface DBOSConfig {
   /** Interval (ms) for coalescing LISTEN/NOTIFY notifications (streams and events) off the write path; bounds read latency. Default 10, min 1. */
   notificationCoalesceMs?: number;
   /**
+   * Statement timeout, in milliseconds, for read-only observability queries against the system
+   * database. Defaults to 30000. Set to 0 or less to disable the cap.
+   */
+  observabilityQueryTimeoutMs?: number;
+  /**
    * Whether to create and migrate the system database on launch. Defaults to true.
    *
    * Set to false for a process that must not alter the schema, such as one whose database
@@ -246,6 +251,7 @@ export type DBOSConfigInternal = {
   maxConcurrentQueueDispatches?: number;
   useListenNotify: boolean;
   notificationCoalesceMs?: number;
+  observabilityQueryTimeoutMs?: number;
   runMigrations: boolean;
 
   http?: {
@@ -371,6 +377,7 @@ export class DBOSExecutor {
         this.config.systemDatabasePollingConcurrency,
         this.config.notificationCoalesceMs,
         this.appName,
+        this.config.observabilityQueryTimeoutMs,
       );
     }
 
