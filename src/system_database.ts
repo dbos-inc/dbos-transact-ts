@@ -1027,9 +1027,9 @@ export class SystemDatabase {
       if (timeoutMs === undefined) {
         return await fn(client);
       }
-      // Never inherit default_transaction_isolation: a repeatable-read snapshot would outlive its statement.
-      await client.query('BEGIN ISOLATION LEVEL READ COMMITTED READ ONLY');
       try {
+        // Never inherit default_transaction_isolation: a repeatable-read snapshot would outlive its statement.
+        await client.query('BEGIN ISOLATION LEVEL READ COMMITTED READ ONLY');
         // SET LOCAL, so the cap dies with its transaction instead of riding the pooled connection into unrelated queries.
         await client.query(`SET LOCAL statement_timeout = ${timeoutMs}`);
         const result = await fn(client);

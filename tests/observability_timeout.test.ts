@@ -198,6 +198,24 @@ describe('observability-query-timeout', () => {
     }
   });
 
+  test('a failed BEGIN does not return a poisoned client to the pool', async () => {
+    // A one-connection pool, so the next query is guaranteed the same session.
+    const sysdb = makeSysDb(undefined, 1);
+    try {
+      // Leave the pooled connection inside an aborted transaction, as a caller-supplied pool can.
+      const client = await sysdb.pool.connect();
+      await client.query('BEGIN');
+      await client.query('SELECT * FROM "dbos".no_such_table').catch(() => {});
+      client.release();
+
+      // BEGIN fails with 25P02 on the inherited mess, but must leave the connection reusable.
+      await expect(sysdb.listWorkflows({})).rejects.toThrow();
+      await expect(sysdb.listWorkflows({})).resolves.toBeDefined();
+    } finally {
+      await sysdb.destroy();
+    }
+  });
+
   test('deserialization runs after the transaction commits', async () => {
     // node-postgres keeps the portal's snapshot alive until commit, so parsing inside would extend the hold the cap bounds.
     const log: string[] = [];
