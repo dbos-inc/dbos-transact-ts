@@ -152,6 +152,9 @@ export interface ApplicationRowCounts {
 // Workflows re-owned per transaction by a rename. Matches the GC default.
 export const DEFAULT_RENAME_BATCH_SIZE = 10_000;
 
+// Workflows deleted per transaction by garbage collection.
+export const DEFAULT_GC_BATCH_SIZE = 10_000;
+
 export interface QueueRecord {
   name: string;
   concurrency: number | null;
@@ -664,6 +667,15 @@ const RETRY_SQLSTATE_CODES = new Set([
   '40003', // statement_completion_unknown
 ]);
 
+/**
+ * Kept out of the sets above: those feed `dbRetry`, which retries forever, and the step-recording
+ * path maps 40001 to a workflow conflict. Only bulk maintenance work retries on these.
+ */
+const SERIALIZATION_SQLSTATE_CODES = new Set([
+  '40001', // serialization_failure (MVCC conflict)
+  '40P01', // deadlock_detected
+]);
+
 // Node.js transient network error codes (system call level)
 const RETRY_NODE_ERRNOS = new Set([
   'ECONNRESET',
@@ -753,6 +765,48 @@ function retriablePostgresException(err: unknown): boolean {
     }
   }
   return false;
+}
+
+function isSerializationError(err: unknown): boolean {
+  for (const e of unwrapErrors(err)) {
+    const anyErr = e as AnyErr;
+    if (isPgDatabaseError(anyErr) && !!anyErr.code && SERIALIZATION_SQLSTATE_CODES.has(anyErr.code)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Re-run a batch that lost a deadlock or serialization race. The database already rolled it
+ * back, so replaying it is safe.
+ */
+async function retryOnSerializationError<T>(operation: () => Promise<T>): Promise<T> {
+  const maxAttempts = 10;
+  const maxBackoff = 2.0;
+  let backoff = 0.05;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await operation();
+    } catch (e) {
+      if (!isSerializationError(e)) {
+        throw e;
+      }
+      const message = e instanceof Error ? e.message : String(e);
+      if (attempt === maxAttempts) {
+        DBOSExecutor.globalInstance?.logger.warn(`Garbage collection failed after ${maxAttempts} attempts: ${message}`);
+        throw e;
+      }
+      // Jittered backoff, so peers that collided do not collide again
+      const actualBackoff = backoff * (0.5 + Math.random());
+      DBOSExecutor.globalInstance?.logger.warn(
+        `Contention or deadlock detected in workflow garbage collection: ${message}. ` +
+          `Retrying in ${actualBackoff.toFixed(2)}s (attempt ${attempt})`,
+      );
+      await sleepms(actualBackoff * 1000);
+      backoff = Math.min(backoff * 2, maxBackoff);
+    }
+  }
 }
 
 /**
@@ -4327,8 +4381,77 @@ export class SystemDatabase {
     });
   }
 
+  /** Rows garbage collection may delete: terminal, older than the cutoff, and ours. */
+  #gcFilter(cutoffEpochTimestampMs: number, params: unknown[]): string {
+    params.push(cutoffEpochTimestampMs);
+    const cutoffClause = `created_at < $${params.length}`;
+    const statuses = [StatusString.PENDING, StatusString.ENQUEUED, StatusString.DELAYED].map((status) => {
+      params.push(status);
+      return `$${params.length}`;
+    });
+    // Unclaimed rows included: excluding them would leak pre-upgrade rows forever.
+    const scope = this.#appNameFilter('application_name', this.appName, params);
+    return `${cutoffClause} AND status NOT IN (${statuses.join(', ')}) AND ${scope}`;
+  }
+
+  /**
+   * Delete one batch, returning the watermark to resume from, or undefined once the last one ran.
+   * The delete is its own transaction; it re-checks the filter, so it needs no snapshot shared
+   * with the select that bounds it.
+   */
+  async #garbageCollectBatch(
+    cutoffEpochTimestampMs: number,
+    batchSize: number,
+    watermark: number,
+  ): Promise<number | undefined> {
+    // Borrowed rather than pool.query'd: that releases with the error, which discards the
+    // connection on a deadlock, so the retry wrapping this would churn the pool per batch.
+    const client = await this.#connect();
+    try {
+      // The batchSize-th oldest eligible row above the watermark bounds this range
+      const stepParams: unknown[] = [];
+      const stepScope = this.#gcFilter(cutoffEpochTimestampMs, stepParams);
+      stepParams.push(watermark);
+      const stepResult = await client.query<{ created_at: string }>(
+        `SELECT created_at
+           FROM "${this.schemaName}".workflow_status
+          WHERE ${stepScope} AND created_at > $${stepParams.length}
+          ORDER BY created_at
+          LIMIT 1 OFFSET ${batchSize - 1}`,
+        stepParams,
+      );
+      // created_at is a bigint, so node-postgres hands it back as a string.
+      const step = stepResult.rows.length > 0 ? Number(stepResult.rows[0].created_at) : undefined;
+
+      const deleteParams: unknown[] = [];
+      let deleteScope = this.#gcFilter(cutoffEpochTimestampMs, deleteParams);
+      if (step !== undefined) {
+        // Inclusive upper bound: created_at ties may push a batch over batchSize, but never split across two.
+        deleteParams.push(watermark, step);
+        deleteScope = `${deleteScope} AND created_at > $${deleteParams.length - 1} AND created_at <= $${deleteParams.length}`;
+      }
+      // The final batch drops the watermark, so rows that appeared below it are still deleted.
+      await client.query(`DELETE FROM "${this.schemaName}".workflow_status WHERE ${deleteScope}`, deleteParams);
+
+      return step;
+    } finally {
+      // No error argument: a genuinely dead connection is still evicted by the pool's own check.
+      client.release();
+    }
+  }
+
   // Conductor sends cleared retention thresholds as JSON null, so both params must be treated as nullish
-  async garbageCollect(cutoffEpochTimestampMs?: number | null, rowsThreshold?: number | null): Promise<void> {
+  async garbageCollect(
+    cutoffEpochTimestampMs?: number | null,
+    rowsThreshold?: number | null,
+    options: { batchSize?: number | null } = {},
+  ): Promise<void> {
+    const batchSize = options.batchSize === null ? undefined : (options.batchSize ?? DEFAULT_GC_BATCH_SIZE);
+    // A NaN survives a bare `< 1` test and would only fail once it reached SQL, leaving GC half-applied.
+    if (batchSize !== undefined && (!Number.isInteger(batchSize) || batchSize < 1)) {
+      throw new DBOSError(`batchSize must be a positive integer, got ${batchSize}`);
+    }
+
     if (rowsThreshold !== undefined && rowsThreshold !== null) {
       // Get the created_at timestamp of the rows_threshold newest row
       const params: unknown[] = [rowsThreshold - 1];
@@ -4359,24 +4482,32 @@ export class SystemDatabase {
       return;
     }
 
-    const deleteParams: unknown[] = [
-      cutoffEpochTimestampMs,
-      StatusString.PENDING,
-      StatusString.ENQUEUED,
-      StatusString.DELAYED,
-    ];
-    // Unclaimed rows included: excluding them would leak pre-upgrade rows forever.
-    const deleteScope = this.#appNameFilter('application_name', this.appName, deleteParams);
-    // Delete all workflows older than cutoff that are NOT PENDING, ENQUEUED, or DELAYED
-    await this.pool.query(
-      `DELETE FROM "${this.schemaName}".workflow_status
-       WHERE created_at < $1
-         AND status NOT IN ($2, $3, $4)
-         AND ${deleteScope}`,
-      deleteParams,
-    );
+    // Narrowed to a constant so the closures below keep it.
+    const cutoff = cutoffEpochTimestampMs;
 
-    return;
+    if (batchSize === undefined) {
+      await retryOnSerializationError(async () => {
+        const deleteParams: unknown[] = [];
+        const deleteScope = this.#gcFilter(cutoff, deleteParams);
+        const client = await this.#connect();
+        try {
+          await client.query(`DELETE FROM "${this.schemaName}".workflow_status WHERE ${deleteScope}`, deleteParams);
+        } finally {
+          client.release();
+        }
+      });
+      return;
+    }
+
+    // Advance a created_at watermark, one committed transaction per batch, so a long
+    // history neither deletes in one transaction nor rescans what it already deleted.
+    let watermark = 0;
+    for (;;) {
+      const next = await retryOnSerializationError(() => this.#garbageCollectBatch(cutoff, batchSize, watermark));
+      // Fewer than a full batch remained, so that delete took the rest.
+      if (next === undefined) return;
+      watermark = next;
+    }
   }
 
   /**

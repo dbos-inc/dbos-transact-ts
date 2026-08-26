@@ -7,7 +7,7 @@ import {
   recoverPendingWorkflows,
   reexecuteWorkflowById,
 } from './helpers';
-import { Client } from 'pg';
+import { Client, Pool, PoolClient } from 'pg';
 import { WorkflowHandle, WorkflowStatus } from '../src/workflow';
 import { randomUUID } from 'node:crypto';
 import { globalParams, sleepms } from '../src/utils';
@@ -960,6 +960,241 @@ describe('test-list-queues', () => {
     await DBOSExecutor.globalInstance!.systemDatabase.garbageCollect(Date.now(), null);
     await DBOSExecutor.globalInstance!.systemDatabase.garbageCollect(null, 1);
     await DBOSExecutor.globalInstance!.systemDatabase.garbageCollect(null, null);
+
+    // The unbatched path still deletes everything in one statement
+    for (let i = 0; i < numWorkflows; i++) {
+      await expect(TestGarbageCollection.testWorkflow(i)).resolves.toBe(i);
+    }
+    await DBOSExecutor.globalInstance!.systemDatabase.garbageCollect(Date.now(), undefined, { batchSize: null });
+    await expect(DBOS.listWorkflows({})).resolves.toHaveLength(0);
+  });
+
+  /**
+   * Intercept workflow_status statements on clients borrowed from the pool. `onStatement`
+   * returns an error to inject in place of the statement, or undefined to let it through.
+   */
+  function interceptStatusStatements(pool: Pool, onStatement: (sql: string) => Error | undefined) {
+    const realConnect = pool.connect.bind(pool) as (cb?: unknown) => unknown;
+    const patch = (client: PoolClient): PoolClient => {
+      const realQuery = client.query.bind(client) as (...a: unknown[]) => unknown;
+      const realRelease = client.release.bind(client) as (err?: Error | boolean) => void;
+      client.query = ((...args: unknown[]) => {
+        const text = typeof args[0] === 'string' ? args[0] : ((args[0] as { text?: string })?.text ?? '');
+        if (text.includes('workflow_status')) {
+          const injected = onStatement(text);
+          if (injected) return Promise.reject(injected);
+        }
+        return realQuery(...args);
+      }) as typeof client.query;
+      // Restored before the client returns to the pool, so no later checkout sees the patch.
+      client.release = ((err?: Error | boolean) => {
+        client.query = realQuery as typeof client.query;
+        client.release = realRelease as typeof client.release;
+        realRelease(err);
+      }) as typeof client.release;
+      return client;
+    };
+    return jest.spyOn(pool, 'connect').mockImplementation(((cb?: unknown) => {
+      if (typeof cb === 'function') {
+        const done = cb as (e: unknown, c: unknown, d: unknown) => void;
+        return realConnect((err: unknown, client: PoolClient, release: unknown) =>
+          done(err, err ? client : patch(client), release),
+        );
+      }
+      return (realConnect() as Promise<PoolClient>).then(patch);
+    }) as unknown as typeof pool.connect);
+  }
+
+  const isStatusDelete = (sql: string) => /^\s*DELETE/i.test(sql);
+  // The batch probe interpolates a literal offset; the rows-threshold probe binds it as $1.
+  const isBatchProbe = (sql: string) => /SELECT\s+created_at/i.test(sql) && /LIMIT 1 OFFSET \d+/.test(sql);
+
+  // 3 = short final batch, 5 = exact multiple, 20 = larger than all eligible rows
+  test.each([3, 5, 20])('test-garbage-collection-batched (batchSize=%i)', async (batchSize) => {
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    // Earlier tests in this describe share the database, so start from an empty table.
+    await sysdb.garbageCollect(Date.now(), undefined, { batchSize: null });
+
+    const numWorkflows = 10;
+    // The event is a shared latch that earlier tests leave set.
+    TestGarbageCollection.event = new Event();
+    const handle = await DBOS.startWorkflow(TestGarbageCollection).blockedWorkflow();
+    for (let i = 0; i < numWorkflows; i++) {
+      await expect(TestGarbageCollection.testWorkflow(i)).resolves.toBe(i);
+      // Space out created_at so watermark batches split deterministically
+      await sleepms(5);
+    }
+
+    try {
+      const statements: string[] = [];
+      const spy = interceptStatusStatements(sysdb.pool, (sql) => {
+        statements.push(sql);
+        return undefined;
+      });
+      try {
+        await sysdb.garbageCollect(Date.now(), undefined, { batchSize });
+      } finally {
+        spy.mockRestore();
+      }
+
+      // One delete per full batch, plus the final remainder delete
+      const expected = Math.floor(numWorkflows / batchSize) + 1;
+      expect(statements.filter(isStatusDelete).length).toBe(expected);
+      // An unbatched implementation issues the same single delete when batchSize exceeds the
+      // row count, so the bounding probe is what proves the batch loop actually ran.
+      expect(statements.filter(isBatchProbe).length).toBe(expected);
+
+      // The blocked workflow is PENDING, so it survives
+      const workflows = await DBOS.listWorkflows({});
+      expect(workflows.length).toBe(1);
+      expect(workflows[0].workflowID).toEqual(handle.workflowID);
+    } finally {
+      // Released even if an assertion above failed, so one regression cannot strand a PENDING
+      // row and cascade into the other parameterized runs.
+      TestGarbageCollection.event.set();
+      await handle.getResult().catch(() => undefined);
+    }
+    await sysdb.garbageCollect(Date.now(), undefined, { batchSize });
+    await expect(DBOS.listWorkflows({})).resolves.toHaveLength(0);
+  });
+
+  test('test-garbage-collection-batched-rows-threshold', async () => {
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    await sysdb.garbageCollect(Date.now(), undefined, { batchSize: null });
+
+    const numWorkflows = 10;
+    const rowsThreshold = 4;
+    const workflowIDs: string[] = [];
+    for (let i = 0; i < numWorkflows; i++) {
+      const handle = await DBOS.startWorkflow(TestGarbageCollection).testWorkflow(i);
+      await expect(handle.getResult()).resolves.toBe(i);
+      workflowIDs.push(handle.workflowID);
+      await sleepms(5);
+    }
+
+    const statements: string[] = [];
+    const spy = interceptStatusStatements(sysdb.pool, (sql) => {
+      statements.push(sql);
+      return undefined;
+    });
+    try {
+      await sysdb.garbageCollect(undefined, rowsThreshold, { batchSize: 3 });
+    } finally {
+      spy.mockRestore();
+    }
+
+    // Exactly the newest rowsThreshold workflows survive
+    const surviving = new Set((await DBOS.listWorkflows({})).map((w) => w.workflowID));
+    expect(surviving).toEqual(new Set(workflowIDs.slice(-rowsThreshold)));
+
+    // The threshold leaves 6 eligible rows, so batches of 3 take two passes plus the remainder
+    const eligible = numWorkflows - rowsThreshold;
+    expect(statements.filter(isStatusDelete).length).toBe(Math.floor(eligible / 3) + 1);
+    expect(statements.filter(isBatchProbe).length).toBe(Math.floor(eligible / 3) + 1);
+
+    await sysdb.garbageCollect(Date.now(), undefined, { batchSize: 3 });
+  });
+
+  test('test-garbage-collection-batched-resumable', async () => {
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    await sysdb.garbageCollect(Date.now(), undefined, { batchSize: null });
+
+    const numWorkflows = 10;
+    const batchSize = 3;
+    for (let i = 0; i < numWorkflows; i++) {
+      await expect(TestGarbageCollection.testWorkflow(i)).resolves.toBe(i);
+      // Space out created_at so the first batch deletes exactly batchSize rows
+      await sleepms(5);
+    }
+
+    // Let the first delete through, then fail the second
+    let deleteCount = 0;
+    const spy = interceptStatusStatements(sysdb.pool, (sql) =>
+      isStatusDelete(sql) && ++deleteCount > 1 ? new Error('injected garbage collection failure') : undefined,
+    );
+    try {
+      await expect(sysdb.garbageCollect(Date.now(), undefined, { batchSize })).rejects.toThrow(
+        'injected garbage collection failure',
+      );
+    } finally {
+      spy.mockRestore();
+    }
+
+    // The first batch committed before the failure and was not rolled back
+    await expect(DBOS.listWorkflows({})).resolves.toHaveLength(numWorkflows - batchSize);
+
+    // Re-running completes the deletion
+    await sysdb.garbageCollect(Date.now(), undefined, { batchSize });
+    await expect(DBOS.listWorkflows({})).resolves.toHaveLength(0);
+  });
+
+  test('test-garbage-collection-retries-serialization-errors', async () => {
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    await sysdb.garbageCollect(Date.now(), undefined, { batchSize: null });
+
+    const numWorkflows = 6;
+    for (let i = 0; i < numWorkflows; i++) {
+      await expect(TestGarbageCollection.testWorkflow(i)).resolves.toBe(i);
+      await sleepms(5);
+    }
+
+    // A deadlock on the first batch is retried, so GC still drains the table
+    const codes = ['40P01', '40001'];
+    let failures = 0;
+    const retried = interceptStatusStatements(sysdb.pool, (sql) =>
+      isStatusDelete(sql) && failures < codes.length
+        ? Object.assign(new Error('deadlock detected'), { code: codes[failures++] })
+        : undefined,
+    );
+    try {
+      await sysdb.garbageCollect(Date.now(), undefined, { batchSize: 2 });
+    } finally {
+      retried.mockRestore();
+    }
+    expect(failures).toBe(codes.length);
+    await expect(DBOS.listWorkflows({})).resolves.toHaveLength(0);
+
+    // A non-serialization error propagates on the first attempt
+    for (let i = 0; i < numWorkflows; i++) {
+      await expect(TestGarbageCollection.testWorkflow(i)).resolves.toBe(i);
+    }
+    let attempts = 0;
+    const notRetried = interceptStatusStatements(sysdb.pool, (sql) => {
+      if (!isStatusDelete(sql)) return undefined;
+      attempts++;
+      return Object.assign(new Error('duplicate key'), { code: '23505' });
+    });
+    try {
+      await expect(sysdb.garbageCollect(Date.now(), undefined, { batchSize: 2 })).rejects.toThrow('duplicate key');
+    } finally {
+      notRetried.mockRestore();
+    }
+    expect(attempts).toBe(1);
+
+    // The unbatched path is wrapped by the same retry
+    let unbatchedDeletes = 0;
+    const unbatched = interceptStatusStatements(sysdb.pool, (sql) =>
+      isStatusDelete(sql) && unbatchedDeletes++ === 0
+        ? Object.assign(new Error('deadlock detected'), { code: '40001' })
+        : undefined,
+    );
+    try {
+      await sysdb.garbageCollect(Date.now(), undefined, { batchSize: null });
+    } finally {
+      unbatched.mockRestore();
+    }
+    // One injected failure, then the retried delete drained the table
+    expect(unbatchedDeletes).toBe(2);
+    await expect(DBOS.listWorkflows({})).resolves.toHaveLength(0);
+  });
+
+  test('test-garbage-collection-batch-size-validation', async () => {
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    for (const batchSize of [0, -1, 1.5, NaN]) {
+      await expect(sysdb.garbageCollect(Date.now(), undefined, { batchSize })).rejects.toThrow(
+        'batchSize must be a positive integer',
+      );
+    }
   });
 
   class TestGlobalTimeout {

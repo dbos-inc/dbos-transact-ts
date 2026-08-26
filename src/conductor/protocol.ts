@@ -505,6 +505,8 @@ export class ForkFromFailureResponse extends BaseResponse {
 export interface RetentionBody {
   gc_cutoff_epoch_ms?: number;
   gc_rows_threshold?: number;
+  // Absent from older Conductor versions, which take the default batch size.
+  gc_batch_size?: number | null;
   timeout_cutoff_epoch_ms?: number;
 }
 
