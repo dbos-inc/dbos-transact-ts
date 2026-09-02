@@ -15,7 +15,8 @@
         "types": "./dist/index.d.ts",
         "default": "./dist/index.js"
       }
-    }
+    },
+    "./package.json": "./package.json"
   },
   "homepage": "https://docs.dbos.dev/",
   "repository": {
@@ -24,7 +25,7 @@
     "directory": "packages/drizzle-datasource"
   },
   "scripts": {
-    "build": "tsc --project tsconfig.json && node -e \"require('fs').copyFileSync('dist/index.d.ts', 'dist/index.d.mts')\"",
+    "build": "tsc --project tsconfig.json && node -e \"const fs=require('fs');fs.writeFileSync('dist/index.d.mts',fs.readFileSync('dist/index.d.ts','utf8').replace(/^\\/\\/# sourceMappingURL=.*\\n?$/m,''))\"",
     "test": "jest --detectOpenHandles"
   },
   "dependencies": {
