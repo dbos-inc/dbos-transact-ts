@@ -5,6 +5,19 @@
   "license": "MIT",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      }
+    },
+    "./package.json": "./package.json"
+  },
   "homepage": "https://docs.dbos.dev/",
   "repository": {
     "type": "git",
@@ -12,7 +25,7 @@
     "directory": "packages/kysely-datasource"
   },
   "scripts": {
-    "build": "tsc --project tsconfig.json",
+    "build": "tsc --project tsconfig.json && node scripts/emit-esm-types.js",
     "test": "jest --detectOpenHandles"
   },
   "dependencies": {
