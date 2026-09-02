@@ -25,7 +25,7 @@
     "directory": "packages/drizzle-datasource"
   },
   "scripts": {
-    "build": "tsc --project tsconfig.json && node -e \"const fs=require('fs');fs.writeFileSync('dist/index.d.mts',fs.readFileSync('dist/index.d.ts','utf8').replace(/^\\/\\/# sourceMappingURL=.*\\n?$/m,''))\"",
+    "build": "tsc --project tsconfig.json && node scripts/emit-esm-types.js",
     "test": "jest --detectOpenHandles"
   },
   "dependencies": {
