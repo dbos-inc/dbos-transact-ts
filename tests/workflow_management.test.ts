@@ -1362,6 +1362,22 @@ describe('test-list-queues', () => {
       expect(await peerTryLock(otherKey)).toBe(true);
       await systemDBClient.query('SELECT pg_advisory_unlock($1)', [otherKey]);
 
+      // Rounds in different languages have to contend for one lock, so both the key and the
+      // single-bigint form are a contract: changing either splits the lock silently, leaving
+      // every SDK collecting at once and none of them the wiser.
+      expect(sysdb.schemaName).toBe('dbos');
+      const { rows: locks } = await systemDBClient.query<{ classid: string; objid: string; objsubid: number }>(
+        `SELECT classid, objid, objsubid FROM pg_locks WHERE locktype = 'advisory'`,
+      );
+      const advisory = locks.map((r) => ({
+        // objsubid 1 is the pg_try_advisory_lock(bigint) keyspace. The two-int form lands in
+        // objsubid 2 and never contends with it, same bits or not.
+        keyspace: r.objsubid,
+        key: BigInt.asIntN(64, (BigInt(r.classid) << 32n) | BigInt(r.objid)).toString(),
+      }));
+      // The leading 8 bytes of SHA-256 over "dbos.retention.dbos", big-endian signed.
+      expect(advisory).toContainEqual({ keyspace: 1, key: '7208852302618897048' });
+
       // The whole round is skipped, not just its payload half: nothing is collected.
       await garbageCollect(sysdb, Date.now() + 60_000);
       await expect(DBOS.listWorkflows({})).resolves.toHaveLength(numWorkflows);
