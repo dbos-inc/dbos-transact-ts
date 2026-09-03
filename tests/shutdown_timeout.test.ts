@@ -189,6 +189,8 @@ describe('shutdown-workflow-completion-timeout', () => {
         stopSawWorkflowDone = conductorOrder.state.done;
         this.isClosed = true;
       },
+      // No retention round to wait for.
+      awaitRetention: () => Promise.resolve(),
     };
     DBOS.conductor = fakeConductor as unknown as Conductor;
 
