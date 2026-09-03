@@ -11,7 +11,7 @@ import { Client, Pool, PoolClient } from 'pg';
 import { WorkflowHandle, WorkflowStatus } from '../src/workflow';
 import { randomUUID } from 'node:crypto';
 import { globalParams, sleepms } from '../src/utils';
-import { SystemDatabase } from '../src/system_database';
+import { retentionLockKey, SystemDatabase } from '../src/system_database';
 import { GlobalLogger } from '../src/telemetry/logs';
 import {
   garbageCollect,
@@ -1232,6 +1232,12 @@ describe('test-list-queues', () => {
     }
   });
 
+  /** CockroachDB has no advisory locks, so a round there always proceeds. */
+  async function hasAdvisoryLocks(client: Client): Promise<boolean> {
+    const { rows } = await client.query<{ version: string }>('SELECT version() AS version');
+    return !/cockroachdb/i.test(rows[0].version);
+  }
+
   /** Row counts of the three tables the payload sweep collects: inputs, outputs, steps. */
   async function payloadCounts(client: Client): Promise<[number, number, number]> {
     const countOf = async (table: string) => {
@@ -1289,15 +1295,17 @@ describe('test-list-queues', () => {
 
     // The advisory lock is what keeps two rounds from overlapping, so a round that cannot
     // take it must collect nothing at all.
-    const held = await sysdb.acquireRetentionLock();
-    expect(held).toBeDefined();
-    try {
-      await garbageCollect(sysdb, null, 1);
-    } finally {
-      await held!.release();
+    if (await hasAdvisoryLocks(systemDBClient)) {
+      const held = await sysdb.acquireRetentionLock();
+      expect(held).toBeDefined();
+      try {
+        await garbageCollect(sysdb, null, 1);
+      } finally {
+        await held!.release();
+      }
+      await expect(DBOS.listWorkflows({})).resolves.toHaveLength(numWorkflows);
+      await expect(payloadCounts(systemDBClient)).resolves.toEqual(full);
     }
-    await expect(DBOS.listWorkflows({})).resolves.toHaveLength(numWorkflows);
-    await expect(payloadCounts(systemDBClient)).resolves.toEqual(full);
 
     // Collect all but the newest. One round does both halves: the status sweep drops the
     // rows and the payload sweep collects what it left behind.
@@ -1313,6 +1321,64 @@ describe('test-list-queues', () => {
     await expect(DBOS.listWorkflowSteps(survivor.workflowID)).resolves.toHaveLength(1);
     const forked = await DBOS.forkWorkflow(survivor.workflowID, 1);
     await expect(forked.getResult()).resolves.toBe(expected);
+  });
+
+  test('test-retention-lock-serializes-rounds', async () => {
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    await garbageCollect(sysdb, Date.now());
+
+    const key = retentionLockKey(sysdb.schemaName).toString();
+    // From another session, so it reports what a peer executor's round would see.
+    const peerTryLock = async (lockKey: string) => {
+      const { rows } = await systemDBClient.query<{ locked: boolean }>('SELECT pg_try_advisory_lock($1) AS locked', [
+        lockKey,
+      ]);
+      return rows[0].locked;
+    };
+
+    if (!(await hasAdvisoryLocks(systemDBClient))) {
+      // Nothing to contend for, so a round always proceeds rather than not running at all.
+      const unguarded = await sysdb.acquireRetentionLock();
+      expect(unguarded).toBeDefined();
+      await unguarded!.release();
+      return;
+    }
+
+    const numWorkflows = 3;
+    for (let i = 0; i < numWorkflows; i++) {
+      await expect(TestGarbageCollection.testWorkflow(i)).resolves.toBe(i);
+    }
+
+    const held = await sysdb.acquireRetentionLock();
+    expect(held).toBeDefined();
+    try {
+      // A second round runs on its own session, so it cannot take a lock this one holds.
+      await expect(sysdb.acquireRetentionLock()).resolves.toBeUndefined();
+      expect(await peerTryLock(key)).toBe(false);
+
+      // Separate schemas take separate locks, so one schema's round never blocks another's.
+      const otherKey = retentionLockKey(`${sysdb.schemaName}_other`).toString();
+      expect(otherKey).not.toBe(key);
+      expect(await peerTryLock(otherKey)).toBe(true);
+      await systemDBClient.query('SELECT pg_advisory_unlock($1)', [otherKey]);
+
+      // The whole round is skipped, not just its payload half: nothing is collected.
+      await garbageCollect(sysdb, Date.now() + 60_000);
+      await expect(DBOS.listWorkflows({})).resolves.toHaveLength(numWorkflows);
+      await expect(payloadCounts(systemDBClient)).resolves.toEqual([numWorkflows, numWorkflows, numWorkflows]);
+    } finally {
+      await held!.release();
+    }
+
+    // Released in the database, not just in our own bookkeeping: closing the connection only
+    // returns the session to the pool, so the round has to unlock explicitly.
+    expect(await peerTryLock(key)).toBe(true);
+    await systemDBClient.query('SELECT pg_advisory_unlock($1)', [key]);
+
+    // The same round now runs to completion.
+    await garbageCollect(sysdb, Date.now() + 60_000);
+    await expect(DBOS.listWorkflows({})).resolves.toHaveLength(0);
+    await expect(payloadCounts(systemDBClient)).resolves.toEqual([0, 0, 0]);
   });
 
   test('test-payloads-survive-while-their-status-row-does', async () => {
