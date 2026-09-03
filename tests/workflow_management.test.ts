@@ -1393,6 +1393,28 @@ describe('test-list-queues', () => {
     }
   });
 
+  test('test-destroy-stops-retention-on-a-pool-it-does-not-own', async () => {
+    // destroy() never closes a user-supplied pool, so the pool would not refuse a cut round's
+    // next borrow. The system database has to refuse it itself, or the round sweeps on
+    // without its lock against a database we have left.
+    const pool = new Pool({ connectionString: config.systemDatabaseUrl });
+    const sysdb = new SystemDatabase(config.systemDatabaseUrl!, new GlobalLogger(), DBOSJSON, undefined, pool);
+    try {
+      // Live before destroy, so the refusal below is destroy's doing.
+      const lock = await sysdb.acquireRetentionLock();
+      expect(lock).toBeDefined();
+      await lock!.release();
+
+      await sysdb.destroy();
+      await expect(sysdb.acquireRetentionLock()).rejects.toThrow('System database shutting down');
+      await expect(sysdb.garbageCollectPayloads(cutoffPastAllCompletions())).rejects.toThrow(
+        'System database shutting down',
+      );
+    } finally {
+      await pool.end();
+    }
+  });
+
   test('test-payload-garbage-collection', async () => {
     const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
     // Earlier tests in this describe share the database, so start from an empty table.

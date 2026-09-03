@@ -1038,6 +1038,9 @@ export class SystemDatabase {
 
   /** Borrow a connection for a retention round, so destroy() can cut it. */
   async #borrowRetentionClient(): Promise<PoolClient> {
+    if (this.#destroyed) {
+      throw new Error('System database shutting down');
+    }
     const client = await this.#connect();
     this.#retentionClients.add(client);
     return client;
@@ -1200,7 +1203,13 @@ export class SystemDatabase {
     // error, each connection is destroyed at once, the idle lock session lets go of the
     // advisory lock, and the round fails on its next statement instead of holding shutdown.
     for (const client of this.#retentionClients) {
-      client.release(new Error('System database shutting down'));
+      // Cover the release() call itself, which tears the connection down and can surface a socket error.
+      client.on('error', () => {});
+      try {
+        client.release(new Error('System database shutting down'));
+      } catch (e) {
+        this.logger.warn(`Error releasing a retention connection: ${String(e)}`);
+      }
     }
     this.#retentionClients.clear();
     // We attached nothing to the pool object itself, so there is nothing to unpick; only close one we own.
