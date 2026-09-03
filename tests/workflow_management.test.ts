@@ -1,6 +1,7 @@
 import { GetWorkflowsInput, StatusString, DBOS, DBOSClient } from '../src';
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import {
+  cutoffPastAllCompletions,
   generateDBOSTestConfig,
   setUpDBOSTestSysDb,
   Event,
@@ -892,6 +893,9 @@ describe('test-list-queues', () => {
 
     @DBOS.workflow()
     static async blockedWorkflow() {
+      // A recorded step, so what the sweep spares covers the checkpoints a replay would
+      // read and not only the inputs.
+      await TestGarbageCollection.testStep(0);
       await TestGarbageCollection.event.wait();
       return DBOS.workflowID;
     }
@@ -919,7 +923,7 @@ describe('test-list-queues', () => {
     expect(workflows[0].workflowID).toEqual(handle.workflowID);
 
     // Garbage collect all completed workflows
-    await DBOSExecutor.globalInstance!.systemDatabase.garbageCollect(Date.now(), undefined);
+    await DBOSExecutor.globalInstance!.systemDatabase.garbageCollect(cutoffPastAllCompletions(), undefined);
     // Verify only the blocked workflow remains
     workflows = await DBOS.listWorkflows({});
     expect(workflows.length).toBe(1);
@@ -928,7 +932,7 @@ describe('test-list-queues', () => {
     // Finish the blocked workflow, garbage collect everything
     TestGarbageCollection.event.set();
     await expect(handle.getResult()).resolves.toBeTruthy();
-    await DBOSExecutor.globalInstance!.systemDatabase.garbageCollect(Date.now(), undefined);
+    await DBOSExecutor.globalInstance!.systemDatabase.garbageCollect(cutoffPastAllCompletions(), undefined);
     workflows = await DBOS.listWorkflows({});
     expect(workflows.length).toBe(0);
 
@@ -957,7 +961,7 @@ describe('test-list-queues', () => {
       enqueueOptions: { delaySeconds: 60 },
     }).gcQueuedWorkflow();
     expect((await delayedHandle.getStatus())?.status).toBe(StatusString.DELAYED);
-    await DBOSExecutor.globalInstance!.systemDatabase.garbageCollect(Date.now(), undefined);
+    await DBOSExecutor.globalInstance!.systemDatabase.garbageCollect(cutoffPastAllCompletions(), undefined);
     const gcWorkflows = await DBOS.listWorkflows({});
     const gcWfIds = new Set(gcWorkflows.map((w) => w.workflowID));
     expect(gcWfIds.has(enqueuedHandle.workflowID)).toBe(true);
@@ -968,7 +972,7 @@ describe('test-list-queues', () => {
     await DBOS.cancelWorkflow(delayedHandle.workflowID);
 
     // Conductor sends a disabled threshold as JSON null, not undefined
-    await DBOSExecutor.globalInstance!.systemDatabase.garbageCollect(Date.now(), null);
+    await DBOSExecutor.globalInstance!.systemDatabase.garbageCollect(cutoffPastAllCompletions(), null);
     await DBOSExecutor.globalInstance!.systemDatabase.garbageCollect(null, 1);
     await expect(DBOSExecutor.globalInstance!.systemDatabase.garbageCollect(null, null)).resolves.toBeUndefined();
 
@@ -991,7 +995,9 @@ describe('test-list-queues', () => {
     for (let i = 0; i < numWorkflows; i++) {
       await expect(TestGarbageCollection.testWorkflow(i)).resolves.toBe(i);
     }
-    await DBOSExecutor.globalInstance!.systemDatabase.garbageCollect(Date.now(), undefined, { batchSize: null });
+    await DBOSExecutor.globalInstance!.systemDatabase.garbageCollect(cutoffPastAllCompletions(), undefined, {
+      batchSize: null,
+    });
     await expect(DBOS.listWorkflows({})).resolves.toHaveLength(0);
   });
 
@@ -1042,7 +1048,7 @@ describe('test-list-queues', () => {
   test.each([3, 5, 20])('test-garbage-collection-batched (batchSize=%i)', async (batchSize) => {
     const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
     // Earlier tests in this describe share the database, so start from an empty table.
-    await sysdb.garbageCollect(Date.now(), undefined, { batchSize: null });
+    await sysdb.garbageCollect(cutoffPastAllCompletions(), undefined, { batchSize: null });
 
     const numWorkflows = 10;
     // The event is a shared latch that earlier tests leave set.
@@ -1061,7 +1067,7 @@ describe('test-list-queues', () => {
         return undefined;
       });
       try {
-        await sysdb.garbageCollect(Date.now(), undefined, { batchSize });
+        await sysdb.garbageCollect(cutoffPastAllCompletions(), undefined, { batchSize });
       } finally {
         spy.mockRestore();
       }
@@ -1083,13 +1089,13 @@ describe('test-list-queues', () => {
       TestGarbageCollection.event.set();
       await handle.getResult().catch(() => undefined);
     }
-    await sysdb.garbageCollect(Date.now(), undefined, { batchSize });
+    await sysdb.garbageCollect(cutoffPastAllCompletions(), undefined, { batchSize });
     await expect(DBOS.listWorkflows({})).resolves.toHaveLength(0);
   });
 
   test('test-garbage-collection-batched-rows-threshold', async () => {
     const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
-    await sysdb.garbageCollect(Date.now(), undefined, { batchSize: null });
+    await sysdb.garbageCollect(cutoffPastAllCompletions(), undefined, { batchSize: null });
 
     const numWorkflows = 10;
     const rowsThreshold = 4;
@@ -1099,6 +1105,17 @@ describe('test-list-queues', () => {
       await expect(handle.getResult()).resolves.toBe(i);
       workflowIDs.push(handle.workflowID);
       await sleepms(5);
+    }
+    // Enqueued after the completed rows, so they are the newest by created_at. In-flight
+    // rows must not count toward the threshold: otherwise a backlog consumes the whole
+    // quota and every completed workflow is collected.
+    const backlogIDs: string[] = [];
+    for (let i = 0; i < numWorkflows; i++) {
+      const handle = await DBOS.startWorkflow(TestGarbageCollection, {
+        queueName: TestGarbageCollection.queue.name,
+        enqueueOptions: { delaySeconds: 60 },
+      }).gcQueuedWorkflow();
+      backlogIDs.push(handle.workflowID);
     }
 
     const statements: string[] = [];
@@ -1112,21 +1129,24 @@ describe('test-list-queues', () => {
       spy.mockRestore();
     }
 
-    // Exactly the newest rowsThreshold workflows survive
+    // Exactly the newest rowsThreshold completed workflows survive, alongside the backlog
     const surviving = new Set((await DBOS.listWorkflows({})).map((w) => w.workflowID));
-    expect(surviving).toEqual(new Set(workflowIDs.slice(-rowsThreshold)));
+    expect(surviving).toEqual(new Set([...workflowIDs.slice(-rowsThreshold), ...backlogIDs]));
 
     // The threshold leaves 6 eligible rows, so batches of 3 take two passes plus the remainder
     const eligible = numWorkflows - rowsThreshold;
     expect(statements.filter(isStatusDelete).length).toBe(Math.floor(eligible / 3) + 1);
     expect(statements.filter(isBatchProbe).length).toBe(Math.floor(eligible / 3) + 1);
 
-    await sysdb.garbageCollect(Date.now(), undefined, { batchSize: 3 });
+    for (const workflowID of backlogIDs) {
+      await DBOS.cancelWorkflow(workflowID);
+    }
+    await sysdb.garbageCollect(cutoffPastAllCompletions(), undefined, { batchSize: 3 });
   });
 
   test('test-garbage-collection-collects-rows-that-terminalize-mid-sweep', async () => {
     const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
-    await sysdb.garbageCollect(Date.now(), undefined);
+    await sysdb.garbageCollect(cutoffPastAllCompletions(), undefined);
 
     // A row that terminalizes mid-pass takes completed_at > cutoff and cannot fall below the
     // watermark, but an imported row lands with whatever completed_at it carries. The final
@@ -1171,7 +1191,7 @@ describe('test-list-queues', () => {
 
   test('test-garbage-collection-batched-resumable', async () => {
     const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
-    await sysdb.garbageCollect(Date.now(), undefined, { batchSize: null });
+    await sysdb.garbageCollect(cutoffPastAllCompletions(), undefined, { batchSize: null });
 
     const numWorkflows = 10;
     const batchSize = 3;
@@ -1187,7 +1207,7 @@ describe('test-list-queues', () => {
       isStatusDelete(sql) && ++deleteCount > 1 ? new Error('injected garbage collection failure') : undefined,
     );
     try {
-      await expect(sysdb.garbageCollect(Date.now(), undefined, { batchSize })).rejects.toThrow(
+      await expect(sysdb.garbageCollect(cutoffPastAllCompletions(), undefined, { batchSize })).rejects.toThrow(
         'injected garbage collection failure',
       );
     } finally {
@@ -1198,13 +1218,13 @@ describe('test-list-queues', () => {
     await expect(DBOS.listWorkflows({})).resolves.toHaveLength(numWorkflows - batchSize);
 
     // Re-running completes the deletion
-    await sysdb.garbageCollect(Date.now(), undefined, { batchSize });
+    await sysdb.garbageCollect(cutoffPastAllCompletions(), undefined, { batchSize });
     await expect(DBOS.listWorkflows({})).resolves.toHaveLength(0);
   });
 
   test('test-garbage-collection-retries-serialization-errors', async () => {
     const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
-    await sysdb.garbageCollect(Date.now(), undefined, { batchSize: null });
+    await sysdb.garbageCollect(cutoffPastAllCompletions(), undefined, { batchSize: null });
 
     const numWorkflows = 6;
     for (let i = 0; i < numWorkflows; i++) {
@@ -1221,7 +1241,7 @@ describe('test-list-queues', () => {
         : undefined,
     );
     try {
-      await sysdb.garbageCollect(Date.now(), undefined, { batchSize: 2 });
+      await sysdb.garbageCollect(cutoffPastAllCompletions(), undefined, { batchSize: 2 });
     } finally {
       retried.mockRestore();
     }
@@ -1239,7 +1259,9 @@ describe('test-list-queues', () => {
       return Object.assign(new Error('duplicate key'), { code: '23505' });
     });
     try {
-      await expect(sysdb.garbageCollect(Date.now(), undefined, { batchSize: 2 })).rejects.toThrow('duplicate key');
+      await expect(sysdb.garbageCollect(cutoffPastAllCompletions(), undefined, { batchSize: 2 })).rejects.toThrow(
+        'duplicate key',
+      );
     } finally {
       notRetried.mockRestore();
     }
@@ -1253,7 +1275,7 @@ describe('test-list-queues', () => {
         : undefined,
     );
     try {
-      await sysdb.garbageCollect(Date.now(), undefined, { batchSize: null });
+      await sysdb.garbageCollect(cutoffPastAllCompletions(), undefined, { batchSize: null });
     } finally {
       remainder.mockRestore();
     }
@@ -1267,7 +1289,7 @@ describe('test-list-queues', () => {
     for (const batchSize of [0, -1, 1.5, NaN]) {
       // Both sweeps take a batch size, so both have to reject a nonsensical one before it
       // reaches SQL and leaves a round half-applied.
-      await expect(sysdb.garbageCollect(Date.now(), undefined, { batchSize })).rejects.toThrow(
+      await expect(sysdb.garbageCollect(cutoffPastAllCompletions(), undefined, { batchSize })).rejects.toThrow(
         'batchSize must be a positive integer',
       );
       await expect(sysdb.garbageCollectPayloads(Date.now(), batchSize)).rejects.toThrow(
@@ -1322,7 +1344,7 @@ describe('test-list-queues', () => {
   test('test-payload-garbage-collection', async () => {
     const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
     // Earlier tests in this describe share the database, so start from an empty table.
-    await garbageCollect(sysdb, Date.now());
+    await garbageCollect(sysdb, cutoffPastAllCompletions());
 
     const numWorkflows = 5;
     for (let i = 0; i < numWorkflows; i++) {
@@ -1369,7 +1391,7 @@ describe('test-list-queues', () => {
 
   test('test-retention-lock-serializes-rounds', async () => {
     const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
-    await garbageCollect(sysdb, Date.now());
+    await garbageCollect(sysdb, cutoffPastAllCompletions());
 
     const key = retentionLockKey(sysdb.schemaName).toString();
     // From another session, so it reports what a peer executor's round would see.
@@ -1443,7 +1465,7 @@ describe('test-list-queues', () => {
 
   test('test-garbage-collection-spans-every-application', async () => {
     const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
-    await garbageCollect(sysdb, Date.now());
+    await garbageCollect(sysdb, cutoffPastAllCompletions());
 
     await expect(TestGarbageCollection.testWorkflow(1)).resolves.toBe(1);
     const peerID = `peer-${randomUUID()}`;
@@ -1470,7 +1492,7 @@ describe('test-list-queues', () => {
 
   test('test-payload-gc-spares-a-straggler-then-reclaims-it', async () => {
     const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
-    await garbageCollect(sysdb, Date.now());
+    await garbageCollect(sysdb, cutoffPastAllCompletions());
 
     // A workflow older than the cutoff that still has a status row keeps its payload across
     // repeated rounds: it may yet recover or be forked.
@@ -1484,7 +1506,8 @@ describe('test-list-queues', () => {
       for (let round = 0; round < 3; round++) {
         await garbageCollect(sysdb, Date.now() + 60_000);
         await expect(DBOS.listWorkflows({})).resolves.toHaveLength(1);
-        await expect(payloadCounts(systemDBClient)).resolves.toEqual([1, 0, 0]);
+        // Its input and its one checkpoint; no output yet, since it has not finished.
+        await expect(payloadCounts(systemDBClient)).resolves.toEqual([1, 0, 1]);
         expect(await orphanedStatusRows(systemDBClient)).toEqual([0, 0]);
       }
       // Its inputs survived every sweep, so it still runs.
@@ -1503,7 +1526,7 @@ describe('test-list-queues', () => {
 
   test('test-payload-gc-never-orphans-a-status-row', async () => {
     const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
-    await garbageCollect(sysdb, Date.now());
+    await garbageCollect(sysdb, cutoffPastAllCompletions());
 
     // Across a mixed population and repeated sweeps, no surviving status row ever loses the
     // payload a reader could still ask for.
@@ -1543,7 +1566,7 @@ describe('test-list-queues', () => {
 
   test('test-payload-gc-batches-by-watermark', async () => {
     const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
-    await garbageCollect(sysdb, Date.now());
+    await garbageCollect(sysdb, cutoffPastAllCompletions());
 
     const numWorkflows = 7;
     for (let i = 0; i < numWorkflows; i++) {
@@ -1554,12 +1577,25 @@ describe('test-list-queues', () => {
     await systemDBClient.query(`DELETE FROM dbos.workflow_status`);
     await expect(payloadCounts(systemDBClient)).resolves.toEqual([numWorkflows, numWorkflows, numWorkflows]);
 
-    // A batch smaller than the table forces the watermark loop to run more than once.
-    await expect(sysdb.garbageCollectPayloads(Date.now() + 60_000, 2)).resolves.toEqual([
-      numWorkflows,
-      numWorkflows,
-      numWorkflows,
-    ]);
+    // A batch smaller than the table forces the watermark loop to run more than once. The
+    // sweep's deletes name workflow_status in their anti-join, so the interceptor sees them.
+    const isInputDelete = (sql: string) => /^\s*DELETE\s+FROM\s+"[^"]*"\.workflow_input\b/i.test(sql);
+    const statements: string[] = [];
+    const spy = interceptStatusStatements(sysdb.pool, (sql) => {
+      statements.push(sql);
+      return undefined;
+    });
+    try {
+      await expect(sysdb.garbageCollectPayloads(Date.now() + 60_000, 2)).resolves.toEqual([
+        numWorkflows,
+        numWorkflows,
+        numWorkflows,
+      ]);
+    } finally {
+      spy.mockRestore();
+    }
+    // One delete per full batch, plus the final remainder delete
+    expect(statements.filter(isInputDelete).length).toBe(Math.floor(numWorkflows / 2) + 1);
     await expect(payloadCounts(systemDBClient)).resolves.toEqual([0, 0, 0]);
   });
 

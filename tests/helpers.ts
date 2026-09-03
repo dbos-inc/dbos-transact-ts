@@ -258,3 +258,13 @@ export async function causeChaos(db: string): Promise<void> {
     } catch (err) {}
   }
 }
+
+/**
+ * A cutoff every completion so far falls strictly before. completed_at is stamped by the
+ * database and rounded to the millisecond, while a wall-clock cutoff taken right after a
+ * workflow finishes truncates, so the two can land on the same value and spare the row.
+ * Only rows with no completed_at need to survive these cutoffs.
+ */
+export function cutoffPastAllCompletions(): number {
+  return Date.now() + 1000;
+}

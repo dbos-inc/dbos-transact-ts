@@ -219,25 +219,44 @@ describe('conductor-retention-dispatch', () => {
 
   test('skips a round while the previous one on this executor is still running', async () => {
     const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    const logger = DBOSExecutor.globalInstance!.logger;
     await expect(retentionWorkflow(1)).resolves.toBe(1);
 
-    // Held from the test, so a round that reaches the system database cannot get past the
-    // lock and collect. Both requests must still be answered.
-    const held = await sysdb.acquireRetentionLock();
+    // The first round parks on its lock acquisition until the test lets it go, so the second
+    // request is guaranteed to arrive while it is still running. It then resolves to "not
+    // acquired", so that round ends without collecting either.
+    let openGate!: (lock: undefined) => void;
+    const gate = new Promise<undefined>((resolve) => (openGate = resolve));
+    const acquire = jest.spyOn(sysdb, 'acquireRetentionLock').mockImplementationOnce(() => gate);
+    const warn = jest.spyOn(logger, 'warn');
     try {
-      for (const requestID of ['round-a', 'round-b']) {
+      const request = (requestID: string) =>
         conductorSocket.send(
           JSON.stringify(new protocol.RetentionRequest(requestID, { gc_cutoff_epoch_ms: Date.now() + 60_000 })),
         );
-      }
+      request('round-a');
+      await retryUntilSuccess(() => {
+        expect(acquire).toHaveBeenCalledTimes(1);
+      });
+
+      // Skipped by the executor, before it ever reaches the database.
+      request('round-b');
+      await retryUntilSuccess(() => {
+        expect(warn).toHaveBeenCalledWith('Skipping retention: the previous round on this executor is still running.');
+      });
+      expect(acquire).toHaveBeenCalledTimes(1);
+
+      openGate(undefined);
+      // Both requests are answered, and neither collected anything.
       await retryUntilSuccess(() => {
         expect(answersTo('round-a')).toHaveLength(1);
         expect(answersTo('round-b')).toHaveLength(1);
       });
-      // Neither round got past the lock, so the workflow is still there.
       await expect(DBOS.listWorkflows({})).resolves.toHaveLength(1);
     } finally {
-      await held?.release();
+      openGate(undefined);
+      warn.mockRestore();
+      acquire.mockRestore();
     }
   });
 });

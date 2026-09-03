@@ -5,6 +5,7 @@ import { ensureTestDatabase } from './helpers';
 import { randomUUID } from 'node:crypto';
 import { Client } from 'pg';
 import { garbageCollect } from '../src/workflow_management';
+import { cutoffPastAllCompletions } from './helpers';
 
 const cockroachdbUrl = process.env.DBOS_COCKROACHDB_URL;
 const describeIf = cockroachdbUrl ? describe : describe.skip;
@@ -213,9 +214,13 @@ describeIf('cockroachdb', () => {
     const warn = jest.spyOn(sysdb.logger, 'warn');
     try {
       await client.connect();
+      // The describe shares one database, so earlier tests leave completed rows behind.
+      // Collect them first, and scope every assertion below to the rows this test makes.
+      await garbageCollect(sysdb, cutoffPastAllCompletions());
+      const ours = new Set<string>();
       const payloadIDs = async (table: string) => {
         const { rows } = await client.query<{ workflow_uuid: string }>(`SELECT workflow_uuid FROM dbos.${table}`);
-        return new Set(rows.map((r) => r.workflow_uuid));
+        return new Set(rows.map((r) => r.workflow_uuid).filter((id) => ours.has(id)));
       };
 
       // Enqueued first, so these are the oldest rows. A delay keeps them DELAYED, so the
@@ -227,6 +232,7 @@ describeIf('cockroachdb', () => {
           enqueueOptions: { delaySeconds: 60 },
         }).testWorkflow(`crdb-straggler-${i}`);
         stragglers.push(handle.workflowID);
+        ours.add(handle.workflowID);
       }
 
       const rowsThreshold = 3;
@@ -235,8 +241,9 @@ describeIf('cockroachdb', () => {
         const handle = await DBOS.startWorkflow(CRDBTestClass).testWorkflow(`crdb-gc-${i}`);
         await expect(handle.getResult()).resolves.toBe(`CRDB-GC-${i}`);
         completed.push(handle.workflowID);
+        ours.add(handle.workflowID);
       }
-      expect(await payloadIDs('workflow_input')).toEqual(new Set([...stragglers, ...completed]));
+      expect(await payloadIDs('workflow_input')).toEqual(ours);
 
       // Inside a held lock: CockroachDB stubs advisory locks out, so a round must still run
       // rather than skip itself into never collecting.
@@ -251,7 +258,7 @@ describeIf('cockroachdb', () => {
       // The newest completed rows survive, as do the stragglers the sweep cannot touch.
       const collected = new Set(completed.slice(0, -rowsThreshold));
       const retained = new Set([...completed.slice(-rowsThreshold), ...stragglers]);
-      const listed = new Set((await DBOS.listWorkflows({})).map((w) => w.workflowID));
+      const listed = new Set((await DBOS.listWorkflows({})).map((w) => w.workflowID).filter((id) => ours.has(id)));
       expect(listed).toEqual(retained);
 
       // Payloads follow their workflows: collected ones gone, in-flight ones spared.

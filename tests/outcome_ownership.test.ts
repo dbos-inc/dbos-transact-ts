@@ -150,13 +150,17 @@ async function rewriteRowWith(
   );
 }
 
-/** The outcome a reader resolves: the payload table, falling back to the legacy columns. */
+/**
+ * The status row and the payload table's outcome. Read directly rather than through the
+ * fallback a reader uses, so a run that wrongly cleared the payload row cannot hide behind
+ * the legacy column the rewrite also filled.
+ */
 async function readOutcome(
   client: Client,
   workflowID: string,
 ): Promise<{ status: string; output: string | null; error: string | null }> {
   const { rows } = await client.query<{ status: string; output: string | null; error: string | null }>(
-    `SELECT ws.status, COALESCE(wo.output, ws.output) AS output, COALESCE(wo.error, ws.error) AS error
+    `SELECT ws.status, wo.output, wo.error
      FROM dbos.workflow_status ws
      LEFT JOIN dbos.workflow_output wo ON wo.workflow_uuid = ws.workflow_uuid
      WHERE ws.workflow_uuid=$1`,

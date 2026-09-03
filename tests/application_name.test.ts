@@ -2,7 +2,7 @@ import { Client } from 'pg';
 import { DBOS, DBOSClient, StatusString } from '../src';
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import { garbageCollect, globalTimeout } from '../src/workflow_management';
-import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
+import { cutoffPastAllCompletions, generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
 import { globalParams } from '../src/utils';
 import type { GetWorkflowsInput } from '../src/workflow';
 
@@ -434,10 +434,12 @@ describe('application-name', () => {
     await insertPeerWorkflow(client, 'appname-gc-peer', { status: StatusString.SUCCESS, createdAt: old });
     await insertPeerWorkflow(client, 'appname-gc-peer-pending', { status: StatusString.PENDING, createdAt: old });
 
-    // Retention spans every application, so the peer's old terminal row goes too.
-    await garbageCollect(DBOSExecutor.globalInstance!.systemDatabase, Date.now(), undefined);
-    const peerRows = await client.query(`SELECT 1 FROM dbos.workflow_status WHERE workflow_uuid = 'appname-gc-peer'`);
-    expect(peerRows.rowCount).toBe(0);
+    // Retention spans every application, so the peer's old terminal row goes along with ours.
+    await garbageCollect(DBOSExecutor.globalInstance!.systemDatabase, cutoffPastAllCompletions(), undefined);
+    const collected = await client.query(`SELECT 1 FROM dbos.workflow_status WHERE workflow_uuid = ANY($1)`, [
+      ['appname-gc-peer', mine.workflowID],
+    ]);
+    expect(collected.rowCount).toBe(0);
 
     // Timing out cancels running work, so it stays scoped: a peer's in-flight workflow is left alone.
     await globalTimeout(DBOSExecutor.globalInstance!.systemDatabase, Date.now());
