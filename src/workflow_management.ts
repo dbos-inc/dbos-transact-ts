@@ -114,6 +114,39 @@ export async function toWorkflowStatus(
   };
 }
 
+/** Enforce retention across the entire system database. */
+export async function garbageCollect(
+  sysdb: SystemDatabase,
+  cutoffEpochTimestampMs?: number | null,
+  rowsThreshold?: number | null,
+  options: { batchSize?: number | null } = {},
+): Promise<void> {
+  if (
+    (cutoffEpochTimestampMs === undefined || cutoffEpochTimestampMs === null) &&
+    (rowsThreshold === undefined || rowsThreshold === null)
+  ) {
+    return;
+  }
+  const lock = await sysdb.acquireRetentionLock();
+  if (!lock) {
+    sysdb.logger.warn('Skipping retention: another round is already running against this system database.');
+    return;
+  }
+  try {
+    // Both sweeps take the same batch size, and both default it the same way when unset.
+    const batchSize = options.batchSize ?? undefined;
+    const cutoff = await sysdb.garbageCollect(cutoffEpochTimestampMs, rowsThreshold, { batchSize });
+    if (cutoff === undefined) {
+      return;
+    }
+    // Strictly after the status sweep: the payload sweep only takes orphans, so this round's
+    // are only visible to it once that sweep has committed.
+    await sysdb.garbageCollectPayloads(cutoff, batchSize);
+  } finally {
+    await lock.release();
+  }
+}
+
 export async function globalTimeout(sysdb: SystemDatabase, cutoffEpochTimestampMs: number): Promise<void> {
   // IDs only, so a bulk timeout does not deserialize every row's inputs and outputs.
   for (const workflowID of await sysdb.listTimedOutWorkflowIds(cutoffEpochTimestampMs)) {

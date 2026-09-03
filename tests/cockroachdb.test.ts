@@ -4,6 +4,7 @@ import { dropPGDatabase } from '../src/database_utils';
 import { ensureTestDatabase } from './helpers';
 import { randomUUID } from 'node:crypto';
 import { Client } from 'pg';
+import { garbageCollect } from '../src/workflow_management';
 
 const cockroachdbUrl = process.env.DBOS_COCKROACHDB_URL;
 const describeIf = cockroachdbUrl ? describe : describe.skip;
@@ -202,5 +203,39 @@ describeIf('cockroachdb', () => {
       await client.end();
     }
     expect(await handle.getResult()).toBe('hello');
+  });
+
+  test('retention', async () => {
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    const client = new Client(config.systemDatabaseUrl);
+    try {
+      await client.connect();
+      const countOf = async (table: string) => {
+        const { rows } = await client.query<{ count: string }>(`SELECT COUNT(*) AS count FROM dbos.${table}`);
+        return Number(rows[0].count);
+      };
+
+      const numWorkflows = 3;
+      for (let i = 0; i < numWorkflows; i++) {
+        await expect(CRDBTestClass.testWorkflow(`crdb-gc-${i}`)).resolves.toBe(`CRDB-GC-${i}`);
+      }
+      expect(await countOf('workflow_input')).toBeGreaterThanOrEqual(numWorkflows);
+      expect(await countOf('workflow_output')).toBeGreaterThanOrEqual(numWorkflows);
+
+      // CockroachDB has no advisory locks, so a round always proceeds; it collects
+      // unprotected rather than not at all.
+      const lock = await sysdb.acquireRetentionLock();
+      expect(lock).toBeDefined();
+      await lock!.release();
+
+      // One round takes the status rows and then the payloads they left behind.
+      await garbageCollect(sysdb, Date.now() + 60_000);
+      await expect(DBOS.listWorkflows({})).resolves.toHaveLength(0);
+      for (const table of ['workflow_input', 'workflow_output', 'operation_outputs']) {
+        expect(await countOf(table)).toBe(0);
+      }
+    } finally {
+      await client.end();
+    }
   });
 });

@@ -1003,7 +1003,10 @@ describe('DBOSClient', () => {
       // The row must carry the portable encoding, which is the whole point of this entry
       // point: a peer in another language has to be able to read these inputs.
       const written = await txClient.query<workflow_status>(
-        'SELECT serialization, inputs FROM dbos.workflow_status WHERE workflow_uuid = $1',
+        `SELECT ws.serialization, wi.inputs
+         FROM dbos.workflow_status ws
+         JOIN dbos.workflow_input wi ON wi.workflow_uuid = ws.workflow_uuid
+         WHERE ws.workflow_uuid = $1`,
         [wfid],
       );
       expect(written.rows[0].serialization).toBe('portable_json');

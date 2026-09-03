@@ -1,7 +1,7 @@
 import { Client } from 'pg';
 import { DBOS, DBOSClient, StatusString } from '../src';
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
-import { globalTimeout } from '../src/workflow_management';
+import { garbageCollect, globalTimeout } from '../src/workflow_management';
 import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
 import { globalParams } from '../src/utils';
 import type { GetWorkflowsInput } from '../src/workflow';
@@ -45,17 +45,27 @@ async function insertPeerStep(
 async function insertPeerWorkflow(
   client: Client,
   id: string,
-  options: { queueName?: string; status?: string; applicationName?: string | null; createdAt?: number } = {},
+  options: {
+    queueName?: string;
+    status?: string;
+    applicationName?: string | null;
+    createdAt?: number;
+    completedAt?: number | null;
+  } = {},
 ): Promise<void> {
   const now = options.createdAt ?? Date.now();
+  const status = options.status ?? StatusString.ENQUEUED;
+  // Terminal rows carry completed_at, as ones written by DBOS itself do.
+  const terminal = status === StatusString.SUCCESS || status === StatusString.ERROR;
+  const completedAt = 'completedAt' in options ? options.completedAt : terminal ? now : null;
   // An explicit null means unclaimed, which `??` would otherwise swallow.
   const owner = 'applicationName' in options ? options.applicationName : PEER;
   await client.query(
     `INSERT INTO dbos.workflow_status
        (workflow_uuid, status, name, queue_name, executor_id, application_id, created_at, updated_at,
-        recovery_attempts, priority, inputs, serialization, application_name)
-     VALUES ($1, $2, 'peerWorkflow', $3, 'local', '', $4, $4, 0, 0, '{"positionalArgs":[]}', 'portable_json', $5)`,
-    [id, options.status ?? StatusString.ENQUEUED, options.queueName ?? null, now, owner],
+        completed_at, recovery_attempts, priority, inputs, serialization, application_name)
+     VALUES ($1, $2, 'peerWorkflow', $3, 'local', '', $4, $4, $5, 0, 0, '{"positionalArgs":[]}', 'portable_json', $6)`,
+    [id, status, options.queueName ?? null, now, completedAt, owner],
   );
 }
 
@@ -408,7 +418,7 @@ describe('application-name', () => {
     expect(rows[0].application_name).toBe(PEER);
   });
 
-  test('bulk operations spare another application', async () => {
+  test('bulk operations across applications', async () => {
     class BulkTest {
       @DBOS.workflow()
       static async aWorkflow(): Promise<string> {
@@ -424,11 +434,12 @@ describe('application-name', () => {
     await insertPeerWorkflow(client, 'appname-gc-peer', { status: StatusString.SUCCESS, createdAt: old });
     await insertPeerWorkflow(client, 'appname-gc-peer-pending', { status: StatusString.PENDING, createdAt: old });
 
-    // Garbage collection deletes only what this application owns, plus unclaimed rows.
-    await DBOSExecutor.globalInstance!.systemDatabase.garbageCollect(Date.now(), undefined);
-    expect(await ownerOf(client, 'workflow_status', 'workflow_uuid', 'appname-gc-peer')).toBe(PEER);
+    // Retention spans every application, so the peer's old terminal row goes too.
+    await garbageCollect(DBOSExecutor.globalInstance!.systemDatabase, Date.now(), undefined);
+    const peerRows = await client.query(`SELECT 1 FROM dbos.workflow_status WHERE workflow_uuid = 'appname-gc-peer'`);
+    expect(peerRows.rowCount).toBe(0);
 
-    // A global timeout leaves the peer's in-flight workflow alone.
+    // Timing out cancels running work, so it stays scoped: a peer's in-flight workflow is left alone.
     await globalTimeout(DBOSExecutor.globalInstance!.systemDatabase, Date.now());
     const { rows } = await client.query<{ status: string }>(
       `SELECT status FROM dbos.workflow_status WHERE workflow_uuid = 'appname-gc-peer-pending'`,

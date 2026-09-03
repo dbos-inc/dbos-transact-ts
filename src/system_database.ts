@@ -36,7 +36,7 @@ import {
 } from './utils';
 import { GlobalLogger } from './telemetry/logs';
 import { QueueRateLimit, resolveQueueLimits, WorkflowQueue } from './wfqueue';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { getClientConfig } from './utils';
 import { ensurePGDatabase, maskDatabaseUrl } from './database_utils';
 import { getCurrentSysDBVersion, runSysMigrationsPg } from './sysdb_migrations/migration_runner';
@@ -165,11 +165,11 @@ export interface ApplicationRowCounts {
   steps: number;
 }
 
-// Workflows re-owned per transaction by a rename. Matches the GC default.
+// Workflows re-owned per transaction by a rename.
 export const DEFAULT_RENAME_BATCH_SIZE = 10_000;
 
-// Workflows deleted per transaction by garbage collection.
-export const DEFAULT_GC_BATCH_SIZE = 10_000;
+// Rows deleted per transaction by garbage collection.
+export const DEFAULT_GC_BATCH_SIZE = 50_000;
 
 export interface QueueRecord {
   name: string;
@@ -494,6 +494,16 @@ async function releaseSystemDatabaseClient(client: ClientBase, customPool?: Pool
       await (client as Client).end();
     }
   } catch (e) {}
+}
+
+/**
+ * The pg_try_advisory_lock argument for one schema's retention round: the leading 8 bytes of
+ * SHA-256 over a fixed string, read as a signed big-endian 64-bit integer. Separate locks for
+ * separate schemas. Every DBOS SDK derives the key this way, so rounds in different languages
+ * against one system database contend for the same lock; changing it here changes it everywhere.
+ */
+export function retentionLockKey(schemaName: string): bigint {
+  return createHash('sha256').update(`dbos.retention.${schemaName}`).digest().readBigInt64BE(0);
 }
 
 async function isCockroachDB(client: ClientBase): Promise<boolean> {
@@ -952,6 +962,16 @@ export class SystemDatabase {
 
   // Set by destroy(), so polling waits end instead of running on against a pool that outlives this handle.
   #destroyed: boolean = false;
+
+  /**
+   * For now, also write the workflow_status payload columns so a reader predating the
+   * payload tables still finds inputs and outputs. Anything but the literal "false"
+   * keeps them written: the safe state is the default.
+   */
+  readonly dualWritePayloads: boolean = process.env['DBOS__DUAL_WRITE_PAYLOADS'] !== 'false';
+
+  // Resolved on first use by #cockroach(), since detecting it costs a query.
+  #isCockroach: boolean | undefined = undefined;
 
   constructor(
     readonly systemDatabaseUrl: string,
@@ -1416,7 +1436,8 @@ export class SystemDatabase {
             createdAt,
             status.timeoutMS ?? null,
             status.deadlineEpochMS ?? null,
-            status.input,
+            // Legacy column: NULL leaves the payload to workflow_input alone.
+            this.dualWritePayloads ? status.input : null,
             null,
             status.priority,
             status.queuePartitionKey ?? null,
@@ -1439,6 +1460,22 @@ export class SystemDatabase {
         for (const row of rows) {
           inserted.add(row.workflow_uuid);
         }
+      }
+      for (let start = 0; start < statuses.length; start += chunkSize) {
+        const chunk = statuses.slice(start, start + chunkSize);
+        const tuples: string[] = [];
+        const params: unknown[] = [];
+        let paramIdx = 1;
+        for (let i = 0; i < chunk.length; i++) {
+          tuples.push(`($${paramIdx++}, $${paramIdx++}, $${paramIdx++})`);
+          params.push(chunk[i].workflowUUID, chunk[i].input, createdAts[start + i]);
+        }
+        await client.query(
+          `INSERT INTO "${this.schemaName}".workflow_input (workflow_uuid, inputs, retention_timestamp)
+           VALUES ${tuples.join(', ')}
+           ON CONFLICT (workflow_uuid) DO NOTHING`,
+          params,
+        );
       }
       await client.query('COMMIT');
     } catch (e) {
@@ -1487,12 +1524,34 @@ export class SystemDatabase {
     status: (typeof StatusString)[keyof typeof StatusString],
     outcome: { output?: string | null; error?: string | null },
   ): Promise<boolean> {
-    const rowCount = await this.updateWorkflowStatus(client, workflowID, status, {
-      update: { ...outcome, resetDeduplicationID: true, setCompletedAt: true },
-      where: { status: StatusString.PENDING },
-      throwOnFailure: false,
-    });
-    return rowCount > 0;
+    let committed = false;
+    try {
+      await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
+      const rowCount = await this.updateWorkflowStatus(client, workflowID, status, {
+        update: { ...outcome, resetDeduplicationID: true, setCompletedAt: true },
+        where: { status: StatusString.PENDING },
+        throwOnFailure: false,
+      });
+      if (rowCount === 0) {
+        // The outcome was not ours to write, so leave no orphan payload.
+        return false;
+      }
+      await client.query(
+        `INSERT INTO "${this.schemaName}".workflow_output (workflow_uuid, output, error)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (workflow_uuid) DO UPDATE SET output = EXCLUDED.output, error = EXCLUDED.error`,
+        [workflowID, outcome.output ?? null, outcome.error ?? null],
+      );
+      committed = true;
+      return true;
+    } finally {
+      if (committed) {
+        await client.query('COMMIT');
+      } else {
+        // Swallowed: a rollback failure must not mask why we are rolling back.
+        await client.query('ROLLBACK').catch(() => undefined);
+      }
+    }
   }
 
   async getPendingWorkflows(executorID: string, appVersion: string): Promise<GetPendingWorkflowsOutput[]> {
@@ -1758,8 +1817,8 @@ export class SystemDatabase {
     const dn = Date.now();
     await this.pool.query<operation_outputs>(
       `INSERT INTO ${this.schemaName}.operation_outputs
-       (workflow_uuid, function_id, output, error, function_name, child_workflow_id, started_at_epoch_ms, completed_at_epoch_ms, application_name)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       (workflow_uuid, function_id, output, error, function_name, child_workflow_id, started_at_epoch_ms, completed_at_epoch_ms, application_name, retention_timestamp)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, (EXTRACT(EPOCH FROM now()) * 1000)::bigint)
        ON CONFLICT DO NOTHING;`,
       [workflowID, functionID, null, null, patchName, null, dn, dn, this.appName ?? null],
     );
@@ -1875,7 +1934,6 @@ export class SystemDatabase {
     const classNameOrNull = params.workflowClassName === '' ? null : params.workflowClassName;
     const updateParams: unknown[] = [
       params.delayUntilEpochMS,
-      params.input,
       params.serialization,
       params.workflowName,
       classNameOrNull,
@@ -1884,6 +1942,8 @@ export class SystemDatabase {
       StatusString.DELAYED,
       params.applicationName ?? null,
     ];
+    // Legacy column: the placeholder is bound only while it is still written.
+    const legacyInputs = this.dualWritePayloads ? `inputs = $${updateParams.push(params.input)}, ` : '';
     // Never extend a workflow the target application doesn't own; falls through to the holder below.
     const ownScope = this.#appNameFilter('application_name', params.applicationName, updateParams);
     const updated = await client.query<{ workflow_uuid: string }>(
@@ -1893,18 +1953,24 @@ export class SystemDatabase {
              THEN debounce_deadline_epoch_ms
              ELSE $1
            END,
-           inputs = $2, serialization = $3,
+           ${legacyInputs}serialization = $2,
            updated_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint,
            -- Claim it for the target, as its dequeue would: left unclaimed, every peer coalesces onto the one workflow and the last inputs win.
-           application_name = COALESCE(application_name, $9)
-       WHERE name = $4 AND class_name IS NOT DISTINCT FROM $5
-         AND queue_name = $6 AND deduplication_id = $7
-         AND status = $8 AND is_debounced = TRUE
+           application_name = COALESCE(application_name, $8)
+       WHERE name = $3 AND class_name IS NOT DISTINCT FROM $4
+         AND queue_name = $5 AND deduplication_id = $6
+         AND status = $7 AND is_debounced = TRUE
          AND ${ownScope}
        RETURNING workflow_uuid`,
       updateParams,
     );
     if (updated.rows.length > 0) {
+      await client.query(
+        `INSERT INTO "${this.schemaName}".workflow_input (workflow_uuid, inputs, retention_timestamp)
+         VALUES ($1, $2, (EXTRACT(EPOCH FROM now()) * 1000)::bigint)
+         ON CONFLICT (workflow_uuid) DO UPDATE SET inputs = EXCLUDED.inputs`,
+        [updated.rows[0].workflow_uuid, params.input],
+      );
       return {
         bouncedWorkflowID: updated.rows[0].workflow_uuid,
         holderWorkflowID: null,
@@ -1977,7 +2043,23 @@ export class SystemDatabase {
       }
     }
 
-    await this.pool.query(`DELETE FROM "${this.schemaName}".workflow_status WHERE workflow_uuid = ANY($1)`, [allIds]);
+    const client = await this.#connect();
+    try {
+      await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
+      // The payload tables carry no foreign key, so the status delete does not cascade
+      // into them; without this they survive as orphans.
+      for (const table of ['workflow_input', 'workflow_output', 'operation_outputs']) {
+        await client.query(`DELETE FROM "${this.schemaName}".${table} WHERE workflow_uuid = ANY($1)`, [allIds]);
+      }
+      await client.query(`DELETE FROM "${this.schemaName}".workflow_status WHERE workflow_uuid = ANY($1)`, [allIds]);
+      await client.query('COMMIT');
+    } catch (e) {
+      // Swallowed: a rollback failure must not mask why we are rolling back.
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw e;
+    } finally {
+      client.release();
+    }
 
     for (const wfid of allIds) {
       this.runningWorkflowMap.delete(wfid);
@@ -2096,11 +2178,13 @@ export class SystemDatabase {
 
       // Fetch the status of all original workflows inside the transaction.
       const { rows: statusRows } = await client.query<workflow_status>(
-        `SELECT workflow_uuid, name, class_name, config_name, application_id,
-                authenticated_user, authenticated_roles, assumed_role, inputs, serialization,
-                request, application_version, attributes, application_name
-         FROM "${this.schemaName}".workflow_status
-         WHERE workflow_uuid = ANY($1)`,
+        `SELECT ws.workflow_uuid, ws.name, ws.class_name, ws.config_name, ws.application_id,
+                ws.authenticated_user, ws.authenticated_roles, ws.assumed_role,
+                COALESCE(wi.inputs, ws.inputs) AS inputs, ws.serialization,
+                ws.request, ws.application_version, ws.attributes, ws.application_name
+         FROM "${this.schemaName}".workflow_status ws
+         LEFT JOIN "${this.schemaName}".workflow_input wi ON wi.workflow_uuid = ws.workflow_uuid
+         WHERE ws.workflow_uuid = ANY($1)`,
         [originalWorkflowIDs],
       );
 
@@ -2167,7 +2251,8 @@ export class SystemDatabase {
           ws.request,
           options.applicationVersion ?? ws.application_version ?? null,
           ws.application_id,
-          ws.inputs,
+          // Legacy column: NULL leaves the payload to workflow_input alone.
+          this.dualWritePayloads ? ws.inputs : null,
           options.queuePartitionKey ?? null,
           origID,
           ws.serialization,
@@ -2182,6 +2267,19 @@ export class SystemDatabase {
         `INSERT INTO "${this.schemaName}".workflow_status (${insertCols.join(', ')})
          VALUES ${valuesPlaceholders.join(', ')}`,
         params,
+      );
+
+      const inputPlaceholders: string[] = [];
+      const inputParams: unknown[] = [];
+      let inputIdx = 1;
+      for (let i = 0; i < originalWorkflowIDs.length; i++) {
+        inputPlaceholders.push(`($${inputIdx++}, $${inputIdx++})`);
+        inputParams.push(forkedWorkflowIDs[i], statusByID.get(originalWorkflowIDs[i])!.inputs);
+      }
+      await client.query(
+        `INSERT INTO "${this.schemaName}".workflow_input (workflow_uuid, inputs)
+         VALUES ${inputPlaceholders.join(', ')}`,
+        inputParams,
       );
 
       // Mark all original workflows as having been forked from.
@@ -2225,8 +2323,8 @@ export class SystemDatabase {
         await client.query(
           `${mappingCTE}
            INSERT INTO "${this.schemaName}".operation_outputs
-             (workflow_uuid, function_id, output, error, serialization, function_name, child_workflow_id, started_at_epoch_ms, completed_at_epoch_ms, application_name)
-           SELECT m.fork_id, oo.function_id, oo.output, oo.error, oo.serialization, oo.function_name, ${childWfExpr}, oo.started_at_epoch_ms, oo.completed_at_epoch_ms, m.owner
+             (workflow_uuid, function_id, output, error, serialization, function_name, child_workflow_id, started_at_epoch_ms, completed_at_epoch_ms, application_name, retention_timestamp)
+           SELECT m.fork_id, oo.function_id, oo.output, oo.error, oo.serialization, oo.function_name, ${childWfExpr}, oo.started_at_epoch_ms, oo.completed_at_epoch_ms, m.owner, (EXTRACT(EPOCH FROM now()) * 1000)::bigint
            FROM mapping m
            JOIN "${this.schemaName}".operation_outputs oo
              ON oo.workflow_uuid = m.orig_id AND oo.function_id < m.start_step`,
@@ -2302,17 +2400,22 @@ export class SystemDatabase {
           // token, not logical workflow state, and a source database's xid is
           // meaningless in the target.
           `SELECT
-            workflow_uuid, status, name, authenticated_user, assumed_role,
-            authenticated_roles, request, output, error, executor_id,
-            created_at, updated_at, application_version, application_id,
-            class_name, config_name, recovery_attempts, queue_name,
-            workflow_timeout_ms, workflow_deadline_epoch_ms, started_at_epoch_ms,
-            deduplication_id, inputs, priority, queue_partition_key, forked_from,
-            parent_workflow_id, serialization, delay_until_epoch_ms,
-            was_forked_from, rate_limited, completed_at, attributes, schedule_name,
-            debounce_deadline_epoch_ms, is_debounced, application_name
-          FROM "${this.schemaName}".workflow_status
-          WHERE workflow_uuid = $1`,
+            ws.workflow_uuid, ws.status, ws.name, ws.authenticated_user, ws.assumed_role,
+            ws.authenticated_roles, ws.request,
+            COALESCE(wo.output, ws.output) AS output, COALESCE(wo.error, ws.error) AS error,
+            ws.executor_id,
+            ws.created_at, ws.updated_at, ws.application_version, ws.application_id,
+            ws.class_name, ws.config_name, ws.recovery_attempts, ws.queue_name,
+            ws.workflow_timeout_ms, ws.workflow_deadline_epoch_ms, ws.started_at_epoch_ms,
+            ws.deduplication_id, COALESCE(wi.inputs, ws.inputs) AS inputs,
+            ws.priority, ws.queue_partition_key, ws.forked_from,
+            ws.parent_workflow_id, ws.serialization, ws.delay_until_epoch_ms,
+            ws.was_forked_from, ws.rate_limited, ws.completed_at, ws.attributes, ws.schedule_name,
+            ws.debounce_deadline_epoch_ms, ws.is_debounced, ws.application_name
+          FROM "${this.schemaName}".workflow_status ws
+          LEFT JOIN "${this.schemaName}".workflow_input wi ON wi.workflow_uuid = ws.workflow_uuid
+          LEFT JOIN "${this.schemaName}".workflow_output wo ON wo.workflow_uuid = ws.workflow_uuid
+          WHERE ws.workflow_uuid = $1`,
           [wfID],
         );
 
@@ -2401,8 +2504,9 @@ export class SystemDatabase {
             status.assumed_role,
             status.authenticated_roles,
             status.request,
-            status.output,
-            status.error,
+            // Legacy columns: NULL leaves the payloads to their own tables.
+            this.dualWritePayloads ? status.output : null,
+            this.dualWritePayloads ? status.error : null,
             status.executor_id,
             status.created_at,
             status.updated_at,
@@ -2416,7 +2520,7 @@ export class SystemDatabase {
             status.workflow_deadline_epoch_ms,
             status.started_at_epoch_ms,
             status.deduplication_id,
-            status.inputs,
+            this.dualWritePayloads ? status.inputs : null,
             status.priority,
             status.queue_partition_key,
             status.forked_from,
@@ -2436,14 +2540,29 @@ export class SystemDatabase {
           ],
         );
 
+        // Retention starts at import: the original timestamps are long past the cutoff
+        // and would be collected immediately.
+        await client.query(
+          `INSERT INTO "${this.schemaName}".workflow_input (workflow_uuid, inputs, retention_timestamp)
+           VALUES ($1, $2, (EXTRACT(EPOCH FROM now()) * 1000)::bigint)`,
+          [status.workflow_uuid, status.inputs],
+        );
+        if (status.output !== null || status.error !== null) {
+          await client.query(
+            `INSERT INTO "${this.schemaName}".workflow_output (workflow_uuid, output, error, retention_timestamp)
+             VALUES ($1, $2, $3, (EXTRACT(EPOCH FROM now()) * 1000)::bigint)`,
+            [status.workflow_uuid, status.output, status.error],
+          );
+        }
+
         // Import operation_outputs
         for (const output of workflow.operation_outputs) {
           await client.query(
             `INSERT INTO "${this.schemaName}".operation_outputs (
               workflow_uuid, function_id, function_name, output, error,
               child_workflow_id, started_at_epoch_ms, completed_at_epoch_ms,
-              serialization, application_name
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+              serialization, application_name, retention_timestamp
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, (EXTRACT(EPOCH FROM now()) * 1000)::bigint)`,
             [
               output.workflow_uuid,
               output.function_id,
@@ -2644,8 +2763,11 @@ export class SystemDatabase {
       try {
         ({ rows } = await this.#pollWithLimiter(() =>
           this.pool.query<workflow_status>(
-            `SELECT status, output, error, serialization FROM "${this.schemaName}".workflow_status
-             WHERE workflow_uuid=$1`,
+            `SELECT ws.status, COALESCE(wo.output, ws.output) AS output,
+                    COALESCE(wo.error, ws.error) AS error, ws.serialization
+             FROM "${this.schemaName}".workflow_status ws
+             LEFT JOIN "${this.schemaName}".workflow_output wo ON wo.workflow_uuid = ws.workflow_uuid
+             WHERE ws.workflow_uuid=$1`,
             [workflowID],
           ),
         ));
@@ -3964,12 +4086,23 @@ export class SystemDatabase {
 
     input.loadInput = input.loadInput ?? true;
     input.loadOutput = input.loadOutput ?? true;
+    // Only join the payload table the caller actually asked for.
+    const payloadColumns: string[] = [];
+    const payloadJoins: string[] = [];
     if (input.loadInput) {
-      selectColumns.push('inputs', 'request');
+      selectColumns.push('request');
+      payloadColumns.push('COALESCE(wi.inputs, workflow_status.inputs) AS inputs');
+      payloadJoins.push(
+        `LEFT JOIN "${schemaName}".workflow_input wi ON wi.workflow_uuid = workflow_status.workflow_uuid`,
+      );
     }
 
     if (input.loadOutput) {
-      selectColumns.push('output', 'error');
+      payloadColumns.push('COALESCE(wo.output, workflow_status.output) AS output');
+      payloadColumns.push('COALESCE(wo.error, workflow_status.error) AS error');
+      payloadJoins.push(
+        `LEFT JOIN "${schemaName}".workflow_output wo ON wo.workflow_uuid = workflow_status.workflow_uuid`,
+      );
     }
 
     if (input.loadInput || input.loadOutput) {
@@ -4025,19 +4158,21 @@ export class SystemDatabase {
 
     if (input.workflow_id_prefix) {
       if (Array.isArray(input.workflow_id_prefix)) {
-        const likeClauses = input.workflow_id_prefix.map((_, i) => `workflow_uuid LIKE $${paramCounter + i}`);
+        const likeClauses = input.workflow_id_prefix.map(
+          (_, i) => `workflow_status.workflow_uuid LIKE $${paramCounter + i}`,
+        );
         whereClauses.push(`(${likeClauses.join(' OR ')})`);
         params.push(...input.workflow_id_prefix.map((p) => `${p}%`));
         paramCounter += input.workflow_id_prefix.length;
       } else {
-        whereClauses.push(`workflow_uuid LIKE $${paramCounter}`);
+        whereClauses.push(`workflow_status.workflow_uuid LIKE $${paramCounter}`);
         params.push(`${input.workflow_id_prefix}%`);
         paramCounter++;
       }
     }
     if (input.workflowIDs) {
       const placeholders = input.workflowIDs.map((_, i) => `$${paramCounter + i}`).join(', ');
-      whereClauses.push(`workflow_uuid IN (${placeholders})`);
+      whereClauses.push(`workflow_status.workflow_uuid IN (${placeholders})`);
       params.push(...input.workflowIDs);
       paramCounter += input.workflowIDs.length;
     }
@@ -4110,9 +4245,11 @@ export class SystemDatabase {
     const limitClause = input.limit ? `LIMIT ${input.limit}` : '';
     const offsetClause = input.offset ? `OFFSET ${input.offset}` : '';
 
+    const projection = [...selectColumns.map((c) => `workflow_status.${c}`), ...payloadColumns].join(', ');
     const query = `
-      SELECT ${selectColumns.join(', ')}
+      SELECT ${projection}
       FROM "${schemaName}".workflow_status
+      ${payloadJoins.join('\n      ')}
       ${whereClause}
       ${orderClause}
       ${limitClause}
@@ -4436,17 +4573,225 @@ export class SystemDatabase {
     });
   }
 
-  /** Rows garbage collection may delete: terminal, older than the cutoff, and ours. */
+  /** Whether the system database is CockroachDB. Resolved once, since detecting it costs a query. */
+  async #cockroach(): Promise<boolean> {
+    if (this.#isCockroach === undefined) {
+      const client = await this.#connect();
+      try {
+        this.#isCockroach = await isCockroachDB(client);
+      } finally {
+        client.release();
+      }
+    }
+    return this.#isCockroach;
+  }
+
+  /**
+   * Take a database-wide lock for one retention round, returning how to release it, or
+   * undefined when another round already holds it. The lock is session-scoped, so a round
+   * that crashes releases it. CockroachDB has no advisory locks and always takes it, so it
+   * collects unprotected rather than not at all.
+   */
+  async acquireRetentionLock(): Promise<{ release: () => Promise<void> } | undefined> {
+    if (await this.#cockroach()) {
+      return { release: () => Promise.resolve() };
+    }
+    const key = retentionLockKey(this.schemaName).toString();
+    // The round holds this connection until it ends: releasing it would drop the lock.
+    const client = await this.#connect();
+    let acquired = false;
+    try {
+      const { rows } = await client.query<{ locked: boolean }>('SELECT pg_try_advisory_lock($1) AS locked', [key]);
+      acquired = rows[0]?.locked === true;
+    } catch (e) {
+      client.release();
+      throw e;
+    }
+    if (!acquired) {
+      client.release();
+      return undefined;
+    }
+    return {
+      release: async () => {
+        try {
+          // Explicit, since releasing the client only returns the session to the pool.
+          const { rows } = await client.query<{ released: boolean }>('SELECT pg_advisory_unlock($1) AS released', [
+            key,
+          ]);
+          if (rows[0]?.released !== true) {
+            // False means this session no longer holds it, which a transaction-pooling proxy
+            // causes by switching backends.
+            this.logger.warn(
+              'Could not release the retention lock: this session no longer holds it. Retention will ' +
+                'not proceed until the lock is released, which happens when the holding backend closes. ' +
+                'A transaction-pooling proxy in front of Postgres causes this; run DBOS through a ' +
+                'session-pooled or direct connection.',
+            );
+          }
+        } finally {
+          client.release();
+        }
+      },
+    };
+  }
+
+  /** VACUUM the tables a sweep dirtied. No-op where there is no autovacuum to outrun. */
+  async #vacuumTables(tables: readonly string[]): Promise<void> {
+    if (await this.#cockroach()) {
+      return;
+    }
+    const client = await this.#connect();
+    let notices: string[] = [];
+    const onNotice = (notice: { message?: string }) => notices.push(notice.message ?? '');
+    client.on('notice', onNotice);
+    try {
+      for (const table of tables) {
+        // Per table, so one refusal does not skip the rest.
+        notices = [];
+        try {
+          await client.query(`VACUUM (INDEX_CLEANUP ON, TRUNCATE OFF, ANALYZE) "${this.schemaName}"."${table}"`);
+        } catch (e) {
+          this.logger.warn(`Payload retention could not vacuum ${table}: ${(e as Error).message}`);
+          continue;
+        }
+        // A refused or stalled VACUUM does not raise, it says so in a notice; a successful
+        // one is silent, so anything here is worth surfacing.
+        for (const notice of notices) {
+          this.logger.warn(`Payload retention vacuuming ${table}: ${notice}`);
+        }
+      }
+    } finally {
+      client.removeListener('notice', onNotice);
+      client.release();
+    }
+  }
+
+  /** Delete one payload table's orphans below the cutoff, one batch per transaction. */
+  async #garbageCollectTable(table: string, cutoff: number, batchSize: number): Promise<number> {
+    // A payload below the cutoff belongs to a workflow created before it, so the status side
+    // is the few such rows still present, not the whole table.
+    const orphaned = `NOT EXISTS (
+             SELECT 1 FROM "${this.schemaName}".workflow_status ws
+             WHERE ws.workflow_uuid = t.workflow_uuid AND ws.created_at < $1
+           )`;
+
+    // Seed from the oldest row in range.
+    const oldest = await retryOnSerializationError(async () => {
+      const { rows } = await this.pool.query<{ retention_timestamp: string }>(
+        `SELECT retention_timestamp
+           FROM "${this.schemaName}".${table}
+          WHERE retention_timestamp < $1
+          ORDER BY retention_timestamp
+          LIMIT 1`,
+        [cutoff],
+      );
+      // retention_timestamp is a bigint, so node-postgres hands it back as a string.
+      return rows.length > 0 ? Number(rows[0].retention_timestamp) : undefined;
+    });
+    if (oldest === undefined) {
+      return 0;
+    }
+
+    let total = 0;
+    let watermark = oldest - 1;
+    for (;;) {
+      const batch = await retryOnSerializationError(async () => {
+        // Borrowed rather than pool.query'd: that releases with the error, which discards the
+        // connection on a deadlock, so the retry wrapping this would churn the pool per batch.
+        const client = await this.#connect();
+        try {
+          // Batches are cut by candidate count, so rows spared by the anti-join only thin one
+          // out; they are re-checked next round.
+          const { rows } = await client.query<{ retention_timestamp: string }>(
+            `SELECT retention_timestamp
+               FROM "${this.schemaName}".${table}
+              WHERE retention_timestamp < $1 AND retention_timestamp > $2
+              ORDER BY retention_timestamp
+              LIMIT 1 OFFSET ${batchSize - 1}`,
+            [cutoff, watermark],
+          );
+          const step = rows.length > 0 ? Number(rows[0].retention_timestamp) : undefined;
+          const params: unknown[] = [cutoff, watermark];
+          // Timestamp ties may push the batch slightly over batchSize, but never split across two.
+          const upperBound = step === undefined ? '' : `AND t.retention_timestamp <= $${params.push(step)} `;
+          const result = await client.query(
+            `DELETE FROM "${this.schemaName}".${table} t
+             WHERE t.retention_timestamp < $1 AND t.retention_timestamp > $2 ${upperBound}AND ${orphaned}`,
+            params,
+          );
+          return { step, deleted: result.rowCount ?? 0 };
+        } finally {
+          // No error argument: a genuinely dead connection is still evicted by the pool's own check.
+          client.release();
+        }
+      });
+      total += batch.deleted;
+      if (batch.step === undefined) {
+        return total;
+      }
+      watermark = batch.step;
+    }
+  }
+
+  /**
+   * Delete payload and step rows below the cutoff whose workflow is gone, returning the count
+   * removed from each table. Runs after the status sweep, whose orphans all fall in range:
+   * every payload is stamped no later than the completion that made the row collectable.
+   */
+  async garbageCollectPayloads(cutoff: number, batchSize: number = DEFAULT_GC_BATCH_SIZE): Promise<number[]> {
+    // A NaN survives a bare `< 1` test and would only fail once it reached SQL.
+    if (!Number.isInteger(batchSize) || batchSize < 1) {
+      throw new DBOSError(`batchSize must be a positive integer, got ${batchSize}`);
+    }
+    const tables = ['workflow_input', 'workflow_output', 'operation_outputs'];
+
+    // To optimize performance, vacuum payload tables both before and after collecting them.
+    await this.#vacuumTables(['workflow_status', ...tables]);
+
+    // One connection per concurrent sweep, on top of the one the retention lock holds for the
+    // whole round. A pool too small for all three runs them sequentially rather than leaving
+    // sweeps waiting on a connection that only the round itself would free.
+    const poolMax = this.pool.options.max ?? DEFAULT_POOL_SIZE;
+    const concurrency = Math.max(1, Math.min(tables.length, poolMax - 1));
+
+    const deleted: number[] = new Array<number>(tables.length).fill(0);
+    const failures: unknown[] = [];
+    let next = 0;
+    const sweep = async () => {
+      for (;;) {
+        const i = next++;
+        if (i >= tables.length) return;
+        try {
+          deleted[i] = await this.#garbageCollectTable(tables[i], cutoff, batchSize);
+        } catch (e) {
+          failures.push(e);
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: concurrency }, () => sweep()));
+    // Only the first can be thrown, so the rest would otherwise be lost.
+    for (const extra of failures.slice(1)) {
+      this.logger.warn(
+        `Payload retention sweep also failed: ${extra instanceof Error ? extra.message : String(extra)}`,
+      );
+    }
+    if (failures.length > 0) {
+      throw failures[0];
+    }
+
+    await this.#vacuumTables(tables);
+    this.logger.debug(`Payload retention deleted ${deleted[0]} inputs, ${deleted[1]} outputs, and ${deleted[2]} steps`);
+    return deleted;
+  }
+
+  /**
+   * Rows garbage collection may delete. completed_at is set on every terminal transition and
+   * cleared on resume, so one predicate covers eligibility: in-flight rows hold NULL and never
+   * compare true. Unscoped by application: retention is system-wide.
+   */
   #gcFilter(cutoffEpochTimestampMs: number, params: unknown[]): string {
     params.push(cutoffEpochTimestampMs);
-    const cutoffClause = `created_at < $${params.length}`;
-    const statuses = [StatusString.PENDING, StatusString.ENQUEUED, StatusString.DELAYED].map((status) => {
-      params.push(status);
-      return `$${params.length}`;
-    });
-    // Unclaimed rows included: excluding them would leak pre-upgrade rows forever.
-    const scope = this.#appNameFilter('application_name', this.appName, params);
-    return `${cutoffClause} AND status NOT IN (${statuses.join(', ')}) AND ${scope}`;
+    return `completed_at < $${params.length}`;
   }
 
   /**
@@ -4467,25 +4812,26 @@ export class SystemDatabase {
       const stepParams: unknown[] = [];
       const stepScope = this.#gcFilter(cutoffEpochTimestampMs, stepParams);
       stepParams.push(watermark);
-      const stepResult = await client.query<{ created_at: string }>(
-        `SELECT created_at
+      const stepResult = await client.query<{ completed_at: string }>(
+        `SELECT completed_at
            FROM "${this.schemaName}".workflow_status
-          WHERE ${stepScope} AND created_at > $${stepParams.length}
-          ORDER BY created_at
+          WHERE ${stepScope} AND completed_at > $${stepParams.length}
+          ORDER BY completed_at
           LIMIT 1 OFFSET ${batchSize - 1}`,
         stepParams,
       );
-      // created_at is a bigint, so node-postgres hands it back as a string.
-      const step = stepResult.rows.length > 0 ? Number(stepResult.rows[0].created_at) : undefined;
+      // completed_at is a bigint, so node-postgres hands it back as a string.
+      const step = stepResult.rows.length > 0 ? Number(stepResult.rows[0].completed_at) : undefined;
 
       const deleteParams: unknown[] = [];
       let deleteScope = this.#gcFilter(cutoffEpochTimestampMs, deleteParams);
       if (step !== undefined) {
-        // Inclusive upper bound: created_at ties may push a batch over batchSize, but never split across two.
+        // Inclusive upper bound: completed_at ties may push a batch over batchSize, but never split across two.
         deleteParams.push(watermark, step);
-        deleteScope = `${deleteScope} AND created_at > $${deleteParams.length - 1} AND created_at <= $${deleteParams.length}`;
+        deleteScope = `${deleteScope} AND completed_at > $${deleteParams.length - 1} AND completed_at <= $${deleteParams.length}`;
       }
-      // The final batch drops the watermark, so rows that appeared below it are still deleted.
+      // The final batch drops the watermark: unbounded, since an import can land a
+      // completed_at below it mid-pass.
       await client.query(`DELETE FROM "${this.schemaName}".workflow_status WHERE ${deleteScope}`, deleteParams);
 
       return step;
@@ -4495,33 +4841,38 @@ export class SystemDatabase {
     }
   }
 
-  // Conductor sends cleared retention thresholds as JSON null, so both params must be treated as nullish
+  /**
+   * Delete old terminal workflows throughout the system database, returning the cutoff
+   * actually used, or undefined when there is nothing to collect.
+   *
+   * Conductor sends cleared retention thresholds as JSON null, so every param is nullish.
+   */
   async garbageCollect(
     cutoffEpochTimestampMs?: number | null,
     rowsThreshold?: number | null,
     options: { batchSize?: number | null } = {},
-  ): Promise<void> {
-    const batchSize = options.batchSize === null ? undefined : (options.batchSize ?? DEFAULT_GC_BATCH_SIZE);
+  ): Promise<number | undefined> {
+    const batchSize = options.batchSize ?? DEFAULT_GC_BATCH_SIZE;
     // A NaN survives a bare `< 1` test and would only fail once it reached SQL, leaving GC half-applied.
-    if (batchSize !== undefined && (!Number.isInteger(batchSize) || batchSize < 1)) {
+    if (!Number.isInteger(batchSize) || batchSize < 1) {
       throw new DBOSError(`batchSize must be a positive integer, got ${batchSize}`);
     }
 
     if (rowsThreshold !== undefined && rowsThreshold !== null) {
-      // Get the created_at timestamp of the rows_threshold newest row
-      const params: unknown[] = [rowsThreshold - 1];
-      const scope = this.#appNameFilter('application_name', this.appName, params);
-      const result = await this.pool.query<{ created_at: number }>(
-        `SELECT created_at
+      // The completed_at of the rowsThreshold newest completed row
+      const result = await retryOnSerializationError(() =>
+        this.pool.query<{ completed_at: string }>(
+          `SELECT completed_at
          FROM "${this.schemaName}".workflow_status
-         WHERE ${scope}
-         ORDER BY created_at DESC
+         WHERE completed_at IS NOT NULL
+         ORDER BY completed_at DESC
          LIMIT 1 OFFSET $1`,
-        params,
+          [rowsThreshold - 1],
+        ),
       );
 
       if (result.rows.length > 0) {
-        const rowsBasedCutoff = result.rows[0].created_at;
+        const rowsBasedCutoff = Number(result.rows[0].completed_at);
         // Use the more restrictive cutoff (higher timestamp = more recent = more deletion)
         if (
           cutoffEpochTimestampMs === undefined ||
@@ -4534,33 +4885,33 @@ export class SystemDatabase {
     }
 
     if (cutoffEpochTimestampMs === undefined || cutoffEpochTimestampMs === null) {
-      return;
+      return undefined;
     }
 
     // Narrowed to a constant so the closures below keep it.
     const cutoff = cutoffEpochTimestampMs;
 
-    if (batchSize === undefined) {
-      await retryOnSerializationError(async () => {
-        const deleteParams: unknown[] = [];
-        const deleteScope = this.#gcFilter(cutoff, deleteParams);
-        const client = await this.#connect();
-        try {
-          await client.query(`DELETE FROM "${this.schemaName}".workflow_status WHERE ${deleteScope}`, deleteParams);
-        } finally {
-          client.release();
-        }
-      });
-      return;
-    }
-
-    // Advance a created_at watermark, one committed transaction per batch, so a long
+    // Advance a completed_at watermark, one committed transaction per batch, so a long
     // history neither deletes in one transaction nor rescans what it already deleted.
-    let watermark = 0;
+    const oldest = await retryOnSerializationError(async () => {
+      const params: unknown[] = [];
+      const scope = this.#gcFilter(cutoff, params);
+      const { rows } = await this.pool.query<{ completed_at: string }>(
+        `SELECT completed_at
+           FROM "${this.schemaName}".workflow_status
+          WHERE ${scope}
+          ORDER BY completed_at
+          LIMIT 1`,
+        params,
+      );
+      return rows.length > 0 ? Number(rows[0].completed_at) : undefined;
+    });
+
+    let watermark = oldest === undefined ? 0 : oldest - 1;
     for (;;) {
       const next = await retryOnSerializationError(() => this.#garbageCollectBatch(cutoff, batchSize, watermark));
       // Fewer than a full batch remained, so that delete took the rest.
-      if (next === undefined) return;
+      if (next === undefined) return cutoff;
       watermark = next;
     }
   }
@@ -5341,7 +5692,8 @@ export class SystemDatabase {
           initStatus.status === StatusString.ENQUEUED || initStatus.status === StatusString.DELAYED ? 0 : 1,
           initStatus.timeoutMS ?? null,
           initStatus.deadlineEpochMS ?? null,
-          initStatus.input ?? null,
+          // Legacy column: NULL leaves the payload to workflow_input alone.
+          this.dualWritePayloads ? (initStatus.input ?? null) : null,
           initStatus.deduplicationID ?? null,
           initStatus.priority,
           initStatus.queuePartitionKey ?? null,
@@ -5361,6 +5713,13 @@ export class SystemDatabase {
       if (rows.length === 0) {
         throw new Error(`Attempt to insert workflow ${initStatus.workflowUUID} failed`);
       }
+      // Two statements, not a data-modifying CTE: at scale the CTE costs more than the round trip it saves.
+      await client.query(
+        `INSERT INTO "${this.schemaName}".workflow_input (workflow_uuid, inputs)
+         VALUES ($1, $2)
+         ON CONFLICT (workflow_uuid) DO NOTHING`,
+        [initStatus.workflowUUID, initStatus.input ?? null],
+      );
       const ret = rows[0];
       ret.class_name = ret.class_name ?? '';
       ret.config_name = ret.config_name ?? '';
@@ -5420,12 +5779,13 @@ export class SystemDatabase {
     const args: (string | number | undefined)[] = [workflowID, status];
 
     const update = options.update ?? {};
-    if (update.output) {
+    // Legacy columns: skipped entirely when the payload tables are the only destination.
+    if (update.output && this.dualWritePayloads) {
       const param = args.push(update.output);
       setClause += `, output=$${param}`;
     }
 
-    if (update.error) {
+    if (update.error && this.dualWritePayloads) {
       const param = args.push(update.error);
       setClause += `, error=$${param}`;
     }
@@ -5507,8 +5867,8 @@ export class SystemDatabase {
     try {
       const out = await client.query<operation_outputs>(
         `INSERT INTO ${this.schemaName}.operation_outputs
-         (workflow_uuid, function_id, output, error, function_name, child_workflow_id, started_at_epoch_ms, completed_at_epoch_ms, serialization, application_name)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+         (workflow_uuid, function_id, output, error, function_name, child_workflow_id, started_at_epoch_ms, completed_at_epoch_ms, serialization, application_name, retention_timestamp)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, (EXTRACT(EPOCH FROM now()) * 1000)::bigint)
          ON CONFLICT (workflow_uuid, function_id) DO UPDATE
          SET completed_at_epoch_ms = operation_outputs.completed_at_epoch_ms
          RETURNING completed_at_epoch_ms;`,

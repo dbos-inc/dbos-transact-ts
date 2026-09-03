@@ -919,5 +919,163 @@ $$ LANGUAGE plpgsql;`,
         `ALTER TABLE "${schemaName}"."queues" ADD COLUMN IF NOT EXISTS "partition_rate_limit_period_sec" DOUBLE PRECISION DEFAULT NULL`,
       ],
     },
+    // Payloads move off workflow_status so a status update no longer rewrites a large input.
+    {
+      name: '109_workflow_payload_tables',
+      pg: [
+        `CREATE TABLE IF NOT EXISTS "${schemaName}"."workflow_input" (
+    workflow_uuid TEXT NOT NULL PRIMARY KEY,
+    inputs TEXT,
+    retention_timestamp BIGINT NOT NULL DEFAULT (EXTRACT(epoch FROM now()) * 1000.0)::bigint
+)`,
+        `CREATE TABLE IF NOT EXISTS "${schemaName}"."workflow_output" (
+    workflow_uuid TEXT NOT NULL PRIMARY KEY,
+    output TEXT,
+    error TEXT,
+    retention_timestamp BIGINT NOT NULL DEFAULT (EXTRACT(epoch FROM now()) * 1000.0)::bigint
+)`,
+        `CREATE INDEX IF NOT EXISTS "idx_workflow_input_retention"
+    ON "${schemaName}"."workflow_input" ("retention_timestamp")`,
+        `CREATE INDEX IF NOT EXISTS "idx_workflow_output_retention"
+    ON "${schemaName}"."workflow_output" ("retention_timestamp")`,
+      ],
+    },
+    // Sweep order only: the payload sweep deletes by absence of a status row, so this bounds a round rather than deciding what it may delete.
+    {
+      name: '110_operation_outputs_retention_timestamp',
+      pg: [
+        `ALTER TABLE "${schemaName}"."operation_outputs"
+    ADD COLUMN IF NOT EXISTS "retention_timestamp" BIGINT NOT NULL DEFAULT (EXTRACT(epoch FROM now()) * 1000.0)::bigint`,
+      ],
+    },
+    {
+      name: '111_operation_outputs_retention_index',
+      online: true,
+      pg: [
+        `CREATE INDEX ${isCockroach ? '' : 'CONCURRENTLY'} IF NOT EXISTS "idx_operation_outputs_retention"
+    ON "${schemaName}"."operation_outputs" ("retention_timestamp")`,
+      ],
+    },
+    // Steps are reclaimed by the payload sweep now, so the cascade that used to do it is gone.
+    // Both names are dropped: this SDK created the constraint under the knex name, other SDKs under the Postgres default.
+    {
+      name: '112_drop_operation_outputs_foreign_key',
+      pg: [
+        `ALTER TABLE "${schemaName}"."operation_outputs"
+    DROP CONSTRAINT IF EXISTS "operation_outputs_workflow_uuid_foreign"`,
+        `ALTER TABLE "${schemaName}"."operation_outputs"
+    DROP CONSTRAINT IF EXISTS "operation_outputs_workflow_uuid_fkey"`,
+      ],
+    },
+    // Same signature as 105, so no DROP is needed; the body gains the workflow_input write.
+    {
+      name: '113_enqueue_workflow_split_input',
+      pg: [
+        `CREATE OR REPLACE FUNCTION "${schemaName}".enqueue_workflow(
+    workflow_name TEXT,
+    queue_name TEXT,
+    positional_args JSON[] DEFAULT ARRAY[]::JSON[],
+    named_args JSON DEFAULT '{}'::JSON,
+    class_name TEXT DEFAULT NULL,
+    config_name TEXT DEFAULT NULL,
+    workflow_id TEXT DEFAULT NULL,
+    app_version TEXT DEFAULT NULL,
+    timeout_ms BIGINT DEFAULT NULL,
+    deadline_epoch_ms BIGINT DEFAULT NULL,
+    deduplication_id TEXT DEFAULT NULL,
+    priority INT4 DEFAULT NULL,
+    queue_partition_key TEXT DEFAULT NULL,
+    authenticated_user TEXT DEFAULT NULL,
+    authenticated_roles TEXT DEFAULT NULL,
+    delay_until_epoch_ms BIGINT DEFAULT NULL,
+    application_name TEXT DEFAULT NULL
+) RETURNS TEXT AS $$
+DECLARE
+    v_workflow_id TEXT;
+    v_serialized_inputs TEXT;
+    v_owner_xid TEXT;
+    v_now BIGINT;
+    v_recovery_attempts INT4 := 0;
+    v_priority INT4;
+    v_status TEXT;
+BEGIN
+
+    -- Validate required parameters
+    IF workflow_name IS NULL OR workflow_name = '' THEN
+        RAISE EXCEPTION 'Workflow name cannot be null or empty';
+    END IF;
+    IF queue_name IS NULL OR queue_name = '' THEN
+        RAISE EXCEPTION 'Queue name cannot be null or empty';
+    END IF;
+    IF named_args IS NOT NULL AND jsonb_typeof(named_args::jsonb) != 'object' THEN
+        RAISE EXCEPTION 'Named args must be a JSON object';
+    END IF;
+    IF workflow_id IS NOT NULL AND workflow_id = '' THEN
+        RAISE EXCEPTION 'Workflow ID cannot be an empty string if provided.';
+    END IF;
+    IF delay_until_epoch_ms IS NOT NULL AND delay_until_epoch_ms < 0 THEN
+        RAISE EXCEPTION 'delay_until_epoch_ms must be >= 0';
+    END IF;
+
+    v_workflow_id := COALESCE(workflow_id, gen_random_uuid()::TEXT);
+    v_owner_xid := gen_random_uuid()::TEXT;
+    v_priority := COALESCE(priority, 0);
+    v_serialized_inputs := json_build_object(
+        'positionalArgs', positional_args,
+        'namedArgs', named_args
+    )::TEXT;
+    v_now := EXTRACT(epoch FROM now()) * 1000;
+    v_status := CASE WHEN delay_until_epoch_ms IS NULL THEN 'ENQUEUED' ELSE 'DELAYED' END;
+
+    INSERT INTO "${schemaName}".workflow_status (
+        workflow_uuid, status, inputs,
+        name, class_name, config_name,
+        queue_name, deduplication_id, priority, queue_partition_key,
+        application_version,
+        created_at, updated_at, recovery_attempts,
+        workflow_timeout_ms, workflow_deadline_epoch_ms,
+        parent_workflow_id, owner_xid, serialization,
+        authenticated_user, authenticated_roles,
+        delay_until_epoch_ms, application_name
+    ) VALUES (
+        v_workflow_id, v_status, v_serialized_inputs,
+        workflow_name, class_name, config_name,
+        queue_name, deduplication_id, v_priority, queue_partition_key,
+        app_version,
+        v_now, v_now, v_recovery_attempts,
+        timeout_ms, deadline_epoch_ms,
+        NULL, v_owner_xid, 'portable_json',
+        authenticated_user, authenticated_roles,
+        delay_until_epoch_ms, application_name
+    )
+    ON CONFLICT (workflow_uuid)
+    DO UPDATE SET
+        updated_at = EXCLUDED.updated_at;
+
+    INSERT INTO "${schemaName}".workflow_input (
+        workflow_uuid, inputs, retention_timestamp
+    ) VALUES (
+        v_workflow_id, v_serialized_inputs, v_now
+    )
+    ON CONFLICT (workflow_uuid) DO NOTHING;
+
+    RETURN v_workflow_id;
+
+EXCEPTION
+    WHEN unique_violation THEN
+        RAISE EXCEPTION 'DBOS queue duplicated'
+            USING DETAIL = format('Workflow %s with queue %s and deduplication ID %s already exists', v_workflow_id, queue_name, deduplication_id),
+                ERRCODE = 'unique_violation';
+END;
+$$ LANGUAGE plpgsql;`,
+        ...(isCockroach
+          ? []
+          : [
+              `ALTER FUNCTION "${schemaName}".enqueue_workflow(
+    TEXT, TEXT, JSON[], JSON, TEXT, TEXT, TEXT, TEXT, BIGINT, BIGINT, TEXT, INT4, TEXT, TEXT, TEXT, BIGINT, TEXT
+) SET search_path = pg_catalog, pg_temp`,
+            ]),
+      ],
+    },
   ];
 }

@@ -684,6 +684,8 @@ export class DBOS {
         while (!DBOS.conductor.isClosed) {
           await sleepms(500);
         }
+        // Bounded, so a long round delays shutdown no further than this.
+        await DBOS.conductor.awaitRetention();
         DBOS.conductor = undefined;
       }
 

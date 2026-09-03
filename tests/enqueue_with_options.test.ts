@@ -67,7 +67,10 @@ describe('enqueue-workflow-with-options', () => {
     );
 
     const { rows } = await client.query<{ inputs: string; serialization: string | null }>(
-      `SELECT inputs, serialization FROM dbos.workflow_status WHERE workflow_uuid = $1`,
+      `SELECT wi.inputs, ws.serialization
+       FROM dbos.workflow_status ws
+       JOIN dbos.workflow_input wi ON wi.workflow_uuid = ws.workflow_uuid
+       WHERE ws.workflow_uuid = $1`,
       [handle.workflowID],
     );
     expect(rows[0].serialization).toBe('portable_json');

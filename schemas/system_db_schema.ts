@@ -56,6 +56,20 @@ export interface workflow_events {
   serialization: SysDBSerializationFormat | null;
 }
 
+// Split off workflow_status so updating a status no longer rewrites a large input.
+export interface workflow_input {
+  workflow_uuid: string;
+  inputs: string | null;
+  retention_timestamp: number;
+}
+
+export interface workflow_output {
+  workflow_uuid: string;
+  output: string | null;
+  error: string | null;
+  retention_timestamp: number;
+}
+
 export interface operation_outputs {
   workflow_uuid: string;
   function_id: number;
@@ -67,6 +81,8 @@ export interface operation_outputs {
   completed_at_epoch_ms?: number;
   serialization: SysDBSerializationFormat | null; // Relevant only to getEvent / recv / etc.
   application_name?: string | null; // Denormalized from the parent so step observability filters without a join.
+  // Sweep order only: the payload sweep deletes by absence of a status row, so this bounds a round rather than deciding what it may delete.
+  retention_timestamp?: number;
 }
 
 export interface event_dispatch_kv {
