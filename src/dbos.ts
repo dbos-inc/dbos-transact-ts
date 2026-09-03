@@ -684,7 +684,8 @@ export class DBOS {
         while (!DBOS.conductor.isClosed) {
           await sleepms(500);
         }
-        // Bounded, so a long round delays shutdown no further than this.
+        // Grace only: a round still running past this is cut when the system database is
+        // destroyed, so shutdown waits at most this long plus one connect timeout.
         await DBOS.conductor.awaitRetention();
         DBOS.conductor = undefined;
       }

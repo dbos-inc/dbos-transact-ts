@@ -973,6 +973,10 @@ export class SystemDatabase {
   // Resolved on first use by #cockroach(), since detecting it costs a query.
   #isCockroach: boolean | undefined = undefined;
 
+  // Connections a retention round holds right now. destroy() cuts them, since closing the
+  // pool would otherwise wait on the lock session and on any statement in flight.
+  readonly #retentionClients: Set<PoolClient> = new Set();
+
   constructor(
     readonly systemDatabaseUrl: string,
     readonly logger: GlobalLogger,
@@ -1030,6 +1034,21 @@ export class SystemDatabase {
   /** Check out a pool connection guarded for as long as we hold it. See {@link borrowClient}. */
   #connect(): Promise<PoolClient> {
     return borrowClient(this.pool, this.#onClientError);
+  }
+
+  /** Borrow a connection for a retention round, so destroy() can cut it. */
+  async #borrowRetentionClient(): Promise<PoolClient> {
+    const client = await this.#connect();
+    this.#retentionClients.add(client);
+    return client;
+  }
+
+  /** Return a retention connection, unless destroy() already cut it: a second release would throw. */
+  #releaseRetentionClient(client: PoolClient): void {
+    if (this.#retentionClients.delete(client)) {
+      // No error argument: a genuinely dead connection is still evicted by the pool's own check.
+      client.release();
+    }
   }
 
   /**
@@ -1177,6 +1196,13 @@ export class SystemDatabase {
     if (this.notificationsClient) {
       this.#retireNotificationsClient(this.notificationsClient);
     }
+    // A retention round still running is cut here rather than waited for: returned with an
+    // error, each connection is destroyed at once, the idle lock session lets go of the
+    // advisory lock, and the round fails on its next statement instead of holding shutdown.
+    for (const client of this.#retentionClients) {
+      client.release(new Error('System database shutting down'));
+    }
+    this.#retentionClients.clear();
     // We attached nothing to the pool object itself, so there is nothing to unpick; only close one we own.
     if (!this.customPool) {
       await this.pool.end();
@@ -4598,21 +4624,25 @@ export class SystemDatabase {
     }
     const key = retentionLockKey(this.schemaName).toString();
     // The round holds this connection until it ends: releasing it would drop the lock.
-    const client = await this.#connect();
+    const client = await this.#borrowRetentionClient();
     let acquired = false;
     try {
       const { rows } = await client.query<{ locked: boolean }>('SELECT pg_try_advisory_lock($1) AS locked', [key]);
       acquired = rows[0]?.locked === true;
     } catch (e) {
-      client.release();
+      this.#releaseRetentionClient(client);
       throw e;
     }
     if (!acquired) {
-      client.release();
+      this.#releaseRetentionClient(client);
       return undefined;
     }
     return {
       release: async () => {
+        // Already cut by destroy(): the session is gone and took the lock with it.
+        if (!this.#retentionClients.has(client)) {
+          return;
+        }
         try {
           // Explicit, since releasing the client only returns the session to the pool.
           const { rows } = await client.query<{ released: boolean }>('SELECT pg_advisory_unlock($1) AS released', [
@@ -4629,7 +4659,7 @@ export class SystemDatabase {
             );
           }
         } finally {
-          client.release();
+          this.#releaseRetentionClient(client);
         }
       },
     };
@@ -4640,7 +4670,7 @@ export class SystemDatabase {
     if (await this.#cockroach()) {
       return;
     }
-    const client = await this.#connect();
+    const client = await this.#borrowRetentionClient();
     let notices: string[] = [];
     const onNotice = (notice: { message?: string }) => notices.push(notice.message ?? '');
     client.on('notice', onNotice);
@@ -4662,7 +4692,7 @@ export class SystemDatabase {
       }
     } finally {
       client.removeListener('notice', onNotice);
-      client.release();
+      this.#releaseRetentionClient(client);
     }
   }
 
@@ -4698,7 +4728,7 @@ export class SystemDatabase {
       const batch = await retryOnSerializationError(async () => {
         // Borrowed rather than pool.query'd: that releases with the error, which discards the
         // connection on a deadlock, so the retry wrapping this would churn the pool per batch.
-        const client = await this.#connect();
+        const client = await this.#borrowRetentionClient();
         try {
           // Batches are cut by candidate count, so rows spared by the anti-join only thin one
           // out; they are re-checked next round.
@@ -4721,8 +4751,7 @@ export class SystemDatabase {
           );
           return { step, deleted: result.rowCount ?? 0 };
         } finally {
-          // No error argument: a genuinely dead connection is still evicted by the pool's own check.
-          client.release();
+          this.#releaseRetentionClient(client);
         }
       });
       total += batch.deleted;
@@ -4806,7 +4835,7 @@ export class SystemDatabase {
   ): Promise<number | undefined> {
     // Borrowed rather than pool.query'd: that releases with the error, which discards the
     // connection on a deadlock, so the retry wrapping this would churn the pool per batch.
-    const client = await this.#connect();
+    const client = await this.#borrowRetentionClient();
     try {
       // The batchSize-th oldest eligible row above the watermark bounds this range
       const stepParams: unknown[] = [];
@@ -4836,8 +4865,7 @@ export class SystemDatabase {
 
       return step;
     } finally {
-      // No error argument: a genuinely dead connection is still evicted by the pool's own check.
-      client.release();
+      this.#releaseRetentionClient(client);
     }
   }
 

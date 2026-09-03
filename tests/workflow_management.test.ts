@@ -7,6 +7,7 @@ import {
   Event,
   recoverPendingWorkflows,
   reexecuteWorkflowById,
+  retryUntilSuccess,
 } from './helpers';
 import { Client, Pool, PoolClient } from 'pg';
 import { WorkflowHandle, WorkflowStatus } from '../src/workflow';
@@ -1340,6 +1341,57 @@ describe('test-list-queues', () => {
       [id, createdAt],
     );
   }
+
+  test('test-destroy-cuts-a-running-retention-round', async () => {
+    // A round holds the advisory lock for its whole duration and a connection for each
+    // statement in flight. Closing the pool would wait on both, so destroy() cuts them first.
+    await expect(TestGarbageCollection.testWorkflow(1)).resolves.toBe(1);
+
+    const sysdb = new SystemDatabase(config.systemDatabaseUrl!, new GlobalLogger(), DBOSJSON);
+    const key = retentionLockKey(sysdb.schemaName).toString();
+    const lockHeld = async () => {
+      const { rows } = await systemDBClient.query<{ classid: string; objid: string; objsubid: number }>(
+        `SELECT classid, objid, objsubid FROM pg_locks WHERE locktype = 'advisory'`,
+      );
+      return rows.some(
+        (r) => r.objsubid === 1 && BigInt.asIntN(64, (BigInt(r.classid) << 32n) | BigInt(r.objid)).toString() === key,
+      );
+    };
+
+    // Park the first status delete on its borrowed connection until the test lets it go.
+    let parked = false;
+    let resume!: () => void;
+    const gate = new Promise<void>((resolve) => (resume = resolve));
+    const spy = interceptStatusStatements(sysdb.pool, (sql) => {
+      if (parked || !isStatusDelete(sql)) return undefined;
+      parked = true;
+      return gate;
+    });
+    try {
+      // Off the loop, as the conductor runs it.
+      const round = garbageCollect(sysdb, cutoffPastAllCompletions());
+      await retryUntilSuccess(() => {
+        expect(parked).toBe(true);
+      });
+      expect(await lockHeld()).toBe(true);
+
+      // destroy() returns at once rather than waiting on the round's connections...
+      const started = Date.now();
+      await sysdb.destroy();
+      expect(Date.now() - started).toBeLessThan(5000);
+      // ...and the cut lock session let go of the advisory lock with it.
+      await retryUntilSuccess(async () => {
+        expect(await lockHeld()).toBe(false);
+      });
+
+      // The round fails on its cut connection instead of hanging, and does not release twice.
+      resume();
+      await expect(round).rejects.toThrow();
+    } finally {
+      resume();
+      spy.mockRestore();
+    }
+  });
 
   test('test-payload-garbage-collection', async () => {
     const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
