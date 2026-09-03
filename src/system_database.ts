@@ -4690,6 +4690,9 @@ export class SystemDatabase {
         try {
           await client.query(`VACUUM (INDEX_CLEANUP ON, TRUNCATE OFF, ANALYZE) "${this.schemaName}"."${table}"`);
         } catch (e) {
+          if (!this.#retentionClients.has(client)) {
+            throw e;
+          }
           this.logger.warn(`Payload retention could not vacuum ${table}: ${(e as Error).message}`);
           continue;
         }
