@@ -208,33 +208,64 @@ describeIf('cockroachdb', () => {
   test('retention', async () => {
     const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
     const client = new Client(config.systemDatabaseUrl);
+    // CockroachDB rejects VACUUM outright, so a round that tried would warn on every table,
+    // every time. Silence is what proves the round skips it rather than attempting it.
+    const warn = jest.spyOn(sysdb.logger, 'warn');
     try {
       await client.connect();
-      const countOf = async (table: string) => {
-        const { rows } = await client.query<{ count: string }>(`SELECT COUNT(*) AS count FROM dbos.${table}`);
-        return Number(rows[0].count);
+      const payloadIDs = async (table: string) => {
+        const { rows } = await client.query<{ workflow_uuid: string }>(`SELECT workflow_uuid FROM dbos.${table}`);
+        return new Set(rows.map((r) => r.workflow_uuid));
       };
 
-      const numWorkflows = 3;
-      for (let i = 0; i < numWorkflows; i++) {
-        await expect(CRDBTestClass.testWorkflow(`crdb-gc-${i}`)).resolves.toBe(`CRDB-GC-${i}`);
+      // Enqueued first, so these are the oldest rows. A delay keeps them DELAYED, so the
+      // status sweep cannot touch them however far the cutoff reaches: they are stragglers.
+      const stragglers: string[] = [];
+      for (let i = 0; i < 2; i++) {
+        const handle = await DBOS.startWorkflow(CRDBTestClass, {
+          queueName: testQueueName,
+          enqueueOptions: { delaySeconds: 60 },
+        }).testWorkflow(`crdb-straggler-${i}`);
+        stragglers.push(handle.workflowID);
       }
-      expect(await countOf('workflow_input')).toBeGreaterThanOrEqual(numWorkflows);
-      expect(await countOf('workflow_output')).toBeGreaterThanOrEqual(numWorkflows);
 
-      // CockroachDB has no advisory locks, so a round always proceeds; it collects
-      // unprotected rather than not at all.
-      const lock = await sysdb.acquireRetentionLock();
-      expect(lock).toBeDefined();
-      await lock!.release();
+      const rowsThreshold = 3;
+      const completed: string[] = [];
+      for (let i = 0; i < 8; i++) {
+        const handle = await DBOS.startWorkflow(CRDBTestClass).testWorkflow(`crdb-gc-${i}`);
+        await expect(handle.getResult()).resolves.toBe(`CRDB-GC-${i}`);
+        completed.push(handle.workflowID);
+      }
+      expect(await payloadIDs('workflow_input')).toEqual(new Set([...stragglers, ...completed]));
 
-      // One round takes the status rows and then the payloads they left behind.
-      await garbageCollect(sysdb, Date.now() + 60_000);
-      await expect(DBOS.listWorkflows({})).resolves.toHaveLength(0);
-      for (const table of ['workflow_input', 'workflow_output', 'operation_outputs']) {
-        expect(await countOf(table)).toBe(0);
+      // Inside a held lock: CockroachDB stubs advisory locks out, so a round must still run
+      // rather than skip itself into never collecting.
+      const held = await sysdb.acquireRetentionLock();
+      expect(held).toBeDefined();
+      try {
+        await garbageCollect(sysdb, null, rowsThreshold, { batchSize: 2 });
+      } finally {
+        await held!.release();
+      }
+
+      // The newest completed rows survive, as do the stragglers the sweep cannot touch.
+      const collected = new Set(completed.slice(0, -rowsThreshold));
+      const retained = new Set([...completed.slice(-rowsThreshold), ...stragglers]);
+      const listed = new Set((await DBOS.listWorkflows({})).map((w) => w.workflowID));
+      expect(listed).toEqual(retained);
+
+      // Payloads follow their workflows: collected ones gone, in-flight ones spared.
+      expect(await payloadIDs('workflow_input')).toEqual(retained);
+      const outputs = await payloadIDs('workflow_output');
+      expect([...outputs].filter((id) => collected.has(id))).toEqual([]);
+
+      expect(warn.mock.calls.flat().join(' ')).not.toMatch(/vacuum/i);
+
+      for (const workflowID of stragglers) {
+        await DBOS.cancelWorkflow(workflowID);
       }
     } finally {
+      warn.mockRestore();
       await client.end();
     }
   });
