@@ -182,9 +182,9 @@ describe('conductor-retention-dispatch', () => {
       JSON.stringify(
         new protocol.RetentionRequest('retention-round-1', {
           gc_cutoff_epoch_ms: Date.now() + 60_000,
-          // Null rather than absent: a Conductor that clears the batch size must fall back
-          // to the default rather than failing the round.
-          gc_batch_size: null,
+          // Zero rather than absent: a Conductor that clears the batch size must fall back to
+          // the default rather than failing the round, as Python does. Null takes the same path.
+          gc_batch_size: 0,
         }),
       ),
     );
