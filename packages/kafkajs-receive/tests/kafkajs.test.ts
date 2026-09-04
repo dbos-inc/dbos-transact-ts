@@ -11,7 +11,6 @@ import { EventEmitter } from 'node:events';
 const kafkaConfig = {
   clientId: 'dbos-kafka-test',
   brokers: [process.env['KAFKA_BROKER'] ?? 'localhost:9092'],
-  requestTimeout: 100,
   retry: { retries: 5 },
   logLevel: logLevel.NOTHING,
 };
