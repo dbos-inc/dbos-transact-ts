@@ -963,13 +963,6 @@ export class SystemDatabase {
   // Set by destroy(), so polling waits end instead of running on against a pool that outlives this handle.
   #destroyed: boolean = false;
 
-  /**
-   * For now, also write the workflow_status payload columns so a reader predating the
-   * payload tables still finds inputs and outputs. Anything but the literal "false"
-   * keeps them written: the safe state is the default.
-   */
-  readonly dualWritePayloads: boolean = process.env['DBOS__DUAL_WRITE_PAYLOADS'] !== 'false';
-
   // Resolved on first use by #cockroach(), since detecting it costs a query.
   #isCockroach: boolean | undefined = undefined;
 
@@ -1471,8 +1464,8 @@ export class SystemDatabase {
             createdAt,
             status.timeoutMS ?? null,
             status.deadlineEpochMS ?? null,
-            // Legacy column: NULL leaves the payload to workflow_input alone.
-            this.dualWritePayloads ? status.input : null,
+            // Legacy column: the payload lives in workflow_input.
+            null,
             null,
             status.priority,
             status.queuePartitionKey ?? null,
@@ -1563,7 +1556,7 @@ export class SystemDatabase {
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
       const rowCount = await this.updateWorkflowStatus(client, workflowID, status, {
-        update: { ...outcome, resetDeduplicationID: true, setCompletedAt: true },
+        update: { resetDeduplicationID: true, setCompletedAt: true },
         where: { status: StatusString.PENDING },
         throwOnFailure: false,
       });
@@ -1977,8 +1970,6 @@ export class SystemDatabase {
       StatusString.DELAYED,
       params.applicationName ?? null,
     ];
-    // Legacy column: the placeholder is bound only while it is still written.
-    const legacyInputs = this.dualWritePayloads ? `inputs = $${updateParams.push(params.input)}, ` : '';
     // Never extend a workflow the target application doesn't own; falls through to the holder below.
     const ownScope = this.#appNameFilter('application_name', params.applicationName, updateParams);
     const updated = await client.query<{ workflow_uuid: string }>(
@@ -1988,7 +1979,7 @@ export class SystemDatabase {
              THEN debounce_deadline_epoch_ms
              ELSE $1
            END,
-           ${legacyInputs}serialization = $2,
+           serialization = $2,
            updated_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint,
            -- Claim it for the target, as its dequeue would: left unclaimed, every peer coalesces onto the one workflow and the last inputs win.
            application_name = COALESCE(application_name, $8)
@@ -2286,8 +2277,8 @@ export class SystemDatabase {
           ws.request,
           options.applicationVersion ?? ws.application_version ?? null,
           ws.application_id,
-          // Legacy column: NULL leaves the payload to workflow_input alone.
-          this.dualWritePayloads ? ws.inputs : null,
+          // Legacy column: the payload lives in workflow_input.
+          null,
           options.queuePartitionKey ?? null,
           origID,
           ws.serialization,
@@ -2539,9 +2530,9 @@ export class SystemDatabase {
             status.assumed_role,
             status.authenticated_roles,
             status.request,
-            // Legacy columns: NULL leaves the payloads to their own tables.
-            this.dualWritePayloads ? status.output : null,
-            this.dualWritePayloads ? status.error : null,
+            // Legacy columns: the payloads live in their own tables.
+            null,
+            null,
             status.executor_id,
             status.created_at,
             status.updated_at,
@@ -2555,7 +2546,7 @@ export class SystemDatabase {
             status.workflow_deadline_epoch_ms,
             status.started_at_epoch_ms,
             status.deduplication_id,
-            this.dualWritePayloads ? status.inputs : null,
+            null,
             status.priority,
             status.queue_partition_key,
             status.forked_from,
@@ -5732,8 +5723,8 @@ export class SystemDatabase {
           initStatus.status === StatusString.ENQUEUED || initStatus.status === StatusString.DELAYED ? 0 : 1,
           initStatus.timeoutMS ?? null,
           initStatus.deadlineEpochMS ?? null,
-          // Legacy column: NULL leaves the payload to workflow_input alone.
-          this.dualWritePayloads ? (initStatus.input ?? null) : null,
+          // Legacy column: the payload lives in workflow_input.
+          null,
           initStatus.deduplicationID ?? null,
           initStatus.priority,
           initStatus.queuePartitionKey ?? null,
@@ -5792,8 +5783,6 @@ export class SystemDatabase {
     status: (typeof StatusString)[keyof typeof StatusString],
     options: {
       update?: {
-        output?: string | null;
-        error?: string | null;
         resetRecoveryAttempts?: boolean;
         queueName?: string | null;
         resetDeadline?: boolean;
@@ -5819,17 +5808,6 @@ export class SystemDatabase {
     const args: (string | number | undefined)[] = [workflowID, status];
 
     const update = options.update ?? {};
-    // Legacy columns: skipped entirely when the payload tables are the only destination.
-    if (update.output && this.dualWritePayloads) {
-      const param = args.push(update.output);
-      setClause += `, output=$${param}`;
-    }
-
-    if (update.error && this.dualWritePayloads) {
-      const param = args.push(update.error);
-      setClause += `, error=$${param}`;
-    }
-
     if (update.resetRecoveryAttempts) {
       setClause += `, recovery_attempts = 0`;
     }

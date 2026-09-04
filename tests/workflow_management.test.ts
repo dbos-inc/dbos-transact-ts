@@ -1706,11 +1706,11 @@ describe('test-list-queues', () => {
   });
 });
 
-describe('payload-dual-write', () => {
+describe('legacy-payload-rows', () => {
   let config: DBOSConfig;
   let systemDBClient: Client;
 
-  class DualWrite {
+  class LegacyPayload {
     @DBOS.workflow()
     static async workflow(x: number) {
       return Promise.resolve(x);
@@ -1718,16 +1718,9 @@ describe('payload-dual-write', () => {
   }
 
   beforeAll(async () => {
-    // Unset rather than set to "true", so this exercises the shipped default itself. Every
-    // other test forces it off so a broken new-table path cannot hide behind the old columns.
-    delete process.env.DBOS__DUAL_WRITE_PAYLOADS;
     config = generateDBOSTestConfig();
     await setUpDBOSTestSysDb(config);
     DBOS.setConfig(config);
-  });
-
-  afterAll(() => {
-    process.env.DBOS__DUAL_WRITE_PAYLOADS = 'false';
   });
 
   beforeEach(async () => {
@@ -1741,15 +1734,13 @@ describe('payload-dual-write', () => {
     await DBOS.shutdown();
   });
 
-  test('test-payload-dual-write-and-read-fallback', async () => {
+  test('test-legacy-payload-rows-still-read', async () => {
     const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
-    expect(process.env.DBOS__DUAL_WRITE_PAYLOADS).toBeUndefined();
-    expect(sysdb.dualWritePayloads).toBe(true);
 
-    await expect(DualWrite.workflow(11)).resolves.toBe(11);
+    await expect(LegacyPayload.workflow(11)).resolves.toBe(11);
     const workflowID = (await DBOS.listWorkflows({}))[0].workflowID;
 
-    const legacy = await systemDBClient.query<{ inputs: string; output: string }>(
+    const legacy = await systemDBClient.query<{ inputs: string | null; output: string | null }>(
       `SELECT inputs, output FROM dbos.workflow_status WHERE workflow_uuid = $1`,
       [workflowID],
     );
@@ -1762,14 +1753,19 @@ describe('payload-dual-write', () => {
       [workflowID],
     );
 
-    // Both destinations written, with identical payloads.
-    expect(legacy.rows[0].inputs).not.toBeNull();
-    expect(legacy.rows[0].output).not.toBeNull();
-    expect(split.rows[0].inputs).toBe(legacy.rows[0].inputs);
-    expect(out.rows[0].output).toBe(legacy.rows[0].output);
+    // Payloads land only in their own tables, so the legacy columns stay empty.
+    expect(legacy.rows[0].inputs).toBeNull();
+    expect(legacy.rows[0].output).toBeNull();
+    expect(split.rows[0].inputs).not.toBeNull();
+    expect(out.rows[0].output).not.toBeNull();
 
-    // Drop the split rows: a row written before the migration looks exactly like this, and
-    // every read path must still resolve it from workflow_status.
+    // Move them onto the legacy columns: a row written before the split looks exactly like
+    // this, and every read path must still resolve it from workflow_status.
+    await systemDBClient.query(`UPDATE dbos.workflow_status SET inputs = $2, output = $3 WHERE workflow_uuid = $1`, [
+      workflowID,
+      split.rows[0].inputs,
+      out.rows[0].output,
+    ]);
     await systemDBClient.query(`DELETE FROM dbos.workflow_input WHERE workflow_uuid = $1`, [workflowID]);
     await systemDBClient.query(`DELETE FROM dbos.workflow_output WHERE workflow_uuid = $1`, [workflowID]);
 
@@ -1780,13 +1776,11 @@ describe('payload-dual-write', () => {
     const forked = await DBOS.forkWorkflow(workflowID, 0);
     await expect(forked.getResult()).resolves.toBe(11);
 
-    // Retention in the configuration that actually ships: a round collects both destinations,
-    // including the legacy-only row, and leaves nothing stranded.
+    // A round collects the legacy-only row with everything else and strands nothing.
     await garbageCollect(sysdb, Date.now() + 60_000);
     await expect(DBOS.listWorkflows({})).resolves.toHaveLength(0);
     for (const table of ['workflow_input', 'workflow_output', 'operation_outputs', 'workflow_status']) {
       const { rows } = await systemDBClient.query<{ count: string }>(`SELECT COUNT(*) AS count FROM dbos.${table}`);
-      // The legacy columns live on workflow_status, so the status sweep takes them.
       expect(Number(rows[0].count)).toBe(0);
     }
   });

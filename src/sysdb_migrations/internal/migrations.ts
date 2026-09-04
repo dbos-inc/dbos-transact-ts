@@ -1028,7 +1028,7 @@ BEGIN
     v_status := CASE WHEN delay_until_epoch_ms IS NULL THEN 'ENQUEUED' ELSE 'DELAYED' END;
 
     INSERT INTO "${schemaName}".workflow_status (
-        workflow_uuid, status, inputs,
+        workflow_uuid, status,
         name, class_name, config_name,
         queue_name, deduplication_id, priority, queue_partition_key,
         application_version,
@@ -1038,7 +1038,7 @@ BEGIN
         authenticated_user, authenticated_roles,
         delay_until_epoch_ms, application_name
     ) VALUES (
-        v_workflow_id, v_status, v_serialized_inputs,
+        v_workflow_id, v_status,
         workflow_name, class_name, config_name,
         queue_name, deduplication_id, v_priority, queue_partition_key,
         app_version,
