@@ -5,7 +5,7 @@ import WebSocket from 'ws';
 import * as protocol from './protocol';
 import { GetWorkflowsInput, WorkflowStatusString } from '../workflow';
 import { hostname } from 'node:os';
-import { globalTimeout } from '../workflow_management';
+import { garbageCollect, globalTimeout } from '../workflow_management';
 import assert from 'node:assert';
 import * as zlib from 'node:zlib';
 import { promisify } from 'node:util';
@@ -30,6 +30,8 @@ export class Conductor {
   pingIntervalTimeout: IntervalTimeout | undefined = undefined; // Combined interval and timeout for pinging Conductor
   reconnectDelayMs = 1000;
   reconnectTimeout: NodeJS.Timeout | undefined = undefined;
+  // The retention round running off the message loop, if there is one.
+  retentionRound: Promise<void> | undefined = undefined;
 
   constructor(
     readonly dbosExec: DBOSExecutor,
@@ -407,27 +409,40 @@ export class Conductor {
             break;
           case protocol.MessageType.RETENTION:
             const retentionMessage = baseMsg as protocol.RetentionRequest;
-            let retentionSuccess = true;
-            try {
-              await this.dbosExec.systemDatabase.garbageCollect(
-                retentionMessage.body.gc_cutoff_epoch_ms,
-                retentionMessage.body.gc_rows_threshold,
-                { batchSize: retentionMessage.body.gc_batch_size },
-              );
-              if (retentionMessage.body.timeout_cutoff_epoch_ms) {
-                await globalTimeout(this.dbosExec.systemDatabase, retentionMessage.body.timeout_cutoff_epoch_ms);
-              }
-            } catch (e) {
-              retentionSuccess = false;
-              errorMsg = `Exception encountered during enforcing retention policy: ${(e as Error).message}`;
-              this.dbosExec.logger.error(errorMsg);
+            const retentionBody = retentionMessage.body;
+            // Off the message loop: a round takes minutes, and awaiting it here stops every
+            // other command and lets the dispatch time out into a second round on another executor.
+            if (this.retentionRound !== undefined) {
+              this.dbosExec.logger.warn('Skipping retention: the previous round on this executor is still running.');
+            } else {
+              this.retentionRound = (async () => {
+                try {
+                  await garbageCollect(
+                    this.dbosExec.systemDatabase,
+                    retentionBody.gc_cutoff_epoch_ms,
+                    retentionBody.gc_rows_threshold,
+                    // Older Conductor versions may not send gc_batch_size, newer ones may send null,
+                    // and a cleared setting may arrive as zero: every one of those takes the default.
+                    { batchSize: retentionBody.gc_batch_size || undefined },
+                  );
+                  if (retentionBody.timeout_cutoff_epoch_ms) {
+                    await globalTimeout(this.dbosExec.systemDatabase, retentionBody.timeout_cutoff_epoch_ms);
+                  }
+                } catch (e) {
+                  if (this.isShuttingDown) {
+                    // Shutdown took the system database away mid-round; the next round resumes the work.
+                    this.dbosExec.logger.debug('Retention interrupted by shutdown');
+                    return;
+                  }
+                  this.dbosExec.logger.error(
+                    `Exception encountered during enforcing retention policy: ${(e as Error).message}`,
+                  );
+                }
+              })().finally(() => {
+                this.retentionRound = undefined;
+              });
             }
-            const retentionResponse = new protocol.RetentionResponse(
-              retentionMessage.request_id,
-              retentionSuccess,
-              errorMsg,
-            );
-            currWebsocket.send(JSON.stringify(retentionResponse));
+            currWebsocket.send(JSON.stringify(new protocol.RetentionResponse(retentionMessage.request_id, true)));
             break;
           case protocol.MessageType.GET_METRICS:
             const getMetricsMessage = baseMsg as protocol.GetMetricsRequest;
@@ -945,6 +960,23 @@ export class Conductor {
       if (this.reconnectTimeout === undefined) {
         this.resetWebsocket(this.websocket, this.pingIntervalTimeout);
       }
+    }
+  }
+
+  /**
+   * Give a round in flight a bounded chance to finish before shutdown takes the system
+   * database away from it.
+   */
+  async awaitRetention(timeoutMs: number = 10000): Promise<void> {
+    const round = this.retentionRound;
+    if (round === undefined) {
+      return;
+    }
+    let timer: NodeJS.Timeout | undefined = undefined;
+    try {
+      await Promise.race([round, new Promise<void>((resolve) => (timer = setTimeout(resolve, timeoutMs)))]);
+    } finally {
+      clearTimeout(timer);
     }
   }
 

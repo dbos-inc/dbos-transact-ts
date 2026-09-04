@@ -142,6 +142,31 @@ async function rewriteRowWith(
      WHERE workflow_uuid=$5`,
     [status, fields.output ?? null, fields.error ?? null, fields.serialization ?? null, workflowID],
   );
+  // Both destinations, as the execution that really recorded this outcome would have.
+  await client.query(
+    `INSERT INTO dbos.workflow_output (workflow_uuid, output, error) VALUES ($1, $2, $3)
+     ON CONFLICT (workflow_uuid) DO UPDATE SET output = EXCLUDED.output, error = EXCLUDED.error`,
+    [workflowID, fields.output ?? null, fields.error ?? null],
+  );
+}
+
+/**
+ * The status row and the payload table's outcome. Read directly rather than through the
+ * fallback a reader uses, so a run that wrongly cleared the payload row cannot hide behind
+ * the legacy column the rewrite also filled.
+ */
+async function readOutcome(
+  client: Client,
+  workflowID: string,
+): Promise<{ status: string; output: string | null; error: string | null }> {
+  const { rows } = await client.query<{ status: string; output: string | null; error: string | null }>(
+    `SELECT ws.status, wo.output, wo.error
+     FROM dbos.workflow_status ws
+     LEFT JOIN dbos.workflow_output wo ON wo.workflow_uuid = ws.workflow_uuid
+     WHERE ws.workflow_uuid=$1`,
+    [workflowID],
+  );
+  return rows[0];
 }
 
 // Plant the checkpoint the blocked step is about to write, with a different
@@ -205,12 +230,9 @@ describe('workflow-outcome-ownership', () => {
     await expect(handle.getResult()).resolves.toBe('recorded-elsewhere');
 
     // The recorded output must not be overwritten.
-    const { rows } = await systemDBClient.query<{ status: string; output: string }>(
-      `SELECT status, output FROM dbos.workflow_status WHERE workflow_uuid=$1`,
-      [handle.workflowID],
-    );
-    expect(rows[0].status).toBe(StatusString.SUCCESS);
-    expect(rows[0].output).toBe(recorded.serializedValue);
+    const outcome = await readOutcome(systemDBClient, handle.workflowID);
+    expect(outcome.status).toBe(StatusString.SUCCESS);
+    expect(outcome.output).toBe(recorded.serializedValue);
   });
 
   test('recorded-error-supersedes-the-run-result', async () => {
@@ -275,12 +297,9 @@ describe('workflow-outcome-ownership', () => {
     await expect(handle.getResult()).rejects.toThrow(DBOSMaxRecoveryAttemptsExceededError);
 
     // The refused outcome must not have recorded an output.
-    const { rows } = await systemDBClient.query<{ status: string; output: string | null }>(
-      `SELECT status, output FROM dbos.workflow_status WHERE workflow_uuid=$1`,
-      [handle.workflowID],
-    );
-    expect(rows[0].status).toBe(StatusString.MAX_RECOVERY_ATTEMPTS_EXCEEDED);
-    expect(rows[0].output).toBeNull();
+    const outcome = await readOutcome(systemDBClient, handle.workflowID);
+    expect(outcome.status).toBe(StatusString.MAX_RECOVERY_ATTEMPTS_EXCEEDED);
+    expect(outcome.output).toBeNull();
   });
 
   test('deleted-row-fails-the-run-with-non-existent-workflow', async () => {
@@ -330,13 +349,10 @@ describe('workflow-outcome-ownership', () => {
 
     // The run's own failure must not surface, and must not be recorded.
     await expect(handle.getResult()).resolves.toBe('recorded-elsewhere');
-    const { rows } = await systemDBClient.query<{ status: string; output: string; error: string | null }>(
-      `SELECT status, output, error FROM dbos.workflow_status WHERE workflow_uuid=$1`,
-      [handle.workflowID],
-    );
-    expect(rows[0].status).toBe(StatusString.SUCCESS);
-    expect(rows[0].output).toBe(recorded.serializedValue);
-    expect(rows[0].error).toBeNull();
+    const outcome = await readOutcome(systemDBClient, handle.workflowID);
+    expect(outcome.status).toBe(StatusString.SUCCESS);
+    expect(outcome.output).toBe(recorded.serializedValue);
+    expect(outcome.error).toBeNull();
   });
 
   test('duplicate-execution-releases-the-running-entry-before-parking', async () => {
@@ -389,12 +405,9 @@ describe('workflow-outcome-ownership', () => {
     ctrl.release.set();
 
     await expect(handle.getResult()).resolves.toBe('recorded-elsewhere');
-    const { rows } = await systemDBClient.query<{ status: string; error: string | null }>(
-      `SELECT status, error FROM dbos.workflow_status WHERE workflow_uuid=$1`,
-      [handle.workflowID],
-    );
-    expect(rows[0].status).toBe(StatusString.SUCCESS);
-    expect(rows[0].error).toBeNull();
+    const outcome = await readOutcome(systemDBClient, handle.workflowID);
+    expect(outcome.status).toBe(StatusString.SUCCESS);
+    expect(outcome.error).toBeNull();
   });
 
   test('portable-failed-run-adopts-the-recorded-outcome', async () => {
@@ -411,13 +424,10 @@ describe('workflow-outcome-ownership', () => {
     ctrl.release.set();
 
     await expect(handle.getResult()).resolves.toBe('recorded-elsewhere');
-    const { rows } = await systemDBClient.query<{ status: string; output: string; error: string | null }>(
-      `SELECT status, output, error FROM dbos.workflow_status WHERE workflow_uuid=$1`,
-      [handle.workflowID],
-    );
-    expect(rows[0].status).toBe(StatusString.SUCCESS);
-    expect(rows[0].output).toBe(recorded.serializedValue);
-    expect(rows[0].error).toBeNull();
+    const outcome = await readOutcome(systemDBClient, handle.workflowID);
+    expect(outcome.status).toBe(StatusString.SUCCESS);
+    expect(outcome.output).toBe(recorded.serializedValue);
+    expect(outcome.error).toBeNull();
   });
 
   test('failed-run-fails-fast-when-its-row-is-deleted', async () => {

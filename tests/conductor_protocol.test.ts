@@ -1,8 +1,10 @@
 import { inspect } from 'node:util';
+import { AddressInfo } from 'node:net';
+import { WebSocket, WebSocketServer } from 'ws';
 import { DBOS } from '../src';
-import { DBOSConfig } from '../src/dbos-executor';
+import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import * as protocol from '../src/conductor/protocol';
-import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
+import { generateDBOSTestConfig, retryUntilSuccess, setUpDBOSTestSysDb } from './helpers';
 
 // Regression tests for the conductor protocol's human-readable string
 // representations of workflow/step input and output.
@@ -125,5 +127,144 @@ describe('conductor-protocol-string-representations', () => {
     expect(wire.Output).toBeDefined();
     expect(wire.Output).toContain('10n');
     expect(wire.Output).toContain('Set');
+  });
+});
+
+// A retention round takes minutes, so the conductor runs it off its command loop. That is a
+// property of the live connection rather than of a wire object, so unlike the suite above
+// this one stands up a real websocket for Conductor's side of it.
+describe('conductor-retention-dispatch', () => {
+  let config: DBOSConfig;
+  let server: WebSocketServer;
+  let conductorSocket: WebSocket;
+  let received: string[];
+
+  const retentionWorkflow = DBOS.registerWorkflow(
+    (x: number) => {
+      return Promise.resolve(x);
+    },
+    { name: 'retentionWorkflow' },
+  );
+
+  beforeAll(() => {
+    config = generateDBOSTestConfig();
+    DBOS.setConfig(config);
+  });
+
+  beforeEach(async () => {
+    await setUpDBOSTestSysDb(config);
+    received = [];
+    server = new WebSocketServer({ host: '127.0.0.1', port: 0 });
+    await new Promise<void>((resolve) => server.once('listening', resolve));
+    const connected = new Promise<WebSocket>((resolve) => server.once('connection', resolve));
+
+    const { port } = server.address() as AddressInfo;
+    await DBOS.launch({ conductorKey: 'test-key', conductorURL: `ws://127.0.0.1:${port}` });
+
+    conductorSocket = await connected;
+    conductorSocket.on('message', (data: Buffer) => received.push(data.toString('utf-8')));
+  });
+
+  afterEach(async () => {
+    // shutdown() returns once it has asked the socket to close, but ws finishes the handshake
+    // afterwards, and its close handler logs. Wait for it, or that log lands after teardown.
+    const socket = DBOS.conductor?.websocket;
+    const closed =
+      socket === undefined || socket.readyState === WebSocket.CLOSED
+        ? Promise.resolve()
+        : new Promise<void>((resolve) => socket.once('close', () => resolve()));
+    await DBOS.shutdown();
+    await closed;
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+
+  /** The responses this stand-in has received for one request ID. */
+  const answersTo = (requestID: string) =>
+    received.map((m) => JSON.parse(m) as protocol.BaseResponse).filter((m) => m.request_id === requestID);
+
+  test('answers a retention request at once and still collects', async () => {
+    await expect(retentionWorkflow(1)).resolves.toBe(1);
+    await expect(DBOS.listWorkflows({})).resolves.toHaveLength(1);
+
+    conductorSocket.send(
+      JSON.stringify(
+        new protocol.RetentionRequest('retention-round-1', {
+          gc_cutoff_epoch_ms: Date.now() + 60_000,
+          // Zero rather than absent: a Conductor that clears the batch size must fall back to
+          // the default rather than failing the round, as Python does. Null takes the same path.
+          gc_batch_size: 0,
+        }),
+      ),
+    );
+
+    await retryUntilSuccess(() => {
+      const answers = answersTo('retention-round-1');
+      expect(answers).toHaveLength(1);
+      expect((answers[0] as protocol.RetentionResponse).success).toBe(true);
+      expect(answers[0].error_message).toBeUndefined();
+    });
+
+    // The answer above did not wait for the round, so the collection is what proves it ran.
+    await retryUntilSuccess(async () => {
+      await expect(DBOS.listWorkflows({})).resolves.toHaveLength(0);
+    });
+
+    // The round ran off the command loop, so the loop is still serving commands.
+    conductorSocket.send(
+      JSON.stringify(
+        new protocol.ListWorkflowsRequest('after-retention', {
+          workflow_uuids: ['no-such-workflow'],
+          sort_desc: false,
+        }),
+      ),
+    );
+    await retryUntilSuccess(() => {
+      const answers = answersTo('after-retention');
+      expect(answers).toHaveLength(1);
+      expect(answers[0].error_message).toBeUndefined();
+    });
+  });
+
+  test('skips a round while the previous one on this executor is still running', async () => {
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    const logger = DBOSExecutor.globalInstance!.logger;
+    await expect(retentionWorkflow(1)).resolves.toBe(1);
+
+    // The first round parks on its lock acquisition until the test lets it go, so the second
+    // request is guaranteed to arrive while it is still running. It then resolves to "not
+    // acquired", so that round ends without collecting either.
+    let openGate!: (lock: undefined) => void;
+    const gate = new Promise<undefined>((resolve) => (openGate = resolve));
+    const acquire = jest.spyOn(sysdb, 'acquireRetentionLock').mockImplementationOnce(() => gate);
+    const warn = jest.spyOn(logger, 'warn');
+    try {
+      const request = (requestID: string) =>
+        conductorSocket.send(
+          JSON.stringify(new protocol.RetentionRequest(requestID, { gc_cutoff_epoch_ms: Date.now() + 60_000 })),
+        );
+      request('round-a');
+      await retryUntilSuccess(() => {
+        expect(acquire).toHaveBeenCalledTimes(1);
+      });
+
+      // Skipped by the executor, before it ever reaches the database.
+      request('round-b');
+      await retryUntilSuccess(() => {
+        expect(warn).toHaveBeenCalledWith('Skipping retention: the previous round on this executor is still running.');
+      });
+      expect(acquire).toHaveBeenCalledTimes(1);
+
+      openGate(undefined);
+      // Both requests are answered, and neither collected anything.
+      await retryUntilSuccess(() => {
+        expect(answersTo('round-a')).toHaveLength(1);
+        expect(answersTo('round-b')).toHaveLength(1);
+      });
+      await expect(DBOS.listWorkflows({})).resolves.toHaveLength(1);
+    } finally {
+      openGate(undefined);
+      warn.mockRestore();
+      acquire.mockRestore();
+    }
   });
 });

@@ -183,6 +183,24 @@ const portableRecvWF = DBOS.registerWorkflow(
   { name: 'portableRecvWF' },
 );
 
+/**
+ * A status row with its payloads resolved from the split tables, falling back to the legacy
+ * columns: the shape every reader in the SDK sees, whether or not dual write is on.
+ */
+async function readStatusRow(client: Client, workflowID: string | undefined) {
+  return client.query<workflow_status>(
+    `SELECT ws.workflow_uuid, ws.status, ws.serialization,
+            COALESCE(wi.inputs, ws.inputs) AS inputs,
+            COALESCE(wo.output, ws.output) AS output,
+            COALESCE(wo.error, ws.error) AS error
+     FROM dbos.workflow_status ws
+     LEFT JOIN dbos.workflow_input wi ON wi.workflow_uuid = ws.workflow_uuid
+     LEFT JOIN dbos.workflow_output wo ON wo.workflow_uuid = ws.workflow_uuid
+     WHERE ws.workflow_uuid = $1`,
+    [workflowID],
+  );
+}
+
 describe('portable-serizlization-tests', () => {
   let config: DBOSConfig;
   let systemDBClient: Client;
@@ -260,10 +278,7 @@ describe('portable-serizlization-tests', () => {
 
     // Snoop the DB to make sure serialization format is correct
     // WF
-    const nser = await systemDBClient.query<workflow_status>(
-      'SELECT * FROM dbos.workflow_status where workflow_uuid = $1',
-      [wfhd.workflowID],
-    );
+    const nser = await readStatusRow(systemDBClient, wfhd.workflowID);
     expect(nser.rows[0].serialization).toBe(DBOSJSON.name());
     // Messages
     await checkMsgSer(drpwfh.workflowID, 'default', DBOSJSON.name());
@@ -299,10 +314,7 @@ describe('portable-serizlization-tests', () => {
 
     // Snoop the DB to make sure serialization format is correct
     // WF
-    const pser = await systemDBClient.query<workflow_status>(
-      'SELECT * FROM dbos.workflow_status where workflow_uuid = $1',
-      [wfhp.workflowID],
-    );
+    const pser = await readStatusRow(systemDBClient, wfhp.workflowID);
     expect(pser.rows[0].serialization).toBe(DBOSPortableJSON.name());
     expect(pser.rows[0].output).toBe('"s-1-k:v@\\"m\\""');
 
@@ -364,10 +376,7 @@ describe('portable-serizlization-tests', () => {
 
     // Snoop the DB to make sure serialization format is correct
     // WF
-    const eser = await systemDBClient.query<workflow_status>(
-      'SELECT * FROM dbos.workflow_status where workflow_uuid = $1',
-      [PortableWorkflow.lastWfid],
-    );
+    const eser = await readStatusRow(systemDBClient, PortableWorkflow.lastWfid);
     expect(eser.rows[0].serialization).toBe(DBOSPortableJSON.name());
     expect(eser.rows[0].output).toBeNull();
     expect(eser.rows[0].error).toBe('{\"name\":\"Error\",\"message\":\"Failed!\"}');
@@ -407,10 +416,7 @@ describe('portable-serizlization-tests', () => {
       expect(await portableDirectWorkflow()).toBe('direct');
     });
 
-    const wfser = await systemDBClient.query<workflow_status>(
-      'SELECT * FROM dbos.workflow_status where workflow_uuid = $1',
-      [directID],
-    );
+    const wfser = await readStatusRow(systemDBClient, directID);
     expect(wfser.rows[0].serialization).toBe(DBOSPortableJSON.name());
     await checkEvtSer(directID, 'defstat', DBOSPortableJSON.name());
     await checkStreamSer(directID, 'defstream', DBOSPortableJSON.name());
@@ -440,10 +446,7 @@ describe('portable-serizlization-tests', () => {
     expect(result).toBeNull();
 
     // Verify the workflow completed successfully in the DB
-    const dbRow = await systemDBClient.query<workflow_status>(
-      'SELECT * FROM dbos.workflow_status WHERE workflow_uuid = $1',
-      [wfh.workflowID],
-    );
+    const dbRow = await readStatusRow(systemDBClient, wfh.workflowID);
     expect(dbRow.rows[0].status).toBe('SUCCESS');
     expect(dbRow.rows[0].serialization).toBe(DBOSPortableJSON.name());
 
@@ -479,10 +482,7 @@ describe('portable-serizlization-tests', () => {
     expect(result).toBeNull();
 
     // Verify the workflow completed successfully in the DB
-    const dbRow = await systemDBClient.query<workflow_status>(
-      'SELECT * FROM dbos.workflow_status WHERE workflow_uuid = $1',
-      [wfh.workflowID],
-    );
+    const dbRow = await readStatusRow(systemDBClient, wfh.workflowID);
     expect(dbRow.rows[0].status).toBe('SUCCESS');
     expect(dbRow.rows[0].serialization).toBe(DBOSPortableJSON.name());
 
@@ -578,10 +578,7 @@ describe('portable-serizlization-tests', () => {
     const wfh = DBOS.retrieveWorkflow(id);
     await expect(wfh.getResult()).rejects.toThrow();
 
-    const result = await systemDBClient.query<workflow_status>(
-      'SELECT * FROM dbos.workflow_status WHERE workflow_uuid = $1',
-      [id],
-    );
+    const result = await readStatusRow(systemDBClient, id);
     expect(result.rows).toHaveLength(1);
     expect(result.rows[0].status).toBe('ERROR');
     expect(result.rows[0].error).toBeDefined();
@@ -619,10 +616,7 @@ describe('portable-serizlization-tests', () => {
     const wfh = DBOS.retrieveWorkflow(id);
     await expect(wfh.getResult()).rejects.toThrow();
 
-    const result = await systemDBClient.query<workflow_status>(
-      'SELECT * FROM dbos.workflow_status WHERE workflow_uuid = $1',
-      [id],
-    );
+    const result = await readStatusRow(systemDBClient, id);
     expect(result.rows[0].status).toBe('ERROR');
     expect(result.rows[0].error).toBeDefined();
   });
@@ -656,10 +650,7 @@ describe('portable-serizlization-tests', () => {
     const wfh = DBOS.retrieveWorkflow(id);
     await expect(wfh.getResult()).rejects.toThrow();
 
-    const result = await systemDBClient.query<workflow_status>(
-      'SELECT * FROM dbos.workflow_status WHERE workflow_uuid = $1',
-      [id],
-    );
+    const result = await readStatusRow(systemDBClient, id);
     expect(result.rows[0].status).toBe('ERROR');
     // The error should contain Zod validation details
     expect(result.rows[0].error).toBeDefined();
@@ -736,10 +727,7 @@ describe('portable-serizlization-tests', () => {
 
     // Verify the inputs column in the DB stored the date as a string (portable JSON),
     // not as a Date object — confirming the coercion happened on the way back in.
-    const dbRow = await systemDBClient.query<workflow_status>(
-      'SELECT * FROM dbos.workflow_status WHERE workflow_uuid = $1',
-      [wfh.workflowID],
-    );
+    const dbRow = await readStatusRow(systemDBClient, wfh.workflowID);
     expect(dbRow.rows[0].serialization).toBe('portable_json');
     const storedInputs = JSON.parse(dbRow.rows[0].inputs) as JsonWorkflowArgs;
     // Portable JSON stores the Date as an ISO string
@@ -814,10 +802,7 @@ describe('portable-serizlization-tests', () => {
 
         // Snoop the DB to make sure serialization format is correct
         // WF
-        const pser = await systemDBClient.query<workflow_status>(
-          'SELECT * FROM dbos.workflow_status where workflow_uuid = $1',
-          [wfhs.workflowID],
-        );
+        const pser = await readStatusRow(systemDBClient, wfhs.workflowID);
         expect(pser.rows[0].serialization).toBe(DBOSPortableJSON.name());
         expect(pser.rows[0].output).toBe('"s-1-k:v@\\"m\\""');
 
@@ -904,10 +889,7 @@ describe('custom-serializer-restart-tests', () => {
     await expect(p1ErrHandle.getResult()).rejects.toThrow('phase1-oops');
 
     // Verify DB stores default serialization format
-    const p1Status = await systemDBClient.query<workflow_status>(
-      'SELECT * FROM dbos.workflow_status WHERE workflow_uuid = $1',
-      [p1Handle.workflowID],
-    );
+    const p1Status = await readStatusRow(systemDBClient, p1Handle.workflowID);
     expect(p1Status.rows[0].serialization).toBe(DBOSJSON.name());
 
     await DBOS.shutdown();
@@ -941,10 +923,7 @@ describe('custom-serializer-restart-tests', () => {
     await client.destroy();
 
     // Verify DB stores custom serialization format
-    const p2Status = await systemDBClient.query<workflow_status>(
-      'SELECT * FROM dbos.workflow_status WHERE workflow_uuid = $1',
-      [p2Handle.workflowID],
-    );
+    const p2Status = await readStatusRow(systemDBClient, p2Handle.workflowID);
     expect(p2Status.rows[0].serialization).toBe('custom_base64');
     expect(p2Status.rows[0].output).toBe(base64Serializer.stringify('result:world'));
 
@@ -1214,10 +1193,7 @@ describe('async-serializer-tests', () => {
     expect(parseCalls).toBeGreaterThan(0);
 
     // The DB must store base64-encoded values, not '[object Promise]'.
-    const status = await systemDBClient.query<workflow_status>(
-      'SELECT * FROM dbos.workflow_status WHERE workflow_uuid = $1',
-      [sender.workflowID],
-    );
+    const status = await readStatusRow(systemDBClient, sender.workflowID);
     expect(status.rows[0].serialization).toBe('async_base64');
     expect(status.rows[0].output).toBe(await asyncBase64Serializer.stringify('result:hello'));
     expect(status.rows[0].output).not.toContain('[object Promise]');

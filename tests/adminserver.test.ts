@@ -1,6 +1,11 @@
 import { DBOS, StatusString } from '../src';
 import { DBOSConfig } from '../src/dbos-executor';
-import { generateDBOSTestConfig, queueEntriesAreCleanedUp, setUpDBOSTestSysDb } from './helpers';
+import {
+  generateDBOSTestConfig,
+  queueEntriesAreCleanedUp,
+  setUpDBOSTestSysDb,
+  cutoffPastAllCompletions,
+} from './helpers';
 import { QueueMetadataResponse } from '../src/adminserver';
 import { HealthUrl, WorkflowQueuesMetadataUrl, WorkflowRecoveryUrl } from '../src/adminserver';
 import { globalParams, sleepms } from '../src/utils';
@@ -457,7 +462,7 @@ describe('running-admin-server-tests', () => {
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ cutoff_epoch_timestamp_ms: Date.now() }),
+      body: JSON.stringify({ cutoff_epoch_timestamp_ms: cutoffPastAllCompletions() }),
     });
     expect(response.status).toBe(204);
 

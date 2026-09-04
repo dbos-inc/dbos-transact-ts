@@ -8,7 +8,7 @@ import * as net from 'net';
 import { performance } from 'perf_hooks';
 import { globalParams, INTERNAL_QUEUE_NAME } from './utils';
 import { QueueParameters, wfQueueRunner, WorkflowQueue } from './wfqueue';
-import { globalTimeout } from './workflow_management';
+import { garbageCollect, globalTimeout } from './workflow_management';
 import * as protocol from './conductor/protocol';
 
 export type QueueMetadataResponse = QueueParameters & { name: string };
@@ -376,7 +376,8 @@ export class DBOSAdminServer {
           cutoff_epoch_timestamp_ms?: number;
           rows_threshold?: number;
         };
-        await dbosExec.systemDatabase.garbageCollect(body.cutoff_epoch_timestamp_ms, body.rows_threshold);
+        // System-wide: this collects every application sharing the system database.
+        await garbageCollect(dbosExec.systemDatabase, body.cutoff_epoch_timestamp_ms, body.rows_threshold);
         sendNoContent(res);
       },
     });
