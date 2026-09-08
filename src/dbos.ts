@@ -1,6 +1,5 @@
 import {
   getCurrentContextStore,
-  HTTPRequest,
   runWithTopContext,
   getNextWFID,
   StepStatus,
@@ -73,7 +72,6 @@ import {
   registerLifecycleCallback,
   setAlertHandler,
   transactionalDataSources,
-  registerMiddlewareInstaller,
   MethodRegistrationBase,
   TypedAsyncFunction,
   UntypedAsyncFunction,
@@ -83,7 +81,6 @@ import {
   wrapDBOSFunctionAndRegister,
   ensureDBOSIsLaunched,
   ConfiguredInstance,
-  DBOSMethodMiddlewareInstaller,
   DBOSLifecycleCallback,
   finalizeClassRegistrations,
   getClassRegistration,
@@ -783,18 +780,6 @@ export class DBOS {
    */
   static requestObject(): object | undefined {
     return getCurrentContextStore()?.request;
-  }
-
-  /** Get the current HTTP request (within `@DBOS.getApi` et al) */
-  static getRequest(): HTTPRequest | undefined {
-    return this.requestObject() as HTTPRequest | undefined;
-  }
-
-  /** Get the current HTTP request (within `@DBOS.getApi` et al) */
-  static get request(): HTTPRequest {
-    const r = DBOS.getRequest();
-    if (!r) throw new DBOSError('`DBOS.request` accessed from outside of HTTP requests');
-    return r;
   }
 
   /** Get the current application version */
@@ -2407,13 +2392,6 @@ export class DBOS {
    */
   static registerLifecycleCallback(lcl: DBOSLifecycleCallback) {
     registerLifecycleCallback(lcl);
-  }
-
-  /**
-   * Register a middleware provider
-   */
-  static registerMiddlewareInstaller(mwp: DBOSMethodMiddlewareInstaller) {
-    registerMiddlewareInstaller(mwp);
   }
 
   /**

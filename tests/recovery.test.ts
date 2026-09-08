@@ -64,7 +64,8 @@ describe('recovery-tests', () => {
 
     @DBOS.workflow()
     static async testRecoveryWorkflow(input: number) {
-      if (DBOS.authenticatedUser === 'test_recovery_user' && DBOS.request.url === 'test-recovery-url') {
+      const request = DBOS.requestObject() as { url?: string } | undefined;
+      if (DBOS.authenticatedUser === 'test_recovery_user' && request?.url === 'test-recovery-url') {
         LocalRecovery.cnt += input;
       }
 

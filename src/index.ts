@@ -17,13 +17,7 @@ export { SchedulerMode, SchedulerConfig } from './scheduler/scheduler_decorator'
 
 export { WorkflowSchedule, ScheduledWorkflowFn, ScheduleOptions } from './scheduler/scheduler';
 
-export {
-  AlertHandler,
-  DBOSLifecycleCallback,
-  DBOSMethodMiddlewareInstaller,
-  ExternalRegistration,
-  MethodRegistrationBase,
-} from './decorators';
+export { AlertHandler, DBOSLifecycleCallback, ExternalRegistration, MethodRegistrationBase } from './decorators';
 
 export { WorkflowQueue } from './wfqueue';
 

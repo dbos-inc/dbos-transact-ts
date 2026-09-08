@@ -62,11 +62,6 @@ export interface DBOSLifecycleCallback {
   logRegisteredEndpoints?(): void;
 }
 
-// Middleware installation
-export interface DBOSMethodMiddlewareInstaller {
-  installMiddleware(methodReg: MethodRegistrationBase): void;
-}
-
 export const DBOS_AUTH = 'auth';
 
 export interface ClassAuthDefaults {
@@ -342,10 +337,11 @@ export function getLifecycleListeners() {
 }
 
 // Middleware installers - insert middleware in registered functions prior to launch
+type MiddlewareInstaller = (methodReg: MethodRegistrationBase) => void;
 let installedMiddleware = false;
-const middlewareInstallers: DBOSMethodMiddlewareInstaller[] = [];
+const middlewareInstallers: MiddlewareInstaller[] = [];
 
-export function registerMiddlewareInstaller(i: DBOSMethodMiddlewareInstaller) {
+export function registerMiddlewareInstaller(i: MiddlewareInstaller) {
   if (installedMiddleware) throw new TypeError('Attempt to provide method middleware after insertion was performed');
   if (!middlewareInstallers.includes(i)) middlewareInstallers.push(i);
 }
@@ -359,7 +355,7 @@ export function insertAllMiddleware() {
   for (const c of regs) {
     for (const f of c.allRegisteredOperations.values()) {
       for (const i of middlewareInstallers) {
-        i.installMiddleware(f);
+        i(f);
       }
     }
   }

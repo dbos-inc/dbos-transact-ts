@@ -3,7 +3,6 @@ import { DBOS } from './dbos';
 import {
   ClassAuthDefaults,
   DBOS_AUTH,
-  DBOSMethodMiddlewareInstaller,
   MethodAuth,
   MethodRegistrationBase,
   registerMiddlewareInstaller,
@@ -37,21 +36,17 @@ function checkMethodAuth(methReg: MethodRegistrationBase, args: unknown[]) {
   return args;
 }
 
-class AuthChecker implements DBOSMethodMiddlewareInstaller {
-  installMiddleware(methReg: MethodRegistrationBase): void {
-    const classAuth = methReg?.defaults?.getRegisteredInfo(DBOS_AUTH) as ClassAuthDefaults;
-    const methodAuth = methReg?.getRegisteredInfo(DBOS_AUTH) as MethodAuth;
+function installAuthMiddleware(methReg: MethodRegistrationBase): void {
+  const classAuth = methReg?.defaults?.getRegisteredInfo(DBOS_AUTH) as ClassAuthDefaults;
+  const methodAuth = methReg?.getRegisteredInfo(DBOS_AUTH) as MethodAuth;
 
-    const shouldCheck = classAuth?.requiredRole !== undefined || methodAuth?.requiredRole !== undefined;
+  const shouldCheck = classAuth?.requiredRole !== undefined || methodAuth?.requiredRole !== undefined;
 
-    if (shouldCheck) {
-      methReg.addEntryInterceptor(checkMethodAuth, 10);
-    }
+  if (shouldCheck) {
+    methReg.addEntryInterceptor(checkMethodAuth, 10);
   }
 }
 
-const authChecker = new AuthChecker();
-
 export function registerAuthChecker() {
-  registerMiddlewareInstaller(authChecker);
+  registerMiddlewareInstaller(installAuthMiddleware);
 }
