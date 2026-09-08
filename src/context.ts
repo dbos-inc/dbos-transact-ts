@@ -22,7 +22,6 @@ export interface DBOSContextOptions {
   authenticatedUser?: string;
   authenticatedRoles?: string[];
   assumedRole?: string;
-  request?: object;
   operationType?: string; // A custom helper for users to set a operation type of their choice. Intended for functions setting a pctx to run DBOS operations from.
   operationCaller?: string; // This is made to pass through the operationName to DBOS contexts, and potentially the caller span name.
   workflowTimeoutMS?: number | null;

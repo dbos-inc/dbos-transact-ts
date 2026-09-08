@@ -380,7 +380,6 @@ export class DBOSClient {
       error: null,
       assumedRole: '',
       authenticatedRoles: [],
-      request: {},
       executorId: '',
       applicationVersion: appVersion,
       applicationID: '',

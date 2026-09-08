@@ -531,7 +531,6 @@ export class DBOSExecutor {
       authenticatedUser: '',
       assumedRole: '',
       authenticatedRoles: [],
-      request: {},
       executorId: globalParams.executorID,
       applicationVersion: globalParams.appVersion,
       applicationID: globalParams.appID,
@@ -644,7 +643,6 @@ export class DBOSExecutor {
       authenticatedUser: pctx?.authenticatedUser || '',
       assumedRole: pctx?.assumedRole || '',
       authenticatedRoles: pctx?.authenticatedRoles || [],
-      request: pctx?.request || {},
       executorId: globalParams.executorID,
       applicationVersion:
         params.enqueueOptions?.applicationVersion ??
@@ -1565,7 +1563,6 @@ export class DBOSExecutor {
   #getRecoveryContext(_workflowID: string, status: WorkflowStatusInternal): DBOSLocalCtx {
     // Note: this doesn't inherit the original parent context's span.
     const oc: DBOSLocalCtx = {};
-    oc.request = status.request;
     oc.authenticatedUser = status.authenticatedUser;
     oc.authenticatedRoles = status.authenticatedRoles;
     oc.assumedRole = status.assumedRole;

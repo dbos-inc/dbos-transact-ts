@@ -320,7 +320,6 @@ async function enqueueScheduledWorkflow(
     error: null,
     assumedRole: '',
     authenticatedRoles: [],
-    request: {},
     executorId: '',
     applicationID: '',
     input: serparam.serializedValue,

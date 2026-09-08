@@ -163,8 +163,6 @@ export interface WorkflowStatus {
   // INTERNAL
   // Deprecated field
   readonly applicationID: string;
-  // Deprecated field
-  readonly request?: object;
   // The number of times this workflow has been started.
   readonly recoveryAttempts?: number;
 }

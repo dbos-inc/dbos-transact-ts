@@ -773,15 +773,6 @@ export class DBOS {
     return getActiveSpan();
   }
 
-  /**
-   * Get the current request object (such as an HTTP request)
-   * This is intended for use in event libraries that know the type of the current request,
-   *  and set it using `withTracedContext` or `runWithContext`
-   */
-  static requestObject(): object | undefined {
-    return getCurrentContextStore()?.request;
-  }
-
   /** Get the current application version */
   static get applicationVersion(): string {
     return globalParams.appVersion;

@@ -90,7 +90,6 @@ export async function toWorkflowStatus(
     output: internal.output ? await safeParse(serializer, internal.output ?? null, internal.serialization) : undefined,
     error: internal.error ? await safeParseError(serializer, internal.error, internal.serialization) : undefined,
 
-    request: internal.request,
     executorId: internal.executorId,
     applicationVersion: internal.applicationVersion,
     applicationID: internal.applicationID,
