@@ -4573,11 +4573,11 @@ describe('test-workflow-aggregates', () => {
 
   test('filter-by-authenticated-user', async () => {
     // Two workflows as alice, one as bob.
-    await DBOS.withAuthedContext('alice', [], async () => {
+    await DBOS.runWithContext({ authenticatedUser: 'alice', authenticatedRoles: [] }, async () => {
       await AggWorkflows.successWorkflow();
       await AggWorkflows.successWorkflow();
     });
-    await DBOS.withAuthedContext('bob', [], async () => {
+    await DBOS.runWithContext({ authenticatedUser: 'bob', authenticatedRoles: [] }, async () => {
       await AggWorkflows.successWorkflow();
     });
 

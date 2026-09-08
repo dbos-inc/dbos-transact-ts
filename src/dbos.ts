@@ -55,16 +55,12 @@ import {
   AlertHandler,
   associateClassWithExternal,
   associateMethodWithExternal,
-  ClassAuthDefaults,
-  DBOS_AUTH,
   ExternalRegistration,
   getAlertHandler,
   getLifecycleListeners,
   getRegisteredOperations,
   getFunctionRegistration,
   getRegistrationsForExternal,
-  insertAllMiddleware,
-  MethodAuth,
   MethodRegistration,
   recordDBOSLaunch,
   recordDBOSShutdown,
@@ -127,7 +123,6 @@ import { validateCrontab, validateTimezone } from './scheduler/crontab';
 import { logQueue, RegisterQueueOptions, WorkflowQueue, wfQueueRunner } from './wfqueue';
 import { enqueueWorkflowWithOptions } from './enqueue_workflow';
 import type { EnqueueWorkflowOptions } from './enqueue_options';
-import { registerAuthChecker } from './authdecorators';
 import assert from 'node:assert';
 
 type AnyConstructor = new (...args: unknown[]) => object;
@@ -493,7 +488,6 @@ export class DBOS {
     }
 
     finalizeClassRegistrations();
-    insertAllMiddleware();
 
     // Globally set the application name, version and executor ID.
     // In DBOS Cloud, instead use the value supplied through environment variables.
@@ -1287,26 +1281,6 @@ export class DBOS {
   static async withNextWorkflowID<R>(workflowID: string, callback: () => Promise<R>): Promise<R> {
     ensureDBOSIsLaunched('workflows');
     return DBOS.#withTopContext({ idAssignedForNextWorkflow: workflowID }, callback);
-  }
-
-  /**
-   * Use the provided `authedUser` and `authedRoles` as the authenticated user for
-   *   any security checks or calls to `DBOS.authenticatedUser`
-   *   or `DBOS.authenticatedRoles` placed within the `callback` function.
-   * @param authedUser - Authenticated user
-   * @param authedRoles - Authenticated roles
-   * @param callback - Function to run with authentication context in place
-   * @returns - Return value from `callback`
-   */
-  static async withAuthedContext<R>(authedUser: string, authedRoles: string[], callback: () => Promise<R>): Promise<R> {
-    ensureDBOSIsLaunched('auth');
-    return DBOS.#withTopContext(
-      {
-        authenticatedUser: authedUser,
-        authenticatedRoles: authedRoles,
-      },
-      callback,
-    );
   }
 
   /**
@@ -2264,44 +2238,6 @@ export class DBOS {
       throw new TypeError(`Serializers/deserializers should not be registered after DBOS.launch()`);
     }
     registerSerializationRecipe(serReg);
-  }
-
-  /**
-   * Decorate a class with the default list of required roles.
-   *   This class-level default can be overridden on a per-function basis with `requiredRole`.
-   * @param anyOf - The list of roles allowed access; authorization is granted if the authenticated user has any role on the list
-   */
-  static defaultRequiredRole(anyOf: string[]) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    function clsdec<T extends { new (...args: any[]): object }>(ctor: T) {
-      const clsreg = associateClassWithExternal(DBOS_AUTH, ctor) as ClassAuthDefaults;
-      clsreg.requiredRole = anyOf;
-      registerAuthChecker();
-    }
-    return clsdec;
-  }
-
-  /**
-   * Decorate a method with the default list of required roles.
-   * @see `DBOS.defaultRequiredRole`
-   * @param anyOf - The list of roles allowed access; authorization is granted if the authenticated user has any role on the list
-   */
-  static requiredRole(anyOf: string[]) {
-    function apidec<This, Args extends unknown[], Return>(
-      target: object,
-      propertyKey: string,
-      inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
-    ) {
-      const rr = associateMethodWithExternal(DBOS_AUTH, target, undefined, propertyKey.toString(), inDescriptor.value!);
-
-      (rr.regInfo as MethodAuth).requiredRole = anyOf;
-      registerAuthChecker();
-
-      inDescriptor.value = rr.registration.wrappedFunction ?? rr.registration.registeredFunction;
-
-      return inDescriptor;
-    }
-    return apidec;
   }
 
   /////

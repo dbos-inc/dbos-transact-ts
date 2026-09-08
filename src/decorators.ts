@@ -62,16 +62,6 @@ export interface DBOSLifecycleCallback {
   logRegisteredEndpoints?(): void;
 }
 
-export const DBOS_AUTH = 'auth';
-
-export interface ClassAuthDefaults {
-  requiredRole?: string[] | undefined;
-}
-
-export interface MethodAuth {
-  requiredRole?: string[] | undefined;
-}
-
 export interface RegistrationDefaults {
   name: string;
 
@@ -85,8 +75,6 @@ export interface MethodRegistrationBase {
   className: string;
 
   defaults?: RegistrationDefaults; // This is the class-level info
-
-  getRequiredRoles(): string[];
 
   workflowConfig?: WorkflowConfig;
   stepConfig?: StepConfig;
@@ -195,17 +183,6 @@ export class MethodRegistration<This, Args extends unknown[], Return> implements
   invoke(pthis: This, args: Args): Promise<Return> {
     const f = this.wrappedFunction ?? this.registeredFunction ?? this.origFunction;
     return f.call(pthis, ...args);
-  }
-
-  getRequiredRoles() {
-    const rr = this.getRegisteredInfo(DBOS_AUTH) as MethodAuth;
-
-    if (rr?.requiredRole) {
-      return rr.requiredRole;
-    }
-
-    const drr = this.defaults?.getRegisteredInfo(DBOS_AUTH) as ClassAuthDefaults;
-    return drr?.requiredRole || [];
   }
 }
 
@@ -318,8 +295,6 @@ export function ensureDBOSIsLaunched(reason: string) {
 
 export function clearAllRegistrations() {
   lifecycleListeners.length = 0;
-  installedMiddleware = false;
-  middlewareInstallers.length = 0;
   functionToRegistration.clear();
   classesByName.clear();
   classesByCtor.clear();
@@ -334,31 +309,6 @@ export function registerLifecycleCallback(lcl: DBOSLifecycleCallback) {
 }
 export function getLifecycleListeners() {
   return lifecycleListeners as readonly DBOSLifecycleCallback[];
-}
-
-// Middleware installers - insert middleware in registered functions prior to launch
-type MiddlewareInstaller = (methodReg: MethodRegistrationBase) => void;
-let installedMiddleware = false;
-const middlewareInstallers: MiddlewareInstaller[] = [];
-
-export function registerMiddlewareInstaller(i: MiddlewareInstaller) {
-  if (installedMiddleware) throw new TypeError('Attempt to provide method middleware after insertion was performed');
-  if (!middlewareInstallers.includes(i)) middlewareInstallers.push(i);
-}
-
-export function insertAllMiddleware() {
-  if (installedMiddleware) return;
-  installedMiddleware = true;
-
-  const regs = getAllClassRegistrations();
-
-  for (const c of regs) {
-    for (const f of c.allRegisteredOperations.values()) {
-      for (const i of middlewareInstallers) {
-        i(f);
-      }
-    }
-  }
 }
 
 // Registration of functions, and classes

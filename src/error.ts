@@ -36,16 +36,6 @@ export class DBOSNotRegisteredError extends DBOSError {
   }
 }
 
-const NotAuthorizedError = 12;
-export class DBOSNotAuthorizedError extends DBOSError {
-  constructor(
-    msg: string,
-    readonly status: number = 403,
-  ) {
-    super(msg, NotAuthorizedError);
-  }
-}
-
 const ConfigKeyTypeError = 14;
 export class DBOSConfigKeyTypeError extends DBOSError {
   constructor(configKey: string, expectedType: string, actualType: string) {
