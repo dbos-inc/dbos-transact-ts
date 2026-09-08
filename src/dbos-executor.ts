@@ -640,9 +640,11 @@ export class DBOSExecutor {
       queueName: params.queueName,
       output: null,
       error: null,
-      authenticatedUser: pctx?.authenticatedUser || '',
+      authenticatedUser:
+        params.authenticatedUser ?? params.enqueueOptions?.authenticatedUser ?? pctx?.authenticatedUser ?? '',
       assumedRole: pctx?.assumedRole || '',
-      authenticatedRoles: pctx?.authenticatedRoles || [],
+      authenticatedRoles:
+        params.authenticatedRoles ?? params.enqueueOptions?.authenticatedRoles ?? pctx?.authenticatedRoles ?? [],
       executorId: globalParams.executorID,
       applicationVersion:
         params.enqueueOptions?.applicationVersion ??

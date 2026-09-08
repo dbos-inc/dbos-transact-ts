@@ -5,6 +5,8 @@ import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
 
 const QUEUE = 'enqueue-with-options-queue';
 
+const authWorkflow = DBOS.registerWorkflow(() => Promise.resolve('ok'), { name: 'authWorkflow' });
+
 describe('enqueue-workflow-with-options', () => {
   let config: DBOSConfig;
   let client: Client;
@@ -165,5 +167,52 @@ describe('enqueue-workflow-with-options', () => {
       `SELECT COUNT(*) as count FROM dbos.workflow_status WHERE name = 'aWorkflowElsewhere'`,
     );
     expect(Number(rows[0].count)).toBe(1);
+  });
+
+  test('records authentication from explicit options, ambient context, or enqueue options', async () => {
+    await DBOS.launch();
+    await DBOS.registerQueue(QUEUE);
+
+    // Explicit params beat the ambient authenticated context.
+    await (
+      await DBOS.withAuthedContext('ambient', ['ambient-role'], () =>
+        DBOS.startWorkflow(authWorkflow, {
+          workflowID: 'auth-explicit',
+          authenticatedUser: 'alice',
+          authenticatedRoles: ['admin', 'user'],
+        })(),
+      )
+    ).getResult();
+
+    // `enqueueOptions` carries the same fields for a queued workflow.
+    await (
+      await DBOS.startWorkflow(authWorkflow, {
+        workflowID: 'auth-enqueued',
+        queueName: QUEUE,
+        enqueueOptions: { authenticatedUser: 'bob', authenticatedRoles: ['reader'] },
+      })()
+    ).getResult();
+
+    // With nothing explicit, the ambient context still applies.
+    await (
+      await DBOS.withAuthedContext('carol', ['ops'], () =>
+        DBOS.startWorkflow(authWorkflow, { workflowID: 'auth-ambient' })(),
+      )
+    ).getResult();
+
+    const { rows } = await client.query<{
+      workflow_uuid: string;
+      authenticated_user: string | null;
+      authenticated_roles: string | null;
+    }>(
+      `SELECT workflow_uuid, authenticated_user, authenticated_roles
+       FROM dbos.workflow_status WHERE workflow_uuid = ANY($1) ORDER BY workflow_uuid`,
+      [['auth-explicit', 'auth-enqueued', 'auth-ambient']],
+    );
+    expect(rows.map((r) => [r.workflow_uuid, r.authenticated_user, r.authenticated_roles])).toEqual([
+      ['auth-ambient', 'carol', '["ops"]'],
+      ['auth-enqueued', 'bob', '["reader"]'],
+      ['auth-explicit', 'alice', '["admin","user"]'],
+    ]);
   });
 });

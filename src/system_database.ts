@@ -356,6 +356,10 @@ export interface EnqueueOptions {
   isDebounced?: boolean;
   // The application the workflow is enqueued for; undefined means the enqueuer's own.
   applicationName?: string;
+  // The authenticated user recorded on the workflow. Defaults to the caller's ambient authenticated user, if any.
+  authenticatedUser?: string;
+  // The authenticated roles recorded on the workflow. Defaults to the caller's ambient authenticated roles, if any.
+  authenticatedRoles?: string[];
 }
 
 // Arguments to debounceDelayedWorkflow: identify the debounced workflow by

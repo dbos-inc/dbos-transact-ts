@@ -54,6 +54,9 @@ export interface WorkflowParams {
   duplicationPolicy?: DuplicationPolicy;
   // Custom key-value attributes to attach to the workflow at creation. Not inherited by child workflows.
   workflowAttributes?: Record<string, unknown>;
+  // Authentication to record on the workflow, overriding the ambient context.
+  authenticatedUser?: string;
+  authenticatedRoles?: string[];
 }
 
 export const DEFAULT_MAX_RECOVERY_ATTEMPTS = 100;

@@ -160,6 +160,10 @@ export interface StartWorkflowParams {
   queueName?: string;
   timeoutMS?: number | null;
   enqueueOptions?: EnqueueOptions;
+  /** The authenticated user recorded on the workflow. Defaults to the caller's ambient authenticated user, if any. */
+  authenticatedUser?: string;
+  /** The authenticated roles recorded on the workflow. Defaults to the caller's ambient authenticated roles, if any. */
+  authenticatedRoles?: string[];
   // How to handle a collision with another workflow that has the same
   // `enqueueOptions.deduplicationID` on the same queue.
   //   'reject' (default): throw `DBOSQueueDuplicatedError`.
@@ -1284,6 +1288,26 @@ export class DBOS {
   }
 
   /**
+   * Use the provided `authedUser` and `authedRoles` as the authenticated user for
+   *   any calls to `DBOS.authenticatedUser` or `DBOS.authenticatedRoles`
+   *   placed within the `callback` function.
+   * @param authedUser - Authenticated user
+   * @param authedRoles - Authenticated roles
+   * @param callback - Function to run with authentication context in place
+   * @returns - Return value from `callback`
+   */
+  static async withAuthedContext<R>(authedUser: string, authedRoles: string[], callback: () => Promise<R>): Promise<R> {
+    ensureDBOSIsLaunched('auth');
+    return DBOS.#withTopContext(
+      {
+        authenticatedUser: authedUser,
+        authenticatedRoles: authedRoles,
+      },
+      callback,
+    );
+  }
+
+  /**
    * This generic setter helps users calling DBOS operation to pass a name,
    *   later used in seeding a parent OTel span for the operation.
    * @param callerName - Tracing caller name
@@ -1912,6 +1936,8 @@ export class DBOS {
         enqueueOptions: params.enqueueOptions,
         duplicationPolicy: params.duplicationPolicy,
         workflowAttributes: params.workflowAttributes,
+        authenticatedUser: params.authenticatedUser,
+        authenticatedRoles: params.authenticatedRoles,
       };
 
       return await invokeRegOp(wfParams, pwfid, funcId);
@@ -1924,6 +1950,8 @@ export class DBOS {
         timeoutMS,
         duplicationPolicy: params.duplicationPolicy,
         workflowAttributes: params.workflowAttributes,
+        authenticatedUser: params.authenticatedUser,
+        authenticatedRoles: params.authenticatedRoles,
       };
 
       return await invokeRegOp(wfParams, undefined, undefined);

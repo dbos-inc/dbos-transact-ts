@@ -13,7 +13,6 @@ import { Client, Pool, PoolClient } from 'pg';
 import { WorkflowHandle, WorkflowStatus } from '../src/workflow';
 import { randomUUID } from 'node:crypto';
 import { globalParams, sleepms } from '../src/utils';
-import { runWithTopContext } from '../src/context';
 import { retentionLockKey, SystemDatabase } from '../src/system_database';
 import { GlobalLogger } from '../src/telemetry/logs';
 import {
@@ -4574,11 +4573,11 @@ describe('test-workflow-aggregates', () => {
 
   test('filter-by-authenticated-user', async () => {
     // Two workflows as alice, one as bob.
-    await runWithTopContext({ authenticatedUser: 'alice', authenticatedRoles: [] }, async () => {
+    await DBOS.withAuthedContext('alice', [], async () => {
       await AggWorkflows.successWorkflow();
       await AggWorkflows.successWorkflow();
     });
-    await runWithTopContext({ authenticatedUser: 'bob', authenticatedRoles: [] }, async () => {
+    await DBOS.withAuthedContext('bob', [], async () => {
       await AggWorkflows.successWorkflow();
     });
 
