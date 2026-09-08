@@ -13,20 +13,16 @@ jobs:
         package:
           [
             .,
-            packages/aws-s3-workflows,
             packages/confluent-kafka-receive,
             packages/create,
             packages/dbos-cloud,
             packages/drizzle-datasource,
             packages/kafkajs-receive,
             packages/knex-datasource,
-            packages/koa-serve,
             packages/kysely-datasource,
             packages/nodepg-datasource,
-            packages/pgnotifier-receive,
             packages/postgres-datasource,
             packages/prisma-datasource,
-            packages/sqs-receive,
             packages/typeorm-datasource,
             packages/otel,
           ]

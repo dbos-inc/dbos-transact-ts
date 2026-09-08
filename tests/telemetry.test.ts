@@ -1,11 +1,10 @@
 import { InMemorySpanExporter, ReadableSpan, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base';
 import { NodeTracerProvider } from './nodetraceprovider';
 import { DBOS } from '../src';
-import Koa from 'koa';
-import Router from '@koa/router';
 import { context, trace, SpanStatusCode } from '@opentelemetry/api';
 import { isTraceContextWorking } from '../src/telemetry/traces';
 import { AddressInfo } from 'net';
+import http from 'http';
 import { globalParams } from '../src/utils';
 
 async function tracedStep() {
@@ -27,44 +26,49 @@ async function doSomethingTraced_internal() {
 const doSomethingTraced = DBOS.registerWorkflow(doSomethingTraced_internal);
 
 function createApp() {
-  const app = new Koa();
-  const router = new Router();
+  return http.createServer((req, res) => {
+    void (async () => {
+      const path = new URL(req.url ?? '/', 'http://localhost').pathname;
 
-  app.use(async (ctx, next) => {
-    const current = trace.getSpan(context.active());
-    if (current) {
-      return next() as Promise<unknown>;
-    }
-
-    const tracer = trace.getTracer('manual');
-    const span = tracer.startSpan(`manual-span-for-${ctx.method} ${ctx.path}`);
-
-    try {
-      await context.with(trace.setSpan(context.active(), span), async () => {
-        await next();
-        if (ctx.status >= 400) {
-          span.setStatus({ code: SpanStatusCode.ERROR, message: ctx.message });
+      const handle = async () => {
+        if (req.method === 'GET' && path === '/test') {
+          await doSomethingTraced();
+          res.statusCode = 200;
+          res.end('OK');
         } else {
-          span.setStatus({ code: SpanStatusCode.OK });
+          res.statusCode = 404;
+          res.end('Not Found');
         }
-      });
-    } catch (err) {
-      span.setStatus({ code: SpanStatusCode.ERROR, message: (err as Error).message });
-      throw err;
-    } finally {
-      span.end();
-    }
+      };
+
+      if (trace.getSpan(context.active())) {
+        await handle();
+        return;
+      }
+
+      const tracer = trace.getTracer('manual');
+      const span = tracer.startSpan(`manual-span-for-${req.method} ${path}`);
+
+      try {
+        await context.with(trace.setSpan(context.active(), span), async () => {
+          await handle();
+          if (res.statusCode >= 400) {
+            span.setStatus({ code: SpanStatusCode.ERROR, message: res.statusMessage });
+          } else {
+            span.setStatus({ code: SpanStatusCode.OK });
+          }
+        });
+      } catch (err) {
+        span.setStatus({ code: SpanStatusCode.ERROR, message: (err as Error).message });
+        if (!res.writableEnded) {
+          res.statusCode = 500;
+          res.end();
+        }
+      } finally {
+        span.end();
+      }
+    })();
   });
-
-  router.get('/test', async (ctx) => {
-    await doSomethingTraced();
-    ctx.body = 'OK';
-  });
-
-  app.use(router.routes());
-  app.use(router.allowedMethods());
-
-  return app;
 }
 
 function getParentSpanID(span: ReadableSpan) {
