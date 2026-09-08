@@ -1921,7 +1921,7 @@ export class DBOS {
     const funcId = isChild ? (startWfFuncId ?? functionIDGetIncrement()) : undefined;
 
     // All enqueue-option validation lives here. Param-only checks
-    // (priority range, dedup-with-partition) always run; the partition-flag
+    // (priority range) always run; the partition-flag
     // checks run only for queues in this executor's in-memory map.
     // Database-backed queues skip them to avoid an extra roundtrip on every enqueue.
     if (queueName) {
@@ -1929,9 +1929,6 @@ export class DBOS {
       const priority = params.enqueueOptions?.priority;
       if (priority !== undefined && (priority < DBOS_QUEUE_MIN_PRIORITY || priority > DBOS_QUEUE_MAX_PRIORITY)) {
         throw new DBOSInvalidQueuePriorityError(priority, DBOS_QUEUE_MIN_PRIORITY, DBOS_QUEUE_MAX_PRIORITY);
-      }
-      if (queuePartitionKey && params.enqueueOptions?.deduplicationID) {
-        throw Error('Deduplication is not supported for partitioned queues');
       }
       const inMem = this.#executor.getQueueByName(queueName);
       if (inMem) {

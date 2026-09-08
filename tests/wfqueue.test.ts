@@ -1964,16 +1964,84 @@ describe('queue-time-outs', () => {
     } finally {
       await client.destroy();
     }
+  });
 
-    // Deduplication is not supported for partitioned queues. This check is
-    // purely from supplied params, so it fires regardless of whether the
-    // queue is in the in-memory map.
-    await assert.rejects(async () => {
-      await DBOS.startWorkflow(partitionNormalWorkflow, {
+  const partitionDedupBlockingEvent = new Event();
+  const partitionDedupWaitingEvent = new Event();
+  const partitionDedupBlockedWorkflow = DBOS.registerWorkflow(
+    async () => {
+      partitionDedupWaitingEvent.set();
+      await partitionDedupBlockingEvent.wait();
+      return DBOS.workflowID;
+    },
+    { name: 'partitionDedupBlockedWorkflow' },
+  );
+
+  test('partitioned-queue-deduplication', async () => {
+    // A deduplication ID is scoped to the whole queue, not to one partition: the unique
+    // index is on (queue_name, deduplication_id) and the lookup behind 'return-existing'
+    // has no partition filter. Callers wanting per-partition dedup prefix the partition key.
+    const dedupID = 'partition-dedup-key';
+    const partitionA = 'dedup-a';
+    const partitionB = 'dedup-b';
+
+    // The holder of the key starts on partition A and blocks there.
+    const holder = await DBOS.startWorkflow(partitionDedupBlockedWorkflow, {
+      queueName: partitionQueue.name,
+      enqueueOptions: { queuePartitionKey: partitionA, deduplicationID: dedupID },
+    })();
+    await partitionDedupWaitingEvent.wait();
+    await expect(holder.getStatus()).resolves.toMatchObject({
+      status: StatusString.PENDING,
+      queuePartitionKey: partitionA,
+      deduplicationID: dedupID,
+    });
+
+    // The same key on a different partition collides, through both in-process enqueue paths.
+    await expect(
+      DBOS.startWorkflow(partitionNormalWorkflow, {
         queueName: partitionQueue.name,
-        enqueueOptions: { queuePartitionKey: normalPartitionKey, deduplicationID: 'key' },
-      })();
-    }, Error);
+        enqueueOptions: { queuePartitionKey: partitionB, deduplicationID: dedupID },
+      })(),
+    ).rejects.toBeInstanceOf(DBOSQueueDuplicatedError);
+    await expect(
+      DBOS.enqueueWorkflowWithOptions({
+        queueName: partitionQueue.name,
+        workflowName: 'partitionNormalWorkflow',
+        queuePartitionKey: partitionB,
+        deduplicationID: dedupID,
+      }),
+    ).rejects.toBeInstanceOf(DBOSQueueDuplicatedError);
+
+    // Under 'return-existing', a caller on partition B is handed the partition-A holder.
+    const existing = await DBOS.startWorkflow(partitionNormalWorkflow, {
+      queueName: partitionQueue.name,
+      enqueueOptions: { queuePartitionKey: partitionB, deduplicationID: dedupID },
+      duplicationPolicy: 'return-existing',
+    })();
+    expect(existing.workflowID).toBe(holder.workflowID);
+    await expect(existing.getStatus()).resolves.toMatchObject({ queuePartitionKey: partitionA });
+
+    // A different key on partition B is unaffected by the held key and runs to completion.
+    const otherKey = await DBOS.startWorkflow(partitionNormalWorkflow, {
+      queueName: partitionQueue.name,
+      enqueueOptions: { queuePartitionKey: partitionB, deduplicationID: `${dedupID}-other` },
+    })();
+    await otherKey.getResult();
+
+    // Once the holder reaches a terminal state the key is released for any partition.
+    partitionDedupBlockingEvent.set();
+    await holder.getResult();
+    const reused = await DBOS.startWorkflow(partitionNormalWorkflow, {
+      queueName: partitionQueue.name,
+      enqueueOptions: { queuePartitionKey: partitionB, deduplicationID: dedupID },
+    })();
+    expect(reused.workflowID).not.toBe(holder.workflowID);
+    await expect(reused.getStatus()).resolves.toMatchObject({
+      queuePartitionKey: partitionB,
+      deduplicationID: dedupID,
+    });
+    await reused.getResult();
   });
 
   test('partitioned-queue-worker-concurrency', async () => {
