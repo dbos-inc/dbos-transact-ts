@@ -1,5 +1,6 @@
 import { DBOS, DBOSConfig, DBOSLifecycleCallback } from '../src';
 import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
+import { runWithTopContext } from '../src/context';
 
 export interface ERDefaults {
   classval?: string;
@@ -24,7 +25,7 @@ class ERD implements DBOSLifecycleCallback {
         const cs = classConfig as ERDefaults;
         const ms = methodConfig as ERSpecifics;
 
-        await DBOS.runWithContext(
+        await runWithTopContext(
           {
             authenticatedUser: 'ER',
             authenticatedRoles: ['Event', 'Receiver'],

@@ -1317,18 +1317,6 @@ export class DBOS {
     return DBOS.#withTopContext({ workflowTimeoutMS: timeoutMS }, callback);
   }
 
-  /**
-   * Run a workflow with the option to set any of the contextual items
-   *
-   * @param options - Overrides for options
-   * @param callback - Function to run, which would call or start workflows
-   * @returns - Return value from `callback`
-   */
-  static async runWithContext<R>(options: DBOSContextOptions, callback: () => Promise<R>): Promise<R> {
-    ensureDBOSIsLaunched('contexts');
-    return DBOS.#withTopContext(options, callback);
-  }
-
   static async #withTopContext<R>(options: DBOSContextOptions, callback: () => Promise<R>): Promise<R> {
     const pctx = getCurrentContextStore();
     if (pctx) {
