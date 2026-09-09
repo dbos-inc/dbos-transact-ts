@@ -13,7 +13,6 @@ import { Client } from 'pg';
 import { StatusString } from '../dist/src';
 import { DBOSAwaitedWorkflowExceededMaxRecoveryAttempts } from '../src/error';
 import { INTERNAL_QUEUE_NAME } from '../src/utils';
-import { runWithTopContext } from '../src/context';
 import assert from 'assert';
 
 import { randomUUID } from 'node:crypto';
@@ -64,7 +63,7 @@ describe('recovery-tests', () => {
 
     @DBOS.workflow()
     static async testRecoveryWorkflow(input: number) {
-      if (DBOS.authenticatedUser === 'test_recovery_user' && DBOS.request.url === 'test-recovery-url') {
+      if (DBOS.authenticatedUser === 'test_recovery_user') {
         LocalRecovery.cnt += input;
       }
 
@@ -262,11 +261,9 @@ describe('recovery-tests', () => {
     LocalRecovery.cnt = 0;
     // Run a workflow until pending and start recovery.
 
-    const handle = await runWithTopContext(
-      {
-        authenticatedUser: 'test_recovery_user',
-        request: { url: 'test-recovery-url' },
-      },
+    const handle = await DBOS.withAuthedContext(
+      'test_recovery_user',
+      [],
       async () => await DBOS.startWorkflow(LocalRecovery).testRecoveryWorkflow(5),
     );
 

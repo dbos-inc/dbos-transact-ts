@@ -104,7 +104,6 @@ export async function buildEnqueueStatus(
     error: null,
     assumedRole: '',
     authenticatedRoles: options.authenticatedRoles ?? [],
-    request: {},
     executorId: '',
     applicationVersion: options.appVersion,
     applicationID: '',

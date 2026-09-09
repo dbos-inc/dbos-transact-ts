@@ -135,6 +135,16 @@ export interface ClientEnqueueOptions {
    * Workflows with higher priority will be dequeued first.
    */
   priority?: number;
+
+  /**
+   * The authenticated user to record on the enqueued workflow.
+   */
+  authenticatedUser?: string;
+
+  /**
+   * The authenticated roles to record on the enqueued workflow.
+   */
+  authenticatedRoles?: string[];
   /**
    * Partition key for partitioned queues.
    * Required when enqueueing on a partitioned queue.
@@ -375,12 +385,11 @@ export class DBOSClient {
       workflowClassName: workflowClassName ?? '',
       workflowConfigName: workflowConfigName ?? '',
       queueName: queueName,
-      authenticatedUser: '',
+      authenticatedUser: options.authenticatedUser ?? '',
       output: null,
       error: null,
       assumedRole: '',
-      authenticatedRoles: [],
-      request: {},
+      authenticatedRoles: options.authenticatedRoles ?? [],
       executorId: '',
       applicationVersion: appVersion,
       applicationID: '',

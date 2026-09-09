@@ -531,7 +531,6 @@ export class DBOSExecutor {
       authenticatedUser: '',
       assumedRole: '',
       authenticatedRoles: [],
-      request: {},
       executorId: globalParams.executorID,
       applicationVersion: globalParams.appVersion,
       applicationID: globalParams.appID,
@@ -568,6 +567,13 @@ export class DBOSExecutor {
 
     const pctx = { ...getCurrentContextStore() }; // function ID was already incremented...
 
+    // Resolve authentication once: explicit params, then enqueue options, then the ambient context.
+    // The status row, the span, and the workflow's own context must all agree on this.
+    const authenticatedUser =
+      params.authenticatedUser ?? params.enqueueOptions?.authenticatedUser ?? pctx?.authenticatedUser ?? '';
+    const authenticatedRoles =
+      params.authenticatedRoles ?? params.enqueueOptions?.authenticatedRoles ?? pctx?.authenticatedRoles ?? [];
+
     let wConfig: WorkflowConfig = {};
     const wInfo = getFunctionRegistration(wf);
     const wfNames = getRegisteredFunctionFullName(wf);
@@ -595,8 +601,8 @@ export class DBOSExecutor {
       operationUUID: workflowID,
       operationType: OperationType.WORKFLOW,
       operationName: wInfo?.name ?? wf.name,
-      authenticatedUser: pctx?.authenticatedUser ?? '',
-      authenticatedRoles: pctx?.authenticatedRoles ?? [],
+      authenticatedUser,
+      authenticatedRoles,
       assumedRole: pctx?.assumedRole ?? '',
     });
 
@@ -641,10 +647,9 @@ export class DBOSExecutor {
       queueName: params.queueName,
       output: null,
       error: null,
-      authenticatedUser: pctx?.authenticatedUser || '',
+      authenticatedUser,
       assumedRole: pctx?.assumedRole || '',
-      authenticatedRoles: pctx?.authenticatedRoles || [],
-      request: pctx?.request || {},
+      authenticatedRoles,
       executorId: globalParams.executorID,
       applicationVersion:
         params.enqueueOptions?.applicationVersion ??
@@ -880,6 +885,8 @@ export class DBOSExecutor {
                 curWFFunctionId: undefined,
                 activeStreamReads: 0,
                 serializationType,
+                authenticatedUser,
+                authenticatedRoles,
               },
               () => {
                 const callPromise = wf.call(params.configuredInstance, ...args);
@@ -1565,7 +1572,6 @@ export class DBOSExecutor {
   #getRecoveryContext(_workflowID: string, status: WorkflowStatusInternal): DBOSLocalCtx {
     // Note: this doesn't inherit the original parent context's span.
     const oc: DBOSLocalCtx = {};
-    oc.request = status.request;
     oc.authenticatedUser = status.authenticatedUser;
     oc.authenticatedRoles = status.authenticatedRoles;
     oc.assumedRole = status.assumedRole;

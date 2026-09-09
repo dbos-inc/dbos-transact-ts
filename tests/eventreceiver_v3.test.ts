@@ -24,15 +24,9 @@ class ERD implements DBOSLifecycleCallback {
         const cs = classConfig as ERDefaults;
         const ms = methodConfig as ERSpecifics;
 
-        await DBOS.runWithContext(
-          {
-            authenticatedUser: 'ER',
-            authenticatedRoles: ['Event', 'Receiver'],
-          },
-          async () => {
-            return await methodReg.invoke(undefined, [cs.classval, ms.methodval, i]);
-          },
-        );
+        await DBOS.withAuthedContext('ER', ['Event', 'Receiver'], async () => {
+          return await methodReg.invoke(undefined, [cs.classval, ms.methodval, i]);
+        });
       }
     }
   }

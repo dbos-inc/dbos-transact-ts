@@ -85,7 +85,6 @@ describe('batch-enqueue', () => {
         authenticatedUser: 'alice',
         authenticatedRoles: ['admin'],
         assumedRole: 'admin',
-        request: { url: '/orders' },
       },
       async () =>
         await prepareEnqueuedWorkflow(batchWf, ['hi'], {
@@ -102,7 +101,6 @@ describe('batch-enqueue', () => {
     expect(status.authenticatedUser).toBe('');
     expect(status.assumedRole).toBe('');
     expect(status.authenticatedRoles).toEqual([]);
-    expect(status.request).toEqual({});
     expect(status.parentWorkflowID).toBeUndefined();
     expect(status.attributes).toBeUndefined();
   });

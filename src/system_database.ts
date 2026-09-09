@@ -309,7 +309,6 @@ export interface WorkflowStatusInternal {
   input: string | null;
   assumedRole: string;
   authenticatedRoles: string[];
-  request: object;
   executorId: string;
   applicationVersion?: string;
   applicationID: string;
@@ -357,6 +356,10 @@ export interface EnqueueOptions {
   isDebounced?: boolean;
   // The application the workflow is enqueued for; undefined means the enqueuer's own.
   applicationName?: string;
+  // The authenticated user recorded on the workflow. Defaults to the caller's ambient authenticated user, if any.
+  authenticatedUser?: string;
+  // The authenticated roles recorded on the workflow. Defaults to the caller's ambient authenticated roles, if any.
+  authenticatedRoles?: string[];
 }
 
 // Arguments to debounceDelayedWorkflow: identify the debounced workflow by
@@ -651,7 +654,6 @@ function mapWorkflowStatus(row: workflow_status): WorkflowStatusInternal {
     authenticatedUser: row.authenticated_user,
     assumedRole: row.assumed_role,
     authenticatedRoles: JSON.parse(row.authenticated_roles) as string[],
-    request: row.request ? (JSON.parse(row.request) as object) : {},
     executorId: row.executor_id,
     createdAt: Number(row.created_at),
     updatedAt: Number(row.updated_at),
@@ -1409,7 +1411,6 @@ export class SystemDatabase {
       'authenticated_user',
       'assumed_role',
       'authenticated_roles',
-      'request',
       'executor_id',
       'application_version',
       'application_id',
@@ -1455,7 +1456,6 @@ export class SystemDatabase {
             status.authenticatedUser,
             status.assumedRole,
             JSON.stringify(status.authenticatedRoles),
-            JSON.stringify(status.request),
             status.executorId,
             status.applicationVersion ?? null,
             status.applicationID,
@@ -2207,7 +2207,7 @@ export class SystemDatabase {
         `SELECT ws.workflow_uuid, ws.name, ws.class_name, ws.config_name, ws.application_id,
                 ws.authenticated_user, ws.authenticated_roles, ws.assumed_role,
                 COALESCE(wi.inputs, ws.inputs) AS inputs, ws.serialization,
-                ws.request, ws.application_version, ws.attributes, ws.application_name
+                ws.application_version, ws.attributes, ws.application_name
          FROM "${this.schemaName}".workflow_status ws
          LEFT JOIN "${this.schemaName}".workflow_input wi ON wi.workflow_uuid = ws.workflow_uuid
          WHERE ws.workflow_uuid = ANY($1)`,
@@ -2234,7 +2234,6 @@ export class SystemDatabase {
         'authenticated_user',
         'assumed_role',
         'authenticated_roles',
-        'request',
         'application_version',
         'application_id',
         'inputs',
@@ -2274,7 +2273,6 @@ export class SystemDatabase {
           ws.authenticated_user,
           ws.assumed_role,
           ws.authenticated_roles,
-          ws.request,
           options.applicationVersion ?? ws.application_version ?? null,
           ws.application_id,
           // Legacy column: the payload lives in workflow_input.
@@ -2427,7 +2425,7 @@ export class SystemDatabase {
           // meaningless in the target.
           `SELECT
             ws.workflow_uuid, ws.status, ws.name, ws.authenticated_user, ws.assumed_role,
-            ws.authenticated_roles, ws.request,
+            ws.authenticated_roles,
             COALESCE(wo.output, ws.output) AS output, COALESCE(wo.error, ws.error) AS error,
             ws.executor_id,
             ws.created_at, ws.updated_at, ws.application_version, ws.application_id,
@@ -2513,7 +2511,7 @@ export class SystemDatabase {
         await client.query(
           `INSERT INTO "${this.schemaName}".workflow_status (
             workflow_uuid, status, name, authenticated_user, assumed_role,
-            authenticated_roles, request, output, error, executor_id,
+            authenticated_roles, output, error, executor_id,
             created_at, updated_at, application_version, application_id,
             class_name, config_name, recovery_attempts, queue_name,
             workflow_timeout_ms, workflow_deadline_epoch_ms, started_at_epoch_ms,
@@ -2521,7 +2519,7 @@ export class SystemDatabase {
             parent_workflow_id, serialization, delay_until_epoch_ms,
             was_forked_from, rate_limited, completed_at, attributes, schedule_name,
             debounce_deadline_epoch_ms, is_debounced, application_name
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37)`,
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36)`,
           [
             status.workflow_uuid,
             status.status,
@@ -2529,7 +2527,6 @@ export class SystemDatabase {
             status.authenticated_user,
             status.assumed_role,
             status.authenticated_roles,
-            status.request,
             // Legacy columns: the payloads live in their own tables.
             null,
             null,
@@ -4116,7 +4113,6 @@ export class SystemDatabase {
     const payloadColumns: string[] = [];
     const payloadJoins: string[] = [];
     if (input.loadInput) {
-      selectColumns.push('request');
       payloadColumns.push('COALESCE(wi.inputs, workflow_status.inputs) AS inputs');
       payloadJoins.push(
         `LEFT JOIN "${schemaName}".workflow_input wi ON wi.workflow_uuid = workflow_status.workflow_uuid`,
@@ -5674,7 +5670,6 @@ export class SystemDatabase {
           authenticated_user,
           assumed_role,
           authenticated_roles,
-          request,
           executor_id,
           application_version,
           application_id,
@@ -5695,7 +5690,7 @@ export class SystemDatabase {
           debounce_deadline_epoch_ms,
           is_debounced,
           application_name
-        ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30)
+        ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29)
         ON CONFLICT (workflow_uuid)
           DO UPDATE SET
             updated_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint,
@@ -5716,7 +5711,6 @@ export class SystemDatabase {
           initStatus.authenticatedUser,
           initStatus.assumedRole,
           JSON.stringify(initStatus.authenticatedRoles),
-          JSON.stringify(initStatus.request),
           initStatus.executorId,
           initStatus.applicationVersion ?? null,
           initStatus.applicationID,

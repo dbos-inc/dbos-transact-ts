@@ -1,6 +1,5 @@
 import {
   getCurrentContextStore,
-  HTTPRequest,
   runWithTopContext,
   getNextWFID,
   StepStatus,
@@ -56,16 +55,12 @@ import {
   AlertHandler,
   associateClassWithExternal,
   associateMethodWithExternal,
-  ClassAuthDefaults,
-  DBOS_AUTH,
   ExternalRegistration,
   getAlertHandler,
   getLifecycleListeners,
   getRegisteredOperations,
   getFunctionRegistration,
   getRegistrationsForExternal,
-  insertAllMiddleware,
-  MethodAuth,
   MethodRegistration,
   recordDBOSLaunch,
   recordDBOSShutdown,
@@ -73,7 +68,6 @@ import {
   registerLifecycleCallback,
   setAlertHandler,
   transactionalDataSources,
-  registerMiddlewareInstaller,
   MethodRegistrationBase,
   TypedAsyncFunction,
   UntypedAsyncFunction,
@@ -83,9 +77,7 @@ import {
   wrapDBOSFunctionAndRegister,
   ensureDBOSIsLaunched,
   ConfiguredInstance,
-  DBOSMethodMiddlewareInstaller,
   DBOSLifecycleCallback,
-  associateParameterWithExternal,
   finalizeClassRegistrations,
   getClassRegistration,
   clearAllRegistrations,
@@ -131,7 +123,6 @@ import { validateCrontab, validateTimezone } from './scheduler/crontab';
 import { logQueue, RegisterQueueOptions, WorkflowQueue, wfQueueRunner } from './wfqueue';
 import { enqueueWorkflowWithOptions } from './enqueue_workflow';
 import type { EnqueueWorkflowOptions } from './enqueue_options';
-import { registerAuthChecker } from './authdecorators';
 import assert from 'node:assert';
 
 type AnyConstructor = new (...args: unknown[]) => object;
@@ -169,6 +160,10 @@ export interface StartWorkflowParams {
   queueName?: string;
   timeoutMS?: number | null;
   enqueueOptions?: EnqueueOptions;
+  /** The authenticated user recorded on the workflow. Defaults to the caller's ambient authenticated user, if any. */
+  authenticatedUser?: string;
+  /** The authenticated roles recorded on the workflow. Defaults to the caller's ambient authenticated roles, if any. */
+  authenticatedRoles?: string[];
   // How to handle a collision with another workflow that has the same
   // `enqueueOptions.deduplicationID` on the same queue.
   //   'reject' (default): throw `DBOSQueueDuplicatedError`.
@@ -497,7 +492,6 @@ export class DBOS {
     }
 
     finalizeClassRegistrations();
-    insertAllMiddleware();
 
     // Globally set the application name, version and executor ID.
     // In DBOS Cloud, instead use the value supplied through environment variables.
@@ -775,27 +769,6 @@ export class DBOS {
   /** Get the current DBOS tracing span, appropriate to the current context */
   static get span(): DBOSSpan | undefined {
     return getActiveSpan();
-  }
-
-  /**
-   * Get the current request object (such as an HTTP request)
-   * This is intended for use in event libraries that know the type of the current request,
-   *  and set it using `withTracedContext` or `runWithContext`
-   */
-  static requestObject(): object | undefined {
-    return getCurrentContextStore()?.request;
-  }
-
-  /** Get the current HTTP request (within `@DBOS.getApi` et al) */
-  static getRequest(): HTTPRequest | undefined {
-    return this.requestObject() as HTTPRequest | undefined;
-  }
-
-  /** Get the current HTTP request (within `@DBOS.getApi` et al) */
-  static get request(): HTTPRequest {
-    const r = DBOS.getRequest();
-    if (!r) throw new DBOSError('`DBOS.request` accessed from outside of HTTP requests');
-    return r;
   }
 
   /** Get the current application version */
@@ -1316,8 +1289,8 @@ export class DBOS {
 
   /**
    * Use the provided `authedUser` and `authedRoles` as the authenticated user for
-   *   any security checks or calls to `DBOS.authenticatedUser`
-   *   or `DBOS.authenticatedRoles` placed within the `callback` function.
+   *   any calls to `DBOS.authenticatedUser` or `DBOS.authenticatedRoles`
+   *   placed within the `callback` function.
    * @param authedUser - Authenticated user
    * @param authedRoles - Authenticated roles
    * @param callback - Function to run with authentication context in place
@@ -1366,18 +1339,6 @@ export class DBOS {
   static async withWorkflowTimeout<R>(timeoutMS: number | null, callback: () => Promise<R>): Promise<R> {
     ensureDBOSIsLaunched('workflows');
     return DBOS.#withTopContext({ workflowTimeoutMS: timeoutMS }, callback);
-  }
-
-  /**
-   * Run a workflow with the option to set any of the contextual items
-   *
-   * @param options - Overrides for options
-   * @param callback - Function to run, which would call or start workflows
-   * @returns - Return value from `callback`
-   */
-  static async runWithContext<R>(options: DBOSContextOptions, callback: () => Promise<R>): Promise<R> {
-    ensureDBOSIsLaunched('contexts');
-    return DBOS.#withTopContext(options, callback);
   }
 
   static async #withTopContext<R>(options: DBOSContextOptions, callback: () => Promise<R>): Promise<R> {
@@ -1975,6 +1936,8 @@ export class DBOS {
         enqueueOptions: params.enqueueOptions,
         duplicationPolicy: params.duplicationPolicy,
         workflowAttributes: params.workflowAttributes,
+        authenticatedUser: params.authenticatedUser,
+        authenticatedRoles: params.authenticatedRoles,
       };
 
       return await invokeRegOp(wfParams, pwfid, funcId);
@@ -1987,6 +1950,8 @@ export class DBOS {
         timeoutMS,
         duplicationPolicy: params.duplicationPolicy,
         workflowAttributes: params.workflowAttributes,
+        authenticatedUser: params.authenticatedUser,
+        authenticatedRoles: params.authenticatedRoles,
       };
 
       return await invokeRegOp(wfParams, undefined, undefined);
@@ -2291,44 +2256,6 @@ export class DBOS {
     registerSerializationRecipe(serReg);
   }
 
-  /**
-   * Decorate a class with the default list of required roles.
-   *   This class-level default can be overridden on a per-function basis with `requiredRole`.
-   * @param anyOf - The list of roles allowed access; authorization is granted if the authenticated user has any role on the list
-   */
-  static defaultRequiredRole(anyOf: string[]) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    function clsdec<T extends { new (...args: any[]): object }>(ctor: T) {
-      const clsreg = associateClassWithExternal(DBOS_AUTH, ctor) as ClassAuthDefaults;
-      clsreg.requiredRole = anyOf;
-      registerAuthChecker();
-    }
-    return clsdec;
-  }
-
-  /**
-   * Decorate a method with the default list of required roles.
-   * @see `DBOS.defaultRequiredRole`
-   * @param anyOf - The list of roles allowed access; authorization is granted if the authenticated user has any role on the list
-   */
-  static requiredRole(anyOf: string[]) {
-    function apidec<This, Args extends unknown[], Return>(
-      target: object,
-      propertyKey: string,
-      inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
-    ) {
-      const rr = associateMethodWithExternal(DBOS_AUTH, target, undefined, propertyKey.toString(), inDescriptor.value!);
-
-      (rr.regInfo as MethodAuth).requiredRole = anyOf;
-      registerAuthChecker();
-
-      inDescriptor.value = rr.registration.wrappedFunction ?? rr.registration.registeredFunction;
-
-      return inDescriptor;
-    }
-    return apidec;
-  }
-
   /////
   // Patching
   /////
@@ -2411,13 +2338,6 @@ export class DBOS {
   }
 
   /**
-   * Register a middleware provider
-   */
-  static registerMiddlewareInstaller(mwp: DBOSMethodMiddlewareInstaller) {
-    registerMiddlewareInstaller(mwp);
-  }
-
-  /**
    * Register information to be associated with a DBOS class
    */
   static associateClassWithInfo(external: AnyConstructor | object | string, cls: AnyConstructor | string): object {
@@ -2433,26 +2353,6 @@ export class DBOS {
     target: FunctionName,
   ) {
     return associateMethodWithExternal(external, target.ctorOrProto, target.className, target.name ?? func.name, func);
-  }
-
-  /**
-   * Register information to be associated with a DBOS function
-   */
-  static associateParamWithInfo<This, Args extends unknown[], Return>(
-    external: AnyConstructor | object | string,
-    func: ((this: This, ...args: Args) => Promise<Return>) | undefined,
-    target: FunctionName & {
-      param: number | string;
-    },
-  ) {
-    return associateParameterWithExternal(
-      external,
-      target.ctorOrProto,
-      target.className,
-      target.name ?? func?.name ?? '<unknown>',
-      func,
-      target.param,
-    );
   }
 
   /** Get registrations */

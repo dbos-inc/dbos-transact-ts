@@ -1,9 +1,6 @@
 import { DBOSContextualLogger } from './telemetry/logs';
-import { IncomingHttpHeaders } from 'http';
-import { ParsedUrlQuery } from 'querystring';
 import { AsyncLocalStorage } from 'async_hooks';
 import { DBOSInvalidWorkflowTransitionError } from './error';
-import Koa from 'koa';
 import { DBOSExecutor } from './dbos-executor';
 import { WorkflowSerializationFormat } from './workflow';
 
@@ -25,7 +22,6 @@ export interface DBOSContextOptions {
   authenticatedUser?: string;
   authenticatedRoles?: string[];
   assumedRole?: string;
-  request?: object;
   operationType?: string; // A custom helper for users to set a operation type of their choice. Intended for functions setting a pctx to run DBOS operations from.
   operationCaller?: string; // This is made to pass through the operationName to DBOS contexts, and potentially the caller span name.
   workflowTimeoutMS?: number | null;
@@ -43,7 +39,6 @@ export interface DBOSLocalCtx extends DBOSContextOptions {
   curStepFunctionId?: number; // If currently in a step, its function ID
   stepStatus?: StepStatus; // If currently in a step, its public status object
   curTxFunctionId?: number; // If currently in a tx, its function ID
-  koaContext?: Koa.Context;
 }
 
 export function isWithinWorkflowCtx(ctx: DBOSLocalCtx) {
@@ -179,23 +174,4 @@ export async function runInStepContext<R>(
     },
     callback,
   );
-}
-
-/**
- * HTTPRequest includes useful information from http.IncomingMessage and parsed body,
- *   URL parameters, and parsed query string.
- * In essence, it is the serializable part of the request.
- */
-export interface HTTPRequest {
-  readonly headers?: IncomingHttpHeaders; // A node's http.IncomingHttpHeaders object.
-  readonly rawHeaders?: string[]; // Raw headers.
-  readonly params?: unknown; // Parsed path parameters from the URL.
-  readonly body?: unknown; // parsed HTTP body as an object.
-  readonly rawBody?: string; // Unparsed raw HTTP body string.
-  readonly query?: ParsedUrlQuery; // Parsed query string.
-  readonly querystring?: string; // Unparsed raw query string.
-  readonly url?: string; // Request URL.
-  readonly method?: string; // Request HTTP method.
-  readonly ip?: string; // Request remote address.
-  readonly requestID?: string; // Request ID. Gathered from headers or generated if missing.
 }

@@ -17,16 +17,7 @@ export { SchedulerMode, SchedulerConfig } from './scheduler/scheduler_decorator'
 
 export { WorkflowSchedule, ScheduledWorkflowFn, ScheduleOptions } from './scheduler/scheduler';
 
-export {
-  AlertHandler,
-  ArgDataType,
-  DBOSDataType,
-  DBOSLifecycleCallback,
-  DBOSMethodMiddlewareInstaller,
-  ExternalRegistration,
-  MethodRegistrationBase,
-  ArgName,
-} from './decorators';
+export { AlertHandler, DBOSLifecycleCallback, ExternalRegistration, MethodRegistrationBase } from './decorators';
 
 export { WorkflowQueue } from './wfqueue';
 
@@ -52,7 +43,7 @@ export { SerializationRecipe, DBOSSerializer } from './serialization';
 
 export { StepConfig } from './step';
 
-export { FunctionName, ConfiguredInstance, MethodParameter } from './decorators';
+export { FunctionName, ConfiguredInstance } from './decorators';
 
 export { DBOSConfig, DBOSExternalState, OtelAttributeFormat } from './dbos-executor';
 
