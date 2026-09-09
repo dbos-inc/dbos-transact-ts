@@ -5,7 +5,12 @@ import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
 
 const QUEUE = 'enqueue-with-options-queue';
 
-const authWorkflow = DBOS.registerWorkflow(() => Promise.resolve('ok'), { name: 'authWorkflow' });
+// Reports the auth the workflow body itself observes, so a test can check that it agrees
+// with what was recorded on the status row.
+const authWorkflow = DBOS.registerWorkflow(
+  () => Promise.resolve(`${DBOS.authenticatedUser}|${DBOS.authenticatedRoles.join(',')}`),
+  { name: 'authWorkflow' },
+);
 
 describe('enqueue-workflow-with-options', () => {
   let config: DBOSConfig;
@@ -174,7 +179,7 @@ describe('enqueue-workflow-with-options', () => {
     await DBOS.registerQueue(QUEUE);
 
     // Explicit params beat the ambient authenticated context.
-    await (
+    const explicit = await (
       await DBOS.withAuthedContext('ambient', ['ambient-role'], () =>
         DBOS.startWorkflow(authWorkflow, {
           workflowID: 'auth-explicit',
@@ -185,7 +190,7 @@ describe('enqueue-workflow-with-options', () => {
     ).getResult();
 
     // `enqueueOptions` carries the same fields for a queued workflow.
-    await (
+    const enqueued = await (
       await DBOS.startWorkflow(authWorkflow, {
         workflowID: 'auth-enqueued',
         queueName: QUEUE,
@@ -194,11 +199,16 @@ describe('enqueue-workflow-with-options', () => {
     ).getResult();
 
     // With nothing explicit, the ambient context still applies.
-    await (
+    const ambient = await (
       await DBOS.withAuthedContext('carol', ['ops'], () =>
         DBOS.startWorkflow(authWorkflow, { workflowID: 'auth-ambient' })(),
       )
     ).getResult();
+
+    // The running workflow must see the same auth its status row records, on every path.
+    expect(explicit).toBe('alice|admin,user');
+    expect(enqueued).toBe('bob|reader');
+    expect(ambient).toBe('carol|ops');
 
     const { rows } = await client.query<{
       workflow_uuid: string;

@@ -84,7 +84,7 @@ export interface MethodRegistrationBase {
   // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
   wrappedFunction: Function | undefined; // Function that is user-callable, including the WF engine transition
   // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
-  registeredFunction: Function | undefined; // Function that is called by DBOS engine, including input validation and role check
+  registeredFunction: Function | undefined; // Function that is called by DBOS engine, including input validation
   // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
   origFunction: Function; // Function that the app provided
 
@@ -95,8 +95,6 @@ export interface MethodRegistrationBase {
 }
 
 export class MethodRegistration<This, Args extends unknown[], Return> implements MethodRegistrationBase {
-  defaults?: RegistrationDefaults | undefined;
-
   name: string = '';
   className: string = '';
   classReg: ClassRegistration;
@@ -410,7 +408,6 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
     methReg.needInitialized = false;
     methReg.name = fname;
     methReg.className = classReg.name;
-    methReg.defaults = classReg;
 
     const wrappedMethod = async function (this: This, ...rawArgs: Args) {
       let validatedArgs = rawArgs;

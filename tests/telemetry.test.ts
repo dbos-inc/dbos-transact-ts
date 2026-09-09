@@ -67,7 +67,13 @@ function createApp() {
       } finally {
         span.end();
       }
-    })();
+    })().catch(() => {
+      // Koa answered every handler throw with a 500; without this the socket would hang.
+      if (!res.writableEnded) {
+        res.statusCode = 500;
+        res.end();
+      }
+    });
   });
 }
 

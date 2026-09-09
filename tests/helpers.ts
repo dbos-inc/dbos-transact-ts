@@ -128,8 +128,6 @@ export async function queueEntriesAreCleanedUp() {
   return success;
 }
 
-// copied from https://github.com/uuidjs/uuid project
-
 // Poll `check` until it stops throwing, rethrowing its last failure if the deadline passes.
 export async function retryUntilSuccess(check: () => void | Promise<void>, timeoutMs: number = 15000) {
   const deadline = Date.now() + timeoutMs;

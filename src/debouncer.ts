@@ -220,6 +220,8 @@ export class Debouncer<Args extends unknown[], Return> {
           queueName,
           timeoutMS: this.cfg.startWorkflowParams?.timeoutMS ?? null,
           workflowAttributes: this.cfg.startWorkflowParams?.workflowAttributes,
+          authenticatedUser: this.cfg.startWorkflowParams?.authenticatedUser,
+          authenticatedRoles: this.cfg.startWorkflowParams?.authenticatedRoles,
           enqueueOptions: {
             applicationVersion: this.cfg.startWorkflowParams?.enqueueOptions?.applicationVersion,
             deduplicationID,
@@ -309,6 +311,8 @@ export class DebouncerClient {
             workflowTimeoutMS: this.cfg.startWorkflowParams?.timeoutMS ?? undefined,
             appVersion: this.cfg.startWorkflowParams?.enqueueOptions?.applicationVersion,
             attributes: this.cfg.startWorkflowParams?.workflowAttributes,
+            authenticatedUser: this.cfg.startWorkflowParams?.authenticatedUser,
+            authenticatedRoles: this.cfg.startWorkflowParams?.authenticatedRoles,
             deduplicationID,
             delaySeconds: debouncePeriodMs / 1000,
             serializationType: this.serializationType,
