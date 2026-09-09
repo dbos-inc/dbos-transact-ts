@@ -23,7 +23,7 @@
     "@types/prompt-sync": "^4.2.3",
     "@types/update-notifier": "^6.0.8",
     "@types/validator": "^13.11.9",
-    "typescript": "^5.4.5"
+    "typescript": "^5.9.0"
   },
   "dependencies": {
     "@inquirer/prompts": "^7.8.2",

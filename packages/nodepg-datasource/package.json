@@ -28,6 +28,6 @@
     "@types/node": "^20.11.25",
     "@types/pg": "^8.11.2",
     "jest": "^29.7.0",
-    "typescript": "^5.4.5"
+    "typescript": "^5.9.0"
   }
 }

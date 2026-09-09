@@ -1,0 +1,19 @@
+{
+  "name": "dbos-esm-test",
+  "version": "1.0.0",
+  "description": "Test DBOS from a native ESM application",
+  "private": true,
+  "type": "module",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc --project tsconfig.json"
+  },
+  "dependencies": {
+    "@dbos-inc/dbos-sdk": "file:../../",
+    "serialize-error": "^13.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.1",
+    "typescript": "^5.9.0"
+  }
+}

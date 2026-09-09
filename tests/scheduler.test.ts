@@ -329,7 +329,7 @@ describe('dynamic-scheduler-tests', () => {
       // All "pods" apply the identical schedule set at the same time.
       const results = await Promise.allSettled(Array.from({ length: POD_COUNT }, () => DBOS.applySchedules(desired)));
 
-      const failures = results.filter((r) => r.status === 'rejected') as PromiseRejectedResult[];
+      const failures = results.filter((r) => r.status === 'rejected');
       expect(failures.map((f) => `${f.reason}`)).toEqual([]);
 
       // The schedules should be applied exactly once, with the expected contents.

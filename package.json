@@ -9,7 +9,7 @@
   },
   "homepage": "https://docs.dbos.dev/",
   "engines": {
-    "node": ">=20"
+    "node": "^20.19.0 || >=22.12.0"
   },
   "keywords": [
     "dbos",
@@ -31,6 +31,7 @@
     "agentic workflow",
     "postgresql"
   ],
+  "type": "commonjs",
   "main": "dist/src/index.js",
   "types": "dist/src/index.d.ts",
   "exports": {
@@ -93,7 +94,7 @@
     "prettier": "^3.4.2",
     "publint": "^0.3.21",
     "ts-jest": "^29.2.4",
-    "typescript": "^5.4.5",
+    "typescript": "^5.9.0",
     "typescript-eslint": "^8.26.1",
     "zod": "^4.3.6"
   },

@@ -6,7 +6,13 @@ module.exports = {
   },
   testEnvironment: 'node',
   testRegex: '((\\.|/)(test|spec))\\.(ts|js)?$',
-  testPathIgnorePatterns: ['packages/*', 'tests/bundler-test/node_modules', 'tests/bundler-test/dist'],
+  testPathIgnorePatterns: [
+    'packages/*',
+    'tests/bundler-test/node_modules',
+    'tests/bundler-test/dist',
+    'tests/esm-test/node_modules',
+    'tests/esm-test/dist',
+  ],
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node'],
   modulePaths: ['./'],
   moduleNameMapper: {
