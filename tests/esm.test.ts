@@ -36,8 +36,10 @@ describe('DBOS ESM Tests', () => {
       timeout: 120000,
     });
 
+    const appTimeoutMs = 120000;
     let stdout = '';
     let stderr = '';
+    let timedOut = false;
 
     const exitCode = await new Promise<number>((resolve, reject) => {
       const child = spawn('node', [path.join('dist', 'main.js')], {
@@ -58,11 +60,26 @@ describe('DBOS ESM Tests', () => {
         stderr += data.toString();
       });
 
-      child.on('close', (code) => {
-        resolve(code ?? 0);
+      // The app must exit on its own; a hang would otherwise hold its pipes open for the rest of the run.
+      const watchdog = setTimeout(() => {
+        timedOut = true;
+        child.kill('SIGKILL');
+      }, appTimeoutMs);
+
+      child.on('close', (code, signal) => {
+        clearTimeout(watchdog);
+        if (timedOut) {
+          reject(new Error(`ESM app did not exit within ${appTimeoutMs / 1000}s:\n${stdout}${stderr}`));
+        } else if (signal) {
+          reject(new Error(`ESM app was killed by ${signal}:\n${stdout}${stderr}`));
+        } else {
+          resolve(code ?? 0);
+        }
       });
 
       child.on('error', (error) => {
+        clearTimeout(watchdog);
+        child.kill('SIGKILL');
         reject(error);
       });
     });
