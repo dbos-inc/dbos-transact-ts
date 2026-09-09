@@ -654,6 +654,10 @@ export class WorkflowQueue {
  * bypassing any `listenQueues` filter, since this process is the only one that
  * enqueues onto them.
  *
+ * Callers must resolve their queues through this rather than caching them: a registry
+ * clear (`DBOS.shutdown({ deregister: true })`) drops the registration, and a cached
+ * queue would silently stop being dispatched, leaving its workflows ENQUEUED forever.
+ *
  * Not a user-facing API: applications register queues with `DBOS.registerQueue`.
  * @internal
  */

@@ -7,7 +7,7 @@
 import { DBOSExecutor, PrepareEnqueuedWorkflowOptions } from './dbos-executor';
 import { ensureDBOSIsLaunched, TypedAsyncFunction } from './decorators';
 import { WorkflowStatusInternal } from './system_database';
-import { registerInternalQueue, wfQueueRunner, WorkflowQueue } from './wfqueue';
+import { wfQueueRunner, WorkflowQueue } from './wfqueue';
 
 export type { PrepareEnqueuedWorkflowOptions };
 
@@ -59,16 +59,8 @@ export function registerPollerQueue(name: string): void {
   wfQueueRunner.pollerQueueNames.add(name);
 }
 
-/**
- * Register a process-local queue for this receiver's own use, or return the one already
- * registered under `name`. Its configuration is fixed here rather than persisted in the
- * `queues` table, and it is always dispatched, bypassing any `listenQueues` filter.
- *
- * A receiver must resolve its queues through this rather than caching them: a registry clear
- * (`DBOS.shutdown({ deregister: true })`) drops the registration, and a cached queue would
- * silently stop being dispatched, leaving its workflows ENQUEUED forever.
- */
-export { registerInternalQueue };
+/** How a receiver declares the process-local queues it enqueues onto. */
+export { registerInternalQueue } from './wfqueue';
 
 /**
  * Look up a queue by name: one of DBOS's own process-local queues if there is one under that
