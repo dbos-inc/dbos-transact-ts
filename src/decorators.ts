@@ -74,8 +74,6 @@ export interface MethodRegistrationBase {
   name: string;
   className: string;
 
-  defaults?: RegistrationDefaults; // This is the class-level info
-
   workflowConfig?: WorkflowConfig;
   stepConfig?: StepConfig;
   isInstance: boolean;
@@ -92,8 +90,6 @@ export interface MethodRegistrationBase {
 
   // Add an interceptor that, when function is run, get a chance to process arguments / throw errors
   addEntryInterceptor(func: (reg: MethodRegistrationBase, args: unknown[]) => unknown[], seqNum?: number): void;
-
-  getRegisteredInfo(reg: AnyConstructor | object | string): unknown;
 
   invoke(pthis: unknown, args: unknown[]): unknown;
 }
@@ -784,7 +780,7 @@ export function getRegistrationsForExternal(
       if (funcName) {
         const f = reg.registeredOperationsByName.get(funcName);
         if (f) {
-          collectRegForFunction(f);
+          collectRegForFunction(f, reg);
         }
       } else {
         collectRegForClass(reg);
@@ -800,13 +796,13 @@ export function getRegistrationsForExternal(
 
   function collectRegForClass(reg: ClassRegistration) {
     for (const f of reg.allRegisteredOperations.values()) {
-      collectRegForFunction(f);
+      collectRegForFunction(f, reg);
     }
   }
 
-  function collectRegForFunction(f: MethodRegistrationBase) {
+  function collectRegForFunction(f: MethodRegistrationBase, classReg: ClassRegistration) {
     const methodConfig = f.externalRegInfo.get(external);
-    const classConfig = f.defaults?.externalRegInfo.get(external);
+    const classConfig = classReg.externalRegInfo.get(external);
     if (!methodConfig && !classConfig) return;
     res.push({ methodReg: f, methodConfig, classConfig: classConfig ?? {} });
   }

@@ -1,4 +1,3 @@
-import {} from 'serialize-error';
 import { PortableWorkflowError } from '../schemas/system_db_schema';
 
 export class DBOSError extends Error {
