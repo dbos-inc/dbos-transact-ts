@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import { DBOS, DBOSConfig, WorkflowQueue } from '../src/';
+import { DBOS, DBOSConfig } from '../src/';
 import { startDockerPg, stopDockerPg } from '../src/cli/docker_pg_helper';
 import { dropDatabases, PostgresChaosMonkey } from './helpers';
 import { sleepms } from '../src/utils';
@@ -130,7 +130,7 @@ describe('chaos-tests', () => {
   });
 
   class TestQueues {
-    static queue = new WorkflowQueue('queue');
+    static readonly queueName = 'queue';
 
     @DBOS.step()
     static async stepOne(x: number) {
@@ -151,9 +151,10 @@ describe('chaos-tests', () => {
   }
 
   test('test-queues', async () => {
+    await DBOS.registerQueue(TestQueues.queueName);
     const numWorkflows = 60;
     for (let i = 0; i < numWorkflows; i++) {
-      const handle = await DBOS.startWorkflow(TestQueues, { queueName: TestQueues.queue.name }).workflow(i);
+      const handle = await DBOS.startWorkflow(TestQueues, { queueName: TestQueues.queueName }).workflow(i);
       await expect(handle.getResult()).resolves.toEqual(i + 3);
       DBOS.logger.info(i);
     }

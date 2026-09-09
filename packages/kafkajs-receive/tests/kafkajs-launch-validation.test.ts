@@ -1,7 +1,7 @@
 import { afterEach, suite, test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { ConfiguredInstance, DBOS, WorkflowQueue } from '@dbos-inc/dbos-sdk';
+import { ConfiguredInstance, DBOS } from '@dbos-inc/dbos-sdk';
 import { Client } from 'pg';
 import { dropDB } from './test-helpers';
 import { Kafka, KafkaConfig, KafkaMessage, logLevel } from 'kafkajs';
@@ -57,16 +57,21 @@ suite('kafkajs-receive-launch-validation', async () => {
   });
 
   await test('a partitioned custom queue is rejected at launch', { timeout: 30000 }, async () => {
-    const receiver = new KafkaReceiver(kafkaConfig);
     const queueName = `partq-${rand()}`;
-    new WorkflowQueue(queueName, { partitionQueue: true });
+    DBOS.setConfig({ name: 'kafka-launchval-test' });
+
+    // The queue is validated at launch, so persist it in an earlier launch that has no consumers.
+    await DBOS.launch();
+    await DBOS.registerQueue(queueName, { partitionConcurrency: 1 });
+    await DBOS.shutdown();
+
+    const receiver = new KafkaReceiver(kafkaConfig);
     receiver.registerConsumer(makeWorkflow('partQWf'), `t-${rand()}`, {
       name: 'partQWf',
       queueName,
       config: { groupId: `partq-grp-${rand()}` },
     });
 
-    DBOS.setConfig({ name: 'kafka-launchval-test' });
     await assert.rejects(DBOS.launch(), /is a partitioned queue/);
   });
 

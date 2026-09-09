@@ -376,8 +376,8 @@ describe('running-admin-server-tests', () => {
     });
     expect(metadataResponse.status).toBe(200);
     const queueMetadata: QueueMetadataResponse[] = (await metadataResponse.json()) as QueueMetadataResponse[];
-    // 4 user-registered DB-backed queues + INTERNAL_QUEUE_NAME (in-memory).
-    expect(queueMetadata.length).toBe(5);
+    // The 4 user-registered queues; the internal queue is not reported.
+    expect(queueMetadata.length).toBe(4);
     for (const q of queueMetadata) {
       if (q.name === testQueueOne.name) {
         expect(q.concurrency).toBeUndefined();

@@ -12,7 +12,7 @@ import {
   setWfAndChildrenToPending,
 } from './helpers';
 import { WorkflowQueue } from '../src';
-import { EnqueueOptions, SystemDatabase } from '../src/system_database';
+import { EnqueueOptions, QueueRecord, SystemDatabase } from '../src/system_database';
 import { randomUUID } from 'node:crypto';
 import { globalParams, sleepms, INTERNAL_QUEUE_NAME } from '../src/utils';
 
@@ -2292,8 +2292,8 @@ describe('database-backed-queue-crud', () => {
     });
     expect(registered.name).toBe(queueName);
     expect(registered.databaseBacked).toBe(true);
-    // Database-backed queues are not added to the in-memory registry.
-    expect(wfQueueRunner.wfQueuesByName.has(queueName)).toBe(false);
+    // Database-backed queues are not added to the internal registry.
+    expect(wfQueueRunner.getInternalQueue(queueName)).toBeUndefined();
 
     let retrieved = await DBOS.retrieveQueue(queueName);
     expect(retrieved).not.toBeNull();
@@ -2433,12 +2433,10 @@ describe('database-backed-queue-crud', () => {
     expect((await DBOS.retrieveQueue(partName))!.rateLimit).toBeUndefined();
     await DBOS.deleteQueue(partName);
 
-    // In-memory queues do not support setters.
-    const legacyName = `legacy_dyn_queue_${randomUUID()}`;
-    const legacy = new WorkflowQueue(legacyName, { concurrency: 2 });
-    expect(legacy.concurrency).toBe(2);
-    expect(legacy.databaseBacked).toBe(false);
-    await expect(legacy.setConcurrency(5)).rejects.toThrow(/dynamic configuration is only supported/);
+    // Internal queues are not persisted, so they do not support setters.
+    const internal = wfQueueRunner.getInternalQueue(INTERNAL_QUEUE_NAME)!;
+    expect(internal.databaseBacked).toBe(false);
+    await expect(internal.setConcurrency(5)).rejects.toThrow(/dynamic configuration is only supported/);
 
     await DBOS.deleteQueue(queueName);
   });
@@ -2485,39 +2483,45 @@ describe('database-backed-queue-crud', () => {
     // we can launch with a custom listenQueues filter.
     await DBOS.shutdown();
 
-    const inMemQueueName = `inmem_${randomUUID()}`;
-    const allowedDbName = `allowed_db_${randomUUID()}`;
-    const filteredOutDbName = `filtered_db_${randomUUID()}`;
-
-    const inMemQueue = new WorkflowQueue(inMemQueueName, { minPollingIntervalMs: 100 });
+    const instanceName = `listen_instance_${randomUUID()}`;
+    const allowedName = `listen_allowed_${randomUUID()}`;
+    const filteredOutName = `listen_filtered_${randomUUID()}`;
 
     const cfg = generateDBOSTestConfig();
-    cfg.listenQueues = [inMemQueue, allowedDbName];
+
+    // listenQueues is read at launch, so this queue's instance must come from a
+    // client: DBOS.registerQueue is only available once DBOS is launched.
+    const client = await DBOSClient.create({ systemDatabaseUrl: cfg.systemDatabaseUrl! });
+    const instanceQueue = await client.registerQueue(instanceName, { minPollingIntervalMs: 100 });
+    await client.destroy();
+
+    // listenQueues accepts a mix of WorkflowQueue instances and string names.
+    cfg.listenQueues = [instanceQueue, allowedName];
     DBOS.setConfig(cfg);
     await DBOS.launch();
 
-    // Register both DB-backed queues. The dispatcher must dispatch the
-    // allowed name and skip the filtered one.
-    await DBOS.registerQueue(allowedDbName, { minPollingIntervalMs: 100 });
-    await DBOS.registerQueue(filteredOutDbName, { minPollingIntervalMs: 100 });
+    // Register the remaining queues. The dispatcher must dispatch the allowed
+    // name and skip the filtered one.
+    await DBOS.registerQueue(allowedName, { minPollingIntervalMs: 100 });
+    await DBOS.registerQueue(filteredOutName, { minPollingIntervalMs: 100 });
 
-    // The in-memory queue (passed as an instance) processes its workflow.
-    const h1 = await DBOS.startWorkflow(TestWFs, { queueName: inMemQueueName }).testWorkflowSimple('a', '1');
+    // The queue passed as an instance processes its workflow.
+    const h1 = await DBOS.startWorkflow(TestWFs, { queueName: instanceName }).testWorkflowSimple('a', '1');
     expect(await h1.getResult()).toBe('a1');
 
-    // The DB-backed queue (passed as a string name) also processes.
-    const h2 = await DBOS.startWorkflow(TestWFs, { queueName: allowedDbName }).testWorkflowSimple('b', '2');
+    // The queue passed as a string name also processes.
+    const h2 = await DBOS.startWorkflow(TestWFs, { queueName: allowedName }).testWorkflowSimple('b', '2');
     expect(await h2.getResult()).toBe('b2');
 
-    // The filtered-out DB-backed queue is not dispatched; its workflow stays
-    // ENQUEUED. Wait long enough for several reconcile cycles to confirm
-    // the filter holds.
-    const h3 = await DBOS.startWorkflow(TestWFs, { queueName: filteredOutDbName }).testWorkflowSimple('c', '3');
+    // The filtered-out queue is not dispatched; its workflow stays ENQUEUED.
+    // Wait long enough for several reconcile cycles to confirm the filter holds.
+    const h3 = await DBOS.startWorkflow(TestWFs, { queueName: filteredOutName }).testWorkflowSimple('c', '3');
     await sleepms(2500);
     expect((await h3.getStatus())?.status).toBe(StatusString.ENQUEUED);
 
-    await DBOS.deleteQueue(allowedDbName);
-    await DBOS.deleteQueue(filteredOutDbName);
+    await DBOS.deleteQueue(instanceName);
+    await DBOS.deleteQueue(allowedName);
+    await DBOS.deleteQueue(filteredOutName);
   });
 
   test('async-getters-reflect-cross-process-changes', async () => {
@@ -2552,51 +2556,40 @@ describe('database-backed-queue-crud', () => {
     await DBOS.deleteQueue(queueName);
     await expect(q1!.getConcurrency()).rejects.toThrow(/not found in the database/);
 
-    // In-memory queues: getters return cached values without a DB roundtrip.
-    const memName = `test_mem_freshness_${randomUUID()}`;
-    const mem = new WorkflowQueue(memName, { concurrency: 7, priorityEnabled: true });
-    expect(await mem.getConcurrency()).toBe(7);
-    expect(await mem.getPriorityEnabled()).toBe(true);
+    // Internal queues have no row, so their getters return cached values
+    // instead of throwing the way a deleted database-backed queue does.
+    const internal = wfQueueRunner.getInternalQueue(INTERNAL_QUEUE_NAME)!;
+    expect(await internal.getConcurrency()).toBeUndefined();
+    expect(await internal.getPriorityEnabled()).toBe(false);
   });
 
-  test('in-memory-and-db-backed-queues-coexist', async () => {
+  test('unlistened-queue-runs-after-a-restart-that-listens-to-it', async () => {
     // beforeEach already launched DBOS with the default config; restart it
-    // with a custom listenQueues filter so we can exercise mixed listening.
+    // with a custom listenQueues filter so we can exercise selective listening.
     await DBOS.shutdown();
 
-    const listenedMemName = `inmem_listened_${randomUUID()}`;
-    const idleMemName = `inmem_idle_${randomUUID()}`;
-    const dbBackedName = `dbbacked_${randomUUID()}`;
+    const listenedName = `listened_${randomUUID()}`;
+    const idleName = `idle_${randomUUID()}`;
 
-    const listenedMem = new WorkflowQueue(listenedMemName, { minPollingIntervalMs: 100 });
-    new WorkflowQueue(idleMemName, { concurrency: 2, minPollingIntervalMs: 100 });
-
-    // Re-declaring an in-memory queue with the same name throws.
-    expect(() => new WorkflowQueue(listenedMemName)).toThrow(/defined multiple times/);
-
-    // listenQueues accepts a mix of WorkflowQueue instances and string names.
     const cfg = generateDBOSTestConfig();
-    cfg.listenQueues = [listenedMem, dbBackedName];
+    const client = await DBOSClient.create({ systemDatabaseUrl: cfg.systemDatabaseUrl! });
+    await client.registerQueue(listenedName, { minPollingIntervalMs: 100 });
+    await client.registerQueue(idleName, { concurrency: 2, minPollingIntervalMs: 100 });
+    await client.destroy();
+
+    cfg.listenQueues = [listenedName];
     DBOS.setConfig(cfg);
     await DBOS.launch();
 
-    // Register the database-backed queue post-launch; the dispatcher picks it
-    // up since it matches the listen filter.
-    await DBOS.registerQueue(dbBackedName, { minPollingIntervalMs: 100 });
-
-    // The listened in-memory queue runs workflows. Priority needs no opt-in on any queue.
-    const memHandle = await DBOS.startWorkflow(TestWFs, {
-      queueName: listenedMemName,
+    // The listened queue runs workflows. Priority needs no opt-in on any queue.
+    const listenedHandle = await DBOS.startWorkflow(TestWFs, {
+      queueName: listenedName,
       enqueueOptions: { priority: 5 },
     }).testWorkflowSimple('a', '1');
-    expect(await memHandle.getResult()).toBe('a1');
+    expect(await listenedHandle.getResult()).toBe('a1');
 
-    // The listened database-backed queue runs workflows.
-    const dbHandle = await DBOS.startWorkflow(TestWFs, { queueName: dbBackedName }).testWorkflowSimple('b', '2');
-    expect(await dbHandle.getResult()).toBe('b2');
-
-    // A workflow enqueued on the un-listened in-memory queue stays ENQUEUED.
-    const idleHandle = await DBOS.startWorkflow(TestWFs, { queueName: idleMemName }).testWorkflowSimple('c', '3');
+    // A workflow enqueued on the un-listened queue stays ENQUEUED.
+    const idleHandle = await DBOS.startWorkflow(TestWFs, { queueName: idleName }).testWorkflowSimple('c', '3');
     await sleepms(2000);
     expect((await idleHandle.getStatus())?.status).toBe(StatusString.ENQUEUED);
 
@@ -2604,14 +2597,15 @@ describe('database-backed-queue-crud', () => {
     // workflow now runs to completion.
     await DBOS.shutdown();
     const cfg2 = generateDBOSTestConfig();
-    cfg2.listenQueues = [idleMemName];
+    cfg2.listenQueues = [idleName];
     DBOS.setConfig(cfg2);
     await DBOS.launch();
 
     const resumed = DBOS.retrieveWorkflow(idleHandle.workflowID);
     expect(await resumed.getResult()).toBe('c3');
 
-    await DBOS.deleteQueue(dbBackedName);
+    await DBOS.deleteQueue(listenedName);
+    await DBOS.deleteQueue(idleName);
   });
 
   class DynConcWFs {
@@ -2959,7 +2953,8 @@ describe('bounded-lane dispatcher', () => {
       logger: { info: () => {}, warn: () => {}, debug: () => {}, error: () => {} },
       dispatchDequeuedWorkflows: () => Promise.resolve(),
       systemDatabase: {
-        listQueues: () => Promise.resolve([]),
+        // The dispatcher discovers this test's queues through the queues table.
+        listQueues: () => Promise.resolve(laneRecords),
         getQueuePartitions: () => Promise.resolve([]),
         // pollQueue reads this worker's running count before every dequeue.
         countRunningWorkflowsForQueue: () => 0,
@@ -2977,25 +2972,22 @@ describe('bounded-lane dispatcher', () => {
   }
 
   let seq = 0;
-  const registered: WorkflowQueue[] = [];
-  /** Register N continuously-due in-memory queues under names unique to this test. */
+  let laneRecords: QueueRecord[] = [];
+  /** Build N continuously-due queues under names unique to this test. */
   function makeQueues(count: number): WorkflowQueue[] {
     const tag = `lane-${seq++}`;
-    const queues = Array.from(
-      { length: count },
-      (_, i) => new WorkflowQueue(`${tag}-q${i}`, { minPollingIntervalMs: 1 }),
+    const records = Array.from({ length: count }, (_, i) =>
+      WorkflowQueue.recordFromParams(`${tag}-q${i}`, { minPollingIntervalMs: 1 }),
     );
-    registered.push(...queues);
-    return queues;
+    laneRecords.push(...records);
+    return records.map((record) => WorkflowQueue._fromRecord(record));
   }
 
   afterEach(() => {
     wfQueueRunner.stop();
     // Restores any global patched via jest.spyOn below; runs even when a test times out.
     jest.restoreAllMocks();
-    // The constructor registers globally, so unregister: a later DBOS.launch() would dispatch these.
-    for (const q of registered) wfQueueRunner.wfQueuesByName.delete(q.name);
-    registered.length = 0;
+    laneRecords = [];
   });
 
   test('never runs more concurrent polls than maxConcurrentQueueDispatches', async () => {
@@ -3982,7 +3974,7 @@ describe('partition-queue-limits', () => {
   });
 
   test('rejects limits that could never bind, or that mix a deprecated option with its replacement', () => {
-    const build = (params: QueueParameters) => () => new WorkflowQueue(`validate_${randomUUID()}`, params);
+    const build = (params: QueueParameters) => () => WorkflowQueue.validateQueueParams(params);
     // A deprecated argument cannot be combined with the one replacing it.
     expect(build({ concurrency: 1, globalConcurrency: 1 })).toThrow('set only one of them');
     expect(build({ partitionQueue: true, partitionConcurrency: 1 })).toThrow('set only one of them');

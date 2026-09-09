@@ -1,7 +1,7 @@
 import { after, before, suite, test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { DBOS, WorkflowQueue } from '@dbos-inc/dbos-sdk';
+import { DBOS } from '@dbos-inc/dbos-sdk';
 import { Client } from 'pg';
 import { dropDB, withTimeout } from './test-helpers';
 import { Kafka, KafkaConfig, KafkaMessage, logLevel, Producer } from 'kafkajs';
@@ -96,7 +96,6 @@ async function customQueueWorkflow(_topic: string, partition: number, message: K
 }
 
 const customQueueName = `kafka-custom-q-${suffix}`;
-new WorkflowQueue(customQueueName, { concurrency: 1 });
 
 const registeredPartition = DBOS.registerWorkflow(partitionWorkflow, { name: 'partitionWorkflow' });
 kafkaReceiver.registerConsumer(registeredPartition, partitionTopic, {
@@ -181,6 +180,8 @@ suite('kafkajs-receive-ordering', async () => {
 
       DBOS.setConfig({ name: 'kafka-order-test' });
       await DBOS.launch();
+      // The consumer's queue must have a row before the dispatcher will poll it.
+      await DBOS.registerQueue(customQueueName, { concurrency: 1 });
     },
     { timeout: 60000 },
   );

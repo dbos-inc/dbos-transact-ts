@@ -73,7 +73,7 @@ import {
 } from './serialization';
 import { GetWorkflowsInput } from '.';
 
-import { wfQueueRunner, WorkflowQueue } from './wfqueue';
+import { registerInternalQueue, wfQueueRunner, WorkflowQueue } from './wfqueue';
 import { debugTriggerPoint, DEBUG_TRIGGER_WORKFLOW_ENQUEUE } from './debugpoint';
 import { ScheduledReceiver } from './scheduler/scheduler_decorator';
 import { DynamicSchedulerLoop } from './scheduler/scheduler';
@@ -158,10 +158,9 @@ export interface DBOSConfig {
   enablePatching?: boolean;
   /**
    * Restrict this process to only dequeue from the listed queues. Each entry
-   * is either a `WorkflowQueue` instance or the name of a queue (in-memory
-   * or database-backed). Names that match nothing at launch are deferred —
-   * a database-backed queue registered later under that name will be picked
-   * up by the supervisor.
+   * is either a `WorkflowQueue` instance or the name of a queue. Names that
+   * match nothing at launch are deferred — a queue registered later under that
+   * name will be picked up by the supervisor.
    */
   listenQueues?: (WorkflowQueue | string)[];
   /**
@@ -983,13 +982,13 @@ export class DBOSExecutor {
   }
 
   /**
-   * Look up an in-memory workflow queue by name. Returns `undefined` for
-   * names that are not registered in-process; database-backed queues are
-   * not in this map, so callers using this for sync validation should treat
-   * `undefined` as "no in-process information" rather than as an error.
+   * Look up one of DBOS's own process-local queues by name. Returns `undefined`
+   * for every other name, database-backed queues included, so callers using this
+   * for sync validation should treat `undefined` as "no in-process information"
+   * rather than as an error.
    */
-  getQueueByName(name: string): WorkflowQueue | undefined {
-    return wfQueueRunner.wfQueuesByName.get(name);
+  getInternalQueueByName(name: string): WorkflowQueue | undefined {
+    return wfQueueRunner.getInternalQueue(name);
   }
 
   async runStepTempWF<T extends unknown[], R>(
@@ -1622,6 +1621,6 @@ export class DBOSExecutor {
     if (DBOSExecutor.internalQueue !== undefined) {
       return;
     }
-    DBOSExecutor.internalQueue = new WorkflowQueue(INTERNAL_QUEUE_NAME, {});
+    DBOSExecutor.internalQueue = registerInternalQueue(INTERNAL_QUEUE_NAME);
   }
 }
