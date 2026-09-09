@@ -224,6 +224,8 @@ export class Debouncer<Args extends unknown[], Return> {
           authenticatedRoles: this.cfg.startWorkflowParams?.authenticatedRoles,
           enqueueOptions: {
             applicationVersion: this.cfg.startWorkflowParams?.enqueueOptions?.applicationVersion,
+            authenticatedUser: this.cfg.startWorkflowParams?.enqueueOptions?.authenticatedUser,
+            authenticatedRoles: this.cfg.startWorkflowParams?.enqueueOptions?.authenticatedRoles,
             deduplicationID,
             delaySeconds: debouncePeriodMs / 1000,
             debounceDeadlineEpochMS,
@@ -311,8 +313,13 @@ export class DebouncerClient {
             workflowTimeoutMS: this.cfg.startWorkflowParams?.timeoutMS ?? undefined,
             appVersion: this.cfg.startWorkflowParams?.enqueueOptions?.applicationVersion,
             attributes: this.cfg.startWorkflowParams?.workflowAttributes,
-            authenticatedUser: this.cfg.startWorkflowParams?.authenticatedUser,
-            authenticatedRoles: this.cfg.startWorkflowParams?.authenticatedRoles,
+            // Flat options, so apply the precedence the executor gives the nested form.
+            authenticatedUser:
+              this.cfg.startWorkflowParams?.authenticatedUser ??
+              this.cfg.startWorkflowParams?.enqueueOptions?.authenticatedUser,
+            authenticatedRoles:
+              this.cfg.startWorkflowParams?.authenticatedRoles ??
+              this.cfg.startWorkflowParams?.enqueueOptions?.authenticatedRoles,
             deduplicationID,
             delaySeconds: debouncePeriodMs / 1000,
             serializationType: this.serializationType,
