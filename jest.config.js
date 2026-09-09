@@ -3,7 +3,10 @@ module.exports = {
   preset: 'ts-jest',
   transform: {
     '^.+\\.tsx?$': ['ts-jest', { diagnostics: { ignoreCodes: [151002] } }],
+    // ESM-only dependencies still have to reach jest's CommonJS runtime, which has no require(esm).
+    '^.+\\.m?js$': ['ts-jest', { diagnostics: false, tsconfig: { allowJs: true, module: 'CommonJS' } }],
   },
+  transformIgnorePatterns: ['/node_modules/(?!(serialize-error|non-error)/)'],
   testEnvironment: 'node',
   testRegex: '((\\.|/)(test|spec))\\.(ts|js)?$',
   testPathIgnorePatterns: [

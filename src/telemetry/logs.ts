@@ -11,7 +11,7 @@ import { DBOSJSON } from '../serialization';
 import { LoggerConfig } from '../dbos-executor';
 import { DBOSSpan } from './traces';
 import type { format as formatT } from 'winston';
-import { inspect } from 'node:util';
+import { inspect, type InspectOptions } from 'node:util';
 
 // As DBOS OTLP is optional, OTLP objects must only be dynamically imported
 // and only when OTLP is enabled. Importing OTLP types is fine as long
@@ -58,10 +58,13 @@ export interface StackTrace {
   stack?: string;
 }
 
+// A non-Error cause collapses to `[Object]` at inspect's default depth, hiding what was attached.
+const CAUSE_INSPECT_OPTIONS: InspectOptions = { depth: null };
+
 // Append the `cause` (which Error.stack omits) to the stack; inspect() handles nested/circular/non-Error causes.
 function errorStackWithCause(error: Error): string {
   const stack = error.stack ?? `${error.name}: ${error.message}`;
-  return error.cause === undefined ? stack : `${stack}\n  [cause]: ${inspect(error.cause)}`;
+  return error.cause === undefined ? stack : `${stack}\n  [cause]: ${inspect(error.cause, CAUSE_INSPECT_OPTIONS)}`;
 }
 
 export class GlobalLogger {

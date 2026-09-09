@@ -128,6 +128,12 @@ describe('custom-logger', () => {
     const strEntry = recorder.find('error', 'strcause');
     expect(strEntry?.metadata?.stack).toContain("[cause]: 'plain reason'");
     expect(strEntry?.metadata?.stack).not.toContain('__dbos_serializer');
+
+    // A nested non-Error cause must stay expanded rather than collapsing to [Object].
+    DBOS.logger.error(new Error('deepcause', { cause: { req: { headers: { auth: { token: 'abc123' } } } } }));
+    const deepEntry = recorder.find('error', 'deepcause');
+    expect(deepEntry?.metadata?.stack).toContain('abc123');
+    expect(deepEntry?.metadata?.stack).not.toContain('[Object]');
   });
 
   test('error without a cause keeps an unmodified stack', async () => {

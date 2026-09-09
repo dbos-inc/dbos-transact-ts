@@ -1,4 +1,11 @@
-import { DBOSJSON, DBOSJSONLegacy, SERIALIZER_MARKER_KEY, SERIALIZER_MARKER_VALUE } from '../src/serialization';
+import {
+  DBOSJSON,
+  DBOSJSONLegacy,
+  SERIALIZER_MARKER_KEY,
+  SERIALIZER_MARKER_VALUE,
+  deserializeResError,
+  serializeResErrorWithSerializer,
+} from '../src/serialization';
 
 /**
  * DBOSJSON uses SuperJSON internally for rich type support.
@@ -7,6 +14,7 @@ import { DBOSJSON, DBOSJSONLegacy, SERIALIZER_MARKER_KEY, SERIALIZER_MARKER_VALU
  * 1. "dbos-json-reviver-replacer" - (dates, bigints, buffers)
  * 2. "SuperJSON enhanced types" - (Sets, Maps, undefined, RegExp, etc.)
  * 3. "Backwards compatibility" - Verify old database data still works
+ * 4. "Error serialization" - (cause chains, AggregateError, non-Error throws)
  *
  * Caution: Altering results of this test likely means a backward compatibility break.
  */
@@ -266,5 +274,79 @@ describe('Backwards compatibility', () => {
     expect(complexParsed).toHaveProperty('json');
     expect(complexParsed).toHaveProperty(SERIALIZER_MARKER_KEY, SERIALIZER_MARKER_VALUE);
     expect(complexParsed).toHaveProperty('meta'); // Complex types have meta from SuperJSON
+  });
+
+  test('parses an error row written before causes were captured', async () => {
+    // A workflow_status.error row as written before cause chains were captured.
+    const legacyRow = JSON.stringify({
+      json: {
+        name: 'Error',
+        message: 'External Test endpoint failed',
+        stack: 'Error: External Test endpoint failed\n    at sendTestEvent (/project/src/test_V1.ts:52:19)',
+      },
+      [SERIALIZER_MARKER_KEY]: SERIALIZER_MARKER_VALUE,
+    });
+
+    const restored = await deserializeResError(legacyRow, DBOSJSON.name(), DBOSJSON);
+
+    expect(restored).toBeInstanceOf(Error);
+    expect(restored.name).toBe('Error');
+    expect(restored.message).toBe('External Test endpoint failed');
+    expect(restored.stack).toContain('sendTestEvent');
+    expect(restored.cause).toBeUndefined();
+  });
+
+  test('parses an error row holding a bare string', async () => {
+    const bareRow = JSON.stringify({ json: 'something went wrong', [SERIALIZER_MARKER_KEY]: SERIALIZER_MARKER_VALUE });
+
+    await expect(deserializeResError(bareRow, DBOSJSON.name(), DBOSJSON)).resolves.toBeInstanceOf(Error);
+  });
+});
+
+describe('Error serialization', () => {
+  const roundTrip = async (err: Error) => {
+    const { serializedValue, serialization } = await serializeResErrorWithSerializer(err, DBOSJSON, DBOSJSON.name());
+    return { serializedValue, restored: await deserializeResError(serializedValue, serialization, DBOSJSON) };
+  };
+
+  test('stores and restores a cause', async () => {
+    const { serializedValue, restored } = await roundTrip(new Error('outer', { cause: new Error('inner') }));
+
+    expect(serializedValue).toContain('inner');
+    expect(restored.message).toBe('outer');
+    expect(restored.cause).toBeInstanceOf(Error);
+    expect((restored.cause as Error).message).toBe('inner');
+  });
+
+  test('stores and restores a nested cause chain', async () => {
+    const { restored } = await roundTrip(new Error('a', { cause: new Error('b', { cause: new Error('c') }) }));
+
+    const b = restored.cause as Error;
+    const c = b.cause as Error;
+    expect(b.message).toBe('b');
+    expect(c).toBeInstanceOf(Error);
+    expect(c.message).toBe('c');
+  });
+
+  test('keeps custom properties on the cause', async () => {
+    const inner = new Error('inner');
+    (inner as Error & { code: string }).code = 'E_INNER';
+    const { restored } = await roundTrip(new Error('outer', { cause: inner }));
+
+    expect((restored.cause as Error & { code?: string }).code).toBe('E_INNER');
+  });
+
+  test('stores the members of an AggregateError', async () => {
+    const { serializedValue } = await roundTrip(new AggregateError([new Error('e1'), new Error('e2')], 'many'));
+
+    expect(serializedValue).toContain('e1');
+    expect(serializedValue).toContain('e2');
+  });
+
+  test('wraps a thrown non-Error rather than storing it bare', async () => {
+    const { serializedValue } = await roundTrip('a bare string' as unknown as Error);
+
+    expect(serializedValue).toContain('Non-error value');
+    expect(serializedValue).toContain('a bare string');
   });
 });
