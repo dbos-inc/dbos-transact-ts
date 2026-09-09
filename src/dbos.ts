@@ -2667,7 +2667,7 @@ export class DBOS {
     if (persisted === null) {
       throw new Error(`Queue '${name}' missing from database after upsert`);
     }
-    const queue = WorkflowQueue._fromRecord(persisted);
+    const queue = new WorkflowQueue(persisted);
     if (inserted) {
       DBOSExecutor.globalInstance!.logger.info(`Registered new queue:`);
       logQueue(DBOSExecutor.globalInstance!.logger, queue);
@@ -2720,7 +2720,7 @@ export class DBOS {
   static async retrieveQueue(name: string): Promise<WorkflowQueue | null> {
     ensureDBOSIsLaunched('retrieveQueue');
     const record = await DBOSExecutor.globalInstance!.systemDatabase.getQueue(name);
-    return record === null ? null : WorkflowQueue._fromRecord(record);
+    return record === null ? null : new WorkflowQueue(record);
   }
 
   /** Delete a database-backed queue. Pending workflows on it are unrecoverable. */
@@ -2737,6 +2737,6 @@ export class DBOS {
   static async listQueues(applicationName?: string | string[]): Promise<WorkflowQueue[]> {
     ensureDBOSIsLaunched('listQueues');
     const records = await DBOSExecutor.globalInstance!.systemDatabase.listQueues(applicationName);
-    return records.map((record) => WorkflowQueue._fromRecord(record));
+    return records.map((record) => new WorkflowQueue(record));
   }
 }

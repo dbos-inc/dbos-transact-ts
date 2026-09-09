@@ -248,7 +248,7 @@ export class DBOSAdminServer {
           const records = await dbosExec.systemDatabase.listQueues(dbosExec.systemDatabase.appName);
           for (const record of records) {
             if (record.name === INTERNAL_QUEUE_NAME) continue;
-            const q = WorkflowQueue._fromRecord(record);
+            const q = new WorkflowQueue(record);
             queues.push({
               name: record.name,
               concurrency: q.concurrency,

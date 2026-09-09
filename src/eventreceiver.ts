@@ -71,5 +71,5 @@ export async function getQueue(name: string): Promise<WorkflowQueue | null> {
   if (internal) return internal;
   ensureDBOSIsLaunched('getQueue');
   const record = await DBOSExecutor.globalInstance!.systemDatabase.getQueue(name);
-  return record === null ? null : WorkflowQueue._fromRecord(record);
+  return record === null ? null : new WorkflowQueue(record);
 }

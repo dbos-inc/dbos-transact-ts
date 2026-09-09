@@ -274,19 +274,6 @@ async function refreshFromDb(q: WorkflowQueue): Promise<void> {
   applyRecord(q, record);
 }
 
-/** A `WorkflowQueue` whose `readonly` fields are still writable, as returned by `allocQueue`. */
-type MutableQueue = { -readonly [K in keyof WorkflowQueue]: WorkflowQueue[K] };
-
-/**
- * Allocate a queue instance without invoking the constructor, so no field
- * initializer runs and every field is set by the caller.
- */
-function allocQueue(name: string): MutableQueue {
-  const q = Object.create(WorkflowQueue.prototype) as MutableQueue;
-  q.name = name;
-  return q;
-}
-
 /**
  * Settings structure for a named workflow queue.
  * Workflow queues limit the rate and concurrency at which DBOS executes workflows.
@@ -294,8 +281,7 @@ function allocQueue(name: string): MutableQueue {
  *   `DBOS.withWorkflowQueue`, etc.
  */
 export class WorkflowQueue {
-  /** Set by the allocating factory; the constructor is never run. */
-  readonly name!: string;
+  readonly name: string;
   /**
    * Last-known cached values. May be stale for database-backed queues if
    * another process has modified the row. Use getters instead.
@@ -317,7 +303,7 @@ export class WorkflowQueue {
    * table and may be mutated at runtime via the `setX` methods. False only for
    * the process-local queues DBOS registers for its own use.
    */
-  readonly databaseBacked!: boolean;
+  readonly databaseBacked: boolean;
 
   /**
    * True when configuration reads/writes target a `DBOSClient`-supplied
@@ -325,10 +311,26 @@ export class WorkflowQueue {
    * kept off this class's public type — see the module-level WeakMap below —
    * so that `WorkflowQueue` does not transitively depend on `SystemDatabase`.
    */
-  readonly clientBound!: boolean;
+  readonly clientBound: boolean;
 
-  /** Queues are obtained from `DBOS.registerQueue`, `DBOS.retrieveQueue`, or `DBOS.listQueues`. */
-  private constructor() {}
+  /**
+   * Not reachable from the published package, which exports `WorkflowQueue` as a
+   * type only: applications obtain queues from `DBOS.registerQueue`,
+   * `DBOS.retrieveQueue`, or `DBOS.listQueues`.
+   *
+   * @param record - The queue's configuration, persisted or not.
+   * @param databaseBacked - False only for the process-local queues DBOS registers for its own use.
+   * @param clientSystemDatabase - When set, config reads and writes target this client's database.
+   */
+  constructor(record: QueueRecord, databaseBacked: boolean = true, clientSystemDatabase?: SystemDatabase) {
+    this.name = record.name;
+    this.databaseBacked = databaseBacked;
+    this.clientBound = clientSystemDatabase !== undefined;
+    applyRecord(this, record);
+    if (clientSystemDatabase !== undefined) {
+      clientSystemDatabases.set(this, clientSystemDatabase);
+    }
+  }
 
   /** Throws if any combination of queue parameters is invalid. */
   static validateQueueParams(params: QueueParameters): void {
@@ -424,22 +426,6 @@ export class WorkflowQueue {
       partitionRateLimitPeriodSec: params.partitionRateLimit ? params.partitionRateLimit.periodSec : null,
       pollingIntervalSec: (params.minPollingIntervalMs ?? 1000) / 1000,
     };
-  }
-
-  /**
-   * Construct a database-backed queue from a persisted record. The queues
-   * table is the source of truth, so the instance is not registered anywhere.
-   * @internal
-   */
-  static _fromRecord(record: QueueRecord, clientSystemDatabase?: SystemDatabase): WorkflowQueue {
-    const q = allocQueue(record.name);
-    q.databaseBacked = true;
-    q.clientBound = clientSystemDatabase !== undefined;
-    applyRecord(q as WorkflowQueue, record);
-    if (clientSystemDatabase !== undefined) {
-      clientSystemDatabases.set(q as WorkflowQueue, clientSystemDatabase);
-    }
-    return q as WorkflowQueue;
   }
 
   /** @deprecated Use `setGlobalConcurrency`. */
@@ -666,22 +652,9 @@ export function registerInternalQueue(name: string, params: QueueParameters = {}
   if (existing) return existing;
 
   WorkflowQueue.validateQueueParams(params);
-  const q = allocQueue(name);
-  q.databaseBacked = false;
-  q.clientBound = false;
-  q.concurrency = params.globalConcurrency ?? params.concurrency;
-  q.rateLimit = params.rateLimit;
-  q.workerConcurrency = params.workerConcurrency;
-  q.priorityEnabled = params.priorityEnabled ?? false;
-  q.partitionConcurrency = params.partitionConcurrency;
-  q.partitionWorkerConcurrency = params.partitionWorkerConcurrency;
-  q.partitionRateLimit = params.partitionRateLimit;
-  // Partitioning is inferred from any per-partition limit; the deprecated flag tracks it.
-  q.partitionQueue = (params.partitionQueue ?? false) || hasPartitionLimits(params);
-  q.minPollingIntervalMs = params.minPollingIntervalMs;
-
-  wfQueueRunner.addInternalQueue(q as WorkflowQueue);
-  return q as WorkflowQueue;
+  const queue = new WorkflowQueue(WorkflowQueue.recordFromParams(name, params), false);
+  wfQueueRunner.addInternalQueue(queue);
+  return queue;
 }
 
 /** Per-queue runtime scheduling state tracked by the shared dispatcher. */
@@ -799,9 +772,9 @@ class WFQueueRunner {
       const existing = this.states.get(record.name);
       if (existing) {
         // Refresh config in place, preserving this queue's polling/backoff state.
-        existing.queue = WorkflowQueue._fromRecord(record);
+        existing.queue = new WorkflowQueue(record);
       } else {
-        this.ensureState(WorkflowQueue._fromRecord(record), now);
+        this.ensureState(new WorkflowQueue(record), now);
       }
     }
 

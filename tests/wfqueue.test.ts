@@ -1,6 +1,6 @@
 import { StatusString, WorkflowHandle, DBOS, ConfiguredInstance, DBOSClient } from '../src';
 import { DBOSConfig, DBOSExecutor, DBOS_QUEUE_MAX_PRIORITY, DBOS_QUEUE_MIN_PRIORITY } from '../src/dbos-executor';
-import { QueueParameters, QueueRateLimit, wfQueueRunner } from '../src/wfqueue';
+import { QueueParameters, QueueRateLimit, wfQueueRunner, WorkflowQueue } from '../src/wfqueue';
 import {
   generateDBOSTestConfig,
   setUpDBOSTestSysDb,
@@ -11,7 +11,6 @@ import {
   retryUntilSuccess,
   setWfAndChildrenToPending,
 } from './helpers';
-import { WorkflowQueue } from '../src';
 import { EnqueueOptions, QueueRecord, SystemDatabase } from '../src/system_database';
 import { randomUUID } from 'node:crypto';
 import { globalParams, sleepms, INTERNAL_QUEUE_NAME } from '../src/utils';
@@ -2980,7 +2979,7 @@ describe('bounded-lane dispatcher', () => {
       WorkflowQueue.recordFromParams(`${tag}-q${i}`, { minPollingIntervalMs: 1 }),
     );
     laneRecords.push(...records);
-    return records.map((record) => WorkflowQueue._fromRecord(record));
+    return records.map((record) => new WorkflowQueue(record));
   }
 
   afterEach(() => {
