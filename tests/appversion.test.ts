@@ -2,7 +2,6 @@ import { randomUUID } from 'crypto';
 import { DBOS, DBOSClient, StatusString } from '../src';
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import { generateDBOSTestConfig, recoverPendingWorkflows, setUpDBOSTestSysDb } from './helpers';
-import { globalParams } from '../src/utils';
 
 describe('test-app-version', () => {
   let config: DBOSConfig;
@@ -40,8 +39,6 @@ describe('test-app-version', () => {
 
     // Verify stability -- the same source produces the same app version
     expect(DBOS.applicationVersion).toEqual(appVersion);
-    // Cleared so the relaunch's version is a fresh computation, not what the last launch left behind
-    globalParams.appVersion = '';
     await DBOS.launch();
     expect(DBOS.applicationVersion).toEqual(appVersion);
     await expect(TestAppVersionStability.testWorkflow()).resolves.toEqual(0);

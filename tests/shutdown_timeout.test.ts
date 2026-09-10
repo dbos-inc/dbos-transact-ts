@@ -318,7 +318,7 @@ describe('shutdown-executor-identity', () => {
         );
         expect(rows[0]?.status).toBe(StatusString.SUCCESS);
         expect(rows[0]?.executor_id).toBe(executorID);
-      });
+      }, 5000);
     } finally {
       releaseLateStep.set();
       if (DBOSExecutor.globalInstance) {

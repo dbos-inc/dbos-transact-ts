@@ -121,10 +121,13 @@ describe('application-name', () => {
     expect(await ownerOf(client, 'application_versions', 'version_name', DBOS.applicationVersion)).toBe(APP);
   });
 
-  test('a relaunch does not inherit the last application identity', async () => {
+  test('the application identity survives shutdown and is replaced by the next launch', async () => {
     await DBOS.launch();
     expect(globalParams.appName).toBe(APP);
+
+    // Work outliving the shutdown must keep stamping rows with the name it started under.
     await DBOS.shutdown();
+    expect(globalParams.appName).toBe(APP);
 
     DBOS.setConfig({ ...config, name: PEER });
     await DBOS.launch();

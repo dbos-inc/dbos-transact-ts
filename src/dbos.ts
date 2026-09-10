@@ -498,7 +498,6 @@ export class DBOS {
     globalParams.appName = internalConfig.name;
     globalParams.appVersion = process.env.DBOS__APPVERSION || '';
     globalParams.wasComputed = false;
-    globalParams.appID = process.env.DBOS__APPID || '';
     globalParams.executorID = process.env.DBOS__VMID || 'local';
     // In DBOS Cloud, instead use the value supplied through environment variables.
     if (process.env.DBOS__CLOUD !== 'true') {
