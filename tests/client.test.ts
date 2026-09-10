@@ -19,6 +19,7 @@ import {
 import { randomUUID } from 'crypto';
 import { DBOSConfig } from '../src/dbos-executor';
 import { DEFAULT_POOL_SIZE } from '../src/system_database';
+import { isPartitionedQueue } from '../src/wfqueue';
 
 // Re-register the database-backed queue used by these tests every time DBOS
 // is launched. Many tests in this file launch with their own setup, so this
@@ -1459,7 +1460,7 @@ describe('DBOSClient', () => {
       expect(partitioned!.partitionWorkerConcurrency).toBe(1);
       expect(partitioned!.partitionRateLimit).toEqual({ limitPerPeriod: 3, periodSec: 2 });
       // Any per-partition limit partitions the queue.
-      expect(partitioned!.partitionQueue).toBe(true);
+      expect(isPartitionedQueue(partitioned!)).toBe(true);
       await client.deleteQueue(partitionedName);
 
       // Setters write through the client's database; the launched DBOS

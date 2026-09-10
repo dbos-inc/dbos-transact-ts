@@ -11,13 +11,13 @@ import { globalParams, RESERVED_QUEUE_NAME_PREFIX } from './utils';
 /**
  * Log a single queue's name and its set parameters. Unset parameters are
  * omitted, matching `Queue: <name> (concurrency=…, worker_concurrency=…,
- * limit=N/Ts, partitioned)`.
+ * limit=N/Ts, partition_concurrency=…)`.
  */
 export function logQueue(logger: GlobalLogger, q: WorkflowQueue): void {
   const opts: string[] = [];
   if (q.concurrency !== undefined) {
     // On a partitioned queue the queue-wide scope is worth naming explicitly.
-    opts.push(`${q.partitionQueue ? 'global_concurrency' : 'concurrency'}=${q.concurrency}`);
+    opts.push(`${isPartitionedQueue(q) ? 'global_concurrency' : 'concurrency'}=${q.concurrency}`);
   }
   if (q.workerConcurrency !== undefined) opts.push(`worker_concurrency=${q.workerConcurrency}`);
   if (q.rateLimit !== undefined) opts.push(`limit=${q.rateLimit.limitPerPeriod}/${q.rateLimit.periodSec}s`);
@@ -28,7 +28,6 @@ export function logQueue(logger: GlobalLogger, q: WorkflowQueue): void {
   if (q.partitionRateLimit !== undefined) {
     opts.push(`partition_limit=${q.partitionRateLimit.limitPerPeriod}/${q.partitionRateLimit.periodSec}s`);
   }
-  if (q.partitionQueue) opts.push('partitioned');
   const optsStr = opts.length > 0 ? ` (${opts.join(', ')})` : '';
   logger.info(`Queue: ${q.name}${optsStr}`);
 }
@@ -96,6 +95,16 @@ type PartitionLimits = Pick<
   'partitionConcurrency' | 'partitionWorkerConcurrency' | 'partitionRateLimit'
 >;
 
+/**
+ * Options removed in 5.0, and what replaces each. TypeScript rejects them in an object
+ * literal, so this is what catches a spread, a cast, or a JavaScript caller.
+ */
+const REMOVED_QUEUE_PARAMS: Record<string, string> = {
+  priorityEnabled: 'every queue dispatches in priority order, so the option can be deleted',
+  partitionQueue:
+    'set partitionConcurrency, partitionWorkerConcurrency, or partitionRateLimit instead, any of which partitions the queue',
+};
+
 /** True when any per-partition limit is set, which is what partitions a queue. */
 function hasPartitionLimits(limits: PartitionLimits): boolean {
   return (
@@ -103,6 +112,11 @@ function hasPartitionLimits(limits: PartitionLimits): boolean {
     limits.partitionWorkerConcurrency !== undefined ||
     limits.partitionRateLimit !== undefined
   );
+}
+
+/** True when a queue is partitioned, which is to say any per-partition limit is set on it. */
+export function isPartitionedQueue(queue: WorkflowQueue): boolean {
+  return hasPartitionLimits(queue);
 }
 
 /**
@@ -196,7 +210,6 @@ function applyRecord(q: WorkflowQueue, record: QueueRecord): void {
   q.partitionConcurrency = record.partitionConcurrency ?? undefined;
   q.partitionWorkerConcurrency = record.partitionWorkerConcurrency ?? undefined;
   q.partitionRateLimit = rateLimitFromRecord(record.partitionRateLimitMax, record.partitionRateLimitPeriodSec);
-  q.partitionQueue = record.partitionQueue;
   q.minPollingIntervalMs = record.pollingIntervalSec * 1000;
   q.applicationName = record.applicationName;
 }
@@ -231,8 +244,6 @@ export class WorkflowQueue {
   concurrency?: number;
   rateLimit?: QueueRateLimit;
   workerConcurrency?: number;
-  /** Derived: true when any per-partition limit is set. */
-  partitionQueue: boolean = false;
   partitionConcurrency?: number;
   partitionWorkerConcurrency?: number;
   partitionRateLimit?: QueueRateLimit;
@@ -289,6 +300,11 @@ export class WorkflowQueue {
 
   /** Throws if any combination of queue parameters is invalid. */
   static validateQueueParams(params: QueueParameters): void {
+    for (const [option, replacement] of Object.entries(REMOVED_QUEUE_PARAMS)) {
+      if (option in params) {
+        throw new Error(`${option} was removed: ${replacement}.`);
+      }
+    }
     const {
       concurrency,
       globalConcurrency,
@@ -433,7 +449,6 @@ export class WorkflowQueue {
       partitionQueue: partitioned,
     });
     this.partitionConcurrency = value;
-    this.partitionQueue = partitioned;
   }
 
   async setPartitionWorkerConcurrency(value: number | undefined): Promise<void> {
@@ -459,7 +474,6 @@ export class WorkflowQueue {
       partitionQueue: partitioned,
     });
     this.partitionWorkerConcurrency = value;
-    this.partitionQueue = partitioned;
   }
 
   async setPartitionRateLimit(value: QueueRateLimit | undefined): Promise<void> {
@@ -475,7 +489,6 @@ export class WorkflowQueue {
       partitionQueue: partitioned,
     });
     this.partitionRateLimit = value;
-    this.partitionQueue = partitioned;
   }
 
   async setMinPollingIntervalMs(value: number): Promise<void> {
@@ -830,7 +843,7 @@ class WFQueueRunner {
     const sysdb = exec.systemDatabase;
     // Dequeue workflows for this queue, either in one batched sweep across partitions or one partition at a time.
     try {
-      if (!queue.partitionQueue) {
+      if (!isPartitionedQueue(queue)) {
         const wfids = await sysdb.findAndMarkStartableWorkflows(
           queue,
           exec.executorID,
