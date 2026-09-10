@@ -3,7 +3,12 @@ import { randomUUID } from 'node:crypto';
 import { ConfiguredInstance, DBOS, StatusString } from '../src';
 import { runWithTopContext } from '../src/context';
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
-import { getOrCreateQueue, enqueueWorkflows, prepareEnqueuedWorkflow, PreparedWorkflow } from '../src/eventreceiver';
+import {
+  registerInternalQueue,
+  enqueueWorkflows,
+  prepareEnqueuedWorkflow,
+  PreparedWorkflow,
+} from '../src/eventreceiver';
 import { DBOSNotRegisteredError } from '../src/error';
 import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
 
@@ -76,7 +81,7 @@ describe('batch-enqueue', () => {
   });
 
   test('prepareEnqueuedWorkflow builds an ENQUEUED row, ignoring the ambient context', async () => {
-    const partitioned = getOrCreateQueue(`ctx-part-${randomUUID()}`, { partitionQueue: true });
+    const partitioned = registerInternalQueue(`ctx-part-${randomUUID()}`, { partitionQueue: true });
     // Build under an authenticated context. The normal enqueue path copies these fields off the
     // context store; this one documents that it does not, so the context must be present for the
     // assertions below to mean anything.
@@ -85,7 +90,6 @@ describe('batch-enqueue', () => {
         authenticatedUser: 'alice',
         authenticatedRoles: ['admin'],
         assumedRole: 'admin',
-        request: { url: '/orders' },
       },
       async () =>
         await prepareEnqueuedWorkflow(batchWf, ['hi'], {
@@ -102,7 +106,6 @@ describe('batch-enqueue', () => {
     expect(status.authenticatedUser).toBe('');
     expect(status.assumedRole).toBe('');
     expect(status.authenticatedRoles).toEqual([]);
-    expect(status.request).toEqual({});
     expect(status.parentWorkflowID).toBeUndefined();
     expect(status.attributes).toBeUndefined();
   });
@@ -270,11 +273,12 @@ describe('batch-enqueue', () => {
     expect(Math.min(...ordered.slice(5))).toBeGreaterThan(Math.max(...ordered.slice(0, 5)));
   });
 
-  test('getOrCreateQueue resolves an existing queue rather than throwing', () => {
+  test('registerInternalQueue resolves an existing queue rather than throwing', () => {
     const name = `goc-${randomUUID()}`;
-    const first = getOrCreateQueue(name, { concurrency: 3 });
-    const second = getOrCreateQueue(name);
+    const first = registerInternalQueue(name, { concurrency: 3 });
+    const second = registerInternalQueue(name);
     expect(second).toBe(first);
     expect(second.concurrency).toBe(3);
+    expect(second.databaseBacked).toBe(false);
   });
 });

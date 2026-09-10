@@ -23,7 +23,7 @@ import {
 } from '../src/datasource';
 import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
 import { AsyncLocalStorage } from 'async_hooks';
-import { DBOSNotAuthorizedError, DBOSInvalidWorkflowTransitionError } from '../src/error';
+import { DBOSInvalidWorkflowTransitionError } from '../src/error';
 import { sleepms } from '../src/utils';
 import { DBOSJSON } from '../src/serialization';
 import { DBOSExecutor } from '../src/dbos-executor';
@@ -398,28 +398,6 @@ class DBWFI {
   static async wf() {
     return await DBWFI.tx();
   }
-
-  @DBOS.requiredRole(['user'])
-  @dsa.transaction({ readOnly: true })
-  static async sectx1() {
-    return (await DBOSKnexDS.knexClient.raw<{ rows: { a: string }[] }>("SELECT 'Secure Tx1' as a")).rows[0].a;
-  }
-
-  @dsa.transaction({ readOnly: true })
-  @DBOS.requiredRole(['user'])
-  static async sectx2() {
-    return (await DBOSKnexDS.knexClient.raw<{ rows: { a: string }[] }>("SELECT 'Secure Tx1' as a")).rows[0].a;
-  }
-
-  @DBOS.workflow()
-  static async wfs1() {
-    return await DBWFI.sectx1();
-  }
-
-  @DBOS.workflow()
-  static async wfs2() {
-    return await DBWFI.sectx2();
-  }
 }
 
 async function txFunctionGutsNoWF() {
@@ -503,13 +481,6 @@ describe('decoratorless-api-tests', () => {
     await DBOS.withNextWorkflowID(wfid, async () => {
       await expect(DBWFI.tx()).rejects.toThrow(DBOSInvalidWorkflowTransitionError);
     });
-  });
-
-  test('security-plus-dstxns', async () => {
-    await expect(DBWFI.sectx1()).rejects.toThrow(DBOSNotAuthorizedError);
-    await expect(DBWFI.sectx2()).rejects.toThrow(DBOSNotAuthorizedError);
-    await expect(DBWFI.wfs1()).rejects.toThrow(DBOSNotAuthorizedError);
-    await expect(DBWFI.wfs2()).rejects.toThrow(DBOSNotAuthorizedError);
   });
 });
 

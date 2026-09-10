@@ -71,40 +71,6 @@ class TestFunctions extends ConfiguredInstance {
   }
 }
 
-@DBOS.defaultRequiredRole(['user'])
-class TestSec extends ConfiguredInstance {
-  constructor(name: string) {
-    super(name);
-  }
-
-  @DBOS.requiredRole([])
-  @DBOS.workflow()
-  async testAuth(name: string) {
-    return Promise.resolve(`hello ${name} from ${this.name}`);
-  }
-
-  @DBOS.workflow()
-  async testWorkflow(name: string) {
-    return Promise.resolve(name);
-  }
-}
-
-class TestSec2 extends ConfiguredInstance {
-  constructor(name: string) {
-    super(name);
-  }
-
-  async initialize() {
-    return Promise.resolve();
-  }
-
-  @DBOS.requiredRole(['user'])
-  @DBOS.workflow()
-  async bye() {
-    return Promise.resolve(`bye ${DBOS.assumedRole} ${DBOS.authenticatedUser} from ${this.name}!`);
-  }
-}
-
 const instA = new TestFunctions('A');
 const instB = new TestFunctions('B');
 
@@ -254,39 +220,6 @@ async function main6() {
   await DBOS.shutdown();
 }
 
-async function main7() {
-  const testSecInst = new TestSec('Sec1');
-  const testSec2Inst = new TestSec2('Sec2');
-
-  const config = generateDBOSTestConfig();
-  await setUpDBOSTestSysDb(config);
-  DBOS.setConfig(config);
-  await DBOS.launch();
-
-  await expect(async () => {
-    await testSecInst.testWorkflow('unauthorized');
-  }).rejects.toThrow('User does not have a role with permission to call testWorkflow');
-
-  const res = await testSecInst.testAuth('and welcome');
-  expect(res).toBe('hello and welcome from Sec1');
-
-  await expect(async () => {
-    await testSec2Inst.bye();
-  }).rejects.toThrow('User does not have a role with permission to call bye');
-
-  const hijoe = await DBOS.withAuthedContext('joe', ['user'], async () => {
-    return await testSecInst.testWorkflow('joe');
-  });
-  expect(hijoe).toBe('joe');
-
-  const byejoe = await DBOS.withAuthedContext('joe', ['user'], async () => {
-    return await testSec2Inst.bye();
-  });
-  expect(byejoe).toBe('bye user joe from Sec2!');
-
-  await DBOS.shutdown();
-}
-
 // TODO:
 //  Child workflows
 
@@ -313,10 +246,6 @@ describe('dbos-v2api-tests-main', () => {
 
   test('send_recv_get_set', async () => {
     await main6();
-  });
-
-  test('roles', async () => {
-    await main7();
   });
 });
 

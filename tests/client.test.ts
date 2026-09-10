@@ -192,6 +192,37 @@ describe('DBOSClient', () => {
     }
   });
 
+  test('enqueue-records-authentication', async () => {
+    await DBOS.launch();
+    await registerTestQueue();
+
+    const client = await DBOSClient.create({ systemDatabaseUrl });
+    const wfid = randomUUID();
+
+    try {
+      const handle = await client.enqueue<typeof ClientTest.enqueueTest>(
+        {
+          workflowName: 'enqueueTest',
+          workflowClassName: 'ClientTest',
+          queueName: 'testQueue',
+          workflowID: wfid,
+          authenticatedUser: 'alice',
+          authenticatedRoles: ['admin', 'user'],
+        },
+        42,
+        'test',
+        { first: 'John', last: 'Doe', age: 30 },
+      );
+      await handle.getResult();
+
+      const wfstatus = await client.getWorkflow(wfid);
+      expect(wfstatus?.authenticatedUser).toBe('alice');
+      expect(wfstatus?.authenticatedRoles).toEqual(['admin', 'user']);
+    } finally {
+      await client.destroy();
+    }
+  });
+
   test('enqueue-timeout-simple', async () => {
     await DBOS.launch();
     await registerTestQueue();

@@ -712,6 +712,36 @@ describe('debouncer-tests', () => {
     }
   });
 
+  test('test-debounce-records-authentication-from-either-option', async () => {
+    // A huge period keeps each workflow DELAYED, so the recorded row can be read before it runs.
+    const viaEnqueueOptions = new Debouncer({
+      workflow,
+      startWorkflowParams: { enqueueOptions: { authenticatedUser: 'alice', authenticatedRoles: ['admin'] } },
+    });
+    const enqueueOptionsHandle = await viaEnqueueOptions.debounce('auth-enqueue-options', 1000000000, 1);
+    const enqueueOptionsStatus = await getSysDB().getWorkflowStatus(enqueueOptionsHandle.workflowID);
+    expect(enqueueOptionsStatus?.status).toBe(StatusString.DELAYED);
+    expect(enqueueOptionsStatus?.authenticatedUser).toBe('alice');
+    expect(enqueueOptionsStatus?.authenticatedRoles).toEqual(['admin']);
+
+    // The top-level fields win over the enqueueOptions ones, as they do on a plain startWorkflow.
+    const bothSet = new Debouncer({
+      workflow,
+      startWorkflowParams: {
+        authenticatedUser: 'carol',
+        authenticatedRoles: ['ops'],
+        enqueueOptions: { authenticatedUser: 'alice', authenticatedRoles: ['admin'] },
+      },
+    });
+    const bothSetHandle = await bothSet.debounce('auth-both-set', 1000000000, 1);
+    const bothSetStatus = await getSysDB().getWorkflowStatus(bothSetHandle.workflowID);
+    expect(bothSetStatus?.authenticatedUser).toBe('carol');
+    expect(bothSetStatus?.authenticatedRoles).toEqual(['ops']);
+
+    await DBOS.cancelWorkflow(enqueueOptionsHandle.workflowID);
+    await DBOS.cancelWorkflow(bothSetHandle.workflowID);
+  }, 30000);
+
   test('test-debounce-bounce-path-does-not-leak-pinned-id', async () => {
     // Regression test: a pinned workflow ID around a debounce that coalesces (bounce path) is captured by the debounce and must not stay armed on the workflow's context, or the next child workflow the parent starts would silently run under the pinned ID.
     const pinnedID = randomUUID();

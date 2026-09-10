@@ -1,14 +1,4 @@
-import {} from 'serialize-error';
 import { PortableWorkflowError } from '../schemas/system_db_schema';
-
-export function isDataValidationError(e: Error) {
-  const dbosErrorCode = (e as DBOSError)?.dbosErrorCode;
-  if (!dbosErrorCode) return false;
-  if (dbosErrorCode === DataValidationError) {
-    return true;
-  }
-  return false;
-}
 
 export class DBOSError extends Error {
   // TODO: define a better coding system.
@@ -42,23 +32,6 @@ export class DBOSNotRegisteredError extends DBOSError {
   constructor(name: string, fullmsg?: string) {
     const msg = fullmsg ?? `Operation (Name: ${name}) not registered`;
     super(msg, NotRegisteredError);
-  }
-}
-
-const DataValidationError = 9;
-export class DBOSDataValidationError extends DBOSError {
-  constructor(msg: string) {
-    super(msg, DataValidationError);
-  }
-}
-
-const NotAuthorizedError = 12;
-export class DBOSNotAuthorizedError extends DBOSError {
-  constructor(
-    msg: string,
-    readonly status: number = 403,
-  ) {
-    super(msg, NotAuthorizedError);
   }
 }
 

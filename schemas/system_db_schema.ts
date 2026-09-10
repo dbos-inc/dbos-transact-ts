@@ -11,7 +11,6 @@ export interface workflow_status {
   error: string;
   assumed_role: string;
   authenticated_roles: string; // Serialized list of roles.
-  request: string; // Serialized event dispatch data (such as HTTPRequest)
   executor_id: string; // Set to "local" for local deployment, set to microVM ID for cloud deployment.
   application_version?: string;
   queue_name?: string;
@@ -83,18 +82,6 @@ export interface operation_outputs {
   application_name?: string | null; // Denormalized from the parent so step observability filters without a join.
   // Sweep order only: the payload sweep deletes by absence of a status row, so this bounds a round rather than deciding what it may delete.
   retention_timestamp?: number;
-}
-
-export interface event_dispatch_kv {
-  // Key fields
-  service_name: string;
-  workflow_fn_name: string;
-  key: string;
-
-  // Payload fields
-  value?: string;
-  update_time?: number; // Timestamp of record (for upsert)
-  update_seq?: bigint; // Sequence number of record (for upsert)
 }
 
 export interface streams {

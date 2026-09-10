@@ -1,6 +1,5 @@
 import {
   getCurrentContextStore,
-  HTTPRequest,
   runWithTopContext,
   getNextWFID,
   StepStatus,
@@ -11,7 +10,6 @@ import {
 import {
   DBOSConfig,
   DBOSExecutor,
-  DBOSExternalState,
   InternalWorkflowParams,
   DBOS_QUEUE_MIN_PRIORITY,
   DBOS_QUEUE_MAX_PRIORITY,
@@ -51,21 +49,16 @@ import {
   translateDbosConfig,
   translateRuntimeConfig,
 } from './config';
-import { ScheduledArgs, ScheduledReceiver, SchedulerConfig } from './scheduler/scheduler_decorator';
 import {
   AlertHandler,
   associateClassWithExternal,
   associateMethodWithExternal,
-  ClassAuthDefaults,
-  DBOS_AUTH,
   ExternalRegistration,
   getAlertHandler,
   getLifecycleListeners,
   getRegisteredOperations,
   getFunctionRegistration,
   getRegistrationsForExternal,
-  insertAllMiddleware,
-  MethodAuth,
   MethodRegistration,
   recordDBOSLaunch,
   recordDBOSShutdown,
@@ -73,7 +66,6 @@ import {
   registerLifecycleCallback,
   setAlertHandler,
   transactionalDataSources,
-  registerMiddlewareInstaller,
   MethodRegistrationBase,
   TypedAsyncFunction,
   UntypedAsyncFunction,
@@ -83,15 +75,13 @@ import {
   wrapDBOSFunctionAndRegister,
   ensureDBOSIsLaunched,
   ConfiguredInstance,
-  DBOSMethodMiddlewareInstaller,
   DBOSLifecycleCallback,
-  associateParameterWithExternal,
   finalizeClassRegistrations,
   getClassRegistration,
   clearAllRegistrations,
   getRegisteredFunctionFullName,
 } from './decorators';
-import { defaultEnableOTLP, globalParams, sleepConfig, sleepms } from './utils';
+import { defaultEnableOTLP, globalParams, INTERNAL_QUEUE_NAME, sleepConfig, sleepms } from './utils';
 import {
   deserializeValue,
   JSONValue,
@@ -128,10 +118,9 @@ import {
   backfillSchedule as backfillScheduleImpl,
 } from './scheduler/scheduler';
 import { validateCrontab, validateTimezone } from './scheduler/crontab';
-import { logQueue, RegisterQueueOptions, WorkflowQueue, wfQueueRunner } from './wfqueue';
+import { logQueue, registerInternalQueue, RegisterQueueOptions, WorkflowQueue, wfQueueRunner } from './wfqueue';
 import { enqueueWorkflowWithOptions } from './enqueue_workflow';
 import type { EnqueueWorkflowOptions } from './enqueue_options';
-import { registerAuthChecker } from './authdecorators';
 import assert from 'node:assert';
 
 type AnyConstructor = new (...args: unknown[]) => object;
@@ -169,6 +158,10 @@ export interface StartWorkflowParams {
   queueName?: string;
   timeoutMS?: number | null;
   enqueueOptions?: EnqueueOptions;
+  /** The authenticated user recorded on the workflow. Defaults to the caller's ambient authenticated user, if any. */
+  authenticatedUser?: string;
+  /** The authenticated roles recorded on the workflow. Defaults to the caller's ambient authenticated roles, if any. */
+  authenticatedRoles?: string[];
   // How to handle a collision with another workflow that has the same
   // `enqueueOptions.deduplicationID` on the same queue.
   //   'reject' (default): throw `DBOSQueueDuplicatedError`.
@@ -497,11 +490,14 @@ export class DBOS {
     }
 
     finalizeClassRegistrations();
-    insertAllMiddleware();
 
     // Globally set the application name, version and executor ID.
-    // In DBOS Cloud, instead use the value supplied through environment variables.
+    // Only launch may change these: work outliving a shutdown still checkpoints under this identity.
     globalParams.appName = internalConfig.name;
+    globalParams.appVersion = process.env.DBOS__APPVERSION || '';
+    globalParams.wasComputed = false;
+    globalParams.executorID = process.env.DBOS__VMID || 'local';
+    // In DBOS Cloud, instead use the value supplied through environment variables.
     if (process.env.DBOS__CLOUD !== 'true') {
       if (DBOS.#dbosConfig?.applicationVersion) {
         globalParams.appVersion = DBOS.#dbosConfig.applicationVersion;
@@ -517,7 +513,7 @@ export class DBOS {
       globalParams.executorID = randomUUID();
     }
 
-    DBOSExecutor.createInternalQueue();
+    registerInternalQueue(INTERNAL_QUEUE_NAME);
     DBOSExecutor.globalInstance = new DBOSExecutor(internalConfig);
 
     recordDBOSLaunch();
@@ -615,7 +611,6 @@ export class DBOS {
    * Logs all workflows that can be invoked externally, rather than directly by the applicaton.
    * This includes:
    *   All DBOS event receiver entrypoints (message queues, URLs, etc.)
-   *   Scheduled workflows
    *   Queues
    */
   static logRegisteredEndpoints(): void {
@@ -702,14 +697,6 @@ export class DBOS {
         await ds.destroy();
       }
 
-      // Reset the global app name, version and executor ID
-      globalParams.appVersion = process.env.DBOS__APPVERSION || '';
-      globalParams.wasComputed = false;
-      globalParams.appID = process.env.DBOS__APPID || '';
-      globalParams.executorID = process.env.DBOS__VMID || 'local';
-      // Set at launch from the config, so a relaunch under another name must not inherit this one.
-      globalParams.appName = undefined;
-
       recordDBOSShutdown();
     } finally {
       DBOS.#shuttingDown = false;
@@ -731,7 +718,6 @@ export class DBOS {
     assert(!DBOS.isInitialized(), 'Cannot call DBOS.clearRegistry after DBOS.launch');
     clearAllRegistrations();
     wfQueueRunner.clearRegistrations();
-    DBOSExecutor.internalQueue = undefined;
   }
 
   /** Stop listening for external events (for testing) */
@@ -775,27 +761,6 @@ export class DBOS {
   /** Get the current DBOS tracing span, appropriate to the current context */
   static get span(): DBOSSpan | undefined {
     return getActiveSpan();
-  }
-
-  /**
-   * Get the current request object (such as an HTTP request)
-   * This is intended for use in event libraries that know the type of the current request,
-   *  and set it using `withTracedContext` or `runWithContext`
-   */
-  static requestObject(): object | undefined {
-    return getCurrentContextStore()?.request;
-  }
-
-  /** Get the current HTTP request (within `@DBOS.getApi` et al) */
-  static getRequest(): HTTPRequest | undefined {
-    return this.requestObject() as HTTPRequest | undefined;
-  }
-
-  /** Get the current HTTP request (within `@DBOS.getApi` et al) */
-  static get request(): HTTPRequest {
-    const r = DBOS.getRequest();
-    if (!r) throw new DBOSError('`DBOS.request` accessed from outside of HTTP requests');
-    return r;
   }
 
   /** Get the current application version */
@@ -871,42 +836,6 @@ export class DBOS {
    */
   static isInWorkflow(): boolean {
     return DBOS.isWithinWorkflow() && !DBOS.isInTransaction() && !DBOS.isInStep();
-  }
-
-  //////
-  // Access to system DB, for event receivers etc.
-  //////
-  /**
-   * Get a state item from the system database, which provides a key/value store interface for event dispatchers.
-   *   The full key for the database state should include the service, function, and item.
-   *   Values are versioned.  A version can either be a sequence number (long integer), or a time (high precision floating point).
-   *       If versions are in use, any upsert is discarded if the version field is less than what is already stored.
-   *
-   * Examples of state that could be kept:
-   *   Offsets into kafka topics, per topic partition
-   *   Last time for which a scheduling service completed schedule dispatch
-   *
-   * @param service - should be unique to the event receiver keeping state, to separate from others
-   * @param workflowFnName - function name; should be the fully qualified / unique function name dispatched
-   * @param key - The subitem kept by event receiver service for the function, allowing multiple values to be stored per function
-   * @returns The latest system database state for the specified service+workflow+item
-   */
-  static async getEventDispatchState(svc: string, wfn: string, key: string): Promise<DBOSExternalState | undefined> {
-    ensureDBOSIsLaunched('getEventDispatchState');
-    return await DBOS.#executor.getEventDispatchState(svc, wfn, key);
-  }
-  /**
-   * Set a state item into the system database, which provides a key/value store interface for event dispatchers.
-   *   The full key for the database state should include the service, function, and item; these fields are part of `state`.
-   *   Values are versioned.  A version can either be a sequence number (long integer), or a time (high precision floating point).
-   *     If versions are in use, any upsert is discarded if the version field is less than what is already stored.
-   *
-   * @param state - the service, workflow, item, version, and value to write to the database
-   * @returns The upsert returns the current record, which may be useful if it is more recent than the `state` provided.
-   */
-  static async upsertEventDispatchState(state: DBOSExternalState): Promise<DBOSExternalState> {
-    ensureDBOSIsLaunched('upsertEventDispatchState');
-    return await DBOS.#executor.upsertEventDispatchState(state);
   }
 
   //////
@@ -1316,8 +1245,8 @@ export class DBOS {
 
   /**
    * Use the provided `authedUser` and `authedRoles` as the authenticated user for
-   *   any security checks or calls to `DBOS.authenticatedUser`
-   *   or `DBOS.authenticatedRoles` placed within the `callback` function.
+   *   any calls to `DBOS.authenticatedUser` or `DBOS.authenticatedRoles`
+   *   placed within the `callback` function.
    * @param authedUser - Authenticated user
    * @param authedRoles - Authenticated roles
    * @param callback - Function to run with authentication context in place
@@ -1366,18 +1295,6 @@ export class DBOS {
   static async withWorkflowTimeout<R>(timeoutMS: number | null, callback: () => Promise<R>): Promise<R> {
     ensureDBOSIsLaunched('workflows');
     return DBOS.#withTopContext({ workflowTimeoutMS: timeoutMS }, callback);
-  }
-
-  /**
-   * Run a workflow with the option to set any of the contextual items
-   *
-   * @param options - Overrides for options
-   * @param callback - Function to run, which would call or start workflows
-   * @returns - Return value from `callback`
-   */
-  static async runWithContext<R>(options: DBOSContextOptions, callback: () => Promise<R>): Promise<R> {
-    ensureDBOSIsLaunched('contexts');
-    return DBOS.#withTopContext(options, callback);
   }
 
   static async #withTopContext<R>(options: DBOSContextOptions, callback: () => Promise<R>): Promise<R> {
@@ -1780,18 +1697,6 @@ export class DBOS {
     });
   }
 
-  /**
-   * registers a workflow method or function with an invocation schedule
-   * @param func - The workflow method or function to register with an invocation schedule
-   * @param options - Configuration information for the scheduled workflow
-   */
-  static registerScheduled<This, Return>(
-    func: (this: This, ...args: ScheduledArgs) => Promise<Return>,
-    config: SchedulerConfig & FunctionName,
-  ) {
-    ScheduledReceiver.registerScheduled(func, config);
-  }
-
   //////
   // Decorators
   //////
@@ -1811,28 +1716,6 @@ export class DBOS {
       clsreg.reg!.name = name;
     }
     return clsdec;
-  }
-
-  /**
-   * Decorator associating a class static method with an invocation schedule
-   * @param config - The schedule, consisting of a crontab and policy for "make-up work"
-   */
-  static scheduled(config: SchedulerConfig) {
-    function methodDecorator<This, Return>(
-      target: object,
-      propertyKey: PropertyKey,
-      descriptor: TypedPropertyDescriptor<(this: This, ...args: ScheduledArgs) => Promise<Return>>,
-    ) {
-      if (descriptor.value) {
-        DBOS.registerScheduled(descriptor.value, {
-          ...config,
-          ctorOrProto: target,
-          name: String(propertyKey),
-        });
-      }
-      return descriptor;
-    }
-    return methodDecorator;
   }
 
   /**
@@ -1920,26 +1803,11 @@ export class DBOS {
     }
     const funcId = isChild ? (startWfFuncId ?? functionIDGetIncrement()) : undefined;
 
-    // All enqueue-option validation lives here. Param-only checks
-    // (priority range) always run; the partition-flag
-    // checks run only for queues in this executor's in-memory map.
-    // Database-backed queues skip them to avoid an extra roundtrip on every enqueue.
+    // Param-only checks: reading the queue's own config would cost a roundtrip on every enqueue.
     if (queueName) {
-      const queuePartitionKey = params.enqueueOptions?.queuePartitionKey;
       const priority = params.enqueueOptions?.priority;
       if (priority !== undefined && (priority < DBOS_QUEUE_MIN_PRIORITY || priority > DBOS_QUEUE_MAX_PRIORITY)) {
         throw new DBOSInvalidQueuePriorityError(priority, DBOS_QUEUE_MIN_PRIORITY, DBOS_QUEUE_MAX_PRIORITY);
-      }
-      const inMem = this.#executor.getQueueByName(queueName);
-      if (inMem) {
-        if (inMem.partitionQueue && !queuePartitionKey) {
-          throw Error(`A workflow cannot be enqueued on partitioned queue ${queueName} without a partition key`);
-        }
-        if (queuePartitionKey && !inMem.partitionQueue) {
-          throw Error(
-            `You can only use a partition key on a partition-enabled queue. Key ${queuePartitionKey} was used with non-partitioned queue ${queueName}`,
-          );
-        }
       }
     } else {
       // Only the queue machinery reads these, and a stored dedup ID becomes a unique-constraint violation once anything assigns the row a queue name; applicationVersion is excluded because it still selects recovery executors.
@@ -1972,6 +1840,8 @@ export class DBOS {
         enqueueOptions: params.enqueueOptions,
         duplicationPolicy: params.duplicationPolicy,
         workflowAttributes: params.workflowAttributes,
+        authenticatedUser: params.authenticatedUser,
+        authenticatedRoles: params.authenticatedRoles,
       };
 
       return await invokeRegOp(wfParams, pwfid, funcId);
@@ -1984,6 +1854,8 @@ export class DBOS {
         timeoutMS,
         duplicationPolicy: params.duplicationPolicy,
         workflowAttributes: params.workflowAttributes,
+        authenticatedUser: params.authenticatedUser,
+        authenticatedRoles: params.authenticatedRoles,
       };
 
       return await invokeRegOp(wfParams, undefined, undefined);
@@ -2288,44 +2160,6 @@ export class DBOS {
     registerSerializationRecipe(serReg);
   }
 
-  /**
-   * Decorate a class with the default list of required roles.
-   *   This class-level default can be overridden on a per-function basis with `requiredRole`.
-   * @param anyOf - The list of roles allowed access; authorization is granted if the authenticated user has any role on the list
-   */
-  static defaultRequiredRole(anyOf: string[]) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    function clsdec<T extends { new (...args: any[]): object }>(ctor: T) {
-      const clsreg = associateClassWithExternal(DBOS_AUTH, ctor) as ClassAuthDefaults;
-      clsreg.requiredRole = anyOf;
-      registerAuthChecker();
-    }
-    return clsdec;
-  }
-
-  /**
-   * Decorate a method with the default list of required roles.
-   * @see `DBOS.defaultRequiredRole`
-   * @param anyOf - The list of roles allowed access; authorization is granted if the authenticated user has any role on the list
-   */
-  static requiredRole(anyOf: string[]) {
-    function apidec<This, Args extends unknown[], Return>(
-      target: object,
-      propertyKey: string,
-      inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
-    ) {
-      const rr = associateMethodWithExternal(DBOS_AUTH, target, undefined, propertyKey.toString(), inDescriptor.value!);
-
-      (rr.regInfo as MethodAuth).requiredRole = anyOf;
-      registerAuthChecker();
-
-      inDescriptor.value = rr.registration.wrappedFunction ?? rr.registration.registeredFunction;
-
-      return inDescriptor;
-    }
-    return apidec;
-  }
-
   /////
   // Patching
   /////
@@ -2408,13 +2242,6 @@ export class DBOS {
   }
 
   /**
-   * Register a middleware provider
-   */
-  static registerMiddlewareInstaller(mwp: DBOSMethodMiddlewareInstaller) {
-    registerMiddlewareInstaller(mwp);
-  }
-
-  /**
    * Register information to be associated with a DBOS class
    */
   static associateClassWithInfo(external: AnyConstructor | object | string, cls: AnyConstructor | string): object {
@@ -2430,26 +2257,6 @@ export class DBOS {
     target: FunctionName,
   ) {
     return associateMethodWithExternal(external, target.ctorOrProto, target.className, target.name ?? func.name, func);
-  }
-
-  /**
-   * Register information to be associated with a DBOS function
-   */
-  static associateParamWithInfo<This, Args extends unknown[], Return>(
-    external: AnyConstructor | object | string,
-    func: ((this: This, ...args: Args) => Promise<Return>) | undefined,
-    target: FunctionName & {
-      param: number | string;
-    },
-  ) {
-    return associateParameterWithExternal(
-      external,
-      target.ctorOrProto,
-      target.className,
-      target.name ?? func?.name ?? '<unknown>',
-      func,
-      target.param,
-    );
   }
 
   /** Get registrations */
@@ -2743,7 +2550,7 @@ export class DBOS {
   static async registerQueue(name: string, options: RegisterQueueOptions = {}): Promise<WorkflowQueue> {
     ensureDBOSIsLaunched('registerQueue');
     const { onConflict = 'update_if_latest_version', ...params } = options;
-    WorkflowQueue.validateQueueParams(params);
+    WorkflowQueue.validateQueueRegistration(name, params);
 
     const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
     let updateExisting: boolean;
@@ -2763,7 +2570,7 @@ export class DBOS {
     if (persisted === null) {
       throw new Error(`Queue '${name}' missing from database after upsert`);
     }
-    const queue = WorkflowQueue._fromRecord(persisted);
+    const queue = new WorkflowQueue(persisted);
     if (inserted) {
       DBOSExecutor.globalInstance!.logger.info(`Registered new queue:`);
       logQueue(DBOSExecutor.globalInstance!.logger, queue);
@@ -2816,7 +2623,7 @@ export class DBOS {
   static async retrieveQueue(name: string): Promise<WorkflowQueue | null> {
     ensureDBOSIsLaunched('retrieveQueue');
     const record = await DBOSExecutor.globalInstance!.systemDatabase.getQueue(name);
-    return record === null ? null : WorkflowQueue._fromRecord(record);
+    return record === null ? null : new WorkflowQueue(record);
   }
 
   /** Delete a database-backed queue. Pending workflows on it are unrecoverable. */
@@ -2833,6 +2640,6 @@ export class DBOS {
   static async listQueues(applicationName?: string | string[]): Promise<WorkflowQueue[]> {
     ensureDBOSIsLaunched('listQueues');
     const records = await DBOSExecutor.globalInstance!.systemDatabase.listQueues(applicationName);
-    return records.map((record) => WorkflowQueue._fromRecord(record));
+    return records.map((record) => new WorkflowQueue(record));
   }
 }

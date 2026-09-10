@@ -51,7 +51,7 @@ export const globalParams = {
   appVersion: process.env.DBOS__APPVERSION || '', // The one true source of appVersion
   wasComputed: false, // Was app version set or computed? Stored procs don't support computed versions.
   executorID: process.env.DBOS__VMID || 'local', // The one true source of executorID
-  appName: undefined as string | undefined, // Set at launch from the configured application name; undefined outside an application
+  appName: undefined as string | undefined, // Set at launch from the configured application name; undefined until the first launch
   appID: process.env.DBOS__APPID || '', // The one true source of appID
   enableOTLP: defaultEnableOTLP(), // Whether OTLP is enabled
   tracingEnabled: false, // Whether span creation is active (enableOTLP or external TracerProvider)
@@ -70,6 +70,9 @@ export const dbRetryConfig = {
   initialBackoffSec: 1.0,
   maxBackoffSec: 60.0,
 };
+
+// DBOS's own queues are named under this prefix, so users may not claim it.
+export const RESERVED_QUEUE_NAME_PREFIX = '_dbos_';
 
 // The name of the internal queue used by DBOS
 export const INTERNAL_QUEUE_NAME = '_dbos_internal_queue';

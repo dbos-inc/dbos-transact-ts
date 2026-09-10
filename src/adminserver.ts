@@ -7,7 +7,7 @@ import { GlobalLogger } from './telemetry/logs';
 import * as net from 'net';
 import { performance } from 'perf_hooks';
 import { globalParams, INTERNAL_QUEUE_NAME } from './utils';
-import { QueueParameters, wfQueueRunner, WorkflowQueue } from './wfqueue';
+import { QueueParameters, WorkflowQueue } from './wfqueue';
 import { garbageCollect, globalTimeout } from './workflow_management';
 import * as protocol from './conductor/protocol';
 
@@ -243,16 +243,13 @@ export class DBOSAdminServer {
       method: 'GET',
       path: WorkflowQueuesMetadataUrl,
       handler: async (req, res) => {
-        // Merge DB-backed queues with the in-memory registry. In-memory wins
-        // on collision so a process running with a code-defined queue exposes
-        // its actual configuration even if a stale row exists in the DB.
-        const merged = new Map<string, QueueMetadataResponse>();
+        const queues: QueueMetadataResponse[] = [];
         try {
           const records = await dbosExec.systemDatabase.listQueues(dbosExec.systemDatabase.appName);
           for (const record of records) {
             if (record.name === INTERNAL_QUEUE_NAME) continue;
-            const q = WorkflowQueue._fromRecord(record);
-            merged.set(record.name, {
+            const q = new WorkflowQueue(record);
+            queues.push({
               name: record.name,
               concurrency: q.concurrency,
               workerConcurrency: q.workerConcurrency,
@@ -263,20 +260,9 @@ export class DBOSAdminServer {
             });
           }
         } catch (e) {
-          dbosExec.logger.warn(`Error listing database-backed queues for metadata endpoint: ${(e as Error).message}`);
+          dbosExec.logger.warn(`Error listing queues for metadata endpoint: ${(e as Error).message}`);
         }
-        wfQueueRunner.wfQueuesByName.forEach((q, qn) => {
-          merged.set(qn, {
-            name: qn,
-            concurrency: q.concurrency,
-            workerConcurrency: q.workerConcurrency,
-            rateLimit: q.rateLimit,
-            partitionConcurrency: q.partitionConcurrency,
-            partitionWorkerConcurrency: q.partitionWorkerConcurrency,
-            partitionRateLimit: q.partitionRateLimit,
-          });
-        });
-        sendJson(res, 200, [...merged.values()]);
+        sendJson(res, 200, queues);
         return Promise.resolve();
       },
     });

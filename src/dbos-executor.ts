@@ -73,9 +73,8 @@ import {
 } from './serialization';
 import { GetWorkflowsInput } from '.';
 
-import { wfQueueRunner, WorkflowQueue } from './wfqueue';
+import { wfQueueRunner } from './wfqueue';
 import { debugTriggerPoint, DEBUG_TRIGGER_WORKFLOW_ENQUEUE } from './debugpoint';
-import { ScheduledReceiver } from './scheduler/scheduler_decorator';
 import { DynamicSchedulerLoop } from './scheduler/scheduler';
 import * as crypto from 'crypto';
 import {
@@ -157,13 +156,11 @@ export interface DBOSConfig {
   serializer?: DBOSSerializer;
   enablePatching?: boolean;
   /**
-   * Restrict this process to only dequeue from the listed queues. Each entry
-   * is either a `WorkflowQueue` instance or the name of a queue (in-memory
-   * or database-backed). Names that match nothing at launch are deferred —
-   * a database-backed queue registered later under that name will be picked
-   * up by the supervisor.
+   * Restrict this process to only dequeue from the named queues. A name that
+   * matches nothing at launch is deferred — a queue registered later under that
+   * name will be picked up by the supervisor.
    */
-  listenQueues?: (WorkflowQueue | string)[];
+  listenQueues?: string[];
   /**
    * Maximum number of independent queue dispatch cycles that may run concurrently
    * in this executor. Defaults to 3. Set to 1 to serialize queue dispatch.
@@ -295,24 +292,6 @@ export const TempWorkflowType = {
   send: 'send',
 } as const;
 
-/**
- * State item to be kept in the DBOS system database on behalf of clients
- */
-export interface DBOSExternalState {
-  /** Name of event receiver service */
-  service: string;
-  /** Fully qualified function name for which state is kept */
-  workflowFnName: string;
-  /** subkey within the service+workflowFnName */
-  key: string;
-  /** Value kept for the service+workflowFnName+key combination */
-  value?: string;
-  /** Updated time (used to version the value) */
-  updateTime?: number;
-  /** Updated sequence number (used to version the value) */
-  updateSeq?: bigint;
-}
-
 export interface DBOSExecutorOptions {
   systemDatabase?: SystemDatabase;
 }
@@ -381,7 +360,6 @@ export class DBOSExecutor {
       );
     }
 
-    new ScheduledReceiver(); // Create the scheduler, which registers itself.
     new DynamicSchedulerLoop(config.schedulerPollingIntervalMs); // Create the dynamic scheduler, which registers itself.
 
     this.initialized = false;
@@ -531,7 +509,6 @@ export class DBOSExecutor {
       authenticatedUser: '',
       assumedRole: '',
       authenticatedRoles: [],
-      request: {},
       executorId: globalParams.executorID,
       applicationVersion: globalParams.appVersion,
       applicationID: globalParams.appID,
@@ -568,6 +545,13 @@ export class DBOSExecutor {
 
     const pctx = { ...getCurrentContextStore() }; // function ID was already incremented...
 
+    // Resolve authentication once: explicit params, then enqueue options, then the ambient context.
+    // The status row, the span, and the workflow's own context must all agree on this.
+    const authenticatedUser =
+      params.authenticatedUser ?? params.enqueueOptions?.authenticatedUser ?? pctx?.authenticatedUser ?? '';
+    const authenticatedRoles =
+      params.authenticatedRoles ?? params.enqueueOptions?.authenticatedRoles ?? pctx?.authenticatedRoles ?? [];
+
     let wConfig: WorkflowConfig = {};
     const wInfo = getFunctionRegistration(wf);
     const wfNames = getRegisteredFunctionFullName(wf);
@@ -595,8 +579,8 @@ export class DBOSExecutor {
       operationUUID: workflowID,
       operationType: OperationType.WORKFLOW,
       operationName: wInfo?.name ?? wf.name,
-      authenticatedUser: pctx?.authenticatedUser ?? '',
-      authenticatedRoles: pctx?.authenticatedRoles ?? [],
+      authenticatedUser,
+      authenticatedRoles,
       assumedRole: pctx?.assumedRole ?? '',
     });
 
@@ -641,10 +625,9 @@ export class DBOSExecutor {
       queueName: params.queueName,
       output: null,
       error: null,
-      authenticatedUser: pctx?.authenticatedUser || '',
+      authenticatedUser,
       assumedRole: pctx?.assumedRole || '',
-      authenticatedRoles: pctx?.authenticatedRoles || [],
-      request: pctx?.request || {},
+      authenticatedRoles,
       executorId: globalParams.executorID,
       applicationVersion:
         params.enqueueOptions?.applicationVersion ??
@@ -880,6 +863,8 @@ export class DBOSExecutor {
                 curWFFunctionId: undefined,
                 activeStreamReads: 0,
                 serializationType,
+                authenticatedUser,
+                authenticatedRoles,
               },
               () => {
                 const callPromise = wf.call(params.configuredInstance, ...args);
@@ -973,16 +958,6 @@ export class DBOSExecutor {
     } else {
       return new RetrievedHandle(this.systemDatabase, workflowID);
     }
-  }
-
-  /**
-   * Look up an in-memory workflow queue by name. Returns `undefined` for
-   * names that are not registered in-process; database-backed queues are
-   * not in this map, so callers using this for sync validation should treat
-   * `undefined` as "no in-process information" rather than as an error.
-   */
-  getQueueByName(name: string): WorkflowQueue | undefined {
-    return wfQueueRunner.wfQueuesByName.get(name);
   }
 
   async runStepTempWF<T extends unknown[], R>(
@@ -1367,7 +1342,7 @@ export class DBOSExecutor {
     return handlerArray;
   }
 
-  async initEventReceivers(listenQueues: (WorkflowQueue | string)[] | null) {
+  async initEventReceivers(listenQueues: string[] | null) {
     this.#wfqEnded = wfQueueRunner.dispatchLoop(this, listenQueues, this.config.maxConcurrentQueueDispatches);
 
     for (const lcl of getLifecycleListeners()) {
@@ -1555,17 +1530,9 @@ export class DBOSExecutor {
     }
   }
 
-  async getEventDispatchState(svc: string, wfn: string, key: string): Promise<DBOSExternalState | undefined> {
-    return await this.systemDatabase.getEventDispatchState(svc, wfn, key);
-  }
-  async upsertEventDispatchState(state: DBOSExternalState): Promise<DBOSExternalState> {
-    return await this.systemDatabase.upsertEventDispatchState(state);
-  }
-
   #getRecoveryContext(_workflowID: string, status: WorkflowStatusInternal): DBOSLocalCtx {
     // Note: this doesn't inherit the original parent context's span.
     const oc: DBOSLocalCtx = {};
-    oc.request = status.request;
     oc.authenticatedUser = status.authenticatedUser;
     oc.authenticatedRoles = status.authenticatedRoles;
     oc.assumedRole = status.assumedRole;
@@ -1608,14 +1575,5 @@ export class DBOSExecutor {
       hasher.update(sourceCode);
     }
     return hasher.digest('hex');
-  }
-
-  static internalQueue: WorkflowQueue | undefined = undefined;
-
-  static createInternalQueue() {
-    if (DBOSExecutor.internalQueue !== undefined) {
-      return;
-    }
-    DBOSExecutor.internalQueue = new WorkflowQueue(INTERNAL_QUEUE_NAME, {});
   }
 }

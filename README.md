@@ -84,9 +84,9 @@ You can add queues to your workflows in just a couple lines of code.
 They don't require a separate queueing service or message broker&mdash;just Postgres.
 
 ```ts
-import { DBOS, WorkflowQueue } from '@dbos-inc/dbos-sdk';
+import { DBOS } from '@dbos-inc/dbos-sdk';
 
-const queue = new WorkflowQueue('example_queue');
+const queueName = 'example_queue';
 
 async function taskFunction(task) {
   // ...
@@ -98,7 +98,7 @@ async function queueFunction(tasks) {
 
   // Enqueue each task so all tasks are processed concurrently.
   for (const task of tasks) {
-    handles.push(await DBOS.startWorkflow(taskWorkflow, { queueName: queue.name })(task));
+    handles.push(await DBOS.startWorkflow(taskWorkflow, { queueName })(task));
   }
 
   // Wait for each task to complete and retrieve its result.
@@ -110,6 +110,10 @@ async function queueFunction(tasks) {
   return results;
 }
 const queueWorkflow = DBOS.registerWorkflow(queueFunction, { name: 'queueWorkflow' });
+
+// Queue configuration is stored in Postgres, so register the queue after launch.
+await DBOS.launch();
+await DBOS.registerQueue(queueName);
 ```
 
 [Read more ↗️](https://docs.dbos.dev/typescript/tutorials/queue-tutorial)
@@ -176,15 +180,24 @@ async function handleMessage(request: Request): void {
 
 Schedule workflows using cron syntax, or use durable sleep to pause workflows for as long as you like (even days or weeks) before executing.
 
-You can schedule a workflow ina single line of code:
+You can schedule a workflow in a few lines of code:
 
 ```ts
-async function scheduledFunction(schedTime: Date, startTime: Date) {
+async function scheduledFunction(schedTime: Date, context: unknown) {
   DBOS.logger.info(`I am a workflow scheduled to run every 30 seconds`);
 }
 
-const scheduledWorkflow = DBOS.registerWorkflow(scheduledFunction);
-DBOS.registerScheduled(scheduledWorkflow, { crontab: '*/30 * * * * *' });
+const scheduledWorkflow = DBOS.registerWorkflow(scheduledFunction, { name: 'scheduledWorkflow' });
+
+// Schedules are stored in Postgres, so create the schedule after launch.
+await DBOS.launch();
+await DBOS.applySchedules([
+  {
+    scheduleName: 'every-30-seconds',
+    workflowFn: scheduledWorkflow,
+    schedule: '*/30 * * * * *',
+  },
+]);
 ```
 
 You can add a durable sleep to any workflow with a single line of code.
