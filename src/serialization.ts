@@ -368,35 +368,22 @@ function isIndexableKey(k: unknown): k is string | number {
   return typeof k === 'string' || typeof k === 'number';
 }
 
-// Deserialize a plain value (not function inputs) using specified serialization,
-//   or the provided default
-function unavailableSerialization(serialization: string | null): TypeError {
-  return new TypeError(
-    serialization === null
-      ? 'Value records no serialization format, so it predates the serialization column and can no longer be deserialized'
-      : `Value deserialization type ${serialization} is not available`,
-  );
-}
-
 export async function deserializeValue(
   serializedValue: string | null,
   serialization: string | null,
   serializer: DBOSSerializer,
 ): Promise<unknown> {
-  // Nothing stored at all, as for an absent event or message: every format reads that as null.
-  if (serializedValue === null) {
-    return null;
-  }
   if (serialization === DBOSPortableJSON.name()) {
     return DBOSPortableJSON.parse(serializedValue);
   }
   if (serialization === DBOSJSON.name()) {
     return DBOSJSON.parse(serializedValue);
   }
-  if (serialization === serializer.name()) {
+  // A checkpoint recorded without an explicit format was written by the configured serializer.
+  if (!serialization || serialization === serializer.name()) {
     return await serializer.parse(serializedValue);
   }
-  throw unavailableSerialization(serialization);
+  throw new TypeError(`Value deserialization type ${serialization} is not available`);
 }
 
 export async function deserializePositionalArgs(
