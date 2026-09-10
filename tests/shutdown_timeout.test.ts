@@ -1,4 +1,5 @@
-import { DBOS } from '../src/';
+import { Pool } from 'pg';
+import { DBOS, StatusString } from '../src/';
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import { generateDBOSTestConfig, setUpDBOSTestSysDb, retryUntilSuccess, Event } from './helpers';
 import { sleepConfig, sleepms } from '../src/utils';
@@ -260,5 +261,71 @@ describe('shutdown-workflow-completion-timeout', () => {
       await handle.getResult().catch(() => {});
     }
     expect(DBOSExecutor.globalInstance).toBeUndefined();
+  }, 20000);
+});
+
+// A step that parks until released, so its checkpoint lands after the shutdown that abandoned it.
+const lateStepStarted = new Event();
+const releaseLateStep = new Event();
+
+const lateCheckpointWorkflow = DBOS.registerWorkflow(
+  async () => {
+    await DBOS.runStep(
+      async () => {
+        lateStepStarted.set();
+        await releaseLateStep.wait();
+      },
+      { name: 'shutdownLateCheckpointStep' },
+    );
+  },
+  { name: 'shutdownLateCheckpointWorkflow' },
+);
+
+describe('shutdown-executor-identity', () => {
+  let config: DBOSConfig;
+
+  beforeAll(async () => {
+    config = generateDBOSTestConfig();
+    await setUpDBOSTestSysDb(config);
+  });
+
+  afterAll(() => {
+    releaseLateStep.set();
+  });
+
+  // A caller-owned pool outlives shutdown, so a step finishing afterwards still checkpoints, and
+  // a checkpoint under another executor ID would strand the workflow where no process recovers it.
+  test('a-checkpoint-landing-after-shutdown-keeps-the-executor-id', async () => {
+    const executorID = 'shutdown-identity-executor';
+    const pool = new Pool({ connectionString: config.systemDatabaseUrl! });
+    pool.on('error', () => {});
+    DBOS.setConfig({ ...config, systemDatabasePool: pool, executorID });
+
+    try {
+      await DBOS.launch();
+      const handle = await DBOS.startWorkflow(lateCheckpointWorkflow)();
+      await waitFor(lateStepStarted, 'the blocking step to start');
+
+      // No completion timeout, so the step is still parked when this returns.
+      await DBOS.shutdown();
+      expect(DBOS.executorID).toBe(executorID);
+
+      releaseLateStep.set();
+      await retryUntilSuccess(async () => {
+        const { rows } = await pool.query<{ status: string; executor_id: string }>(
+          `SELECT status, executor_id FROM dbos.workflow_status WHERE workflow_uuid = $1`,
+          [handle.workflowID],
+        );
+        expect(rows[0]?.status).toBe(StatusString.SUCCESS);
+        expect(rows[0]?.executor_id).toBe(executorID);
+      });
+    } finally {
+      releaseLateStep.set();
+      if (DBOSExecutor.globalInstance) {
+        await DBOS.shutdown();
+      }
+      DBOS.setConfig(config);
+      await pool.end();
+    }
   }, 20000);
 });

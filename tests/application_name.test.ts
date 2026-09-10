@@ -121,11 +121,14 @@ describe('application-name', () => {
     expect(await ownerOf(client, 'application_versions', 'version_name', DBOS.applicationVersion)).toBe(APP);
   });
 
-  test('shutdown clears the application identity', async () => {
+  test('a relaunch does not inherit the last application identity', async () => {
     await DBOS.launch();
     expect(globalParams.appName).toBe(APP);
     await DBOS.shutdown();
-    expect(globalParams.appName).toBeUndefined();
+
+    DBOS.setConfig({ ...config, name: PEER });
+    await DBOS.launch();
+    expect(globalParams.appName).toBe(PEER);
   });
 
   test('a client without an identity writes unclaimed rows, and an explicit name wins', async () => {

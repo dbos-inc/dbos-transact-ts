@@ -494,8 +494,13 @@ export class DBOS {
     finalizeClassRegistrations();
 
     // Globally set the application name, version and executor ID.
-    // In DBOS Cloud, instead use the value supplied through environment variables.
+    // Only launch may change these: work outliving a shutdown still checkpoints under this identity.
     globalParams.appName = internalConfig.name;
+    globalParams.appVersion = process.env.DBOS__APPVERSION || '';
+    globalParams.wasComputed = false;
+    globalParams.appID = process.env.DBOS__APPID || '';
+    globalParams.executorID = process.env.DBOS__VMID || 'local';
+    // In DBOS Cloud, instead use the value supplied through environment variables.
     if (process.env.DBOS__CLOUD !== 'true') {
       if (DBOS.#dbosConfig?.applicationVersion) {
         globalParams.appVersion = DBOS.#dbosConfig.applicationVersion;
@@ -695,14 +700,6 @@ export class DBOS {
       for (const [_n, ds] of transactionalDataSources) {
         await ds.destroy();
       }
-
-      // Reset the global app name, version and executor ID
-      globalParams.appVersion = process.env.DBOS__APPVERSION || '';
-      globalParams.wasComputed = false;
-      globalParams.appID = process.env.DBOS__APPID || '';
-      globalParams.executorID = process.env.DBOS__VMID || 'local';
-      // Set at launch from the config, so a relaunch under another name must not inherit this one.
-      globalParams.appName = undefined;
 
       recordDBOSShutdown();
     } finally {
