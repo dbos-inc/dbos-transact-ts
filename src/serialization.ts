@@ -88,12 +88,7 @@ function sjstringify(value: unknown) {
   });
 }
 
-/**
- * DBOSJSON with SuperJSON support for richer type serialization.
- *
- * Backwards compatible - can deserialize both old DBOSJSON format and new SuperJSON format.
- * New serialization uses SuperJSON to handle Sets, Maps, undefined, RegExp, circular refs, etc.
- */
+/** The default format: SuperJSON. */
 export const DBOSJSON: {
   name: () => string;
   parse: (text: string | null | undefined) => unknown;
