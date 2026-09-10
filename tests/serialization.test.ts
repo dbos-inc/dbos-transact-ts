@@ -1,15 +1,36 @@
-import { DBOSJSON, SERIALIZER_MARKER_KEY, SERIALIZER_MARKER_VALUE } from '../src/serialization';
+import { Client } from 'pg';
+import { DBOS, DBOSClient, DBOSConfig, DBOSSerializer, WorkflowHandle } from '../src';
+import { generateDBOSTestConfig, reexecuteWorkflowById, setUpDBOSTestSysDb } from './helpers';
+import {
+  JsonWorkflowArgs,
+  notifications,
+  PortableWorkflowError,
+  streams,
+  workflow_events,
+  workflow_events_history,
+  workflow_status,
+} from '../schemas/system_db_schema';
+import { DBOSJSON, DBOSPortableJSON, SERIALIZER_MARKER_KEY, SERIALIZER_MARKER_VALUE } from '../src/serialization';
+import { randomUUID } from 'node:crypto';
+import { DBOSExecutor } from '../src/dbos-executor';
+import { z } from 'zod';
 
 /**
- * DBOSJSON uses SuperJSON internally for rich type support.
+ * Serialization tests: the wire formats DBOS stores values in.
  *
  * Test structure:
- * 1. "dbos-json-rich-types" - (dates, bigints, buffers)
- * 2. "SuperJSON enhanced types" - (Sets, Maps, undefined, RegExp, etc.)
+ * 1. "dbos-json-rich-types" - dates, bigints, buffers through the default format
+ * 2. "SuperJSON enhanced types" - Sets, Maps, undefined, RegExp, etc.
  * 3. "DBOSJSON format" - the marker every value carries, and what happens without it
+ * 4. "portable-serialization-tests" - the portable format, end to end against the database
+ * 5. "custom-serializer-restart-tests" - adding or removing a serializer against existing data
+ * 6. "async-serializer-tests" - serializers that return promises
  *
- * Caution: Altering results of this test likely means a stored-data compatibility break.
+ * The first three need no database; the rest do.
+ *
+ * Caution: Altering results of these tests likely means a stored-data compatibility break.
  */
+
 describe('dbos-json-rich-types', () => {
   test('Replace revive dates', () => {
     const obj = {
@@ -179,5 +200,1320 @@ describe('DBOSJSON format', () => {
     expect(complexParsed).toHaveProperty('json');
     expect(complexParsed).toHaveProperty(SERIALIZER_MARKER_KEY, SERIALIZER_MARKER_VALUE);
     expect(complexParsed).toHaveProperty('meta'); // Complex types have meta from SuperJSON
+  });
+});
+
+async function workflowFunc(s: string, x: number, o: { k: string; v: string[] }, wfid?: string): Promise<string> {
+  await DBOS.setEvent('defstat', { status: 'Happy' });
+  await DBOS.setEvent('nstat', { status: 'Happy' }, { serializationType: 'native' });
+  await DBOS.setEvent('pstat', { status: 'Happy' }, { serializationType: 'portable' });
+
+  await DBOS.writeStream('defstream', { stream: 'OhYeah' });
+  await DBOS.writeStream('nstream', { stream: 'OhYeah' }, { serializationType: 'native' });
+  await DBOS.writeStream('pstream', { stream: 'OhYeah' }, { serializationType: 'portable' });
+
+  if (wfid) {
+    await DBOS.send(wfid, { message: 'Hello!' }, 'default');
+    await DBOS.send(wfid, { message: 'Hello!' }, 'native', undefined, { serializationType: 'native' });
+    await DBOS.send(wfid, { message: 'Hello!' }, 'portable', undefined, { serializationType: 'portable' });
+  }
+
+  const r = await DBOS.recv('incoming');
+
+  return `${s}-${x}-${o.k}:${o.v.join(',')}@${JSON.stringify(r)}`;
+}
+
+const defWorkflow = DBOS.registerWorkflow(workflowFunc, {
+  name: 'workflowDef',
+  className: 'workflows',
+  serialization: undefined,
+});
+
+const portWorkflow = DBOS.registerWorkflow(
+  async (s: string, x: number, o: { k: string; v: string[] }, wfid?: string) => workflowFunc(s, x, o, wfid),
+  {
+    name: 'workflowPortable',
+    className: 'workflows',
+    serialization: 'portable',
+  },
+);
+
+const closeStreamWorkflow = DBOS.registerWorkflow(
+  async () => {
+    await DBOS.writeStream('closedstream', { stream: 'OhYeah' });
+    await DBOS.closeStream('closedstream');
+  },
+  { name: 'workflowCloseStream', serialization: 'portable' },
+);
+
+// Sends to itself so the message stays unconsumed and its format can be snooped.
+const portableDirectWorkflow = DBOS.registerWorkflow(
+  async () => {
+    await DBOS.setEvent('defstat', { status: 'Happy' });
+    await DBOS.writeStream('defstream', { stream: 'OhYeah' });
+    await DBOS.send(DBOS.workflowID!, { message: 'Hello!' }, 'default');
+    return 'direct';
+  },
+  { name: 'workflowPortableDirect', serialization: 'portable' },
+);
+
+class PortableWorkflow {
+  static lastWfid: string | undefined = undefined;
+
+  @DBOS.workflow({ serialization: 'portable' })
+  static async pwfError() {
+    await Promise.resolve();
+    PortableWorkflow.lastWfid = DBOS.workflowID;
+    expect(DBOS.defaultSerializationType).toBe('portable');
+    throw new Error('Failed!');
+  }
+}
+
+const simpleRecv = DBOS.registerWorkflow(
+  async (topic: string) => {
+    return await DBOS.recv(topic);
+  },
+  { name: 'simpleRecv' },
+);
+
+// Portable workflow that returns undefined (void)
+const voidPortableWorkflow = DBOS.registerWorkflow(
+  async () => {
+    // No return value — returns undefined
+  },
+  {
+    name: 'voidPortableWorkflow',
+    className: 'workflows',
+    serialization: 'portable',
+  },
+);
+
+// Portable workflow that explicitly returns null
+const nullPortableWorkflow = DBOS.registerWorkflow(
+  async () => {
+    await Promise.resolve();
+    return null;
+  },
+  {
+    name: 'nullPortableWorkflow',
+    className: 'workflows',
+    serialization: 'portable',
+  },
+);
+
+// Simple portable workflow that doesn't recv (for insert tests)
+const _simplePortWorkflow = DBOS.registerWorkflow(
+  async (s: string, x: number, o: { k: string; v: string[] }) => {
+    return Promise.resolve(`${s}-${x}-${o.k}:${o.v.join(',')}`);
+  },
+  {
+    name: 'simplePortWorkflow',
+    className: 'workflows',
+    serialization: 'portable',
+  },
+);
+
+// Workflow with inputSchema validation (Zod)
+const validatedWorkflow = DBOS.registerWorkflow(
+  async (s: string, x: number, o: { k: string; v: string[] }) => {
+    return Promise.resolve(`${s}-${x}-${o.k}:${o.v.join(',')}`);
+  },
+  {
+    name: 'validatedWorkflow',
+    className: 'workflows',
+    serialization: 'portable',
+    inputSchema: z.tuple([z.string(), z.number(), z.object({ k: z.string(), v: z.array(z.string()) })]),
+  },
+);
+
+// Workflow with inputSchema that coerces string → Date
+const dateWorkflow = DBOS.registerWorkflow(
+  async (d: Date) => {
+    expect(d).toBeInstanceOf(Date);
+    return Promise.resolve(`date:${d.toISOString()}`);
+  },
+  {
+    name: 'dateWorkflow',
+    className: 'workflows',
+    serialization: 'portable',
+    inputSchema: z.tuple([z.coerce.date()]),
+  },
+);
+
+// Re-sets one event key twice with different formats; the second setEvent must overwrite value AND serialization.
+const reSetEventWorkflow = DBOS.registerWorkflow(
+  async () => {
+    await DBOS.setEvent('rekey', 10n, { serializationType: 'portable' });
+    await DBOS.setEvent('rekey', 10n, { serializationType: 'native' });
+  },
+  { name: 'reSetEventWorkflow' },
+);
+
+// Workflows for the OAOO replay test: recv/getEvent must keep their recorded serialization across replay.
+const portableEventSetterWF = DBOS.registerWorkflow(
+  async (input: string) => {
+    await DBOS.setEvent('evt', input, { serializationType: 'portable' });
+  },
+  { name: 'portableEventSetterWF' },
+);
+
+const eventGetterWF = DBOS.registerWorkflow(
+  async (setterId: string) => {
+    return await DBOS.getEvent<string>(setterId, 'evt');
+  },
+  { name: 'eventGetterWF' },
+);
+
+const portableRecvWF = DBOS.registerWorkflow(
+  async () => {
+    return await DBOS.recv<string>('topic');
+  },
+  { name: 'portableRecvWF' },
+);
+
+/**
+ * A status row with its payloads resolved from the split tables, falling back to the legacy
+ * columns: the shape every reader in the SDK sees, whether or not dual write is on.
+ */
+async function readStatusRow(client: Client, workflowID: string | undefined) {
+  return client.query<workflow_status>(
+    `SELECT ws.workflow_uuid, ws.status, ws.serialization,
+            COALESCE(wi.inputs, ws.inputs) AS inputs,
+            COALESCE(wo.output, ws.output) AS output,
+            COALESCE(wo.error, ws.error) AS error
+     FROM dbos.workflow_status ws
+     LEFT JOIN dbos.workflow_input wi ON wi.workflow_uuid = ws.workflow_uuid
+     LEFT JOIN dbos.workflow_output wo ON wo.workflow_uuid = ws.workflow_uuid
+     WHERE ws.workflow_uuid = $1`,
+    [workflowID],
+  );
+}
+
+describe('portable-serialization-tests', () => {
+  let config: DBOSConfig;
+  let systemDBClient: Client;
+
+  beforeAll(() => {
+    config = generateDBOSTestConfig();
+    DBOS.setConfig(config);
+  });
+
+  beforeEach(async () => {
+    process.env.DBOS__APPVERSION = 'v0';
+    await setUpDBOSTestSysDb(config);
+    await DBOS.launch();
+    await DBOS.registerQueue('testq', { onConflict: 'always_update' });
+
+    systemDBClient = new Client({
+      connectionString: config.systemDatabaseUrl,
+    });
+    await systemDBClient.connect();
+  });
+
+  afterEach(async () => {
+    await systemDBClient.end();
+    await DBOS.shutdown();
+    process.env.DBOS__APPVERSION = undefined;
+  });
+
+  async function checkMsgSer(dstdid: string, topic: string, ser: string) {
+    const mser = await systemDBClient.query<notifications>(
+      `SELECT * FROM dbos.notifications where destination_uuid = $1 and topic=$2;`,
+      [dstdid, topic],
+    );
+    expect(mser.rows[0].serialization).toBe(ser);
+  }
+
+  async function checkEvtSer(wfid: string, key: string, ser: string) {
+    const eser = await systemDBClient.query<workflow_events>(
+      `SELECT * FROM dbos.workflow_events where workflow_uuid = $1 and key=$2;`,
+      [wfid, key],
+    );
+    expect(eser.rows[0].serialization).toBe(ser);
+    const hser = await systemDBClient.query<workflow_events_history>(
+      `SELECT * FROM dbos.workflow_events_history where workflow_uuid = $1 and key=$2;`,
+      [wfid, key],
+    );
+    expect(hser.rows[0].serialization).toBe(ser);
+  }
+
+  async function checkStreamSer(wfid: string, key: string, ser: string) {
+    const mser = await systemDBClient.query<streams>(
+      `SELECT * FROM dbos.streams where workflow_uuid = $1 and key=$2;`,
+      [wfid, key],
+    );
+    expect(mser.rows[0].serialization).toBe(ser);
+  }
+
+  test('test-explicit-ser', async () => {
+    // Run WF with default serialization
+    //  But first, receivers
+    const drpwfh = await DBOS.startWorkflow(simpleRecv)('native');
+    const wfhd = await DBOS.startWorkflow(defWorkflow)('s', 1, { k: 'k', v: ['v'] }, drpwfh.workflowID);
+    await DBOS.send(wfhd.workflowID, 'm', 'incoming');
+    expect(await DBOS.getEvent(wfhd.workflowID, 'defstat')).toStrictEqual({ status: 'Happy' });
+    expect(await DBOS.getEvent(wfhd.workflowID, 'nstat')).toStrictEqual({ status: 'Happy' });
+    expect(await DBOS.getEvent(wfhd.workflowID, 'pstat')).toStrictEqual({ status: 'Happy' });
+    const { value: ddread } = await DBOS.readStream(wfhd.workflowID, 'defstream').next();
+    expect(ddread).toStrictEqual({ stream: 'OhYeah' });
+    const { value: dnread } = await DBOS.readStream(wfhd.workflowID, 'nstream').next();
+    expect(dnread).toStrictEqual({ stream: 'OhYeah' });
+    const { value: dpread } = await DBOS.readStream(wfhd.workflowID, 'pstream').next();
+    expect(dpread).toStrictEqual({ stream: 'OhYeah' });
+    const rvd = await wfhd.getResult();
+    expect(rvd).toBe('s-1-k:v@"m"');
+    expect(await drpwfh.getResult()).toStrictEqual({ message: 'Hello!' });
+
+    // Snoop the DB to make sure serialization format is correct
+    // WF
+    const nser = await readStatusRow(systemDBClient, wfhd.workflowID);
+    expect(nser.rows[0].serialization).toBe(DBOSJSON.name());
+    // Messages
+    await checkMsgSer(drpwfh.workflowID, 'default', DBOSJSON.name());
+    //await checkMsgSer(drpwfh.workflowID, 'native', DBOSJSON.name()); // This got deleted
+    await checkMsgSer(drpwfh.workflowID, 'portable', DBOSPortableJSON.name());
+
+    // Events
+    await checkEvtSer(wfhd.workflowID, 'defstat', DBOSJSON.name());
+    await checkEvtSer(wfhd.workflowID, 'nstat', DBOSJSON.name());
+    await checkEvtSer(wfhd.workflowID, 'pstat', DBOSPortableJSON.name());
+
+    // Streams
+    await checkStreamSer(wfhd.workflowID, 'defstream', DBOSJSON.name());
+    await checkStreamSer(wfhd.workflowID, 'nstream', DBOSJSON.name());
+    await checkStreamSer(wfhd.workflowID, 'pstream', DBOSPortableJSON.name());
+
+    // Run with portable serialization
+    const drdwfh = await DBOS.startWorkflow(simpleRecv)('portable');
+    const wfhp = await DBOS.startWorkflow(portWorkflow)('s', 1, { k: 'k', v: ['v'] }, drdwfh.workflowID);
+    await DBOS.send(wfhp.workflowID, 'm', 'incoming');
+    expect(await DBOS.getEvent(wfhp.workflowID, 'defstat')).toStrictEqual({ status: 'Happy' });
+    expect(await DBOS.getEvent(wfhp.workflowID, 'nstat')).toStrictEqual({ status: 'Happy' });
+    expect(await DBOS.getEvent(wfhp.workflowID, 'pstat')).toStrictEqual({ status: 'Happy' });
+    const { value: pdread } = await DBOS.readStream(wfhp.workflowID, 'defstream').next();
+    expect(pdread).toStrictEqual({ stream: 'OhYeah' });
+    const { value: pnread } = await DBOS.readStream(wfhp.workflowID, 'nstream').next();
+    expect(pnread).toStrictEqual({ stream: 'OhYeah' });
+    const { value: ppread } = await DBOS.readStream(wfhp.workflowID, 'pstream').next();
+    expect(ppread).toStrictEqual({ stream: 'OhYeah' });
+    const rvp = await wfhp.getResult();
+    expect(rvp).toBe('s-1-k:v@"m"');
+    expect(await drdwfh.getResult()).toStrictEqual({ message: 'Hello!' });
+
+    // Snoop the DB to make sure serialization format is correct
+    // WF
+    const pser = await readStatusRow(systemDBClient, wfhp.workflowID);
+    expect(pser.rows[0].serialization).toBe(DBOSPortableJSON.name());
+    expect(pser.rows[0].output).toBe('"s-1-k:v@\\"m\\""');
+
+    // Messages
+    await checkMsgSer(drdwfh.workflowID, 'default', DBOSPortableJSON.name());
+    await checkMsgSer(drdwfh.workflowID, 'native', DBOSJSON.name());
+    //await checkMsgSer(drdwfh.workflowID, 'portable', DBOSPortableJSON.name()); // This got deleted
+
+    // Events
+    await checkEvtSer(wfhp.workflowID, 'defstat', DBOSPortableJSON.name());
+    await checkEvtSer(wfhp.workflowID, 'nstat', DBOSJSON.name());
+    await checkEvtSer(wfhp.workflowID, 'pstat', DBOSPortableJSON.name());
+
+    // Streams
+    await checkStreamSer(wfhp.workflowID, 'defstream', DBOSPortableJSON.name());
+    await checkStreamSer(wfhp.workflowID, 'nstream', DBOSJSON.name());
+    await checkStreamSer(wfhp.workflowID, 'pstream', DBOSPortableJSON.name());
+
+    // Test copy+paste workflow
+    const sysDb = DBOSExecutor.globalInstance!.systemDatabase;
+    // Export with children
+    const exported = await sysDb.exportWorkflow(wfhp.workflowID, true);
+
+    // Delete the workflow so it can be reimported
+    await DBOS.deleteWorkflow(wfhp.workflowID, true);
+
+    // Importing the workflow succeeds after deletion
+    await sysDb.importWorkflow(exported);
+
+    // Check everything still there
+    expect(await wfhp.getResult()).toBe('s-1-k:v@"m"');
+    // Messages
+    await checkMsgSer(drdwfh.workflowID, 'default', DBOSPortableJSON.name());
+    await checkMsgSer(drdwfh.workflowID, 'native', DBOSJSON.name());
+    //await checkMsgSer(drdwfh.workflowID, 'portable', DBOSPortableJSON.name()); // This got deleted
+
+    // Events
+    await checkEvtSer(wfhp.workflowID, 'defstat', DBOSPortableJSON.name());
+    await checkEvtSer(wfhp.workflowID, 'nstat', DBOSJSON.name());
+    await checkEvtSer(wfhp.workflowID, 'pstat', DBOSPortableJSON.name());
+
+    // Streams
+    await checkStreamSer(wfhp.workflowID, 'defstream', DBOSPortableJSON.name());
+    await checkStreamSer(wfhp.workflowID, 'nstream', DBOSJSON.name());
+    await checkStreamSer(wfhp.workflowID, 'pstream', DBOSPortableJSON.name());
+
+    // Check reexec
+    const reh = await reexecuteWorkflowById(wfhp.workflowID);
+    expect(await reh?.getResult()).toBe('s-1-k:v@"m"');
+
+    // Error handling
+    // Check WF that throws an error
+    await expect(PortableWorkflow.pwfError()).rejects.toThrow('Failed!');
+    // The error thrown from direct invocation should be PortableWorkflowError
+    //  for consistency (like we do with return values, run through ser/des)?
+    // However, in JS you cannot count on this.  It's just how it is... there is no class
+    //  registry.
+    await expect(PortableWorkflow.pwfError()).rejects.toThrow(PortableWorkflowError);
+
+    // Snoop the DB to make sure serialization format is correct
+    // WF
+    const eser = await readStatusRow(systemDBClient, PortableWorkflow.lastWfid);
+    expect(eser.rows[0].serialization).toBe(DBOSPortableJSON.name());
+    expect(eser.rows[0].output).toBeNull();
+    expect(eser.rows[0].error).toBe('{\"name\":\"Error\",\"message\":\"Failed!\"}');
+
+    const errh = DBOS.retrieveWorkflow(PortableWorkflow.lastWfid!);
+    await expect(errh.getResult()).rejects.toThrow('Failed!');
+    try {
+      await errh.getResult();
+    } catch (e) {
+      expect((e as PortableWorkflowError).message).toBe('Failed!');
+      expect((e as PortableWorkflowError).name).toBe('Error');
+      expect((e as object).constructor.name).toBe('PortableWorkflowError');
+    }
+  });
+
+  test('test-close-stream-sentinel-is-portable', async () => {
+    // The marker that ends a stream is written as portable JSON, byte-identical to what Python and
+    // Java write, so a reader in any language recognizes a stream the others closed.
+    const wfid = randomUUID();
+    await DBOS.withNextWorkflowID(wfid, async () => {
+      await closeStreamWorkflow();
+    });
+
+    const rows = await systemDBClient.query<streams>(
+      `SELECT * FROM dbos.streams where workflow_uuid = $1 and key=$2 ORDER BY "offset";`,
+      [wfid, 'closedstream'],
+    );
+    expect(rows.rows.map((row) => row.value)).toEqual(['{"stream":"OhYeah"}', '"__DBOS_STREAM_CLOSED__"']);
+    expect(rows.rows.map((row) => row.serialization)).toEqual([DBOSPortableJSON.name(), DBOSPortableJSON.name()]);
+  });
+
+  test('test-portable-direct-invocation', async () => {
+    // Called directly rather than started or enqueued: the body must write in the declared format
+    // too, not just the workflow row.
+    const directID = randomUUID();
+    await DBOS.withNextWorkflowID(directID, async () => {
+      expect(await portableDirectWorkflow()).toBe('direct');
+    });
+
+    const wfser = await readStatusRow(systemDBClient, directID);
+    expect(wfser.rows[0].serialization).toBe(DBOSPortableJSON.name());
+    await checkEvtSer(directID, 'defstat', DBOSPortableJSON.name());
+    await checkStreamSer(directID, 'defstream', DBOSPortableJSON.name());
+    await checkMsgSer(directID, 'default', DBOSPortableJSON.name());
+  });
+
+  test('test-setevent-reset-updates-serialization', async () => {
+    // Re-set portable then native: the native format must win so getEvent recovers 10n, not the superjson envelope.
+    const handle = await DBOS.startWorkflow(reSetEventWorkflow)();
+    await handle.getResult();
+
+    const row = await systemDBClient.query<workflow_events>(
+      `SELECT * FROM dbos.workflow_events WHERE workflow_uuid = $1 AND key = $2`,
+      [handle.workflowID, 'rekey'],
+    );
+    expect(row.rows[0].serialization).toBe(DBOSJSON.name());
+
+    expect(await DBOS.getEvent(handle.workflowID, 'rekey')).toBe(10n);
+  });
+
+  // Reproduces https://github.com/dbos-inc/dbos-transact-ts/issues/1208
+  test('test-portable-void-workflow', async () => {
+    // A portable workflow that returns undefined should succeed, not throw
+    // "undefined" is not valid JSON
+    const wfh = await DBOS.startWorkflow(voidPortableWorkflow)();
+    const result = await wfh.getResult();
+    expect(result).toBeNull();
+
+    // Verify the workflow completed successfully in the DB
+    const dbRow = await readStatusRow(systemDBClient, wfh.workflowID);
+    expect(dbRow.rows[0].status).toBe('SUCCESS');
+    expect(dbRow.rows[0].serialization).toBe(DBOSPortableJSON.name());
+
+    // Also test via queue (simulating enqueue_workflow from pl/pgSQL)
+    const queuedId = randomUUID();
+    await systemDBClient.query(
+      `INSERT INTO dbos.workflow_status(
+        workflow_uuid, name, class_name, queue_name,
+        status, inputs, created_at, serialization
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [
+        queuedId,
+        'voidPortableWorkflow',
+        'workflows',
+        'testq',
+        'ENQUEUED',
+        JSON.stringify({ positionalArgs: [] }),
+        Date.now(),
+        'portable_json',
+      ],
+    );
+
+    const queuedHandle = DBOS.retrieveWorkflow(queuedId);
+    const queuedResult = await queuedHandle.getResult();
+    expect(queuedResult).toBeNull();
+  });
+
+  // Related to issue #1208 — null should also round-trip correctly
+  test('test-portable-null-workflow', async () => {
+    // A portable workflow that returns null should succeed
+    const wfh = await DBOS.startWorkflow(nullPortableWorkflow)();
+    const result = await wfh.getResult();
+    expect(result).toBeNull();
+
+    // Verify the workflow completed successfully in the DB
+    const dbRow = await readStatusRow(systemDBClient, wfh.workflowID);
+    expect(dbRow.rows[0].status).toBe('SUCCESS');
+    expect(dbRow.rows[0].serialization).toBe(DBOSPortableJSON.name());
+
+    // Also test via queue (simulating enqueue_workflow from pl/pgSQL)
+    const queuedId = randomUUID();
+    await systemDBClient.query(
+      `INSERT INTO dbos.workflow_status(
+        workflow_uuid, name, class_name, queue_name,
+        status, inputs, created_at, serialization
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [
+        queuedId,
+        'nullPortableWorkflow',
+        'workflows',
+        'testq',
+        'ENQUEUED',
+        JSON.stringify({ positionalArgs: [] }),
+        Date.now(),
+        'portable_json',
+      ],
+    );
+
+    const queuedHandle = DBOS.retrieveWorkflow(queuedId);
+    const queuedResult = await queuedHandle.getResult();
+    expect(queuedResult).toBeNull();
+  });
+
+  test('test-direct-insert', async () => {
+    const id = randomUUID();
+    await systemDBClient.query(
+      `
+      INSERT INTO dbos.workflow_status(
+        workflow_uuid,
+        name,
+        class_name,
+        queue_name,
+        status,
+        inputs,
+        created_at,
+        serialization
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8);
+      `,
+      [
+        id,
+        'workflowPortable',
+        'workflows',
+        'testq',
+        'ENQUEUED',
+        JSON.stringify({ positionalArgs: ['s', 1, { k: 'k', v: ['v'] }] }),
+        Date.now(),
+        'portable_json',
+      ],
+    );
+
+    await systemDBClient.query(
+      `
+      INSERT INTO dbos.notifications(
+        destination_uuid,
+        topic,
+        message,
+        serialization
+      )
+      VALUES ($1, $2, $3, $4);
+    `,
+      [id, 'incoming', JSON.stringify('M'), 'portable_json'],
+    );
+
+    // This is cheating, but we tested it above
+    const wfh = DBOS.retrieveWorkflow(id);
+    const res = await wfh.getResult();
+    expect(res).toBe('s-1-k:v@"M"');
+  });
+
+  test('test-invalid-json-input', async () => {
+    // Insert a workflow with unparseable JSON in the inputs column
+    const id = randomUUID();
+    await systemDBClient.query(
+      `
+      INSERT INTO dbos.workflow_status(
+        workflow_uuid, name, class_name, queue_name,
+        status, inputs, created_at, serialization
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8);
+      `,
+      [id, 'simplePortWorkflow', 'workflows', 'testq', 'ENQUEUED', 'not valid json{{', Date.now(), 'portable_json'],
+    );
+
+    // The queue poller picks this up, changes status to PENDING, then
+    // deserializePositionalArgs throws a SyntaxError. The error is now
+    // caught in executeWorkflowId which records it as ERROR status
+    // (previously, the workflow would be stuck in PENDING forever).
+    const wfh = DBOS.retrieveWorkflow(id);
+    await expect(wfh.getResult()).rejects.toThrow();
+
+    const result = await readStatusRow(systemDBClient, id);
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0].status).toBe('ERROR');
+    expect(result.rows[0].error).toBeDefined();
+  });
+
+  test('test-mismatched-args-input', async () => {
+    // Insert a workflow with valid JSON but wrong argument types.
+    // simplePortWorkflow expects (s: string, x: number, o: {k: string, v: string[]})
+    // We provide [123, "not_a_number", "not_an_object"].
+    const id = randomUUID();
+    await systemDBClient.query(
+      `
+      INSERT INTO dbos.workflow_status(
+        workflow_uuid, name, class_name, queue_name,
+        status, inputs, created_at, serialization
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8);
+      `,
+      [
+        id,
+        'simplePortWorkflow',
+        'workflows',
+        'testq',
+        'ENQUEUED',
+        JSON.stringify({ positionalArgs: [123, 'not_a_number', 'not_an_object'] }),
+        Date.now(),
+        'portable_json',
+      ],
+    );
+
+    // The JSON parses fine, but when the workflow function tries o.v.join(','),
+    // it crashes because 'not_an_object' is a string, not an object with a v property.
+    // Unlike invalid JSON, this error occurs INSIDE the workflow execution,
+    // so the workflow machinery catches it and records an ERROR status.
+    const wfh = DBOS.retrieveWorkflow(id);
+    await expect(wfh.getResult()).rejects.toThrow();
+
+    const result = await readStatusRow(systemDBClient, id);
+    expect(result.rows[0].status).toBe('ERROR');
+    expect(result.rows[0].error).toBeDefined();
+  });
+
+  test('test-input-schema-rejects-bad-input', async () => {
+    // validatedWorkflow has inputSchema: z.tuple([z.string(), z.number(), z.object({...})])
+    // Insert with wrong types — the Zod schema should reject them with a clear error.
+    const id = randomUUID();
+    await systemDBClient.query(
+      `
+      INSERT INTO dbos.workflow_status(
+        workflow_uuid, name, class_name, queue_name,
+        status, inputs, created_at, serialization
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8);
+      `,
+      [
+        id,
+        'validatedWorkflow',
+        'workflows',
+        'testq',
+        'ENQUEUED',
+        JSON.stringify({ positionalArgs: [123, 'not_a_number', 'not_an_object'] }),
+        Date.now(),
+        'portable_json',
+      ],
+    );
+
+    // With inputSchema, the error is a ZodError with a clear validation message,
+    // not a cryptic runtime crash from within the workflow function.
+    const wfh = DBOS.retrieveWorkflow(id);
+    await expect(wfh.getResult()).rejects.toThrow();
+
+    const result = await readStatusRow(systemDBClient, id);
+    expect(result.rows[0].status).toBe('ERROR');
+    // The error should contain Zod validation details
+    expect(result.rows[0].error).toBeDefined();
+    expect(result.rows[0].error).toContain('expected string');
+  });
+
+  test('test-input-schema-valid-input', async () => {
+    // validatedWorkflow with correct types — should pass validation and succeed.
+    const id = randomUUID();
+    await systemDBClient.query(
+      `
+      INSERT INTO dbos.workflow_status(
+        workflow_uuid, name, class_name, queue_name,
+        status, inputs, created_at, serialization
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8);
+      `,
+      [
+        id,
+        'validatedWorkflow',
+        'workflows',
+        'testq',
+        'ENQUEUED',
+        JSON.stringify({ positionalArgs: ['hello', 42, { k: 'key', v: ['a', 'b'] }] }),
+        Date.now(),
+        'portable_json',
+      ],
+    );
+
+    const wfh = DBOS.retrieveWorkflow(id);
+    const res = await wfh.getResult();
+    expect(res).toBe('hello-42-key:a,b');
+  });
+
+  test('test-input-schema-coercion', async () => {
+    // dateWorkflow has inputSchema: z.tuple([z.coerce.date()])
+    // Insert an ISO date string — Zod should coerce it to a Date object.
+    const isoDate = '2025-06-15T12:00:00.000Z';
+    const id = randomUUID();
+    await systemDBClient.query(
+      `
+      INSERT INTO dbos.workflow_status(
+        workflow_uuid, name, class_name, queue_name,
+        status, inputs, created_at, serialization
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8);
+      `,
+      [
+        id,
+        'dateWorkflow',
+        'workflows',
+        'testq',
+        'ENQUEUED',
+        JSON.stringify({ positionalArgs: [isoDate] }),
+        Date.now(),
+        'portable_json',
+      ],
+    );
+
+    const wfh = DBOS.retrieveWorkflow(id);
+    const res = await wfh.getResult();
+    // The workflow receives a real Date object (coerced from the ISO string)
+    // and returns its ISO string representation.
+    expect(res).toBe(`date:${isoDate}`);
+  });
+
+  test('test-input-schema-date-roundtrip', async () => {
+    // Full round-trip: enqueue with a real Date → portable JSON serializes it
+    // to an ISO string → queue poller deserializes → Zod coerces string back to Date.
+    const testDate = new Date('2025-06-15T12:00:00.000Z');
+    const wfh = await DBOS.startWorkflow(dateWorkflow, { queueName: 'testq' })(testDate);
+    const res = await wfh.getResult();
+    expect(res).toBe(`date:${testDate.toISOString()}`);
+
+    // Verify the inputs column in the DB stored the date as a string (portable JSON),
+    // not as a Date object — confirming the coercion happened on the way back in.
+    const dbRow = await readStatusRow(systemDBClient, wfh.workflowID);
+    expect(dbRow.rows[0].serialization).toBe('portable_json');
+    const storedInputs = JSON.parse(dbRow.rows[0].inputs) as JsonWorkflowArgs;
+    // Portable JSON stores the Date as an ISO string
+    expect(typeof storedInputs.positionalArgs?.[0]).toBe('string');
+    expect(storedInputs.positionalArgs?.[0]).toBe(testDate.toISOString());
+  });
+
+  test('test-input-schema-direct-invocation', async () => {
+    // Verify inputSchema validation also works on direct (non-queue) invocation.
+    // validatedWorkflow should succeed with correct args.
+    const res = await validatedWorkflow('hello', 42, { k: 'key', v: ['a', 'b'] });
+    expect(res).toBe('hello-42-key:a,b');
+
+    // dateWorkflow should coerce a string to Date on direct invocation too.
+    const isoDate = '2025-06-15T12:00:00.000Z';
+    const dateRes = await dateWorkflow(isoDate as unknown as Date);
+    expect(dateRes).toBe(`date:${isoDate}`);
+  });
+
+  test('test-portable-client', async () => {
+    const client = await DBOSClient.create({ systemDatabaseUrl: config.systemDatabaseUrl! });
+    const queueName = 'test-portable-client-queue';
+    try {
+      await client.registerQueue(queueName);
+      for (const calltype of ['regular', 'portable']) {
+        // Run WF with custom serialization
+        const wfhr = await client.enqueue<typeof simpleRecv>(
+          {
+            workflowName: 'simpleRecv',
+            queueName,
+            serializationType: 'portable',
+          },
+          'portable',
+        );
+        let wfhs: WorkflowHandle<string>;
+        if (calltype === 'portable') {
+          wfhs = await client.enqueuePortable<string>(
+            {
+              workflowName: 'workflowDef',
+              workflowClassName: 'workflows',
+              queueName,
+            },
+            ['s', 1, { k: 'k', v: ['v'] }, wfhr.workflowID],
+          );
+        } else {
+          wfhs = await client.enqueue<typeof defWorkflow>(
+            {
+              workflowName: 'workflowDef',
+              workflowClassName: 'workflows',
+              queueName,
+              serializationType: 'portable',
+            },
+            's',
+            1,
+            { k: 'k', v: ['v'] },
+            wfhr.workflowID,
+          );
+        }
+        await client.send(wfhs.workflowID, 'm', 'incoming', undefined, { serializationType: 'portable' });
+        expect(await client.getEvent(wfhs.workflowID, 'defstat', 10)).toStrictEqual({ status: 'Happy' });
+        expect(await client.getEvent(wfhs.workflowID, 'nstat', 10)).toStrictEqual({ status: 'Happy' });
+        expect(await client.getEvent(wfhs.workflowID, 'pstat', 10)).toStrictEqual({ status: 'Happy' });
+        const { value: ddread } = await client.readStream(wfhs.workflowID, 'defstream').next();
+        expect(ddread).toStrictEqual({ stream: 'OhYeah' });
+        const { value: dnread } = await client.readStream(wfhs.workflowID, 'nstream').next();
+        expect(dnread).toStrictEqual({ stream: 'OhYeah' });
+        const { value: dpread } = await client.readStream(wfhs.workflowID, 'pstream').next();
+        expect(dpread).toStrictEqual({ stream: 'OhYeah' });
+        const rvs = await wfhs.getResult();
+        expect(rvs).toBe('s-1-k:v@"m"');
+        expect(await wfhr.getResult()).toStrictEqual({ message: 'Hello!' });
+
+        // Snoop the DB to make sure serialization format is correct
+        // WF
+        const pser = await readStatusRow(systemDBClient, wfhs.workflowID);
+        expect(pser.rows[0].serialization).toBe(DBOSPortableJSON.name());
+        expect(pser.rows[0].output).toBe('"s-1-k:v@\\"m\\""');
+
+        // Messages
+        await checkMsgSer(wfhr.workflowID, 'default', DBOSPortableJSON.name());
+        await checkMsgSer(wfhr.workflowID, 'native', DBOSJSON.name());
+        //await checkMsgSer(drdwfh.workflowID, 'portable', DBOSPortableJSON.name()); // This got deleted
+
+        // Events
+        await checkEvtSer(wfhs.workflowID, 'defstat', DBOSPortableJSON.name());
+        await checkEvtSer(wfhs.workflowID, 'nstat', DBOSJSON.name());
+        await checkEvtSer(wfhs.workflowID, 'pstat', DBOSPortableJSON.name());
+
+        // Streams
+        await checkStreamSer(wfhs.workflowID, 'defstream', DBOSPortableJSON.name());
+        await checkStreamSer(wfhs.workflowID, 'nstream', DBOSJSON.name());
+        await checkStreamSer(wfhs.workflowID, 'pstream', DBOSPortableJSON.name());
+      }
+    } finally {
+      await client.destroy();
+    }
+  });
+});
+
+// Workflows for custom-serializer-restart tests (registered at module level)
+const custSerWorkflow = DBOS.registerWorkflow(
+  async (input: string) => {
+    await DBOS.setEvent('key', input);
+    return `result:${input}`;
+  },
+  { name: 'custSerWorkflow' },
+);
+
+const custSerErrorWorkflow = DBOS.registerWorkflow(
+  async (msg: string) => {
+    return Promise.reject(new Error(msg));
+  },
+  { name: 'custSerErrorWorkflow' },
+);
+
+describe('custom-serializer-restart-tests', () => {
+  const base64Serializer: DBOSSerializer = {
+    name: () => 'custom_base64',
+    parse: (text: string | null | undefined): unknown => {
+      if (text === null || text === undefined) return null;
+      return JSON.parse(Buffer.from(text, 'base64').toString());
+    },
+    stringify: (obj: unknown): string => {
+      if (obj === undefined) obj = null;
+      return Buffer.from(JSON.stringify(obj)).toString('base64');
+    },
+  };
+
+  let config: DBOSConfig;
+  let systemDBClient: Client;
+
+  beforeAll(() => {
+    config = generateDBOSTestConfig();
+  });
+
+  afterEach(async () => {
+    if (systemDBClient) {
+      await systemDBClient.end();
+    }
+    await DBOS.shutdown();
+  });
+
+  test('test-add-custom-serializer-reads-old-data', async () => {
+    // Phase 1: Launch with default serializer, run workflows
+    process.env.DBOS__APPVERSION = 'v0';
+    await setUpDBOSTestSysDb(config);
+    config.serializer = undefined;
+    DBOS.setConfig(config);
+    await DBOS.launch();
+
+    systemDBClient = new Client({ connectionString: config.systemDatabaseUrl });
+    await systemDBClient.connect();
+
+    const p1Handle = await DBOS.startWorkflow(custSerWorkflow)('hello');
+    expect(await p1Handle.getResult()).toBe('result:hello');
+    expect(await DBOS.getEvent(p1Handle.workflowID, 'key')).toBe('hello');
+
+    const p1ErrHandle = await DBOS.startWorkflow(custSerErrorWorkflow)('phase1-oops');
+    await expect(p1ErrHandle.getResult()).rejects.toThrow('phase1-oops');
+
+    // Verify DB stores default serialization format
+    const p1Status = await readStatusRow(systemDBClient, p1Handle.workflowID);
+    expect(p1Status.rows[0].serialization).toBe(DBOSJSON.name());
+
+    await DBOS.shutdown();
+
+    // Phase 2: Relaunch with custom serializer
+    config.serializer = base64Serializer;
+    DBOS.setConfig(config);
+    await DBOS.launch();
+
+    // Old data (js_superjson) should still be readable via DBOS API
+    expect(await DBOS.retrieveWorkflow(p1Handle.workflowID).getResult()).toBe('result:hello');
+    expect(await DBOS.getEvent(p1Handle.workflowID, 'key')).toBe('hello');
+    await expect(DBOS.retrieveWorkflow(p1ErrHandle.workflowID).getResult()).rejects.toThrow('phase1-oops');
+
+    // Old data should also be readable via DBOSClient with the custom serializer
+    const client = await DBOSClient.create({
+      systemDatabaseUrl: config.systemDatabaseUrl!,
+      serializer: base64Serializer,
+    });
+    expect(await client.retrieveWorkflow(p1Handle.workflowID).getResult()).toBe('result:hello');
+    expect(await client.getEvent(p1Handle.workflowID, 'key')).toBe('hello');
+
+    // New workflows should use the custom serializer
+    const p2Handle = await DBOS.startWorkflow(custSerWorkflow)('world');
+    expect(await p2Handle.getResult()).toBe('result:world');
+    expect(await DBOS.getEvent(p2Handle.workflowID, 'key')).toBe('world');
+
+    // Client should also read new custom-serialized data
+    expect(await client.retrieveWorkflow(p2Handle.workflowID).getResult()).toBe('result:world');
+    expect(await client.getEvent(p2Handle.workflowID, 'key')).toBe('world');
+    await client.destroy();
+
+    // Verify DB stores custom serialization format
+    const p2Status = await readStatusRow(systemDBClient, p2Handle.workflowID);
+    expect(p2Status.rows[0].serialization).toBe('custom_base64');
+    expect(p2Status.rows[0].output).toBe(base64Serializer.stringify('result:world'));
+
+    const p2Evt = await systemDBClient.query<workflow_events>(
+      'SELECT * FROM dbos.workflow_events WHERE workflow_uuid = $1 AND key = $2',
+      [p2Handle.workflowID, 'key'],
+    );
+    expect(p2Evt.rows[0].serialization).toBe('custom_base64');
+
+    process.env.DBOS__APPVERSION = undefined;
+  });
+
+  test('test-remove-custom-serializer-errors', async () => {
+    // Phase 1: Launch with custom serializer, create data
+    process.env.DBOS__APPVERSION = 'v0';
+    await setUpDBOSTestSysDb(config);
+    config.serializer = base64Serializer;
+    DBOS.setConfig(config);
+    await DBOS.launch();
+
+    systemDBClient = new Client({ connectionString: config.systemDatabaseUrl });
+    await systemDBClient.connect();
+
+    // Insert a default-format (js_superjson) workflow directly for comparison,
+    // since we can't run both serializers in one launch
+    const defaultWfId = randomUUID();
+    await systemDBClient.query(
+      `INSERT INTO dbos.workflow_status(
+        workflow_uuid, name, class_name, status, output, created_at, serialization
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [
+        defaultWfId,
+        'custSerWorkflow',
+        '',
+        'SUCCESS',
+        DBOSJSON.stringify('result:default'),
+        Date.now(),
+        DBOSJSON.name(),
+      ],
+    );
+    await systemDBClient.query(
+      `INSERT INTO dbos.workflow_events(
+        workflow_uuid, key, value, serialization
+      ) VALUES ($1, $2, $3, $4)`,
+      [defaultWfId, 'key', DBOSJSON.stringify('default'), DBOSJSON.name()],
+    );
+
+    // Run workflows with custom serializer
+    const custHandle = await DBOS.startWorkflow(custSerWorkflow)('custom');
+    expect(await custHandle.getResult()).toBe('result:custom');
+    expect(await DBOS.getEvent(custHandle.workflowID, 'key')).toBe('custom');
+
+    const custErrHandle = await DBOS.startWorkflow(custSerErrorWorkflow)('custom-oops');
+    await expect(custErrHandle.getResult()).rejects.toThrow('custom-oops');
+
+    await DBOS.shutdown();
+
+    // Phase 2: Relaunch WITHOUT custom serializer
+    config.serializer = undefined;
+    DBOS.setConfig(config);
+    await DBOS.launch();
+
+    // Default-format data should still be readable
+    expect(await DBOS.retrieveWorkflow(defaultWfId).getResult()).toBe('result:default');
+    expect(await DBOS.getEvent(defaultWfId, 'key')).toBe('default');
+
+    // Custom-format workflow result should throw TypeError
+    await expect(DBOS.retrieveWorkflow(custHandle.workflowID).getResult()).rejects.toThrow('is not available');
+    // Custom-format event should throw TypeError
+    await expect(DBOS.getEvent(custHandle.workflowID, 'key')).rejects.toThrow('is not available');
+    // Custom-format error workflow should throw TypeError (not the original error)
+    await expect(DBOS.retrieveWorkflow(custErrHandle.workflowID).getResult()).rejects.toThrow('is not available');
+
+    // DBOSClient without the serializer should behave equivalently
+    const client = await DBOSClient.create({ systemDatabaseUrl: config.systemDatabaseUrl! });
+
+    // Default-format data readable via client too
+    expect(await client.retrieveWorkflow(defaultWfId).getResult()).toBe('result:default');
+    expect(await client.getEvent(defaultWfId, 'key')).toBe('default');
+
+    // Custom-format data: client getResult/getEvent throw TypeError
+    await expect(client.retrieveWorkflow(custHandle.workflowID).getResult()).rejects.toThrow('is not available');
+    await expect(client.getEvent(custHandle.workflowID, 'key')).rejects.toThrow('is not available');
+
+    // listWorkflows falls back to raw strings for custom data (both DBOS and client)
+    const allWorkflows = await DBOS.listWorkflows({});
+    const custListed = allWorkflows.find((w) => w.workflowID === custHandle.workflowID);
+    expect(custListed).toBeDefined();
+    expect(custListed!.output).toBe(base64Serializer.stringify('result:custom'));
+    const defaultListed = allWorkflows.find((w) => w.workflowID === defaultWfId);
+    expect(defaultListed).toBeDefined();
+    expect(defaultListed!.output).toBe('result:default');
+
+    const clientWorkflows = await client.listWorkflows({});
+    const clientCustListed = clientWorkflows.find((w) => w.workflowID === custHandle.workflowID);
+    expect(clientCustListed).toBeDefined();
+    expect(clientCustListed!.output).toBe(base64Serializer.stringify('result:custom'));
+    const clientDefaultListed = clientWorkflows.find((w) => w.workflowID === defaultWfId);
+    expect(clientDefaultListed).toBeDefined();
+    expect(clientDefaultListed!.output).toBe('result:default');
+
+    await client.destroy();
+
+    // listWorkflowSteps for custom-format workflow should also fall back
+    const custSteps = await DBOS.listWorkflowSteps(custHandle.workflowID);
+    expect(custSteps).toBeDefined();
+    const setEventStep = custSteps!.find((s) => s.name.includes('setEvent'));
+    expect(setEventStep).toBeDefined();
+
+    process.env.DBOS__APPVERSION = undefined;
+  });
+
+  test('test-recv-getevent-preserve-serialization-on-replay', async () => {
+    // Under the base64 global serializer, replayed recv/getEvent must use the stored portable format or deserialization throws.
+    process.env.DBOS__APPVERSION = 'v0';
+    await setUpDBOSTestSysDb(config);
+    config.serializer = base64Serializer;
+    DBOS.setConfig(config);
+    await DBOS.launch();
+
+    systemDBClient = new Client({ connectionString: config.systemDatabaseUrl });
+    await systemDBClient.connect();
+
+    // --- getEvent path ---
+    const setter = await DBOS.startWorkflow(portableEventSetterWF)('event-payload');
+    await setter.getResult();
+    // Sanity check: the event was stored in portable format, not base64.
+    const evtRow = await systemDBClient.query<workflow_events>(
+      `SELECT * FROM dbos.workflow_events WHERE workflow_uuid = $1 AND key = $2`,
+      [setter.workflowID, 'evt'],
+    );
+    expect(evtRow.rows[0].serialization).toBe(DBOSPortableJSON.name());
+
+    const getter = await DBOS.startWorkflow(eventGetterWF)(setter.workflowID);
+    expect(await getter.getResult()).toBe('event-payload');
+    // Replay the getter: getEvent hits OAOO and must still return the value.
+    const reGetter = await reexecuteWorkflowById(getter.workflowID);
+    expect(await reGetter?.getResult()).toBe('event-payload');
+
+    // --- recv path ---
+    const receiver = await DBOS.startWorkflow(portableRecvWF)();
+    await DBOS.send(receiver.workflowID, 'msg-payload', 'topic', undefined, { serializationType: 'portable' });
+    expect(await receiver.getResult()).toBe('msg-payload');
+    // Replay the receiver: recv hits OAOO and must still return the message.
+    const reReceiver = await reexecuteWorkflowById(receiver.workflowID);
+    expect(await reReceiver?.getResult()).toBe('msg-payload');
+
+    process.env.DBOS__APPVERSION = undefined;
+  });
+});
+
+// Workflows for async-serializer tests (registered at module level)
+const asyncSerWorkflow = DBOS.registerWorkflow(
+  async (input: string, peerWfId?: string) => {
+    await DBOS.setEvent('key', input);
+    if (peerWfId) {
+      await DBOS.send(peerWfId, { msg: `from-${input}` }, 'topic');
+    }
+    return `result:${input}`;
+  },
+  { name: 'asyncSerWorkflow' },
+);
+
+const asyncRecvWorkflow = DBOS.registerWorkflow(
+  async () => {
+    const m = await DBOS.recv<{ msg: string }>('topic', 10);
+    return m?.msg ?? 'none';
+  },
+  { name: 'asyncRecvWorkflow' },
+);
+
+const asyncSerErrorWorkflow = DBOS.registerWorkflow(
+  async (msg: string) => {
+    return Promise.reject(new Error(msg));
+  },
+  { name: 'asyncSerErrorWorkflow' },
+);
+
+const asyncStreamWorkflow = DBOS.registerWorkflow(
+  async () => {
+    await DBOS.writeStream('s', { msg: 'first' });
+    await DBOS.writeStream('s', { msg: 'second' });
+    await DBOS.closeStream('s');
+    return 'streamed';
+  },
+  { name: 'asyncStreamWorkflow' },
+);
+
+const _asyncEnqueueWorkflow = DBOS.registerWorkflow(
+  async (input: string) => {
+    await Promise.resolve();
+    return `enqueued:${input}`;
+  },
+  { name: 'asyncEnqueueWorkflow' },
+);
+
+const asyncScheduledResults: { dates: Date[]; contexts: unknown[] } = { dates: [], contexts: [] };
+async function asyncScheduledFn(scheduledDate: Date, context: unknown) {
+  asyncScheduledResults.dates.push(scheduledDate);
+  asyncScheduledResults.contexts.push(context);
+  await Promise.resolve();
+}
+const asyncScheduledWorkflow = DBOS.registerWorkflow(asyncScheduledFn, { name: 'asyncScheduledWorkflow' });
+
+describe('async-serializer-tests', () => {
+  // A serializer that genuinely returns Promises — both stringify and parse
+  // await a microtask before resolving. This catches missing awaits in DBOS
+  // code paths: any unawaited call would surface as `[object Promise]` in the
+  // database or fail to deserialize.
+  let stringifyCalls = 0;
+  let parseCalls = 0;
+  const asyncBase64Serializer: DBOSSerializer = {
+    name: () => 'async_base64',
+    parse: async (text: string | null | undefined): Promise<unknown> => {
+      parseCalls += 1;
+      await Promise.resolve();
+      if (text === null || text === undefined) return null;
+      return JSON.parse(Buffer.from(text, 'base64').toString());
+    },
+    stringify: async (obj: unknown): Promise<string> => {
+      stringifyCalls += 1;
+      await Promise.resolve();
+      if (obj === undefined) obj = null;
+      return Buffer.from(JSON.stringify(obj)).toString('base64');
+    },
+  };
+
+  let config: DBOSConfig;
+  let systemDBClient: Client;
+
+  beforeAll(() => {
+    config = generateDBOSTestConfig();
+  });
+
+  beforeEach(() => {
+    stringifyCalls = 0;
+    parseCalls = 0;
+  });
+
+  afterEach(async () => {
+    if (systemDBClient) {
+      await systemDBClient.end();
+    }
+    await DBOS.shutdown();
+  });
+
+  test('async-serializer round-trips inputs, results, events, send/recv', async () => {
+    await setUpDBOSTestSysDb(config);
+    config.serializer = asyncBase64Serializer;
+    DBOS.setConfig(config);
+    await DBOS.launch();
+
+    systemDBClient = new Client({ connectionString: config.systemDatabaseUrl });
+    await systemDBClient.connect();
+
+    // Start a receiver, then run a sender that setEvents and sends to the receiver.
+    const receiver = await DBOS.startWorkflow(asyncRecvWorkflow)();
+    const sender = await DBOS.startWorkflow(asyncSerWorkflow)('hello', receiver.workflowID);
+
+    // Result, event, and the received message must all round-trip cleanly.
+    expect(await sender.getResult()).toBe('result:hello');
+    expect(await DBOS.getEvent<string>(sender.workflowID, 'key')).toBe('hello');
+    expect(await receiver.getResult()).toBe('from-hello');
+
+    // The async serializer must actually have been invoked.
+    expect(stringifyCalls).toBeGreaterThan(0);
+    expect(parseCalls).toBeGreaterThan(0);
+
+    // The DB must store base64-encoded values, not '[object Promise]'.
+    const status = await readStatusRow(systemDBClient, sender.workflowID);
+    expect(status.rows[0].serialization).toBe('async_base64');
+    expect(status.rows[0].output).toBe(await asyncBase64Serializer.stringify('result:hello'));
+    expect(status.rows[0].output).not.toContain('[object Promise]');
+
+    // listWorkflows / listWorkflowSteps must also resolve through the async parser.
+    const listed = (await DBOS.listWorkflows({})).find((w) => w.workflowID === sender.workflowID);
+    expect(listed?.output).toBe('result:hello');
+
+    const steps = await DBOS.listWorkflowSteps(sender.workflowID);
+    expect(steps).toBeDefined();
+    expect(steps!.some((s) => s.name.includes('setEvent'))).toBe(true);
+  });
+
+  test('async-serializer surfaces workflow errors', async () => {
+    await setUpDBOSTestSysDb(config);
+    config.serializer = asyncBase64Serializer;
+    DBOS.setConfig(config);
+    await DBOS.launch();
+
+    const errHandle = await DBOS.startWorkflow(asyncSerErrorWorkflow)('boom');
+    await expect(errHandle.getResult()).rejects.toThrow('boom');
+  });
+
+  test('async-serializer round-trips through DBOSClient', async () => {
+    await setUpDBOSTestSysDb(config);
+    config.serializer = asyncBase64Serializer;
+    DBOS.setConfig(config);
+    await DBOS.launch();
+    await DBOS.registerQueue('async-client-q', { onConflict: 'always_update' });
+
+    const client = await DBOSClient.create({
+      systemDatabaseUrl: config.systemDatabaseUrl!,
+      serializer: asyncBase64Serializer,
+    });
+    try {
+      // client.send + workflow.recv: covers serializeValue on the client path.
+      const receiver = await DBOS.startWorkflow(asyncRecvWorkflow)();
+      await client.send(receiver.workflowID, { msg: 'from-client' }, 'topic');
+      expect(await receiver.getResult()).toBe('from-client');
+
+      // setEvent inside a workflow + client.getEvent: client.getEvent must
+      // await deserializeValue (this was one of the bugs).
+      const sender = await DBOS.startWorkflow(asyncSerWorkflow)('hello-client');
+      expect(await sender.getResult()).toBe('result:hello-client');
+      const evt = await client.getEvent<string>(sender.workflowID, 'key');
+      expect(evt).toBe('hello-client');
+      expect(typeof (evt as unknown as { then?: unknown })?.then).not.toBe('function');
+
+      // client.readStream covers deserializeValue inside an async generator —
+      // an unawaited call would yield a Promise instead of the value.
+      const streamWf = await DBOS.startWorkflow(asyncStreamWorkflow)();
+      await streamWf.getResult();
+      const values: { msg: string }[] = [];
+      for await (const v of client.readStream<{ msg: string }>(streamWf.workflowID, 's')) {
+        values.push(v);
+      }
+      expect(values).toEqual([{ msg: 'first' }, { msg: 'second' }]);
+      for (const v of values) {
+        expect(typeof (v as unknown as { then?: unknown })?.then).not.toBe('function');
+      }
+
+      // client.enqueue + handle.getResult: covers serializeArgs on the client
+      // path and reviveResultOrError for the result.
+      const enqHandle = await client.enqueue<typeof _asyncEnqueueWorkflow>(
+        { workflowName: 'asyncEnqueueWorkflow', queueName: 'async-client-q' },
+        'payload',
+      );
+      expect(await enqHandle.getResult()).toBe('enqueued:payload');
+
+      expect(stringifyCalls).toBeGreaterThan(0);
+      expect(parseCalls).toBeGreaterThan(0);
+    } finally {
+      await client.destroy();
+    }
+  });
+
+  test('async-serializer round-trips schedule context (trigger + backfill)', async () => {
+    await setUpDBOSTestSysDb(config);
+    config.serializer = asyncBase64Serializer;
+    DBOS.setConfig(config);
+    await DBOS.launch();
+
+    asyncScheduledResults.dates = [];
+    asyncScheduledResults.contexts = [];
+
+    const ctx = { source: 'async-schedule', nested: { v: 42 } };
+    await DBOS.createSchedule({
+      scheduleName: 'async-sched',
+      workflowFn: asyncScheduledWorkflow,
+      // Hourly so backfill produces multiple firings in a small window. The
+      // far-past window prevents the live scheduler from firing concurrently.
+      schedule: '0 * * * *',
+      context: ctx,
+    });
+    // Pause to keep the live scheduler loop from firing concurrently.
+    await DBOS.pauseSchedule('async-sched');
+
+    // listSchedules / getSchedule both parse the persisted context through
+    // the async serializer.
+    const listed = await DBOS.listSchedules();
+    const me = listed.find((s) => s.scheduleName === 'async-sched');
+    expect(me?.context).toEqual(ctx);
+    const got = await DBOS.getSchedule('async-sched');
+    expect(got?.context).toEqual(ctx);
+
+    // triggerSchedule: parses the stored context, then re-serializes it as
+    // workflow input. The fired workflow must receive the deserialized object.
+    const trigHandle = await DBOS.triggerSchedule('async-sched');
+    await trigHandle.getResult();
+    expect(asyncScheduledResults.contexts.length).toBe(1);
+    expect(asyncScheduledResults.contexts[0]).toEqual(ctx);
+
+    // backfillSchedule was the bug site — an unawaited parse would pass a
+    // Promise as `context` to enqueueScheduledWorkflow, which then serializes
+    // {} (Promises stringify to "{}") as the workflow input.
+    asyncScheduledResults.dates = [];
+    asyncScheduledResults.contexts = [];
+    // nextWakeupTime is strictly after `current`; loop ends when next >= end.
+    // Window 00:00 → 03:00:01 gives firings at 01:00, 02:00, 03:00.
+    const start = new Date(2025, 0, 1, 0, 0, 0);
+    const end = new Date(2025, 0, 1, 3, 0, 1);
+    const handles = await DBOS.backfillSchedule('async-sched', start, end);
+    expect(handles.length).toBe(3);
+    for (const h of handles) {
+      await h.getResult();
+    }
+    expect(asyncScheduledResults.contexts.length).toBe(3);
+    for (const received of asyncScheduledResults.contexts) {
+      expect(received).toEqual(ctx);
+      expect(typeof (received as { then?: unknown })?.then).not.toBe('function');
+    }
+
+    await DBOS.deleteSchedule('async-sched');
   });
 });
