@@ -1,6 +1,13 @@
 import { StatusString, WorkflowHandle, DBOS, ConfiguredInstance, DBOSClient } from '../src';
 import { DBOSConfig, DBOSExecutor, DBOS_QUEUE_MAX_PRIORITY, DBOS_QUEUE_MIN_PRIORITY } from '../src/dbos-executor';
-import { QueueParameters, QueueRateLimit, registerInternalQueue, wfQueueRunner, WorkflowQueue } from '../src/wfqueue';
+import {
+  isPartitionedQueue,
+  QueueParameters,
+  QueueRateLimit,
+  registerInternalQueue,
+  wfQueueRunner,
+  WorkflowQueue,
+} from '../src/wfqueue';
 import {
   generateDBOSTestConfig,
   setUpDBOSTestSysDb,
@@ -700,7 +707,7 @@ describe('queued-wf-tests-simple', () => {
     static blockingEvent = new Event();
     static queue: QueueRef = {
       name: 'TestResumeQueuesPartitioned',
-      config: { concurrency: 1, partitionQueue: true, ...testPolling },
+      config: { partitionConcurrency: 1, ...testPolling },
     };
 
     @DBOS.workflow()
@@ -1877,11 +1884,11 @@ describe('queue-time-outs', () => {
   const partitionWaitingEvent = new Event();
   const partitionQueue: QueueRef = {
     name: 'partition-queue',
-    config: { partitionQueue: true, concurrency: 1, ...testPolling },
+    config: { partitionConcurrency: 1, ...testPolling },
   };
   const partitionWorkerConcurrencyQueue: QueueRef = {
     name: 'partition-worker-concurrency-queue',
-    config: { partitionQueue: true, workerConcurrency: 1, ...testPolling },
+    config: { partitionWorkerConcurrency: 1, ...testPolling },
   };
 
   const partitionBlockedWorkflow = DBOS.registerWorkflow(
@@ -2275,6 +2282,15 @@ describe('database-backed-queue-crud', () => {
 
   test('register-retrieve-delete-and-conflict-resolution', async () => {
     const queueName = `test_crud_queue_${randomUUID()}`;
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    // The columns behind the removed priorityEnabled/partitionQueue options are still written.
+    const storedFlags = async () => {
+      const { rows } = await sysdb.pool.query<{ priority_enabled: boolean; partition_queue: boolean }>(
+        `SELECT priority_enabled, partition_queue FROM "${sysdb.schemaName}".queues WHERE name = $1`,
+        [queueName],
+      );
+      return rows[0];
+    };
 
     expect(await DBOS.retrieveQueue(queueName)).toBeNull();
 
@@ -2282,7 +2298,6 @@ describe('database-backed-queue-crud', () => {
       concurrency: 10,
       rateLimit: { limitPerPeriod: 5, periodSec: 1.5 },
       workerConcurrency: 2,
-      priorityEnabled: true,
       partitionConcurrency: 3,
       partitionWorkerConcurrency: 2,
       partitionRateLimit: { limitPerPeriod: 4, periodSec: 2.5 },
@@ -2299,12 +2314,12 @@ describe('database-backed-queue-crud', () => {
     expect(retrieved!.concurrency).toBe(10);
     expect(retrieved!.workerConcurrency).toBe(2);
     expect(retrieved!.rateLimit).toEqual({ limitPerPeriod: 5, periodSec: 1.5 });
-    expect(retrieved!.priorityEnabled).toBe(true);
     expect(retrieved!.partitionConcurrency).toBe(3);
     expect(retrieved!.partitionWorkerConcurrency).toBe(2);
     expect(retrieved!.partitionRateLimit).toEqual({ limitPerPeriod: 4, periodSec: 2.5 });
-    // Any per-partition limit partitions the queue, without the deprecated flag.
-    expect(retrieved!.partitionQueue).toBe(true);
+    // Any per-partition limit partitions the queue.
+    expect(isPartitionedQueue(retrieved!)).toBe(true);
+    expect(await storedFlags()).toEqual({ priority_enabled: true, partition_queue: true });
     expect(retrieved!.minPollingIntervalMs).toBe(2500);
     expect(retrieved!.databaseBacked).toBe(true);
     // The same row reaches the conductor and the dispatcher through listQueues.
@@ -2325,12 +2340,12 @@ describe('database-backed-queue-crud', () => {
     expect(retrieved!.concurrency).toBe(20);
     expect(retrieved!.workerConcurrency).toBeUndefined();
     expect(retrieved!.rateLimit).toBeUndefined();
-    expect(retrieved!.priorityEnabled).toBe(false);
     expect(retrieved!.partitionConcurrency).toBeUndefined();
     expect(retrieved!.partitionWorkerConcurrency).toBeUndefined();
     expect(retrieved!.partitionRateLimit).toBeUndefined();
     // Clearing the limits un-partitions the queue along with them.
-    expect(retrieved!.partitionQueue).toBe(false);
+    expect(isPartitionedQueue(retrieved!)).toBe(false);
+    expect(await storedFlags()).toEqual({ priority_enabled: true, partition_queue: false });
     expect(retrieved!.minPollingIntervalMs).toBe(1000);
 
     // update_if_latest_version updates when the running version is the latest.
@@ -2339,7 +2354,6 @@ describe('database-backed-queue-crud', () => {
     expect(retrieved!.concurrency).toBe(30);
 
     // If a newer registered version exists, update_if_latest_version no-ops.
-    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
     const newerVersion = `newer-${randomUUID()}`;
     await sysdb.createApplicationVersion(newerVersion);
     await sysdb.updateApplicationVersionTimestamp(newerVersion, Date.now() + 1_000_000);
@@ -2357,18 +2371,23 @@ describe('database-backed-queue-crud', () => {
 
   test('dynamic-config-via-setters', async () => {
     const queueName = `test_dyn_queue_${randomUUID()}`;
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    const storedPartitionFlag = async (name: string) => {
+      const { rows } = await sysdb.pool.query<{ partition_queue: boolean }>(
+        `SELECT partition_queue FROM "${sysdb.schemaName}".queues WHERE name = $1`,
+        [name],
+      );
+      return rows[0].partition_queue;
+    };
     const queue = await DBOS.registerQueue(queueName, {
       concurrency: 4,
       workerConcurrency: 2,
-      priorityEnabled: false,
       minPollingIntervalMs: 1000,
     });
 
     await queue.setConcurrency(8);
     await queue.setWorkerConcurrency(3);
     await queue.setRateLimit({ limitPerPeriod: 7, periodSec: 2.0 });
-    await queue.setPriorityEnabled(true);
-    await queue.setPartitionQueue(true);
     await queue.setMinPollingIntervalMs(500);
 
     const fresh = await DBOS.retrieveQueue(queueName);
@@ -2377,52 +2396,46 @@ describe('database-backed-queue-crud', () => {
       expect(q!.concurrency).toBe(8);
       expect(q!.workerConcurrency).toBe(3);
       expect(q!.rateLimit).toEqual({ limitPerPeriod: 7, periodSec: 2.0 });
-      expect(q!.priorityEnabled).toBe(true);
-      expect(q!.partitionQueue).toBe(true);
+      expect(isPartitionedQueue(q!)).toBe(false);
       expect(q!.minPollingIntervalMs).toBe(500);
     }
 
-    // The queue is now in partitionQueue mode, under which all three limits apply per
-    // partition: they read back at that scope, and re-scoping writes are refused.
-    expect(await queue.getGlobalConcurrency()).toBeUndefined();
-    expect(await queue.getWorkerConcurrency()).toBeUndefined();
-    expect(await queue.getRateLimit()).toBeUndefined();
-    expect(await queue.getPartitionConcurrency()).toBe(8);
-    expect(await queue.getPartitionWorkerConcurrency()).toBe(3);
-    expect(await queue.getPartitionRateLimit()).toEqual({ limitPerPeriod: 7, periodSec: 2.0 });
-    await expect(queue.setGlobalConcurrency(5)).rejects.toThrow('deprecated partitionQueue option');
-    await expect(queue.setPartitionConcurrency(1)).rejects.toThrow('deprecated partitionQueue option');
-    // The queue-wide setters are refused too: here they would write a per-partition limit.
-    await expect(queue.setWorkerConcurrency(1)).rejects.toThrow('deprecated partitionQueue option');
-    await expect(queue.setRateLimit(undefined)).rejects.toThrow('deprecated partitionQueue option');
-    expect((await DBOS.retrieveQueue(queueName))!.rateLimit).toEqual({ limitPerPeriod: 7, periodSec: 2.0 });
+    // With no per-partition limit set, every limit reads back at queue-wide scope.
+    expect(await queue.getGlobalConcurrency()).toBe(8);
+    expect(await queue.getWorkerConcurrency()).toBe(3);
+    expect(await queue.getRateLimit()).toEqual({ limitPerPeriod: 7, periodSec: 2.0 });
+    expect(await queue.getPartitionConcurrency()).toBeUndefined();
+    expect(await queue.getPartitionWorkerConcurrency()).toBeUndefined();
+    expect(await queue.getPartitionRateLimit()).toBeUndefined();
 
     // Polling interval must be positive.
     await expect(queue.setMinPollingIntervalMs(0)).rejects.toThrow('minPollingIntervalMs must be positive');
 
-    // Per-partition limits are set on their own queue, since they and partitionQueue mode
-    // are mutually exclusive. Setting one partitions the queue; the queue stays partitioned
+    // Setting a per-partition limit partitions the queue; the queue stays partitioned
     // while any one remains, and un-partitions once the last is cleared.
     const partName = `partition_dyn_queue_${randomUUID()}`;
     const part = await DBOS.registerQueue(partName, { globalConcurrency: 8, workerConcurrency: 3 });
-    expect(part.partitionQueue).toBe(false);
+    expect(isPartitionedQueue(part)).toBe(false);
     await part.setPartitionConcurrency(4);
     await part.setPartitionWorkerConcurrency(2);
     await part.setPartitionRateLimit({ limitPerPeriod: 3, periodSec: 1 });
     expect(await part.getPartitionConcurrency()).toBe(4);
     expect(await part.getPartitionWorkerConcurrency()).toBe(2);
     expect(await part.getPartitionRateLimit()).toEqual({ limitPerPeriod: 3, periodSec: 1 });
-    expect(await part.getPartitionQueue()).toBe(true);
+    expect(isPartitionedQueue((await DBOS.retrieveQueue(partName))!)).toBe(true);
+    expect(await storedPartitionFlag(partName)).toBe(true);
     // A per-partition limit may not exceed its queue-wide counterpart.
     await expect(part.setPartitionConcurrency(100)).rejects.toThrow('less than or equal to globalConcurrency');
     await expect(part.setPartitionWorkerConcurrency(100)).rejects.toThrow('less than or equal to partitionConcurrency');
     await part.setPartitionConcurrency(undefined);
     await part.setPartitionWorkerConcurrency(undefined);
-    expect((await DBOS.retrieveQueue(partName))!.partitionQueue).toBe(true);
+    expect(isPartitionedQueue((await DBOS.retrieveQueue(partName))!)).toBe(true);
     await part.setPartitionRateLimit(undefined);
-    expect((await DBOS.retrieveQueue(partName))!.partitionQueue).toBe(false);
+    expect(isPartitionedQueue((await DBOS.retrieveQueue(partName))!)).toBe(false);
+    // The partition setters keep the persisted flag in step with the limits, as registration does.
+    expect(await storedPartitionFlag(partName)).toBe(false);
 
-    // Off partitionQueue mode the queue-wide setters apply, so they cross-validate and clear.
+    // The queue-wide setters cross-validate against the other limits, and clear.
     await expect(part.setWorkerConcurrency(100)).rejects.toThrow(
       'workerConcurrency must be less than or equal to concurrency',
     );
@@ -2528,12 +2541,12 @@ describe('database-backed-queue-crud', () => {
 
     // A single async getter call refreshes every cached field in one query.
     await q2!.setRateLimit({ limitPerPeriod: 3, periodSec: 1 });
-    await q2!.setPriorityEnabled(true);
+    await q2!.setWorkerConcurrency(4);
     expect(q1!.rateLimit).toBeUndefined();
-    expect(q1!.priorityEnabled).toBe(false);
+    expect(q1!.workerConcurrency).toBeUndefined();
     await q1!.getConcurrency();
     expect(q1!.rateLimit).toEqual({ limitPerPeriod: 3, periodSec: 1 });
-    expect(q1!.priorityEnabled).toBe(true);
+    expect(q1!.workerConcurrency).toBe(4);
 
     // Async getters throw when the row is gone.
     await DBOS.deleteQueue(queueName);
@@ -2541,9 +2554,9 @@ describe('database-backed-queue-crud', () => {
 
     // Internal queues have no row, so their getters return the config they were
     // registered with rather than throwing the way a deleted queue does.
-    const mem = registerInternalQueue('test_internal_cached_getters', { concurrency: 7, priorityEnabled: true });
+    const mem = registerInternalQueue('test_internal_cached_getters', { concurrency: 7, workerConcurrency: 3 });
     expect(await mem.getConcurrency()).toBe(7);
-    expect(await mem.getPriorityEnabled()).toBe(true);
+    expect(await mem.getWorkerConcurrency()).toBe(3);
   });
 
   test('unlistened-queue-runs-after-a-restart-that-listens-to-it', async () => {
@@ -2678,10 +2691,9 @@ describe('partitioned-queue-orphan-pending', () => {
 
   beforeEach(async () => {
     await DBOS.launch();
-    // concurrency=2 keeps this queue on the per-partition sweep loop; only concurrency=1 uses the batched path.
+    // partitionConcurrency=2 keeps this queue on the per-partition sweep loop; only 1 uses the batched path.
     await DBOS.registerQueue(STRESS_QUEUE_NAME, {
-      partitionQueue: true,
-      concurrency: 2,
+      partitionConcurrency: 2,
       minPollingIntervalMs: 100,
       onConflict: 'always_update',
     });
@@ -2820,7 +2832,8 @@ describe('concurrent-queue-dispatches', () => {
   // whether or not the release happens. Assert on the fast queue to observe lane behavior.
   async function pauseSlowPoll(): Promise<{ slow: WorkflowHandle<string>; releaseSlowPoll: Event }> {
     await DBOS.registerQueue(slowQueueName, {
-      partitionQueue: true,
+      // Above 1, so the queue takes the per-partition sweep the pause point lives in.
+      partitionConcurrency: 2,
       minPollingIntervalMs: 50,
       onConflict: 'always_update',
     });
@@ -3257,8 +3270,7 @@ describe('partitioned-batch-dequeue', () => {
 
   function registerBatchQueue(name: string, options: QueueParameters = {}): Promise<WorkflowQueue> {
     return DBOS.registerQueue(name, {
-      partitionQueue: true,
-      concurrency: 1,
+      partitionConcurrency: 1,
       onConflict: 'always_update',
       ...options,
     });
@@ -3500,15 +3512,13 @@ describe('partitioned-batch-dequeue-dispatch', () => {
     const limiterQueueName = `limiter_fallback_${randomUUID()}`;
     const pausedQueueName = `paused_fallback_${randomUUID()}`;
     await DBOS.registerQueue(limiterQueueName, {
-      partitionQueue: true,
-      concurrency: 1,
-      rateLimit: { limitPerPeriod: 10, periodSec: 60 },
+      partitionConcurrency: 1,
+      partitionRateLimit: { limitPerPeriod: 10, periodSec: 60 },
       minPollingIntervalMs: 100,
       onConflict: 'always_update',
     });
     await DBOS.registerQueue(pausedQueueName, {
-      partitionQueue: true,
-      concurrency: 1,
+      partitionConcurrency: 1,
       workerConcurrency: 0,
       minPollingIntervalMs: 100,
       onConflict: 'always_update',
@@ -3534,7 +3544,7 @@ describe('partitioned-batch-dequeue-dispatch', () => {
     }
     expect(sweptQueues).toContain(limiterQueueName);
     expect(batchedQueues).not.toContain(limiterQueueName);
-    // A zero per-partition worker limit leaves the worker no budget, so neither path is entered.
+    // A zero worker limit leaves the worker no budget, so neither path is entered.
     expect(sweptQueues).not.toContain(pausedQueueName);
     expect(batchedQueues).not.toContain(pausedQueueName);
     expect((await pausedHandle.getStatus())?.status).toBe(StatusString.ENQUEUED);
@@ -3559,8 +3569,7 @@ describe('partitioned-batch-dequeue-dispatch', () => {
 
     const queueName = `exclusive_${randomUUID()}`;
     await DBOS.registerQueue(queueName, {
-      partitionQueue: true,
-      concurrency: 1,
+      partitionConcurrency: 1,
       minPollingIntervalMs: 100,
       onConflict: 'always_update',
     });
@@ -3962,7 +3971,16 @@ describe('partition-queue-limits', () => {
     const register = (params: QueueParameters) => DBOS.registerQueue(`validate_${randomUUID()}`, params);
     // A deprecated argument cannot be combined with the one replacing it.
     await expect(register({ concurrency: 1, globalConcurrency: 1 })).rejects.toThrow('set only one of them');
-    await expect(register({ partitionQueue: true, partitionConcurrency: 1 })).rejects.toThrow('set only one of them');
+    // Options removed in 5.0 fail loudly for callers TypeScript cannot check, whatever their value.
+    const removed = (params: Record<string, unknown>) => register(params as QueueParameters);
+    await expect(removed({ partitionQueue: true })).rejects.toThrow(
+      'partitionQueue was removed: set partitionConcurrency',
+    );
+    await expect(removed({ partitionQueue: false })).rejects.toThrow('partitionQueue was removed');
+    await expect(removed({ priorityEnabled: true })).rejects.toThrow(
+      'priorityEnabled was removed: every queue dispatches in priority order',
+    );
+    await expect(removed({ priorityEnabled: undefined })).rejects.toThrow('priorityEnabled was removed');
     // A per-partition limit above its queue-wide counterpart could never bind.
     await expect(register({ globalConcurrency: 1, partitionConcurrency: 2 })).rejects.toThrow(
       'greater than or equal to',
@@ -3975,9 +3993,6 @@ describe('partition-queue-limits', () => {
     );
     await expect(register({ globalConcurrency: 1, partitionWorkerConcurrency: 2 })).rejects.toThrow(
       'greater than or equal to',
-    );
-    await expect(register({ globalConcurrency: 5, partitionQueue: true })).rejects.toThrow(
-      'cannot be combined with globalConcurrency',
     );
     // Malformed limits are rejected the same way their queue-wide counterparts are.
     await expect(register({ partitionConcurrency: 0 })).rejects.toThrow('at least 1');

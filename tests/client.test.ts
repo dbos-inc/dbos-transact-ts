@@ -19,12 +19,13 @@ import {
 import { randomUUID } from 'crypto';
 import { DBOSConfig } from '../src/dbos-executor';
 import { DEFAULT_POOL_SIZE } from '../src/system_database';
+import { isPartitionedQueue } from '../src/wfqueue';
 
 // Re-register the database-backed queue used by these tests every time DBOS
 // is launched. Many tests in this file launch with their own setup, so this
 // is invoked from each test rather than from a single `beforeEach`.
 async function registerTestQueue(): Promise<void> {
-  await DBOS.registerQueue('testQueue', { onConflict: 'always_update', priorityEnabled: true });
+  await DBOS.registerQueue('testQueue', { onConflict: 'always_update' });
 }
 
 // Wait until every workflow under `prefix` reaches CANCELLED. When a parent
@@ -1431,7 +1432,6 @@ describe('DBOSClient', () => {
         concurrency: 4,
         rateLimit: { limitPerPeriod: 5, periodSec: 1.5 },
         workerConcurrency: 2,
-        priorityEnabled: true,
         minPollingIntervalMs: 2500,
       });
       expect(registered.name).toBe(queueName);
@@ -1444,7 +1444,6 @@ describe('DBOSClient', () => {
       expect(retrieved!.concurrency).toBe(4);
       expect(retrieved!.workerConcurrency).toBe(2);
       expect(retrieved!.rateLimit).toEqual({ limitPerPeriod: 5, periodSec: 1.5 });
-      expect(retrieved!.priorityEnabled).toBe(true);
       expect(retrieved!.minPollingIntervalMs).toBe(2500);
 
       // Partition limits persist through the client's own registration path.
@@ -1460,8 +1459,8 @@ describe('DBOSClient', () => {
       expect(partitioned!.partitionConcurrency).toBe(2);
       expect(partitioned!.partitionWorkerConcurrency).toBe(1);
       expect(partitioned!.partitionRateLimit).toEqual({ limitPerPeriod: 3, periodSec: 2 });
-      // Any per-partition limit partitions the queue, without the deprecated flag.
-      expect(partitioned!.partitionQueue).toBe(true);
+      // Any per-partition limit partitions the queue.
+      expect(isPartitionedQueue(partitioned!)).toBe(true);
       await client.deleteQueue(partitionedName);
 
       // Setters write through the client's database; the launched DBOS

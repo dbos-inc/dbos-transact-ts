@@ -2,6 +2,7 @@ import { DBOS, DBOSLifecycleCallback, Error as DBOSErrors, FunctionName } from '
 import type { WorkflowQueue } from '@dbos-inc/dbos-sdk';
 import {
   registerInternalQueue,
+  isPartitionedQueue,
   getQueue,
   enqueueWorkflows,
   prepareEnqueuedWorkflow,
@@ -296,7 +297,7 @@ export class ConfluentKafkaReceiver implements DBOSLifecycleCallback {
     }
     // A consumer may name a queue that does not exist yet: it can be registered after launch.
     if (queue === null) return;
-    if (queue.partitionQueue) {
+    if (isPartitionedQueue(queue)) {
       throw new Error(
         `Kafka consumer ${funcName}'s queue ${queueName} is a partitioned queue, which a custom Kafka ` +
           `queue must not be; use ordering="partition" or "topic" for ordered processing`,
