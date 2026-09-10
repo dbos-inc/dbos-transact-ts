@@ -22,6 +22,8 @@ describe('chaos-tests', () => {
     await startDockerPg();
     await dropDatabases(config);
     await DBOS.launch();
+    // Register before the monkey starts: registerQueue's writes are not retried.
+    await DBOS.registerQueue(TestQueues.queueName);
 
     // Start chaos monkey after setup
     chaosMonkey = new PostgresChaosMonkey();
@@ -151,7 +153,6 @@ describe('chaos-tests', () => {
   }
 
   test('test-queues', async () => {
-    await DBOS.registerQueue(TestQueues.queueName);
     const numWorkflows = 60;
     for (let i = 0; i < numWorkflows; i++) {
       const handle = await DBOS.startWorkflow(TestQueues, { queueName: TestQueues.queueName }).workflow(i);

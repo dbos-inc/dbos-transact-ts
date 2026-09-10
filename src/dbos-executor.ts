@@ -157,12 +157,11 @@ export interface DBOSConfig {
   serializer?: DBOSSerializer;
   enablePatching?: boolean;
   /**
-   * Restrict this process to only dequeue from the listed queues. Each entry
-   * is either a `WorkflowQueue` instance or the name of a queue. Names that
-   * match nothing at launch are deferred — a queue registered later under that
+   * Restrict this process to only dequeue from the named queues. A name that
+   * matches nothing at launch is deferred — a queue registered later under that
    * name will be picked up by the supervisor.
    */
-  listenQueues?: (WorkflowQueue | string)[];
+  listenQueues?: string[];
   /**
    * Maximum number of independent queue dispatch cycles that may run concurrently
    * in this executor. Defaults to 3. Set to 1 to serialize queue dispatch.
@@ -981,16 +980,6 @@ export class DBOSExecutor {
     }
   }
 
-  /**
-   * Look up one of DBOS's own process-local queues by name. Returns `undefined`
-   * for every other name, database-backed queues included, so callers using this
-   * for sync validation should treat `undefined` as "no in-process information"
-   * rather than as an error.
-   */
-  getInternalQueueByName(name: string): WorkflowQueue | undefined {
-    return wfQueueRunner.getInternalQueue(name);
-  }
-
   async runStepTempWF<T extends unknown[], R>(
     stepFn: TypedAsyncFunction<T, R>,
     params: WorkflowParams,
@@ -1373,7 +1362,7 @@ export class DBOSExecutor {
     return handlerArray;
   }
 
-  async initEventReceivers(listenQueues: (WorkflowQueue | string)[] | null) {
+  async initEventReceivers(listenQueues: string[] | null) {
     this.#wfqEnded = wfQueueRunner.dispatchLoop(this, listenQueues, this.config.maxConcurrentQueueDispatches);
 
     for (const lcl of getLifecycleListeners()) {

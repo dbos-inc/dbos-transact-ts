@@ -713,14 +713,12 @@ class WFQueueRunner {
 
   async dispatchLoop(
     exec: DBOSExecutor,
-    listenQueuesArg: (WorkflowQueue | string)[] | null,
+    listenQueuesArg: string[] | null,
     maxConcurrentQueueDispatches: number = 3,
   ): Promise<void> {
     this.isRunning = true;
     this.states.clear();
-    this.listenQueueNames = listenQueuesArg
-      ? new Set(listenQueuesArg.map((entry) => (typeof entry === 'string' ? entry : entry.name)))
-      : null;
+    this.listenQueueNames = listenQueuesArg ? new Set(listenQueuesArg) : null;
     this.abortController = new AbortController();
 
     const startNow = Date.now();

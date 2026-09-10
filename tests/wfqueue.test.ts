@@ -1,6 +1,6 @@
 import { StatusString, WorkflowHandle, DBOS, ConfiguredInstance, DBOSClient } from '../src';
 import { DBOSConfig, DBOSExecutor, DBOS_QUEUE_MAX_PRIORITY, DBOS_QUEUE_MIN_PRIORITY } from '../src/dbos-executor';
-import { QueueParameters, QueueRateLimit, wfQueueRunner, WorkflowQueue } from '../src/wfqueue';
+import { QueueParameters, QueueRateLimit, registerInternalQueue, wfQueueRunner, WorkflowQueue } from '../src/wfqueue';
 import {
   generateDBOSTestConfig,
   setUpDBOSTestSysDb,
@@ -2477,48 +2477,33 @@ describe('database-backed-queue-crud', () => {
     await DBOS.deleteQueue(queueName);
   });
 
-  test('listenQueues-mixed-instances-and-strings', async () => {
+  test('listenQueues-restricts-dispatch-to-the-named-queues', async () => {
     // beforeEach already launched DBOS with the default config; reset it so
     // we can launch with a custom listenQueues filter.
     await DBOS.shutdown();
 
-    const instanceName = `listen_instance_${randomUUID()}`;
     const allowedName = `listen_allowed_${randomUUID()}`;
     const filteredOutName = `listen_filtered_${randomUUID()}`;
 
     const cfg = generateDBOSTestConfig();
-
-    // listenQueues is read at launch, so this queue's instance must come from a
-    // client: DBOS.registerQueue is only available once DBOS is launched.
-    const client = await DBOSClient.create({ systemDatabaseUrl: cfg.systemDatabaseUrl! });
-    const instanceQueue = await client.registerQueue(instanceName, { minPollingIntervalMs: 100 });
-    await client.destroy();
-
-    // listenQueues accepts a mix of WorkflowQueue instances and string names.
-    cfg.listenQueues = [instanceQueue, allowedName];
+    // Neither queue exists yet: a name that matches nothing at launch is deferred.
+    cfg.listenQueues = [allowedName];
     DBOS.setConfig(cfg);
     await DBOS.launch();
 
-    // Register the remaining queues. The dispatcher must dispatch the allowed
-    // name and skip the filtered one.
     await DBOS.registerQueue(allowedName, { minPollingIntervalMs: 100 });
     await DBOS.registerQueue(filteredOutName, { minPollingIntervalMs: 100 });
 
-    // The queue passed as an instance processes its workflow.
-    const h1 = await DBOS.startWorkflow(TestWFs, { queueName: instanceName }).testWorkflowSimple('a', '1');
+    // The listened queue is picked up by a reconcile and runs its workflow.
+    const h1 = await DBOS.startWorkflow(TestWFs, { queueName: allowedName }).testWorkflowSimple('a', '1');
     expect(await h1.getResult()).toBe('a1');
-
-    // The queue passed as a string name also processes.
-    const h2 = await DBOS.startWorkflow(TestWFs, { queueName: allowedName }).testWorkflowSimple('b', '2');
-    expect(await h2.getResult()).toBe('b2');
 
     // The filtered-out queue is not dispatched; its workflow stays ENQUEUED.
     // Wait long enough for several reconcile cycles to confirm the filter holds.
-    const h3 = await DBOS.startWorkflow(TestWFs, { queueName: filteredOutName }).testWorkflowSimple('c', '3');
+    const h2 = await DBOS.startWorkflow(TestWFs, { queueName: filteredOutName }).testWorkflowSimple('c', '3');
     await sleepms(2500);
-    expect((await h3.getStatus())?.status).toBe(StatusString.ENQUEUED);
+    expect((await h2.getStatus())?.status).toBe(StatusString.ENQUEUED);
 
-    await DBOS.deleteQueue(instanceName);
     await DBOS.deleteQueue(allowedName);
     await DBOS.deleteQueue(filteredOutName);
   });
@@ -2555,11 +2540,11 @@ describe('database-backed-queue-crud', () => {
     await DBOS.deleteQueue(queueName);
     await expect(q1!.getConcurrency()).rejects.toThrow(/not found in the database/);
 
-    // Internal queues have no row, so their getters return cached values
-    // instead of throwing the way a deleted database-backed queue does.
-    const internal = wfQueueRunner.getInternalQueue(INTERNAL_QUEUE_NAME)!;
-    expect(await internal.getConcurrency()).toBeUndefined();
-    expect(await internal.getPriorityEnabled()).toBe(false);
+    // Internal queues have no row, so their getters return the config they were
+    // registered with rather than throwing the way a deleted queue does.
+    const mem = registerInternalQueue('test_internal_cached_getters', { concurrency: 7, priorityEnabled: true });
+    expect(await mem.getConcurrency()).toBe(7);
+    expect(await mem.getPriorityEnabled()).toBe(true);
   });
 
   test('unlistened-queue-runs-after-a-restart-that-listens-to-it', async () => {
@@ -2936,7 +2921,8 @@ describe('concurrent-queue-dispatches', () => {
  * the dispatch loop itself, and the states that expose them (a poll throwing, `stop()` landing
  * mid-maintenance, N queues contending for fewer lanes) are hard to stage against a real system
  * database without long sleeps. The `concurrent-queue-dispatches` block above covers the
- * end-to-end path. `afterEach` unregisters each test's queues so a later `DBOS.launch()` skips them.
+ * end-to-end path. Each test's queues reach the dispatcher through the mocked `listQueues`, so
+ * `afterEach` only has to clear the records it served.
  */
 describe('bounded-lane dispatcher', () => {
   interface MockHooks {
@@ -2972,14 +2958,14 @@ describe('bounded-lane dispatcher', () => {
 
   let seq = 0;
   let laneRecords: QueueRecord[] = [];
-  /** Build N continuously-due queues under names unique to this test. */
-  function makeQueues(count: number): WorkflowQueue[] {
+  /** Build N continuously-due queues under names unique to this test, and return their names. */
+  function makeQueues(count: number): string[] {
     const tag = `lane-${seq++}`;
     const records = Array.from({ length: count }, (_, i) =>
       WorkflowQueue.recordFromParams(`${tag}-q${i}`, { minPollingIntervalMs: 1 }),
     );
     laneRecords.push(...records);
-    return records.map((record) => new WorkflowQueue(record));
+    return records.map((record) => record.name);
   }
 
   afterEach(() => {
@@ -3115,7 +3101,7 @@ describe('bounded-lane dispatcher', () => {
     wfQueueRunner.stop();
     await loop;
 
-    const counts = queues.map((q) => polls.get(q.name) ?? 0);
+    const counts = queues.map((name) => polls.get(name) ?? 0);
     expect(Math.min(...counts)).toBeGreaterThan(0);
     // Service is even, not merely non-zero: round-robin leaves at most a poll or two between
     // the busiest and quietest queue, whereas a biased pick would skew hard.

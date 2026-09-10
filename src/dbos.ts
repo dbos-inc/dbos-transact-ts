@@ -1881,11 +1881,7 @@ export class DBOS {
     }
     const funcId = isChild ? (startWfFuncId ?? functionIDGetIncrement()) : undefined;
 
-    // All enqueue-option validation lives here. Param-only checks
-    // (priority range, dedup-with-partition) always run; the partition-flag
-    // checks run only for DBOS's own process-local queues, whose configuration
-    // is known synchronously. Database-backed queues skip them to avoid an
-    // extra roundtrip on every enqueue.
+    // Param-only checks: reading the queue's own config would cost a roundtrip on every enqueue.
     if (queueName) {
       const queuePartitionKey = params.enqueueOptions?.queuePartitionKey;
       const priority = params.enqueueOptions?.priority;
@@ -1894,17 +1890,6 @@ export class DBOS {
       }
       if (queuePartitionKey && params.enqueueOptions?.deduplicationID) {
         throw Error('Deduplication is not supported for partitioned queues');
-      }
-      const internal = this.#executor.getInternalQueueByName(queueName);
-      if (internal) {
-        if (internal.partitionQueue && !queuePartitionKey) {
-          throw Error(`A workflow cannot be enqueued on partitioned queue ${queueName} without a partition key`);
-        }
-        if (queuePartitionKey && !internal.partitionQueue) {
-          throw Error(
-            `You can only use a partition key on a partition-enabled queue. Key ${queuePartitionKey} was used with non-partitioned queue ${queueName}`,
-          );
-        }
       }
     } else {
       // Only the queue machinery reads these, and a stored dedup ID becomes a unique-constraint violation once anything assigns the row a queue name; applicationVersion is excluded because it still selects recovery executors.

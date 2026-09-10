@@ -1,4 +1,5 @@
-import { DBOS, DBOSLifecycleCallback, Error as DBOSErrors, FunctionName, WorkflowQueue } from '@dbos-inc/dbos-sdk';
+import { DBOS, DBOSLifecycleCallback, Error as DBOSErrors, FunctionName } from '@dbos-inc/dbos-sdk';
+import type { WorkflowQueue } from '@dbos-inc/dbos-sdk';
 import {
   registerInternalQueue,
   getQueue,
