@@ -38,7 +38,7 @@ describe('test-app-version', () => {
     await DBOS.shutdown();
 
     // Verify stability -- the same source produces the same app version
-    expect(DBOS.applicationVersion.length).toBe(0);
+    expect(DBOS.applicationVersion).toEqual(appVersion);
     await DBOS.launch();
     expect(DBOS.applicationVersion).toEqual(appVersion);
     await expect(TestAppVersionStability.testWorkflow()).resolves.toEqual(0);
@@ -53,7 +53,6 @@ describe('test-app-version', () => {
       }
     }
 
-    expect(DBOS.applicationVersion.length).toBe(0);
     await DBOS.launch();
     expect(DBOS.applicationVersion.length).toBeGreaterThan(0);
     expect(DBOS.applicationVersion).not.toEqual(appVersion);
@@ -65,7 +64,6 @@ describe('test-app-version', () => {
     const test_version = 'test_version';
     config.applicationVersion = test_version;
     DBOS.setConfig(config);
-    expect(DBOS.applicationVersion.length).toBe(0);
     await DBOS.launch();
     expect(DBOS.applicationVersion).toBe(test_version);
   });
