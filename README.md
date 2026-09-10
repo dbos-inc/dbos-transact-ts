@@ -191,11 +191,13 @@ const scheduledWorkflow = DBOS.registerWorkflow(scheduledFunction, { name: 'sche
 
 // Schedules are stored in Postgres, so create the schedule after launch.
 await DBOS.launch();
-await DBOS.createSchedule({
-  scheduleName: 'every-30-seconds',
-  workflowFn: scheduledWorkflow,
-  schedule: '*/30 * * * * *',
-});
+await DBOS.applySchedules([
+  {
+    scheduleName: 'every-30-seconds',
+    workflowFn: scheduledWorkflow,
+    schedule: '*/30 * * * * *',
+  },
+]);
 ```
 
 You can add a durable sleep to any workflow with a single line of code.
