@@ -96,8 +96,7 @@ type PartitionLimits = Pick<
 >;
 
 /**
- * Options removed in 5.0, and what replaces each. TypeScript rejects them in an object
- * literal, so this is what catches a spread, a cast, or a JavaScript caller.
+ * Options removed in 5.0, and what replaces each.
  */
 const REMOVED_QUEUE_PARAMS: Record<string, string> = {
   priorityEnabled: 'every queue dispatches in priority order, so the option can be deleted',
@@ -301,7 +300,7 @@ export class WorkflowQueue {
   /** Throws if any combination of queue parameters is invalid. */
   static validateQueueParams(params: QueueParameters): void {
     for (const [option, replacement] of Object.entries(REMOVED_QUEUE_PARAMS)) {
-      if (option in params) {
+      if (Object.hasOwn(params, option)) {
         throw new Error(`${option} was removed: ${replacement}.`);
       }
     }
