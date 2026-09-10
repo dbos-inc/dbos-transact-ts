@@ -1,16 +1,16 @@
-import { DBOSJSON, DBOSJSONLegacy, SERIALIZER_MARKER_KEY, SERIALIZER_MARKER_VALUE } from '../src/serialization';
+import { DBOSJSON, SERIALIZER_MARKER_KEY, SERIALIZER_MARKER_VALUE } from '../src/serialization';
 
 /**
  * DBOSJSON uses SuperJSON internally for rich type support.
  *
  * Test structure:
- * 1. "dbos-json-reviver-replacer" - (dates, bigints, buffers)
+ * 1. "dbos-json-rich-types" - (dates, bigints, buffers)
  * 2. "SuperJSON enhanced types" - (Sets, Maps, undefined, RegExp, etc.)
- * 3. "Backwards compatibility" - Verify old database data still works
+ * 3. "DBOSJSON format" - the marker every value carries, and what happens without it
  *
- * Caution: Altering results of this test likely means a backward compatibility break.
+ * Caution: Altering results of this test likely means a stored-data compatibility break.
  */
-describe('dbos-json-reviver-replacer', () => {
+describe('dbos-json-rich-types', () => {
   test('Replace revive dates', () => {
     const obj = {
       datesObj: {
@@ -140,74 +140,8 @@ describe('SuperJSON enhanced types', () => {
   });
 });
 
-describe('Backwards compatibility', () => {
-  /**
-   * These tests simulate reading data that's ALREADY in production databases.
-   *
-   * Context: Before this PR, DBOSJSON used custom replacer/reviver functions that created
-   * formats like {"dbos_type": "dbos_Date", "dbos_data": "2024-01-01T00:00:00.000Z"}.
-   *
-   * After this PR: DBOSJSON creates SuperJSON format like {"json": {...}, "meta": {...}}.
-   *
-   * The problem: Millions of workflow states in production were serialized with the OLD format.
-   * The solution: DBOSJSON.parse() now detects which format and uses the appropriate deserializer.
-   *
-   * These tests verify that solution works by:
-   * 1. Using DBOSJSONLegacy (the old implementation) to create old-format strings
-   * 2. Parsing those strings with the NEW DBOSJSON
-   * 3. Verifying the data is correctly restored
-   *
-   * If these tests fail, existing production data becomes unreadable. DO NOT MERGE if broken.
-   */
-
-  test('parses legacy DBOSJSON dates', () => {
-    const date = new Date('2024-01-01T12:00:00Z');
-    const legacySerialized = DBOSJSONLegacy.stringify(date);
-    const deserialized = DBOSJSON.parse(legacySerialized);
-    expect(deserialized).toEqual(date);
-  });
-
-  test('parses legacy DBOSJSON BigInts', () => {
-    const bigint = BigInt(123456789);
-    const legacySerialized = DBOSJSONLegacy.stringify(bigint);
-    const deserialized = DBOSJSON.parse(legacySerialized);
-    expect(deserialized).toEqual(bigint);
-  });
-
-  test('parses legacy DBOSJSON complex objects', () => {
-    const obj = {
-      date: new Date('2024-01-01'),
-      bigint: BigInt(42),
-      buffer: Buffer.from('legacy'),
-      nested: {
-        anotherDate: new Date('2024-12-31'),
-        array: [BigInt(1), BigInt(2)],
-      },
-    };
-    const legacySerialized = DBOSJSONLegacy.stringify(obj);
-    const deserialized = DBOSJSON.parse(legacySerialized);
-    expect(deserialized).toEqual(obj);
-  });
-
-  test('new DBOSJSON can parse old database data', () => {
-    // Simulate data that was stored in DB with old DBOSJSON
-    const originalData = {
-      id: 'test-123',
-      createdAt: new Date('2023-01-01'),
-      count: BigInt(999999999999),
-      metadata: { key: 'value' },
-    };
-
-    // This is what's in the database (serialized with old format)
-    const dbStored = DBOSJSONLegacy.stringify(originalData);
-
-    // New DBOSJSON should be able to parse it
-    const parsed = DBOSJSON.parse(dbStored);
-    expect(parsed).toEqual(originalData);
-  });
-
+describe('DBOSJSON format', () => {
   test('handles null correctly', () => {
-    // These are legacy cases
     expect(DBOSJSON.parse(null)).toBe(null);
     expect(DBOSJSON.parse(undefined)).toBe(null);
 
@@ -217,35 +151,14 @@ describe('Backwards compatibility', () => {
     expect(DBOSJSON.stringify(undefined)).toBeTruthy();
   });
 
-  test('parses plain JSON', () => {
-    const plain = { simple: 'object', number: 42, bool: true };
-    const plainSerialized = JSON.stringify(plain);
-    const deserialized = DBOSJSON.parse(plainSerialized);
-    expect(deserialized).toEqual(plain);
-  });
+  test('rejects data it did not write', () => {
+    // Without the marker there is no second format to fall back to
+    const plain = JSON.stringify({ simple: 'object', number: 42 });
+    expect(() => DBOSJSON.parse(plain)).toThrow(TypeError);
 
-  test('does not confuse user data with SuperJSON format', () => {
-    // User data that happens to have a 'json' field should not be treated as SuperJSON
-    const userDataWithJson = {
-      json: { some: 'data' },
-      otherField: 'value',
-      anotherField: 123,
-    };
-    const serialized = JSON.stringify(userDataWithJson);
-    const deserialized = DBOSJSON.parse(serialized);
-    expect(deserialized).toEqual(userDataWithJson);
-
-    // Critical case: {json: {foo: 'bar'}} should be treated as user data, not SuperJSON
-    const ambiguousUserData = { json: { foo: 'bar' } };
-    const ambiguousSerialized = JSON.stringify(ambiguousUserData);
-    const ambiguousDeserialized = DBOSJSON.parse(ambiguousSerialized);
-    expect(ambiguousDeserialized).toEqual(ambiguousUserData); // Should preserve the structure!
-
-    // Only {json, meta} together should be treated as SuperJSON
-    const moreAmbiguous = { json: 'test', someOtherProp: true };
-    const moreSerialized = JSON.stringify(moreAmbiguous);
-    const moreDeserialized = DBOSJSON.parse(moreSerialized);
-    expect(moreDeserialized).toEqual(moreAmbiguous);
+    // User data shaped like SuperJSON is still rejected, because it carries no marker
+    const lookalike = JSON.stringify({ json: { foo: 'bar' }, meta: { values: {} } });
+    expect(() => DBOSJSON.parse(lookalike)).toThrow(TypeError);
   });
 
   test('new DBOSJSON always includes serializer marker to avoid ambiguity', () => {
