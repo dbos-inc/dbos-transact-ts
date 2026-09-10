@@ -73,13 +73,13 @@ describe('failures-tests', () => {
 
     // Should throw an error.
     await DBOS.withNextWorkflowID(workflowUUID, async () => {
-      await expect(FailureTestClass.testNoRetry()).rejects.toThrow(new Error('failed no retry'));
+      await expect(FailureTestClass.testNoRetryWF()).rejects.toThrow(new Error('failed no retry'));
     });
     expect(FailureTestClass.cnt).toBe(1);
 
     // If we retry again, we should get the same error, but numRun should still be 1 (OAOO).
     await DBOS.withNextWorkflowID(workflowUUID, async () => {
-      await expect(FailureTestClass.testNoRetry()).rejects.toThrow(new Error('failed no retry'));
+      await expect(FailureTestClass.testNoRetryWF()).rejects.toThrow(new Error('failed no retry'));
     });
     expect(FailureTestClass.cnt).toBe(1);
   });
@@ -342,6 +342,11 @@ class FailureTestClass extends ConfiguredInstance {
   static async testNoRetry() {
     FailureTestClass.cnt++;
     return Promise.reject(new Error('failed no retry'));
+  }
+
+  @DBOS.workflow()
+  static async testNoRetryWF() {
+    return FailureTestClass.testNoRetry();
   }
 
   @DBOS.workflow()

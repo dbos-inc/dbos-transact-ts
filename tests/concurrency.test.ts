@@ -462,8 +462,8 @@ describe('concurrency-tests', () => {
     // Both should return the correct result but only one should execute.
     const workflowUUID = randomUUID();
     const results = await Promise.allSettled([
-      (await DBOS.startWorkflow(ConcurrTestClass, { workflowID: workflowUUID }).testReadWriteFunction(10)).getResult(),
-      (await DBOS.startWorkflow(ConcurrTestClass, { workflowID: workflowUUID }).testReadWriteFunction(10)).getResult(),
+      (await DBOS.startWorkflow(ConcurrTestClass, { workflowID: workflowUUID }).testReadWriteWorkflow(10)).getResult(),
+      (await DBOS.startWorkflow(ConcurrTestClass, { workflowID: workflowUUID }).testReadWriteWorkflow(10)).getResult(),
     ]);
     expect((results[0] as PromiseFulfilledResult<number>).value).toBe(10);
     expect((results[1] as PromiseFulfilledResult<number>).value).toBe(10);
@@ -492,8 +492,8 @@ describe('concurrency-tests', () => {
     // Since we only record the output after the function, it may cause more than once executions.
     const workflowUUID = randomUUID();
     const results = await Promise.allSettled([
-      (await DBOS.startWorkflow(ConcurrTestClass, { workflowID: workflowUUID }).testStep(11)).getResult(),
-      (await DBOS.startWorkflow(ConcurrTestClass, { workflowID: workflowUUID }).testStep(11)).getResult(),
+      (await DBOS.startWorkflow(ConcurrTestClass, { workflowID: workflowUUID }).testStepWorkflow(11)).getResult(),
+      (await DBOS.startWorkflow(ConcurrTestClass, { workflowID: workflowUUID }).testStepWorkflow(11)).getResult(),
     ]);
     expect((results[0] as PromiseFulfilledResult<number>).value).toBe(11);
     expect((results[1] as PromiseFulfilledResult<number>).value).toBe(11);
@@ -628,6 +628,11 @@ class ConcurrTestClass {
   }
 
   @DBOS.workflow()
+  static async testReadWriteWorkflow(id: number) {
+    return ConcurrTestClass.testReadWriteFunction(id);
+  }
+
+  @DBOS.workflow()
   static async testDSReadWriteFunction(id: number) {
     return await ConcurrTestClass.testDSReadWrite(id);
   }
@@ -643,6 +648,11 @@ class ConcurrTestClass {
   static async testStep(id: number) {
     ConcurrTestClass.cnt++;
     return Promise.resolve(id);
+  }
+
+  @DBOS.workflow()
+  static async testStepWorkflow(id: number) {
+    return ConcurrTestClass.testStep(id);
   }
 
   @DBOS.step()

@@ -9,9 +9,9 @@ import {
   setWfAndChildrenToPending,
 } from './helpers';
 import { randomUUID } from 'node:crypto';
+import { DBOSInvalidWorkflowTransitionError } from '../src/error';
 
 const queue = { name: 'testQ' };
-const serialqueue = { name: 'serialQ' };
 
 class InstanceStep extends ConfiguredInstance {
   constructor() {
@@ -65,39 +65,11 @@ class StaticStep extends ConfiguredInstance {
   }
 }
 
-class WorkflowsEnqueue {
+class WorkflowsCallingSteps {
   @DBOS.workflow()
   static async runFuncs() {
     expect(await StaticStep.testStep('a', '1')).toBe('1');
     expect(await inst.testStep('a', '1')).toBe('1');
-  }
-
-  @DBOS.workflow()
-  static async runAsWFs() {
-    expect(await (await DBOS.startWorkflow(StaticStep).testStep('a', '1')).getResult()).toBe('1');
-    expect(await (await DBOS.startWorkflow(inst).testStep('a', '1')).getResult()).toBe('1');
-  }
-
-  @DBOS.workflow()
-  static async runAsWFIDs(base: string = 'wwfstq') {
-    expect(
-      await (
-        await DBOS.startWorkflow(StaticStep, { workflowID: `${base}2`, queueName: serialqueue.name }).testStep(
-          'a',
-          '1',
-          `${base}2`,
-        )
-      ).getResult(),
-    ).toBe('1');
-    expect(
-      await (
-        await DBOS.startWorkflow(inst, { workflowID: `${base}4`, queueName: serialqueue.name }).testStep(
-          'a',
-          '1',
-          `${base}4`,
-        )
-      ).getResult(),
-    ).toBe('1');
   }
 }
 
@@ -114,102 +86,65 @@ describe('queued-wf-tests-simple', () => {
     StaticStep.reset();
     InstanceStep.reset();
     await DBOS.launch();
-    for (const ref of [queue, serialqueue, TestQueueRecoveryInst.queue]) {
+    for (const ref of [queue, TestQueueRecoveryInst.queue]) {
       await DBOS.registerQueue(ref.name, { onConflict: 'always_update' });
     }
-    // serialqueue carries its own concurrency limit.
-    await DBOS.registerQueue(serialqueue.name, { onConflict: 'always_update', concurrency: 1 });
   });
 
   afterEach(async () => {
     await DBOS.shutdown();
   });
 
-  // Test that functions run
+  // Test that steps called outside a workflow run, without checkpointing anything
   test('run-step-tx', async () => {
+    const wfsBefore = (await DBOS.listWorkflows({})).length;
+
     expect(await StaticStep.testStep('a', '1')).toBe('1');
     expect(await inst.testStep('a', '1')).toBe('1');
 
     expect(StaticStep.stepCnt).toBe(1);
     expect(InstanceStep.stepCnt).toBe(1);
+    expect((await DBOS.listWorkflows({})).length - wfsBefore).toBe(0);
   });
 
-  // Test that functions run as workflows
-  test('start-step-tx', async () => {
-    expect(await (await DBOS.startWorkflow(StaticStep).testStep('a', '1')).getResult()).toBe('1');
-    expect(await (await DBOS.startWorkflow(inst).testStep('a', '1')).getResult()).toBe('1');
+  // A step called outside a workflow cannot be given a workflow ID
+  test('step-with-assigned-id', async () => {
+    await DBOS.withNextWorkflowID(randomUUID(), async () => {
+      await expect(StaticStep.testStep('a', '1')).rejects.toThrow(DBOSInvalidWorkflowTransitionError);
+    });
+    await DBOS.withNextWorkflowID(randomUUID(), async () => {
+      await expect(inst.testStep('a', '1')).rejects.toThrow(DBOSInvalidWorkflowTransitionError);
+    });
 
-    expect(StaticStep.stepCnt).toBe(1);
-    expect(InstanceStep.stepCnt).toBe(1);
+    expect(StaticStep.stepCnt).toBe(0);
+    expect(InstanceStep.stepCnt).toBe(0);
   });
 
-  // Test that functions run as workflows w/ assigned IDs
-  test('start-step-tx-wfid', async () => {
-    expect(
-      await (await DBOS.startWorkflow(StaticStep, { workflowID: 'wfst2' }).testStep('a', '1', 'wfst2')).getResult(),
-    ).toBe('1');
-    expect(
-      await (await DBOS.startWorkflow(inst, { workflowID: 'wfst4' }).testStep('a', '1', 'wfst4')).getResult(),
-    ).toBe('1');
+  // Steps are not workflows: they can be neither started nor enqueued
+  test('start-step-rejected', async () => {
+    await expect(DBOS.startWorkflow(StaticStep).testStep('a', '1')).rejects.toThrow(DBOSInvalidWorkflowTransitionError);
+    await expect(DBOS.startWorkflow(inst).testStep('a', '1')).rejects.toThrow(DBOSInvalidWorkflowTransitionError);
 
-    expect(StaticStep.stepCnt).toBe(1);
-    expect(InstanceStep.stepCnt).toBe(1);
+    expect(StaticStep.stepCnt).toBe(0);
+    expect(InstanceStep.stepCnt).toBe(0);
   });
 
-  // Test that functions run as workflows w/ assigned IDs and q
-  test('start-step-tx-wfid', async () => {
-    expect(
-      await (
-        await DBOS.startWorkflow(StaticStep, { workflowID: 'wfstq2', queueName: queue.name }).testStep(
-          'a',
-          '1',
-          'wfstq2',
-        )
-      ).getResult(),
-    ).toBe('1');
-    expect(
-      await (
-        await DBOS.startWorkflow(inst, { workflowID: 'wfstq4', queueName: queue.name }).testStep('a', '1', 'wfstq4')
-      ).getResult(),
-    ).toBe('1');
+  test('enqueue-step-rejected', async () => {
+    await expect(DBOS.startWorkflow(StaticStep, { queueName: queue.name }).testStep('a', '1')).rejects.toThrow(
+      DBOSInvalidWorkflowTransitionError,
+    );
+    await expect(DBOS.startWorkflow(inst, { queueName: queue.name }).testStep('a', '1')).rejects.toThrow(
+      DBOSInvalidWorkflowTransitionError,
+    );
 
-    const wfh2 = DBOS.retrieveWorkflow('wfstq2');
-    expect((await wfh2.getStatus())?.queueName).toBe(queue.name);
-    const wfh4 = DBOS.retrieveWorkflow('wfstq4');
-    expect((await wfh4.getStatus())?.queueName).toBe(queue.name);
-
+    expect(StaticStep.stepCnt).toBe(0);
+    expect(InstanceStep.stepCnt).toBe(0);
     expect(await queueEntriesAreCleanedUp()).toBe(true);
-
-    expect(StaticStep.stepCnt).toBe(1);
-    expect(InstanceStep.stepCnt).toBe(1);
   });
 
   // Test that functions run (from wf)
   test('run-step-tx-wf', async () => {
-    await WorkflowsEnqueue.runFuncs();
-
-    expect(StaticStep.stepCnt).toBe(1);
-    expect(InstanceStep.stepCnt).toBe(1);
-  });
-
-  // Test that functions run as child WFs (from wf)
-  test('run-step-tx-cwf', async () => {
-    await WorkflowsEnqueue.runAsWFs();
-
-    expect(StaticStep.stepCnt).toBe(1);
-    expect(InstanceStep.stepCnt).toBe(1);
-  });
-
-  // Test that functions run as child WFs (from wf)
-  test('run-step-tx-wfq', async () => {
-    await WorkflowsEnqueue.runAsWFIDs();
-
-    const wfh2 = DBOS.retrieveWorkflow('wwfstq2');
-    expect((await wfh2.getStatus())?.queueName).toBe(serialqueue.name);
-    const wfh4 = DBOS.retrieveWorkflow('wwfstq4');
-    expect((await wfh4.getStatus())?.queueName).toBe(serialqueue.name);
-
-    expect(await queueEntriesAreCleanedUp()).toBe(true);
+    await WorkflowsCallingSteps.runFuncs();
 
     expect(StaticStep.stepCnt).toBe(1);
     expect(InstanceStep.stepCnt).toBe(1);
@@ -217,16 +152,12 @@ describe('queued-wf-tests-simple', () => {
 
   // Test that functions run (from wf)
   test('run-step-tx-wf-onq', async () => {
-    const wfh1 = await DBOS.startWorkflow(WorkflowsEnqueue, { queueName: queue.name }).runFuncs();
-    const wfh2 = await DBOS.startWorkflow(WorkflowsEnqueue, { queueName: queue.name }).runAsWFs();
-    const wfh3 = await DBOS.startWorkflow(WorkflowsEnqueue, { queueName: queue.name }).runAsWFIDs('qwfsfromwfs');
-
+    const wfh1 = await DBOS.startWorkflow(WorkflowsCallingSteps, { queueName: queue.name }).runFuncs();
     await wfh1.getResult();
-    await wfh2.getResult();
-    await wfh3.getResult();
 
-    expect(StaticStep.stepCnt).toBe(3);
-    expect(InstanceStep.stepCnt).toBe(3);
+    expect(StaticStep.stepCnt).toBe(1);
+    expect(InstanceStep.stepCnt).toBe(1);
+    expect(await queueEntriesAreCleanedUp()).toBe(true);
   });
 
   test('test-queue-recovery', async () => {
@@ -238,28 +169,28 @@ describe('queued-wf-tests-simple', () => {
       await e.wait();
       e.clear();
     }
-    expect(tqrInst.taskCount).toEqual(TestQueueRecoveryInst.queuedSteps);
+    expect(tqrInst.taskCount).toEqual(TestQueueRecoveryInst.queuedTasks);
     await originalHandle.getResult();
 
     // Recover the workflow, then resume it. There should be one handle for the workflow and another for each task.
     await setWfAndChildrenToPending(originalHandle.workflowID);
     const recoveryHandles = await recoverPendingWorkflows();
-    expect(recoveryHandles.length).toBe(TestQueueRecoveryInst.queuedSteps + 1);
+    expect(recoveryHandles.length).toBe(TestQueueRecoveryInst.queuedTasks + 1);
 
     // Verify both the recovered and original workflows complete correctly
     for (const h of recoveryHandles) {
       if (h.workflowID === wfid) {
         await expect(h.getResult()).resolves.toEqual(
-          Array.from({ length: TestQueueRecoveryInst.queuedSteps }, (_, i) => i),
+          Array.from({ length: TestQueueRecoveryInst.queuedTasks }, (_, i) => i),
         );
       }
     }
     await expect(originalHandle.getResult()).resolves.toEqual(
-      Array.from({ length: TestQueueRecoveryInst.queuedSteps }, (_, i) => i),
+      Array.from({ length: TestQueueRecoveryInst.queuedTasks }, (_, i) => i),
     );
 
     // Each task should start once, recovery doesn't rerun because they are checkpointed
-    expect(tqrInst.taskCount).toEqual(1 * TestQueueRecoveryInst.queuedSteps);
+    expect(tqrInst.taskCount).toEqual(1 * TestQueueRecoveryInst.queuedTasks);
 
     // Verify all queue entries eventually get cleaned up
     expect(await queueEntriesAreCleanedUp()).toBe(true);
@@ -273,15 +204,15 @@ class TestQueueRecoveryInst extends ConfiguredInstance {
   initialize(): Promise<void> {
     return Promise.resolve();
   }
-  static queuedSteps = 3;
-  taskEvents = Array.from({ length: TestQueueRecoveryInst.queuedSteps }, () => new Event());
+  static queuedTasks = 3;
+  taskEvents = Array.from({ length: TestQueueRecoveryInst.queuedTasks }, () => new Event());
   taskCount = 0;
   static queue = { name: 'testQueueRecovery' };
 
   @DBOS.workflow()
   async testWorkflow() {
     const handles: WorkflowHandle<number>[] = [];
-    for (let i = 0; i < TestQueueRecoveryInst.queuedSteps; i++) {
+    for (let i = 0; i < TestQueueRecoveryInst.queuedTasks; i++) {
       const h = await DBOS.startWorkflow(this, { queueName: TestQueueRecoveryInst.queue.name }).blockingTask(i);
       handles.push(h);
     }
@@ -290,8 +221,14 @@ class TestQueueRecoveryInst extends ConfiguredInstance {
     return results;
   }
 
-  @DBOS.step()
+  @DBOS.workflow()
   async blockingTask(i: number) {
+    return await this.countTask(i);
+  }
+
+  // The count lives in a step so recovery replays the checkpoint instead of running it again
+  @DBOS.step()
+  async countTask(i: number) {
     this.taskEvents[i].set();
     this.taskCount++;
     return Promise.resolve(i);

@@ -23,7 +23,6 @@ import {
   type ListWorkflowStepsOptions,
   WorkflowConfig,
   DEFAULT_MAX_RECOVERY_ATTEMPTS,
-  WorkflowSerializationFormat,
 } from './workflow';
 
 import { type StepConfig, validateStepConfig } from './step';
@@ -34,8 +33,6 @@ import { TelemetryExporter } from './telemetry/exporters';
 import { SystemDatabase, type WorkflowStatusInternal, type SystemDatabaseStoredResult } from './system_database';
 import { randomUUID } from 'node:crypto';
 import {
-  getRegisteredFunctionClassName,
-  getRegisteredFunctionName,
   getConfiguredInstance,
   getLifecycleListeners,
   UntypedAsyncFunction,
@@ -69,7 +66,6 @@ import {
   serializeFunctionInputOutputWithSerializer,
   serializeResError,
   serializeResErrorWithSerializer,
-  serializeValue,
 } from './serialization';
 import { GetWorkflowsInput } from '.';
 
@@ -259,9 +255,6 @@ export type DBOSConfigInternal = {
 };
 
 export interface InternalWorkflowParams extends WorkflowParams {
-  readonly tempWfType?: string;
-  readonly tempWfName?: string;
-  readonly tempWfClass?: string;
   /** Set only by queue dispatch: the claimed row this run was started from. */
   readonly dequeuedStatus?: WorkflowStatusInternal;
 }
@@ -287,11 +280,6 @@ export const OperationType = {
   STEP: 'step',
 } as const;
 
-export const TempWorkflowType = {
-  step: 'step',
-  send: 'send',
-} as const;
-
 export interface DBOSExecutorOptions {
   systemDatabase?: SystemDatabase;
 }
@@ -300,9 +288,6 @@ export class DBOSExecutor {
   initialized: boolean;
   // System Database
   readonly systemDatabase: SystemDatabase;
-
-  // Temporary workflows are created by calling transaction/send/recv directly from the executor class
-  static readonly #tempWorkflowName = 'temp_workflow';
 
   readonly telemetryCollector: TelemetryCollector;
 
@@ -438,7 +423,6 @@ export class DBOSExecutor {
     }
   }
 
-  // This could return WF, or the function underlying a temp wf
   #getFunctionInfoFromWFStatus(wf: WorkflowStatusInternal) {
     const methReg = getFunctionRegistrationByName(wf.workflowClassName, wf.workflowName);
     return { methReg, configuredInst: getConfiguredInstance(wf.workflowClassName, wf.workflowConfigName) };
@@ -552,23 +536,15 @@ export class DBOSExecutor {
     const authenticatedRoles =
       params.authenticatedRoles ?? params.enqueueOptions?.authenticatedRoles ?? pctx?.authenticatedRoles ?? [];
 
-    let wConfig: WorkflowConfig = {};
     const wInfo = getFunctionRegistration(wf);
     const wfNames = getRegisteredFunctionFullName(wf);
-    let wfname = wfNames.name;
-    let wfclassname = wfNames.className;
+    const wfname = wfNames.name;
+    const wfclassname = wfNames.className;
 
-    const isTempWorkflow = DBOSExecutor.#tempWorkflowName === wfname || !!params.tempWfType;
-
-    if (!isTempWorkflow) {
-      if (!wInfo || !wInfo.workflowConfig) {
-        throw new DBOSNotRegisteredError(wf.name);
-      }
-      wConfig = wInfo.workflowConfig;
-    } else if (params.tempWfName) {
-      wfname = params.tempWfName;
-      wfclassname = params.tempWfClass ?? '';
+    if (!wInfo || !wInfo.workflowConfig) {
+      throw new DBOSNotRegisteredError(wf.name);
     }
+    const wConfig: WorkflowConfig = wInfo.workflowConfig;
 
     const maxRecoveryAttempts = wConfig.maxRecoveryAttempts
       ? wConfig.maxRecoveryAttempts
@@ -648,10 +624,6 @@ export class DBOSExecutor {
       isDebounced: params.enqueueOptions?.isDebounced ?? false,
       applicationName: ownerAppName,
     };
-
-    if (isTempWorkflow) {
-      internalStatus.workflowName = `${DBOSExecutor.#tempWorkflowName}-${params.tempWfType}-${params.tempWfName}`;
-    }
 
     let $deadlineEpochMS: number | undefined = undefined;
     let shouldExecute: boolean | undefined = undefined;
@@ -958,40 +930,6 @@ export class DBOSExecutor {
     } else {
       return new RetrievedHandle(this.systemDatabase, workflowID);
     }
-  }
-
-  async runStepTempWF<T extends unknown[], R>(
-    stepFn: TypedAsyncFunction<T, R>,
-    params: WorkflowParams,
-    ...args: T
-  ): Promise<R> {
-    return await (await this.startStepTempWF(stepFn, params, undefined, undefined, ...args)).getResult();
-  }
-
-  async startStepTempWF<T extends unknown[], R>(
-    stepFn: TypedAsyncFunction<T, R>,
-    params: InternalWorkflowParams,
-    callerWFID?: string,
-    callerFunctionID?: number,
-    ...args: T
-  ): Promise<WorkflowHandle<R>> {
-    // Create a workflow and call external.
-    const temp_workflow = async (...args: T) => {
-      return await this.callStepFunction(stepFn, undefined, undefined, params.configuredInstance ?? null, ...args);
-    };
-
-    return await this.internalWorkflow(
-      temp_workflow,
-      {
-        ...params,
-        tempWfType: TempWorkflowType.step,
-        tempWfName: getRegisteredFunctionName(stepFn),
-        tempWfClass: getRegisteredFunctionClassName(stepFn),
-      },
-      callerWFID,
-      callerFunctionID,
-      ...args,
-    );
   }
 
   /**
@@ -1456,78 +1394,9 @@ export class DBOSExecutor {
       });
     }
 
-    // Should be temporary workflows. Parse the name of the workflow.
-    const wfName = wfStatus.workflowName;
-    const nameArr = wfName.split('-');
-    if (!nameArr[0].startsWith(DBOSExecutor.#tempWorkflowName)) {
-      throw new DBOSError(
-        `Cannot find workflow function for a non-temporary workflow, ID ${workflowID}, class '${wfStatus.workflowClassName}', function '${wfName}'; did you change your code?`,
-      );
-    }
-
-    if (nameArr[1] === TempWorkflowType.step) {
-      const stepReg = getFunctionRegistrationByName(wfStatus.workflowClassName, nameArr[2]);
-      if (!stepReg?.stepConfig) {
-        this.logger.error(`Cannot find step info for ID ${workflowID}, name ${nameArr[2]}`);
-        throw new DBOSNotRegisteredError(nameArr[2]);
-      }
-      return await runWithTopContext(recoverCtx, async () => {
-        return await this.startStepTempWF(
-          stepReg.registeredFunction as UntypedAsyncFunction,
-          {
-            workflowUUID: workflowID,
-            configuredInstance: configuredInst,
-            queueName: wfStatus.queueName, // Probably null
-            enqueueOptions,
-            executeWorkflow: true,
-            dequeuedStatus: wfStatus,
-          },
-          undefined,
-          undefined,
-          ...inputs,
-        );
-      });
-    } else if (nameArr[1] === TempWorkflowType.send) {
-      // Backwards compatibility: recover send temp workflows created before sendDirect was introduced.
-      const swf = async (
-        destinationID: string,
-        message: unknown,
-        topic?: string,
-        serialization?: WorkflowSerializationFormat | null,
-      ) => {
-        const ctx = getCurrentContextStore();
-        // Reserve the function ID synchronously, before any await.
-        const functionID: number = functionIDGetIncrement();
-        const sermsg = await serializeValue(message, this.serializer, serialization ?? undefined);
-        await this.systemDatabase.send(
-          ctx!.workflowId!,
-          functionID,
-          destinationID,
-          sermsg.serializedValue,
-          topic,
-          sermsg.serialization,
-        );
-      };
-      const temp_workflow = swf as UntypedAsyncFunction;
-      return await runWithTopContext(recoverCtx, async () => {
-        return this.workflow(
-          temp_workflow,
-          {
-            tempWfName: nameArr[2],
-            tempWfType: TempWorkflowType.send,
-            workflowUUID: workflowID,
-            queueName: wfStatus.queueName,
-            enqueueOptions,
-            executeWorkflow: true,
-            dequeuedStatus: wfStatus,
-          },
-          ...inputs,
-        );
-      });
-    } else {
-      this.logger.error(`Unrecognized temporary workflow! UUID ${workflowID}, name ${wfName}`);
-      throw new DBOSNotRegisteredError(wfName);
-    }
+    throw new DBOSError(
+      `Cannot find workflow function for ID ${workflowID}, class '${wfStatus.workflowClassName}', function '${wfStatus.workflowName}'; did you change your code?`,
+    );
   }
 
   #getRecoveryContext(_workflowID: string, status: WorkflowStatusInternal): DBOSLocalCtx {

@@ -1871,14 +1871,12 @@ export class DBOS {
         return DBOSExecutor.globalInstance!.internalWorkflow(func, wfParams, workflowID, funcNum, ...args);
       }
       if (regOP.stepConfig) {
-        const func = regOP.registeredFunction as TypedAsyncFunction<Args, Return>;
-        return DBOSExecutor.globalInstance!.startStepTempWF(func, wfParams, workflowID, funcNum, ...args);
+        throw new DBOSInvalidWorkflowTransitionError(
+          `Attempt to start or enqueue step '${regOP.name}'; only workflows can be started or enqueued`,
+        );
       }
 
-      throw new DBOSNotRegisteredError(
-        regOP.name,
-        `${regOP.name} is not a registered DBOS workflow, step, or transaction function`,
-      );
+      throw new DBOSNotRegisteredError(regOP.name, `${regOP.name} is not a registered DBOS workflow function`);
     }
   }
 
@@ -2034,18 +2032,12 @@ export class DBOS {
           );
         }
 
-        const wfId = getNextWFID(undefined);
-
-        const wfParams: WorkflowParams = {
-          configuredInstance: inst,
-          workflowUUID: wfId,
-        };
-
-        return await DBOS.#executor.runStepTempWF(
-          registration.registeredFunction as TypedAsyncFunction<Args, Return>,
-          wfParams,
-          ...rawArgs,
-        );
+        if (getNextWFID(undefined)) {
+          throw new DBOSInvalidWorkflowTransitionError(
+            `Invalid call to step '${registration.name}' outside of a workflow; with directive to start a workflow.`,
+          );
+        }
+        return registration.registeredFunction!.call(this, ...rawArgs);
       };
 
       descriptor.value = invokeWrapper;

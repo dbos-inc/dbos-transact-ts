@@ -63,13 +63,13 @@ describe('dbos-tests', () => {
   test('return-void', async () => {
     const workflowUUID = randomUUID();
     await DBOS.withNextWorkflowID(workflowUUID, async () => {
-      await DBOSTestClass.testVoidFunction();
+      await DBOSTestClass.testVoidWorkflow();
     });
     await DBOS.withNextWorkflowID(workflowUUID, async () => {
-      await expect(DBOSTestClass.testVoidFunction()).resolves.toBeFalsy();
+      await expect(DBOSTestClass.testVoidWorkflow()).resolves.toBeFalsy();
     });
     await DBOS.withNextWorkflowID(workflowUUID, async () => {
-      await expect(DBOSTestClass.testVoidFunction()).resolves.toBeFalsy();
+      await expect(DBOSTestClass.testVoidWorkflow()).resolves.toBeFalsy();
     });
   });
 
@@ -86,9 +86,9 @@ describe('dbos-tests', () => {
   test('simple-step', async () => {
     const workflowUUID: string = randomUUID();
     await DBOS.withNextWorkflowID(workflowUUID, async () => {
-      await expect(DBOSTestClass.testStep()).resolves.toBe(0);
+      await expect(DBOSTestClass.testStepWorkflow()).resolves.toBe(0);
     });
-    await expect(DBOSTestClass.testStep()).resolves.toBe(1);
+    await expect(DBOSTestClass.testStepWorkflow()).resolves.toBe(1);
   });
 
   test('simple-workflow-notifications', async () => {
@@ -842,6 +842,11 @@ class DBOSTestClass {
     return Promise.resolve();
   }
 
+  @DBOS.workflow()
+  static async testVoidWorkflow() {
+    return DBOSTestClass.testVoidFunction();
+  }
+
   @DBOS.step()
   static async testNameFunction(name: string) {
     return Promise.resolve(name);
@@ -868,6 +873,11 @@ class DBOSTestClass {
   @DBOS.step()
   static async testStep() {
     return Promise.resolve(DBOSTestClass.cnt++);
+  }
+
+  @DBOS.workflow()
+  static async testStepWorkflow() {
+    return DBOSTestClass.testStep();
   }
 
   @DBOS.workflow()
