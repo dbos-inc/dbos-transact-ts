@@ -194,10 +194,6 @@ export function waitForAbort(signal: AbortSignal): Promise<void> {
 
 export type ValuesOf<T> = T[keyof T];
 
-export function exhaustiveCheckGuard(_: never): never {
-  throw new Error('Exaustive matching is not applied');
-}
-
 // Capture original functions
 const originalStdoutWrite = process.stdout.write.bind(process.stdout);
 const originalStderrWrite = process.stderr.write.bind(process.stderr);
