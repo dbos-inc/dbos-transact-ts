@@ -1965,8 +1965,7 @@ describe('queue-time-outs', () => {
     }
 
     // Deduplication is not supported for partitioned queues. This check is
-    // purely from supplied params, so it fires regardless of whether the
-    // queue is in the in-memory map.
+    // purely from supplied params, so it fires for every queue.
     await assert.rejects(async () => {
       await DBOS.startWorkflow(partitionNormalWorkflow, {
         queueName: partitionQueue.name,

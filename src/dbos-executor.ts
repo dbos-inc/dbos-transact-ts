@@ -73,7 +73,7 @@ import {
 } from './serialization';
 import { GetWorkflowsInput } from '.';
 
-import { registerInternalQueue, wfQueueRunner, WorkflowQueue } from './wfqueue';
+import { wfQueueRunner } from './wfqueue';
 import { debugTriggerPoint, DEBUG_TRIGGER_WORKFLOW_ENQUEUE } from './debugpoint';
 import { ScheduledReceiver } from './scheduler/scheduler_decorator';
 import { DynamicSchedulerLoop } from './scheduler/scheduler';
@@ -1602,14 +1602,5 @@ export class DBOSExecutor {
       hasher.update(sourceCode);
     }
     return hasher.digest('hex');
-  }
-
-  static internalQueue: WorkflowQueue | undefined = undefined;
-
-  static createInternalQueue() {
-    if (DBOSExecutor.internalQueue !== undefined) {
-      return;
-    }
-    DBOSExecutor.internalQueue = registerInternalQueue(INTERNAL_QUEUE_NAME);
   }
 }

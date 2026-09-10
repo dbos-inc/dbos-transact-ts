@@ -83,7 +83,7 @@ import {
   clearAllRegistrations,
   getRegisteredFunctionFullName,
 } from './decorators';
-import { defaultEnableOTLP, globalParams, sleepConfig, sleepms } from './utils';
+import { defaultEnableOTLP, globalParams, INTERNAL_QUEUE_NAME, sleepConfig, sleepms } from './utils';
 import {
   deserializeValue,
   JSONValue,
@@ -120,7 +120,7 @@ import {
   backfillSchedule as backfillScheduleImpl,
 } from './scheduler/scheduler';
 import { validateCrontab, validateTimezone } from './scheduler/crontab';
-import { logQueue, RegisterQueueOptions, WorkflowQueue, wfQueueRunner } from './wfqueue';
+import { logQueue, registerInternalQueue, RegisterQueueOptions, WorkflowQueue, wfQueueRunner } from './wfqueue';
 import { enqueueWorkflowWithOptions } from './enqueue_workflow';
 import type { EnqueueWorkflowOptions } from './enqueue_options';
 import assert from 'node:assert';
@@ -511,7 +511,7 @@ export class DBOS {
       globalParams.executorID = randomUUID();
     }
 
-    DBOSExecutor.createInternalQueue();
+    registerInternalQueue(INTERNAL_QUEUE_NAME);
     DBOSExecutor.globalInstance = new DBOSExecutor(internalConfig);
 
     recordDBOSLaunch();
@@ -725,7 +725,6 @@ export class DBOS {
     assert(!DBOS.isInitialized(), 'Cannot call DBOS.clearRegistry after DBOS.launch');
     clearAllRegistrations();
     wfQueueRunner.clearRegistrations();
-    DBOSExecutor.internalQueue = undefined;
   }
 
   /** Stop listening for external events (for testing) */
