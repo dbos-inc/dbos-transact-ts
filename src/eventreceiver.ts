@@ -7,7 +7,7 @@
 import { DBOSExecutor, PrepareEnqueuedWorkflowOptions } from './dbos-executor';
 import { ensureDBOSIsLaunched, TypedAsyncFunction } from './decorators';
 import { WorkflowStatusInternal } from './system_database';
-import { QueueParameters, wfQueueRunner, WorkflowQueue } from './wfqueue';
+import { wfQueueRunner, WorkflowQueue } from './wfqueue';
 
 export type { PrepareEnqueuedWorkflowOptions };
 
@@ -59,25 +59,17 @@ export function registerPollerQueue(name: string): void {
   wfQueueRunner.pollerQueueNames.add(name);
 }
 
-/**
- * Get the in-memory queue registered under `name` in this process, creating it if there is none.
- *
- * A receiver must resolve its internal queues through this rather than caching them: a registry
- * clear (`DBOS.shutdown({ deregister: true })`) drops the registration, and a cached queue would
- * silently stop being dispatched, leaving its workflows ENQUEUED forever.
- */
-export function getOrCreateQueue(name: string, params: QueueParameters = {}): WorkflowQueue {
-  return wfQueueRunner.wfQueuesByName.get(name) ?? new WorkflowQueue(name, params);
-}
+/** How a receiver declares the process-local queues it enqueues onto. */
+export { registerInternalQueue } from './wfqueue';
 
 /**
- * Look up a queue by name: an in-memory queue registered in this process if there is one,
- * otherwise a database-backed queue. Returns `null` if neither exists.
+ * Look up a queue by name: one of DBOS's own process-local queues if there is one under that
+ * name, otherwise a database-backed queue. Returns `null` if neither exists.
  */
 export async function getQueue(name: string): Promise<WorkflowQueue | null> {
-  const inMemory = wfQueueRunner.wfQueuesByName.get(name);
-  if (inMemory) return inMemory;
+  const internal = wfQueueRunner.getInternalQueue(name);
+  if (internal) return internal;
   ensureDBOSIsLaunched('getQueue');
   const record = await DBOSExecutor.globalInstance!.systemDatabase.getQueue(name);
-  return record === null ? null : WorkflowQueue._fromRecord(record);
+  return record === null ? null : new WorkflowQueue(record);
 }

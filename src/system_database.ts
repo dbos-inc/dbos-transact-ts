@@ -185,7 +185,7 @@ export interface QueueRecord {
   partitionRateLimitMax: number | null;
   partitionRateLimitPeriodSec: number | null;
   pollingIntervalSec: number;
-  // Owner from the queues table; undefined for in-memory and pre-upgrade queues.
+  // Owner from the queues table; undefined for internal and pre-upgrade queues.
   applicationName?: string;
 }
 

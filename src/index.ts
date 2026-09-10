@@ -19,7 +19,7 @@ export { WorkflowSchedule, ScheduledWorkflowFn, ScheduleOptions } from './schedu
 
 export { AlertHandler, DBOSLifecycleCallback, ExternalRegistration, MethodRegistrationBase } from './decorators';
 
-export { WorkflowQueue } from './wfqueue';
+export type { WorkflowQueue } from './wfqueue';
 
 export * as Error from './error';
 

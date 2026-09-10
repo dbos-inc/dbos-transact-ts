@@ -83,7 +83,7 @@ import {
   clearAllRegistrations,
   getRegisteredFunctionFullName,
 } from './decorators';
-import { defaultEnableOTLP, globalParams, sleepConfig, sleepms } from './utils';
+import { defaultEnableOTLP, globalParams, INTERNAL_QUEUE_NAME, sleepConfig, sleepms } from './utils';
 import {
   deserializeValue,
   JSONValue,
@@ -120,7 +120,7 @@ import {
   backfillSchedule as backfillScheduleImpl,
 } from './scheduler/scheduler';
 import { validateCrontab, validateTimezone } from './scheduler/crontab';
-import { logQueue, RegisterQueueOptions, WorkflowQueue, wfQueueRunner } from './wfqueue';
+import { logQueue, registerInternalQueue, RegisterQueueOptions, WorkflowQueue, wfQueueRunner } from './wfqueue';
 import { enqueueWorkflowWithOptions } from './enqueue_workflow';
 import type { EnqueueWorkflowOptions } from './enqueue_options';
 import assert from 'node:assert';
@@ -511,7 +511,7 @@ export class DBOS {
       globalParams.executorID = randomUUID();
     }
 
-    DBOSExecutor.createInternalQueue();
+    registerInternalQueue(INTERNAL_QUEUE_NAME);
     DBOSExecutor.globalInstance = new DBOSExecutor(internalConfig);
 
     recordDBOSLaunch();
@@ -725,7 +725,6 @@ export class DBOS {
     assert(!DBOS.isInitialized(), 'Cannot call DBOS.clearRegistry after DBOS.launch');
     clearAllRegistrations();
     wfQueueRunner.clearRegistrations();
-    DBOSExecutor.internalQueue = undefined;
   }
 
   /** Stop listening for external events (for testing) */
@@ -1881,10 +1880,7 @@ export class DBOS {
     }
     const funcId = isChild ? (startWfFuncId ?? functionIDGetIncrement()) : undefined;
 
-    // All enqueue-option validation lives here. Param-only checks
-    // (priority range, dedup-with-partition) always run; the partition-flag
-    // checks run only for queues in this executor's in-memory map.
-    // Database-backed queues skip them to avoid an extra roundtrip on every enqueue.
+    // Param-only checks: reading the queue's own config would cost a roundtrip on every enqueue.
     if (queueName) {
       const queuePartitionKey = params.enqueueOptions?.queuePartitionKey;
       const priority = params.enqueueOptions?.priority;
@@ -1893,17 +1889,6 @@ export class DBOS {
       }
       if (queuePartitionKey && params.enqueueOptions?.deduplicationID) {
         throw Error('Deduplication is not supported for partitioned queues');
-      }
-      const inMem = this.#executor.getQueueByName(queueName);
-      if (inMem) {
-        if (inMem.partitionQueue && !queuePartitionKey) {
-          throw Error(`A workflow cannot be enqueued on partitioned queue ${queueName} without a partition key`);
-        }
-        if (queuePartitionKey && !inMem.partitionQueue) {
-          throw Error(
-            `You can only use a partition key on a partition-enabled queue. Key ${queuePartitionKey} was used with non-partitioned queue ${queueName}`,
-          );
-        }
       }
     } else {
       // Only the queue machinery reads these, and a stored dedup ID becomes a unique-constraint violation once anything assigns the row a queue name; applicationVersion is excluded because it still selects recovery executors.
@@ -2646,7 +2631,7 @@ export class DBOS {
   static async registerQueue(name: string, options: RegisterQueueOptions = {}): Promise<WorkflowQueue> {
     ensureDBOSIsLaunched('registerQueue');
     const { onConflict = 'update_if_latest_version', ...params } = options;
-    WorkflowQueue.validateQueueParams(params);
+    WorkflowQueue.validateQueueRegistration(name, params);
 
     const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
     let updateExisting: boolean;
@@ -2666,7 +2651,7 @@ export class DBOS {
     if (persisted === null) {
       throw new Error(`Queue '${name}' missing from database after upsert`);
     }
-    const queue = WorkflowQueue._fromRecord(persisted);
+    const queue = new WorkflowQueue(persisted);
     if (inserted) {
       DBOSExecutor.globalInstance!.logger.info(`Registered new queue:`);
       logQueue(DBOSExecutor.globalInstance!.logger, queue);
@@ -2719,7 +2704,7 @@ export class DBOS {
   static async retrieveQueue(name: string): Promise<WorkflowQueue | null> {
     ensureDBOSIsLaunched('retrieveQueue');
     const record = await DBOSExecutor.globalInstance!.systemDatabase.getQueue(name);
-    return record === null ? null : WorkflowQueue._fromRecord(record);
+    return record === null ? null : new WorkflowQueue(record);
   }
 
   /** Delete a database-backed queue. Pending workflows on it are unrecoverable. */
@@ -2736,6 +2721,6 @@ export class DBOS {
   static async listQueues(applicationName?: string | string[]): Promise<WorkflowQueue[]> {
     ensureDBOSIsLaunched('listQueues');
     const records = await DBOSExecutor.globalInstance!.systemDatabase.listQueues(applicationName);
-    return records.map((record) => WorkflowQueue._fromRecord(record));
+    return records.map((record) => new WorkflowQueue(record));
   }
 }

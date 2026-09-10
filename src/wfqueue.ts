@@ -1,5 +1,4 @@
 import { DBOSExecutor } from './dbos-executor';
-import { DBOS } from './dbos';
 import {
   DEBUG_TRIGGER_WORKFLOW_QUEUE_START,
   DEBUG_TRIGGER_BETWEEN_PARTITION_DISPATCHES,
@@ -7,7 +6,7 @@ import {
 } from './debugpoint';
 import type { QueueRecord, SystemDatabase } from './system_database';
 import type { GlobalLogger } from './telemetry/logs';
-import { globalParams, INTERNAL_QUEUE_NAME } from './utils';
+import { globalParams, RESERVED_QUEUE_NAME_PREFIX } from './utils';
 
 /**
  * Log a single queue's name and its set parameters. Unset parameters are
@@ -263,7 +262,7 @@ function applyRecord(q: WorkflowQueue, record: QueueRecord): void {
 
 /**
  * Re-read the queue's row from the database and update the cached fields on
- * `q` in place. No-op for in-memory queues. Throws if the row has been
+ * `q` in place. No-op for internal queues. Throws if the row has been
  * deleted.
  */
 async function refreshFromDb(q: WorkflowQueue): Promise<void> {
@@ -296,16 +295,15 @@ export class WorkflowQueue {
   partitionWorkerConcurrency?: number;
   partitionRateLimit?: QueueRateLimit;
   minPollingIntervalMs?: number;
-  /** Owner from the queues table; undefined for in-memory and unclaimed queues. */
+  /** Owner from the queues table; undefined for internal and unclaimed queues. */
   applicationName?: string;
 
   /**
    * When true, this queue's configuration is persisted in the `queues` system
-   * table and may be mutated at runtime via the `setX` methods. When false,
-   * the queue's configuration is fixed at construction and lives only in
-   * process memory.
+   * table and may be mutated at runtime via the `setX` methods. False only for
+   * the process-local queues DBOS registers for its own use.
    */
-  readonly databaseBacked: boolean = false;
+  readonly databaseBacked: boolean;
 
   /**
    * True when configuration reads/writes target a `DBOSClient`-supplied
@@ -313,50 +311,38 @@ export class WorkflowQueue {
    * kept off this class's public type — see the module-level WeakMap below —
    * so that `WorkflowQueue` does not transitively depend on `SystemDatabase`.
    */
-  readonly clientBound: boolean = false;
-
-  constructor(name: string);
+  readonly clientBound: boolean;
 
   /**
+   * Not reachable from the published package, which exports `WorkflowQueue` as a
+   * type only: applications obtain queues from `DBOS.registerQueue`,
+   * `DBOS.retrieveQueue`, or `DBOS.listQueues`.
    *
-   * @param name - Name to give the `WorkflowQueue`, accepted by `DBOS.startWorkflow`
-   * @param queueParameters - Policy for limiting workflow initiation rate and execution concurrency
+   * @param record - The queue's configuration, persisted or not.
+   * @param databaseBacked - False only for the process-local queues DBOS registers for its own use.
+   * @param clientSystemDatabase - When set, config reads and writes target this client's database.
    */
-  constructor(name: string, queueParameters: QueueParameters);
+  constructor(record: QueueRecord, databaseBacked: boolean = true, clientSystemDatabase?: SystemDatabase) {
+    this.name = record.name;
+    this.databaseBacked = databaseBacked;
+    this.clientBound = clientSystemDatabase !== undefined;
+    applyRecord(this, record);
+    if (clientSystemDatabase !== undefined) {
+      clientSystemDatabases.set(this, clientSystemDatabase);
+    }
+  }
 
-  constructor(name: string, arg2?: QueueParameters | number, rateLimit?: QueueRateLimit) {
-    this.name = name;
-
-    if (DBOS.isInitialized()) {
-      DBOS.logger.warn(
-        `In-memory workflow queue '${name}' was created after DBOS initialization and will not be picked up by the queue dispatcher. ` +
-          `Use DBOS.registerQueue to register a database-backed queue at runtime.`,
+  /**
+   * Throws if a user-supplied queue registration is invalid. Internal queues bypass the name
+   * check: the reserved prefix is theirs, and they validate their parameters directly.
+   */
+  static validateQueueRegistration(name: string, params: QueueParameters): void {
+    if (name.startsWith(RESERVED_QUEUE_NAME_PREFIX)) {
+      throw new Error(
+        `Queue name ${name} is reserved: names starting with '${RESERVED_QUEUE_NAME_PREFIX}' belong to DBOS's internal queues.`,
       );
     }
-
-    let params: QueueParameters;
-    if (typeof arg2 === 'object' && arg2 !== null) {
-      params = arg2;
-    } else {
-      params = { concurrency: arg2, rateLimit };
-    }
     WorkflowQueue.validateQueueParams(params);
-
-    this.concurrency = params.globalConcurrency ?? params.concurrency;
-    this.rateLimit = params.rateLimit;
-    this.workerConcurrency = params.workerConcurrency;
-    this.priorityEnabled = params.priorityEnabled ?? false;
-    this.partitionConcurrency = params.partitionConcurrency;
-    this.partitionWorkerConcurrency = params.partitionWorkerConcurrency;
-    this.partitionRateLimit = params.partitionRateLimit;
-    // Partitioning is inferred from any per-partition limit; the deprecated flag tracks it.
-    this.partitionQueue = (params.partitionQueue ?? false) || hasPartitionLimits(params);
-    this.minPollingIntervalMs = params.minPollingIntervalMs;
-
-    if (wfQueueRunner.wfQueuesByName.has(name)) {
-      throw Error(`Workflow Queue '${name}' defined multiple times`);
-    }
-    wfQueueRunner.wfQueuesByName.set(name, this);
   }
 
   /** Throws if any combination of queue parameters is invalid. */
@@ -453,26 +439,6 @@ export class WorkflowQueue {
       partitionRateLimitPeriodSec: params.partitionRateLimit ? params.partitionRateLimit.periodSec : null,
       pollingIntervalSec: (params.minPollingIntervalMs ?? 1000) / 1000,
     };
-  }
-
-  /**
-   * Construct a database-backed queue from a persisted record. Bypasses the
-   * legacy constructor so the instance is not added to the global registry —
-   * the queues table is the source of truth.
-   * @internal
-   */
-  static _fromRecord(record: QueueRecord, clientSystemDatabase?: SystemDatabase): WorkflowQueue {
-    // Allocate without invoking the constructor (which would auto-register
-    // in `wfQueuesByName`) and strip `readonly` so we can set the fields here.
-    const q = Object.create(WorkflowQueue.prototype) as { -readonly [K in keyof WorkflowQueue]: WorkflowQueue[K] };
-    q.name = record.name;
-    q.databaseBacked = true;
-    q.clientBound = clientSystemDatabase !== undefined;
-    applyRecord(q as WorkflowQueue, record);
-    if (clientSystemDatabase !== undefined) {
-      clientSystemDatabases.set(q as WorkflowQueue, clientSystemDatabase);
-    }
-    return q as WorkflowQueue;
   }
 
   /** @deprecated Use `setGlobalConcurrency`. */
@@ -678,6 +644,32 @@ export class WorkflowQueue {
   }
 }
 
+/**
+ * Register a queue that DBOS itself needs — the internal queue, a Kafka receiver's
+ * queue — or return the one already registered under `name`.
+ *
+ * Internal queues are not persisted in the `queues` table: their configuration is
+ * fixed here and lives only in this process's memory. They are always dispatched,
+ * bypassing any `listenQueues` filter, since this process is the only one that
+ * enqueues onto them.
+ *
+ * Callers must resolve their queues through this rather than caching them: a registry
+ * clear (`DBOS.shutdown({ deregister: true })`) drops the registration, and a cached
+ * queue would silently stop being dispatched, leaving its workflows ENQUEUED forever.
+ *
+ * Not a user-facing API: applications register queues with `DBOS.registerQueue`.
+ * @internal
+ */
+export function registerInternalQueue(name: string, params: QueueParameters = {}): WorkflowQueue {
+  const existing = wfQueueRunner.getInternalQueue(name);
+  if (existing) return existing;
+
+  WorkflowQueue.validateQueueParams(params);
+  const queue = new WorkflowQueue(WorkflowQueue.recordFromParams(name, params), false);
+  wfQueueRunner.addInternalQueue(queue);
+  return queue;
+}
+
 /** Per-queue runtime scheduling state tracked by the shared dispatcher. */
 interface QueueRuntimeState {
   /** Latest config snapshot; replaced in place when a DB-backed row is refreshed. */
@@ -689,7 +681,8 @@ interface QueueRuntimeState {
 }
 
 class WFQueueRunner {
-  readonly wfQueuesByName: Map<string, WorkflowQueue> = new Map();
+  /** DBOS's own process-local queues, registered via `registerInternalQueue`. */
+  private readonly internalQueues: Map<string, WorkflowQueue> = new Map();
 
   /**
    * Queues fed by this process's own pollers (e.g. a Kafka consumer). Always dispatched,
@@ -702,8 +695,6 @@ class WFQueueRunner {
   private listenQueueNames: Set<string> | null = null;
   /** Per-queue scheduling state, keyed by queue name. */
   private readonly states: Map<string, QueueRuntimeState> = new Map();
-  /** Names already warned about colliding with an in-memory queue (warn-once). */
-  private readonly conflictWarned: Set<string> = new Set();
 
   private static readonly defaultMinPollingIntervalMs: number = 1000;
   private static readonly defaultMaxPollingIntervalMs: number = 120000;
@@ -714,6 +705,14 @@ class WFQueueRunner {
   private readonly jitterMin: number = 0.95;
   private readonly jitterMax: number = 1.05;
 
+  addInternalQueue(queue: WorkflowQueue): void {
+    this.internalQueues.set(queue.name, queue);
+  }
+
+  getInternalQueue(name: string): WorkflowQueue | undefined {
+    return this.internalQueues.get(name);
+  }
+
   stop() {
     if (!this.isRunning) return;
     this.isRunning = false;
@@ -721,31 +720,24 @@ class WFQueueRunner {
   }
 
   clearRegistrations() {
-    this.wfQueuesByName.clear();
+    this.internalQueues.clear();
     this.pollerQueueNames.clear();
   }
 
   async dispatchLoop(
     exec: DBOSExecutor,
-    listenQueuesArg: (WorkflowQueue | string)[] | null,
+    listenQueuesArg: string[] | null,
     maxConcurrentQueueDispatches: number = 3,
   ): Promise<void> {
     this.isRunning = true;
     this.states.clear();
-    this.conflictWarned.clear();
-    this.listenQueueNames = listenQueuesArg
-      ? new Set(listenQueuesArg.map((entry) => (typeof entry === 'string' ? entry : entry.name)))
-      : null;
+    this.listenQueueNames = listenQueuesArg ? new Set(listenQueuesArg) : null;
     this.abortController = new AbortController();
 
     const startNow = Date.now();
 
-    // The internal queue is process-private and bypasses the listenQueues filter.
-    const internal = this.wfQueuesByName.get(INTERNAL_QUEUE_NAME);
-    if (internal) this.ensureState(internal, startNow);
-
-    // Unmatched string entries are deferred to refreshDbQueues as DB-backed queues.
-    for (const q of this.resolveInMemoryQueues(listenQueuesArg)) {
+    // Internal queues are process-private and bypass the listenQueues filter.
+    for (const q of this.internalQueues.values()) {
       this.ensureState(q, startNow);
     }
 
@@ -757,29 +749,6 @@ class WFQueueRunner {
 
     // One loop drives global maintenance; queue polls run in a bounded set of independent lanes.
     await this.schedulerLoop(exec, startNow, maxConcurrentQueueDispatches);
-  }
-
-  /** Resolve the listenQueues argument to the set of in-memory queues to dispatch for. */
-  private resolveInMemoryQueues(listenQueuesArg: (WorkflowQueue | string)[] | null): WorkflowQueue[] {
-    if (listenQueuesArg === null) {
-      return Array.from(this.wfQueuesByName.values()).filter((q) => q.name !== INTERNAL_QUEUE_NAME);
-    }
-    const result: WorkflowQueue[] = [];
-    for (const entry of listenQueuesArg) {
-      if (typeof entry === 'string') {
-        const q = this.wfQueuesByName.get(entry);
-        if (q) result.push(q);
-      } else {
-        result.push(entry);
-      }
-    }
-    // Poller-fed queues are always dispatched: this process enqueues onto them, so under a
-    // listenQueues filter their workflows would otherwise sit ENQUEUED forever.
-    for (const name of this.pollerQueueNames) {
-      const q = this.wfQueuesByName.get(name);
-      if (q && !result.some((r) => r.name === name)) result.push(q);
-    }
-    return result;
   }
 
   /** Begin tracking a queue if it isn't already, scheduling its first poll one interval out. */
@@ -801,18 +770,8 @@ class WFQueueRunner {
 
     const present = new Set<string>();
     for (const record of records) {
-      if (record.name === INTERNAL_QUEUE_NAME) continue;
-      if (this.wfQueuesByName.has(record.name)) {
-        if (!this.conflictWarned.has(record.name)) {
-          this.conflictWarned.add(record.name);
-          exec.logger.warn(
-            `Database-backed queue '${record.name}' has the same name as an in-memory queue. ` +
-              `The in-memory queue's configuration is being used; the database-backed queue is ignored. ` +
-              `Rename one of them to resolve the conflict.`,
-          );
-        }
-        continue;
-      }
+      // An internal queue owns its name outright; its process-local configuration wins.
+      if (this.internalQueues.has(record.name)) continue;
       if (
         this.listenQueueNames !== null &&
         !this.listenQueueNames.has(record.name) &&
@@ -824,9 +783,9 @@ class WFQueueRunner {
       const existing = this.states.get(record.name);
       if (existing) {
         // Refresh config in place, preserving this queue's polling/backoff state.
-        existing.queue = WorkflowQueue._fromRecord(record);
+        existing.queue = new WorkflowQueue(record);
       } else {
-        this.ensureState(WorkflowQueue._fromRecord(record), now);
+        this.ensureState(new WorkflowQueue(record), now);
       }
     }
 
@@ -842,7 +801,7 @@ class WFQueueRunner {
 
   /** Log every queue this process will dispatch for, once at startup after discovery. */
   private logRunningQueues(exec: DBOSExecutor): void {
-    const names = Array.from(this.states.keys()).filter((n) => n !== INTERNAL_QUEUE_NAME);
+    const names = Array.from(this.states.keys()).filter((n) => !this.internalQueues.has(n));
     exec.logger.info(`Listening to ${names.length} queues:`);
     for (const name of names) {
       logQueue(exec.logger, this.states.get(name)!.queue);

@@ -573,7 +573,7 @@ export class DBOSClient {
           "Use 'always_update' or 'never_update'.",
       );
     }
-    WorkflowQueue.validateQueueParams(params);
+    WorkflowQueue.validateQueueRegistration(name, params);
 
     const updateExisting = onConflict === 'always_update';
     const record = { ...WorkflowQueue.recordFromParams(name, params), applicationName };
@@ -583,7 +583,7 @@ export class DBOSClient {
     if (persisted === null) {
       throw new Error(`Queue '${name}' missing from database after upsert`);
     }
-    const queue = WorkflowQueue._fromRecord(persisted, this.systemDatabase);
+    const queue = new WorkflowQueue(persisted, true, this.systemDatabase);
     if (inserted) {
       this.logger.info(`Registered new queue:`);
       logQueue(this.logger, queue);
@@ -594,7 +594,7 @@ export class DBOSClient {
   /** Retrieve a database-backed queue by name, or `null` if no row exists. */
   async retrieveQueue(name: string): Promise<WorkflowQueue | null> {
     const record = await this.systemDatabase.getQueue(name);
-    return record === null ? null : WorkflowQueue._fromRecord(record, this.systemDatabase);
+    return record === null ? null : new WorkflowQueue(record, true, this.systemDatabase);
   }
 
   /** Delete a database-backed queue. Pending workflows on it are unrecoverable. */
@@ -609,7 +609,7 @@ export class DBOSClient {
    */
   async listQueues(applicationName?: string | string[]): Promise<WorkflowQueue[]> {
     const records = await this.systemDatabase.listQueues(applicationName);
-    return records.map((record) => WorkflowQueue._fromRecord(record, this.systemDatabase));
+    return records.map((record) => new WorkflowQueue(record, true, this.systemDatabase));
   }
 
   /**

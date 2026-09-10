@@ -8,8 +8,8 @@ import { Kafka, KafkaConfig, KafkaMessage, logLevel, Producer } from 'kafkajs';
 import { KafkaReceiver } from '..';
 
 // Regression: a consumer's queue must be polled under a listenQueues filter even when it is
-// database-backed, i.e. absent from the in-memory registry. The sibling listen-queues suite covers
-// only the in-memory branch — its consumer uses the internal queue, which is always registered — so
+// database-backed, i.e. absent from the internal registry. The sibling listen-queues suite covers
+// only the internal branch — its consumer uses the internal queue, which is always registered — so
 // the dispatcher's separate database-backed branch is reachable only from here.
 const kafkaConfig: KafkaConfig = {
   clientId: 'dbos-kafka-dbq-test',
@@ -76,7 +76,7 @@ suite('kafkajs-receive-listen-queues-db-backed', async () => {
       }
 
       // Persist the queue through the public API, which requires a launched instance. It lives in
-      // the queues table only — nothing puts it in the in-memory registry.
+      // the queues table only — nothing puts it in the internal registry.
       DBOS.setConfig({ name: 'kafka-dbq-test' });
       await DBOS.launch();
       const registered = await DBOS.registerQueue(queueName, { concurrency: 10 });

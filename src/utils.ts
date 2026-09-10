@@ -71,6 +71,9 @@ export const dbRetryConfig = {
   maxBackoffSec: 60.0,
 };
 
+// DBOS's own queues are named under this prefix, so users may not claim it.
+export const RESERVED_QUEUE_NAME_PREFIX = '_dbos_';
+
 // The name of the internal queue used by DBOS
 export const INTERNAL_QUEUE_NAME = '_dbos_internal_queue';
 

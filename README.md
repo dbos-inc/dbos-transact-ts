@@ -84,9 +84,9 @@ You can add queues to your workflows in just a couple lines of code.
 They don't require a separate queueing service or message broker&mdash;just Postgres.
 
 ```ts
-import { DBOS, WorkflowQueue } from '@dbos-inc/dbos-sdk';
+import { DBOS } from '@dbos-inc/dbos-sdk';
 
-const queue = new WorkflowQueue('example_queue');
+const queueName = 'example_queue';
 
 async function taskFunction(task) {
   // ...
@@ -98,7 +98,7 @@ async function queueFunction(tasks) {
 
   // Enqueue each task so all tasks are processed concurrently.
   for (const task of tasks) {
-    handles.push(await DBOS.startWorkflow(taskWorkflow, { queueName: queue.name })(task));
+    handles.push(await DBOS.startWorkflow(taskWorkflow, { queueName })(task));
   }
 
   // Wait for each task to complete and retrieve its result.
@@ -110,6 +110,10 @@ async function queueFunction(tasks) {
   return results;
 }
 const queueWorkflow = DBOS.registerWorkflow(queueFunction, { name: 'queueWorkflow' });
+
+// Queue configuration is stored in Postgres, so register the queue after launch.
+await DBOS.launch();
+await DBOS.registerQueue(queueName);
 ```
 
 [Read more ↗️](https://docs.dbos.dev/typescript/tutorials/queue-tutorial)

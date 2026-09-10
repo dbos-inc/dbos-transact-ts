@@ -1,6 +1,7 @@
-import { DBOS, DBOSLifecycleCallback, Error as DBOSErrors, FunctionName, WorkflowQueue } from '@dbos-inc/dbos-sdk';
+import { DBOS, DBOSLifecycleCallback, Error as DBOSErrors, FunctionName } from '@dbos-inc/dbos-sdk';
+import type { WorkflowQueue } from '@dbos-inc/dbos-sdk';
 import {
-  getOrCreateQueue,
+  registerInternalQueue,
   getQueue,
   enqueueWorkflows,
   prepareEnqueuedWorkflow,
@@ -172,13 +173,13 @@ export function applyDBOSConsumerConfig(
 
 /** Several receivers in one process share the internal queues, so resolve rather than construct. */
 function getKafkaQueue(): WorkflowQueue {
-  return getOrCreateQueue(KAFKA_QUEUE_NAME);
+  return registerInternalQueue(KAFKA_QUEUE_NAME);
 }
 
 function getKafkaOrderedQueue(): WorkflowQueue {
   // One shared partitioned queue: a per-partition concurrency of 1 makes execution
   // serial per partition key and parallel across keys.
-  return getOrCreateQueue(KAFKA_ORDERED_QUEUE_NAME, { partitionConcurrency: 1 });
+  return registerInternalQueue(KAFKA_ORDERED_QUEUE_NAME, { partitionConcurrency: 1 });
 }
 
 function partitionKeyFor(
@@ -524,7 +525,7 @@ export class ConfluentKafkaReceiver implements DBOSLifecycleCallback {
     kafkaRegInfo.ordering = ordering;
     kafkaRegInfo.batchSize = batchSize;
 
-    // Resolve the consumer's queue now, before launch: the dispatcher snapshots in-memory queues
+    // Resolve the consumer's queue now, before launch: the dispatcher snapshots internal queues
     // when it starts, and a queue created later would never be dispatched.
     if (ordering === 'none') {
       kafkaRegInfo.consumerQueueName = options.queueName ?? getKafkaQueue().name;
