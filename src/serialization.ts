@@ -178,20 +178,25 @@ type AnyObject = { [key: string | symbol]: unknown };
  *   aren't present as functions on the deserialized object.
  * The return is both the deserialized object and its serialized string.
  */
+/** The format a value is written in: the explicit choice, else the configured serializer's own. */
+function serializationName(format: WorkflowSerializationFormat, serializer: DBOSSerializer): string {
+  if (format === 'portable') return DBOSPortableJSON.name();
+  if (format === 'native') return DBOSJSON.name();
+  return serializer.name();
+}
+
 export async function serializeFunctionInputOutput<T>(
   value: T,
   path: PathToMember = [],
   serializer: DBOSSerializer,
   serializationType?: WorkflowSerializationFormat,
 ): Promise<{ deserialized: T; stringified: string; sername: string }> {
-  const serialization =
-    serializationType === 'portable'
-      ? DBOSPortableJSON.name()
-      : serializationType === 'native'
-        ? DBOSJSON.name()
-        : serializer.name();
-
-  return serializeFunctionInputOutputWithSerializer(value, path, serializer, serialization);
+  return serializeFunctionInputOutputWithSerializer(
+    value,
+    path,
+    serializer,
+    serializationName(serializationType, serializer),
+  );
 }
 
 export async function serializeFunctionInputOutputWithSerializer<T>(
@@ -378,6 +383,10 @@ export async function deserializeValue(
   serialization: string | null,
   serializer: DBOSSerializer,
 ): Promise<unknown> {
+  // Nothing stored at all, as for an absent event or message: every format reads that as null.
+  if (serializedValue === null) {
+    return null;
+  }
   if (serialization === DBOSPortableJSON.name()) {
     return DBOSPortableJSON.parse(serializedValue);
   }
@@ -390,23 +399,16 @@ export async function deserializeValue(
   throw unavailableSerialization(serialization);
 }
 
-// Deserialize a plain value (not function inputs) using specified serialization,
-//   or the provided default
 export async function deserializePositionalArgs(
   serializedValue: string | null,
   serialization: string | null,
   serializer: DBOSSerializer,
 ): Promise<unknown[]> {
-  if (serialization === DBOSPortableJSON.name()) {
-    return (DBOSPortableJSON.parse(serializedValue) as JsonWorkflowArgs).positionalArgs ?? [];
-  }
-  if (serialization === DBOSJSON.name()) {
-    return DBOSJSON.parse(serializedValue) as unknown[];
-  }
-  if (serialization === serializer.name()) {
-    return (await serializer.parse(serializedValue)) as unknown[];
-  }
-  throw unavailableSerialization(serialization);
+  const parsed = await deserializeValue(serializedValue, serialization, serializer);
+  // The portable form wraps the arguments in a record; every other format stores the array itself.
+  return serialization === DBOSPortableJSON.name()
+    ? ((parsed as JsonWorkflowArgs).positionalArgs ?? [])
+    : (parsed as unknown[]);
 }
 
 export async function deserializeResError(
@@ -414,17 +416,13 @@ export async function deserializeResError(
   serialization: string | null,
   serializer: DBOSSerializer,
 ): Promise<Error> {
+  const parsed = await deserializeValue(serializedValue, serialization, serializer);
+  // The portable form carries a language-neutral record rather than a serialized Error.
   if (serialization === DBOSPortableJSON.name()) {
-    const errdata = DBOSPortableJSON.parse(serializedValue) as JsonWorkflowErrorData;
+    const errdata = parsed as JsonWorkflowErrorData;
     throw new PortableWorkflowError(errdata.message, errdata.name, errdata.code, errdata.data);
   }
-  if (serialization === DBOSJSON.name()) {
-    return deserializeError(DBOSJSON.parse(serializedValue));
-  }
-  if (serialization === serializer.name()) {
-    return deserializeError(await serializer.parse(serializedValue));
-  }
-  throw unavailableSerialization(serialization);
+  return deserializeError(parsed);
 }
 
 // Attempt to deserialize a value, but if it fails, retun the raw string.
@@ -513,13 +511,7 @@ export async function serializeResError(
   serializer: DBOSSerializer,
   serializationType: WorkflowSerializationFormat,
 ): Promise<{ serializedValue: string | null; serialization: string | null }> {
-  const serialization =
-    serializationType === 'portable'
-      ? DBOSPortableJSON.name()
-      : serializationType === 'native'
-        ? DBOSJSON.name()
-        : serializer.name();
-  return serializeResErrorWithSerializer(err, serializer, serialization);
+  return serializeResErrorWithSerializer(err, serializer, serializationName(serializationType, serializer));
 }
 
 export async function serializeResErrorWithSerializer(

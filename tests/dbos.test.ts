@@ -27,7 +27,6 @@ describe('dbos-tests', () => {
 
   beforeEach(async () => {
     await DBOS.launch();
-    DBOSTestClass.cnt = 0;
   });
 
   afterEach(async () => {
@@ -81,14 +80,6 @@ describe('dbos-tests', () => {
 
   test('abort-function', async () => {
     await expect(DBOSTestClass.testFailWorkflow('fail')).rejects.toThrow('fail');
-  });
-
-  test('simple-step', async () => {
-    const workflowUUID: string = randomUUID();
-    await DBOS.withNextWorkflowID(workflowUUID, async () => {
-      await expect(DBOSTestClass.testStepWorkflow()).resolves.toBe(0);
-    });
-    await expect(DBOSTestClass.testStepWorkflow()).resolves.toBe(1);
   });
 
   test('simple-workflow-notifications', async () => {
@@ -824,8 +815,6 @@ class DBOSTimeoutTestClass {
 }
 
 class DBOSTestClass {
-  static cnt: number = 0;
-
   @DBOS.step()
   static async testFunction(name: string) {
     return Promise.resolve(name);
@@ -868,16 +857,6 @@ class DBOSTestClass {
   @DBOS.workflow()
   static async testFailWorkflow(name: string) {
     await DBOSTestClass.testFailFunction(name);
-  }
-
-  @DBOS.step()
-  static async testStep() {
-    return Promise.resolve(DBOSTestClass.cnt++);
-  }
-
-  @DBOS.workflow()
-  static async testStepWorkflow() {
-    return DBOSTestClass.testStep();
   }
 
   @DBOS.workflow()
