@@ -13,8 +13,6 @@ export {
 
 export { DBOSClient } from './client';
 
-export { SchedulerMode, SchedulerConfig } from './scheduler/scheduler_decorator';
-
 export { WorkflowSchedule, ScheduledWorkflowFn, ScheduleOptions } from './scheduler/scheduler';
 
 export { AlertHandler, DBOSLifecycleCallback, ExternalRegistration, MethodRegistrationBase } from './decorators';
@@ -45,7 +43,7 @@ export { StepConfig } from './step';
 
 export { FunctionName, ConfiguredInstance } from './decorators';
 
-export { DBOSConfig, DBOSExternalState, OtelAttributeFormat } from './dbos-executor';
+export { DBOSConfig, OtelAttributeFormat } from './dbos-executor';
 
 export { DLogger, ContextualMetadata, StackTrace } from './telemetry/logs';
 

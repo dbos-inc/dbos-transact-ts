@@ -13,11 +13,11 @@ export class DBOSWFTest {
 
   static ran = false;
 
-  @DBOS.scheduled({ crontab: '* * * * * *' })
+  // Scheduled by clear-reg.test.ts after launch, since schedules live in the database.
   @DBOS.workflow()
-  static async scheduledWF(_1: Date, _2: Date) {
+  static async scheduledWF(_scheduledDate: Date, _context: unknown) {
     DBOSWFTest.ran = true;
-    return await DBOSWFTest.runStep();
+    await DBOSWFTest.runStep();
   }
 }
 
