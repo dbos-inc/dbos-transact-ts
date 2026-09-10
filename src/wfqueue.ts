@@ -90,16 +90,6 @@ export interface RegisterQueueOptions extends QueueParameters {
   onConflict?: QueueConflictResolution;
 }
 
-/** A queue's limits, each resolved to the scope it is enforced at. */
-export interface ResolvedQueueLimits {
-  globalConcurrency?: number;
-  workerConcurrency?: number;
-  rateLimit?: QueueRateLimit;
-  partitionConcurrency?: number;
-  partitionWorkerConcurrency?: number;
-  partitionRateLimit?: QueueRateLimit;
-}
-
 /** The per-partition limits, any of which partitions a queue. */
 type PartitionLimits = Pick<
   QueueParameters,
@@ -115,28 +105,16 @@ function hasPartitionLimits(limits: PartitionLimits): boolean {
   );
 }
 
-/** Resolve every limit on a queue to the scope it is actually enforced at. */
-export function resolveQueueLimits(q: WorkflowQueue): ResolvedQueueLimits {
-  return {
-    globalConcurrency: q.concurrency,
-    workerConcurrency: q.workerConcurrency,
-    rateLimit: q.rateLimit,
-    partitionConcurrency: q.partitionConcurrency,
-    partitionWorkerConcurrency: q.partitionWorkerConcurrency,
-    partitionRateLimit: q.partitionRateLimit,
-  };
-}
-
 /**
  * Room left under this worker's queue-wide concurrency limit, given how many of
  * its workflows are already running or claimed.
  */
-function workerBudget(limits: ResolvedQueueLimits, running: number): number {
-  if (limits.workerConcurrency === undefined) {
+function workerBudget(queue: WorkflowQueue, running: number): number {
+  if (queue.workerConcurrency === undefined) {
     // A per-partition worker limit is enforced per partition instead.
     return Infinity;
   }
-  return Math.max(0, limits.workerConcurrency - running);
+  return Math.max(0, queue.workerConcurrency - running);
 }
 
 /** 40001 serialization_failure or 55P03 lock_not_available: a peer is claiming the same rows. */
@@ -248,6 +226,7 @@ export class WorkflowQueue {
   /**
    * Last-known cached values. May be stale for database-backed queues if
    * another process has modified the row. Use getters instead.
+   * `concurrency` is the queue-wide limit, across every worker and partition.
    */
   concurrency?: number;
   rateLimit?: QueueRateLimit;
@@ -848,7 +827,6 @@ class WFQueueRunner {
       }
       await exec.dispatchDequeuedWorkflows(wfids);
     };
-    const limits = resolveQueueLimits(queue);
     const sysdb = exec.systemDatabase;
     // Dequeue workflows for this queue, either in one batched sweep across partitions or one partition at a time.
     try {
@@ -862,13 +840,13 @@ class WFQueueRunner {
         );
         await dispatch(wfids);
       } else if (
-        limits.partitionConcurrency === 1 &&
-        limits.globalConcurrency === undefined &&
-        limits.rateLimit === undefined &&
-        limits.partitionRateLimit === undefined
+        queue.partitionConcurrency === 1 &&
+        queue.concurrency === undefined &&
+        queue.rateLimit === undefined &&
+        queue.partitionRateLimit === undefined
       ) {
         // Batched path: one transaction claims every partition's head (see findAndMarkStartablePartitionedWorkflows).
-        const maxTasks = workerBudget(limits, sysdb.countRunningWorkflowsForQueue(queue.name));
+        const maxTasks = workerBudget(queue, sysdb.countRunningWorkflowsForQueue(queue.name));
         if (maxTasks > 0) {
           const wfids = await sysdb.findAndMarkStartablePartitionedWorkflows(
             queue,
@@ -885,7 +863,7 @@ class WFQueueRunner {
         const running = sysdb.countRunningWorkflowsForQueue(queue.name);
         let claimed = 0;
         for (const partitionKey of partitionKeys) {
-          if (workerBudget(limits, running + claimed) <= 0) break;
+          if (workerBudget(queue, running + claimed) <= 0) break;
           let partitionWfids: string[];
           try {
             partitionWfids = await sysdb.findAndMarkStartableWorkflows(

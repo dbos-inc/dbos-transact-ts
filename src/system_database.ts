@@ -34,7 +34,7 @@ import {
   sleepms,
 } from './utils';
 import { GlobalLogger } from './telemetry/logs';
-import { QueueRateLimit, resolveQueueLimits, WorkflowQueue } from './wfqueue';
+import { QueueRateLimit, WorkflowQueue } from './wfqueue';
 import { createHash, randomUUID } from 'crypto';
 import { getClientConfig } from './utils';
 import { ensurePGDatabase, maskDatabaseUrl } from './database_utils';
@@ -3642,17 +3642,16 @@ export class SystemDatabase {
     partitionLocalRunningCount: number = 0,
   ): Promise<string[]> {
     const claimedIDs: string[] = [];
-    const limits = resolveQueueLimits(queue);
     const partitionParams: string[] = queuePartitionKey !== undefined ? [queuePartitionKey] : [];
     // Shares a concurrency or rate limit budget with other executors.
     const hasSharedBudget =
-      limits.globalConcurrency !== undefined ||
-      limits.partitionConcurrency !== undefined ||
-      limits.rateLimit !== undefined ||
-      limits.partitionRateLimit !== undefined;
+      queue.concurrency !== undefined ||
+      queue.partitionConcurrency !== undefined ||
+      queue.rateLimit !== undefined ||
+      queue.partitionRateLimit !== undefined;
     // Shares that budget across partitions too, so sweeps of different partitions read disjoint rows and could each spend it.
     const hasWriteSkew =
-      queuePartitionKey !== undefined && (limits.globalConcurrency !== undefined || limits.rateLimit !== undefined);
+      queuePartitionKey !== undefined && (queue.concurrency !== undefined || queue.rateLimit !== undefined);
 
     const client = await this.#connect();
     try {
@@ -3703,48 +3702,48 @@ export class SystemDatabase {
       // Compute maxTasks, the number of workflows startable under every flow control limit on this queue.
       let maxTasks = Infinity;
 
-      if (limits.workerConcurrency !== undefined) {
+      if (queue.workerConcurrency !== undefined) {
         // Use the in-memory registry for this worker's running count — avoids a DB round trip.
-        maxTasks = Math.min(maxTasks, Math.max(0, limits.workerConcurrency - localRunningCount));
+        maxTasks = Math.min(maxTasks, Math.max(0, queue.workerConcurrency - localRunningCount));
       }
-      if (limits.partitionWorkerConcurrency !== undefined) {
-        maxTasks = Math.min(maxTasks, Math.max(0, limits.partitionWorkerConcurrency - partitionLocalRunningCount));
+      if (queue.partitionWorkerConcurrency !== undefined) {
+        maxTasks = Math.min(maxTasks, Math.max(0, queue.partitionWorkerConcurrency - partitionLocalRunningCount));
       }
       if (maxTasks <= 0) {
         await client.query('COMMIT');
         return claimedIDs;
       }
 
-      if (limits.rateLimit !== undefined) {
+      if (queue.rateLimit !== undefined) {
         // Bound the claim by the limiter's remaining slots so a backlogged queue locks only what it can start.
-        maxTasks = Math.min(maxTasks, await rateLimitRemaining(limits.rateLimit, false));
+        maxTasks = Math.min(maxTasks, await rateLimitRemaining(queue.rateLimit, false));
       }
-      if (limits.partitionRateLimit !== undefined) {
-        maxTasks = Math.min(maxTasks, await rateLimitRemaining(limits.partitionRateLimit, true));
+      if (queue.partitionRateLimit !== undefined) {
+        maxTasks = Math.min(maxTasks, await rateLimitRemaining(queue.partitionRateLimit, true));
       }
       if (maxTasks <= 0) {
         await client.query('COMMIT');
         return claimedIDs;
       }
 
-      if (limits.globalConcurrency !== undefined) {
+      if (queue.concurrency !== undefined) {
         // Global concurrency still requires a DB query since other workers may be running workflows too.
         const totalRunningTasks = await pendingCount(false);
-        if (totalRunningTasks > limits.globalConcurrency) {
+        if (totalRunningTasks > queue.concurrency) {
           this.logger.warn(
-            `Total running tasks (${totalRunningTasks}) exceeds the global concurrency limit (${limits.globalConcurrency})`,
+            `Total running tasks (${totalRunningTasks}) exceeds the global concurrency limit (${queue.concurrency})`,
           );
         }
-        maxTasks = Math.min(maxTasks, Math.max(0, limits.globalConcurrency - totalRunningTasks));
+        maxTasks = Math.min(maxTasks, Math.max(0, queue.concurrency - totalRunningTasks));
       }
-      if (limits.partitionConcurrency !== undefined) {
+      if (queue.partitionConcurrency !== undefined) {
         const partitionRunningTasks = await pendingCount(true);
-        if (partitionRunningTasks > limits.partitionConcurrency) {
+        if (partitionRunningTasks > queue.partitionConcurrency) {
           this.logger.warn(
-            `Total running tasks (${partitionRunningTasks}) on partition ${queuePartitionKey} of queue ${queue.name} exceeds the partition concurrency limit (${limits.partitionConcurrency})`,
+            `Total running tasks (${partitionRunningTasks}) on partition ${queuePartitionKey} of queue ${queue.name} exceeds the partition concurrency limit (${queue.partitionConcurrency})`,
           );
         }
-        maxTasks = Math.min(maxTasks, Math.max(0, limits.partitionConcurrency - partitionRunningTasks));
+        maxTasks = Math.min(maxTasks, Math.max(0, queue.partitionConcurrency - partitionRunningTasks));
       }
       // Return immediately if there are no available tasks due to flow control limits
       if (maxTasks <= 0) {
@@ -3792,7 +3791,7 @@ export class SystemDatabase {
           StatusString.PENDING,
           executorID,
           appVersion,
-          limits.rateLimit !== undefined || limits.partitionRateLimit !== undefined,
+          queue.rateLimit !== undefined || queue.partitionRateLimit !== undefined,
           workflowIDs,
           StatusString.ENQUEUED,
           // Claim an unclaimed row for this application; a nameless dequeuer leaves ownership untouched.
@@ -3848,18 +3847,17 @@ export class SystemDatabase {
     appVersion: string,
     maxTasks: number = Infinity,
   ): Promise<string[]> {
-    const limits = resolveQueueLimits(queue);
     if (
-      limits.partitionConcurrency !== 1 ||
-      limits.globalConcurrency !== undefined ||
-      limits.rateLimit !== undefined ||
-      limits.partitionRateLimit !== undefined
+      queue.partitionConcurrency !== 1 ||
+      queue.concurrency !== undefined ||
+      queue.rateLimit !== undefined ||
+      queue.partitionRateLimit !== undefined
     ) {
       throw new DBOSError(
         `Batched partitioned dequeue requires a queue with partition concurrency 1 and no queue-wide concurrency or rate limit: ${queue.name}`,
       );
     }
-    // partitionWorkerConcurrency needs no handling here: any value above 0 is capped at partition concurrency 1, which the PENDING gate already enforces globally, and 0 makes the caller's maxTasks 0.
+    // partitionWorkerConcurrency needs no handling here: it cannot exceed partition concurrency 1, which the PENDING gate already enforces globally.
     const client = await this.#connect();
     try {
       await client.query('BEGIN');
