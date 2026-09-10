@@ -180,15 +180,24 @@ async function handleMessage(request: Request): void {
 
 Schedule workflows using cron syntax, or use durable sleep to pause workflows for as long as you like (even days or weeks) before executing.
 
-You can schedule a workflow ina single line of code:
+You can schedule a workflow in a few lines of code:
 
 ```ts
-async function scheduledFunction(schedTime: Date, startTime: Date) {
+async function scheduledFunction(schedTime: Date, context: unknown) {
   DBOS.logger.info(`I am a workflow scheduled to run every 30 seconds`);
 }
 
-const scheduledWorkflow = DBOS.registerWorkflow(scheduledFunction);
-DBOS.registerScheduled(scheduledWorkflow, { crontab: '*/30 * * * * *' });
+const scheduledWorkflow = DBOS.registerWorkflow(scheduledFunction, { name: 'scheduledWorkflow' });
+
+// Schedules are stored in Postgres, so create the schedule after launch.
+await DBOS.launch();
+await DBOS.applySchedules([
+  {
+    scheduleName: 'every-30-seconds',
+    workflowFn: scheduledWorkflow,
+    schedule: '*/30 * * * * *',
+  },
+]);
 ```
 
 You can add a durable sleep to any workflow with a single line of code.

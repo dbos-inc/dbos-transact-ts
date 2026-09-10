@@ -75,7 +75,6 @@ import { GetWorkflowsInput } from '.';
 
 import { wfQueueRunner } from './wfqueue';
 import { debugTriggerPoint, DEBUG_TRIGGER_WORKFLOW_ENQUEUE } from './debugpoint';
-import { ScheduledReceiver } from './scheduler/scheduler_decorator';
 import { DynamicSchedulerLoop } from './scheduler/scheduler';
 import * as crypto from 'crypto';
 import {
@@ -293,24 +292,6 @@ export const TempWorkflowType = {
   send: 'send',
 } as const;
 
-/**
- * State item to be kept in the DBOS system database on behalf of clients
- */
-export interface DBOSExternalState {
-  /** Name of event receiver service */
-  service: string;
-  /** Fully qualified function name for which state is kept */
-  workflowFnName: string;
-  /** subkey within the service+workflowFnName */
-  key: string;
-  /** Value kept for the service+workflowFnName+key combination */
-  value?: string;
-  /** Updated time (used to version the value) */
-  updateTime?: number;
-  /** Updated sequence number (used to version the value) */
-  updateSeq?: bigint;
-}
-
 export interface DBOSExecutorOptions {
   systemDatabase?: SystemDatabase;
 }
@@ -379,7 +360,6 @@ export class DBOSExecutor {
       );
     }
 
-    new ScheduledReceiver(); // Create the scheduler, which registers itself.
     new DynamicSchedulerLoop(config.schedulerPollingIntervalMs); // Create the dynamic scheduler, which registers itself.
 
     this.initialized = false;
@@ -1548,13 +1528,6 @@ export class DBOSExecutor {
       this.logger.error(`Unrecognized temporary workflow! UUID ${workflowID}, name ${wfName}`);
       throw new DBOSNotRegisteredError(wfName);
     }
-  }
-
-  async getEventDispatchState(svc: string, wfn: string, key: string): Promise<DBOSExternalState | undefined> {
-    return await this.systemDatabase.getEventDispatchState(svc, wfn, key);
-  }
-  async upsertEventDispatchState(state: DBOSExternalState): Promise<DBOSExternalState> {
-    return await this.systemDatabase.upsertEventDispatchState(state);
   }
 
   #getRecoveryContext(_workflowID: string, status: WorkflowStatusInternal): DBOSLocalCtx {
