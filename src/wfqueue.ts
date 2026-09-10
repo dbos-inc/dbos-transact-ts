@@ -132,12 +132,8 @@ export function resolveQueueLimits(q: WorkflowQueue): ResolvedQueueLimits {
  * its workflows are already running or claimed.
  */
 function workerBudget(limits: ResolvedQueueLimits, running: number): number {
-  if (limits.partitionWorkerConcurrency !== undefined && limits.partitionWorkerConcurrency <= 0) {
-    // Zero per partition pauses this worker; the batched sweep enforces no per-partition worker limit of its own.
-    return 0;
-  }
   if (limits.workerConcurrency === undefined) {
-    // A non-zero per-partition worker limit is enforced per partition instead.
+    // A per-partition worker limit is enforced per partition instead.
     return Infinity;
   }
   return Math.max(0, limits.workerConcurrency - running);

@@ -2275,6 +2275,15 @@ describe('database-backed-queue-crud', () => {
 
   test('register-retrieve-delete-and-conflict-resolution', async () => {
     const queueName = `test_crud_queue_${randomUUID()}`;
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    // The columns behind the removed priorityEnabled/partitionQueue options are still written.
+    const storedFlags = async () => {
+      const { rows } = await sysdb.pool.query<{ priority_enabled: boolean; partition_queue: boolean }>(
+        `SELECT priority_enabled, partition_queue FROM "${sysdb.schemaName}".queues WHERE name = $1`,
+        [queueName],
+      );
+      return rows[0];
+    };
 
     expect(await DBOS.retrieveQueue(queueName)).toBeNull();
 
@@ -2303,6 +2312,7 @@ describe('database-backed-queue-crud', () => {
     expect(retrieved!.partitionRateLimit).toEqual({ limitPerPeriod: 4, periodSec: 2.5 });
     // Any per-partition limit partitions the queue.
     expect(retrieved!.partitionQueue).toBe(true);
+    expect(await storedFlags()).toEqual({ priority_enabled: true, partition_queue: true });
     expect(retrieved!.minPollingIntervalMs).toBe(2500);
     expect(retrieved!.databaseBacked).toBe(true);
     // The same row reaches the conductor and the dispatcher through listQueues.
@@ -2328,6 +2338,7 @@ describe('database-backed-queue-crud', () => {
     expect(retrieved!.partitionRateLimit).toBeUndefined();
     // Clearing the limits un-partitions the queue along with them.
     expect(retrieved!.partitionQueue).toBe(false);
+    expect(await storedFlags()).toEqual({ priority_enabled: true, partition_queue: false });
     expect(retrieved!.minPollingIntervalMs).toBe(1000);
 
     // update_if_latest_version updates when the running version is the latest.
@@ -2336,7 +2347,6 @@ describe('database-backed-queue-crud', () => {
     expect(retrieved!.concurrency).toBe(30);
 
     // If a newer registered version exists, update_if_latest_version no-ops.
-    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
     const newerVersion = `newer-${randomUUID()}`;
     await sysdb.createApplicationVersion(newerVersion);
     await sysdb.updateApplicationVersionTimestamp(newerVersion, Date.now() + 1_000_000);
@@ -2354,6 +2364,14 @@ describe('database-backed-queue-crud', () => {
 
   test('dynamic-config-via-setters', async () => {
     const queueName = `test_dyn_queue_${randomUUID()}`;
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    const storedPartitionFlag = async (name: string) => {
+      const { rows } = await sysdb.pool.query<{ partition_queue: boolean }>(
+        `SELECT partition_queue FROM "${sysdb.schemaName}".queues WHERE name = $1`,
+        [name],
+      );
+      return rows[0].partition_queue;
+    };
     const queue = await DBOS.registerQueue(queueName, {
       concurrency: 4,
       workerConcurrency: 2,
@@ -2398,6 +2416,7 @@ describe('database-backed-queue-crud', () => {
     expect(await part.getPartitionWorkerConcurrency()).toBe(2);
     expect(await part.getPartitionRateLimit()).toEqual({ limitPerPeriod: 3, periodSec: 1 });
     expect((await DBOS.retrieveQueue(partName))!.partitionQueue).toBe(true);
+    expect(await storedPartitionFlag(partName)).toBe(true);
     // A per-partition limit may not exceed its queue-wide counterpart.
     await expect(part.setPartitionConcurrency(100)).rejects.toThrow('less than or equal to globalConcurrency');
     await expect(part.setPartitionWorkerConcurrency(100)).rejects.toThrow('less than or equal to partitionConcurrency');
@@ -2406,6 +2425,8 @@ describe('database-backed-queue-crud', () => {
     expect((await DBOS.retrieveQueue(partName))!.partitionQueue).toBe(true);
     await part.setPartitionRateLimit(undefined);
     expect((await DBOS.retrieveQueue(partName))!.partitionQueue).toBe(false);
+    // The setters keep the persisted flag in step with the limits, which is all that writes it.
+    expect(await storedPartitionFlag(partName)).toBe(false);
 
     // The queue-wide setters cross-validate against the other limits, and clear.
     await expect(part.setWorkerConcurrency(100)).rejects.toThrow(

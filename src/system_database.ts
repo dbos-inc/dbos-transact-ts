@@ -5374,6 +5374,7 @@ export class SystemDatabase {
           worker_concurrency = EXCLUDED.worker_concurrency,
           rate_limit_max = EXCLUDED.rate_limit_max,
           rate_limit_period_sec = EXCLUDED.rate_limit_period_sec,
+          priority_enabled = EXCLUDED.priority_enabled,
           partition_queue = EXCLUDED.partition_queue,
           partition_concurrency = EXCLUDED.partition_concurrency,
           partition_worker_concurrency = EXCLUDED.partition_worker_concurrency,
@@ -5397,10 +5398,11 @@ export class SystemDatabase {
       await client.query(
         `INSERT INTO "${this.schemaName}".queues
           (name, concurrency, worker_concurrency, rate_limit_max, rate_limit_period_sec,
-           partition_queue, partition_concurrency, partition_worker_concurrency,
+           priority_enabled, partition_queue, partition_concurrency, partition_worker_concurrency,
            partition_rate_limit_max, partition_rate_limit_period_sec,
            polling_interval_sec, updated_at, application_name)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+         -- priority_enabled is vestigial: every queue dispatches in priority order.
+         VALUES ($1, $2, $3, $4, $5, TRUE, $6, $7, $8, $9, $10, $11, $12, $13)
          ${onConflict}`,
         [
           record.name,
