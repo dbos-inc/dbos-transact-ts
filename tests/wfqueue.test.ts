@@ -3957,23 +3957,47 @@ describe('partition-queue-limits', () => {
     jest.restoreAllMocks();
   });
 
-  test('rejects limits that could never bind, or that mix a deprecated option with its replacement', () => {
-    const build = (params: QueueParameters) => () => WorkflowQueue.validateQueueParams(params);
+  test('rejects limits that could never bind, or that mix a deprecated option with its replacement', async () => {
+    // Register through the public API, so this covers the path a user actually takes.
+    const register = (params: QueueParameters) => DBOS.registerQueue(`validate_${randomUUID()}`, params);
     // A deprecated argument cannot be combined with the one replacing it.
-    expect(build({ concurrency: 1, globalConcurrency: 1 })).toThrow('set only one of them');
-    expect(build({ partitionQueue: true, partitionConcurrency: 1 })).toThrow('set only one of them');
+    await expect(register({ concurrency: 1, globalConcurrency: 1 })).rejects.toThrow('set only one of them');
+    await expect(register({ partitionQueue: true, partitionConcurrency: 1 })).rejects.toThrow('set only one of them');
     // A per-partition limit above its queue-wide counterpart could never bind.
-    expect(build({ globalConcurrency: 1, partitionConcurrency: 2 })).toThrow('greater than or equal to');
-    expect(build({ workerConcurrency: 1, partitionWorkerConcurrency: 2 })).toThrow('greater than or equal to');
-    expect(build({ partitionConcurrency: 1, partitionWorkerConcurrency: 2 })).toThrow('greater than or equal to');
-    expect(build({ globalConcurrency: 1, partitionWorkerConcurrency: 2 })).toThrow('greater than or equal to');
-    expect(build({ globalConcurrency: 5, partitionQueue: true })).toThrow('cannot be combined with globalConcurrency');
+    await expect(register({ globalConcurrency: 1, partitionConcurrency: 2 })).rejects.toThrow(
+      'greater than or equal to',
+    );
+    await expect(register({ workerConcurrency: 1, partitionWorkerConcurrency: 2 })).rejects.toThrow(
+      'greater than or equal to',
+    );
+    await expect(register({ partitionConcurrency: 1, partitionWorkerConcurrency: 2 })).rejects.toThrow(
+      'greater than or equal to',
+    );
+    await expect(register({ globalConcurrency: 1, partitionWorkerConcurrency: 2 })).rejects.toThrow(
+      'greater than or equal to',
+    );
+    await expect(register({ globalConcurrency: 5, partitionQueue: true })).rejects.toThrow(
+      'cannot be combined with globalConcurrency',
+    );
     // Malformed limits are rejected the same way their queue-wide counterparts are.
-    expect(build({ partitionConcurrency: 0 })).toThrow('at least 1');
-    expect(build({ partitionWorkerConcurrency: 0 })).toThrow('at least 1');
-    expect(build({ partitionRateLimit: { limitPerPeriod: 1 } as QueueRateLimit })).toThrow(
+    await expect(register({ partitionConcurrency: 0 })).rejects.toThrow('at least 1');
+    await expect(register({ partitionWorkerConcurrency: 0 })).rejects.toThrow('at least 1');
+    await expect(register({ partitionRateLimit: { limitPerPeriod: 1 } as QueueRateLimit })).rejects.toThrow(
       'both limitPerPeriod and periodSec',
     );
+  });
+
+  test('rejects a queue name under the prefix reserved for DBOS', async () => {
+    await expect(DBOS.registerQueue('_dbos_my_queue')).rejects.toThrow('is reserved');
+    await expect(DBOS.registerQueue(INTERNAL_QUEUE_NAME, { concurrency: 5 })).rejects.toThrow('is reserved');
+    const client = await DBOSClient.create({ systemDatabaseUrl: config.systemDatabaseUrl! });
+    try {
+      await expect(client.registerQueue('_dbos_client_queue')).rejects.toThrow('is reserved');
+    } finally {
+      await client.destroy();
+    }
+    // DBOS's own queues own the prefix: the internal queue is registered under it.
+    expect(wfQueueRunner.getInternalQueue(INTERNAL_QUEUE_NAME)?.name).toBe(INTERNAL_QUEUE_NAME);
   });
 
   test.each([

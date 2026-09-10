@@ -2631,7 +2631,7 @@ export class DBOS {
   static async registerQueue(name: string, options: RegisterQueueOptions = {}): Promise<WorkflowQueue> {
     ensureDBOSIsLaunched('registerQueue');
     const { onConflict = 'update_if_latest_version', ...params } = options;
-    WorkflowQueue.validateQueueParams(params);
+    WorkflowQueue.validateQueueRegistration(name, params);
 
     const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
     let updateExisting: boolean;

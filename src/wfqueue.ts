@@ -6,7 +6,7 @@ import {
 } from './debugpoint';
 import type { QueueRecord, SystemDatabase } from './system_database';
 import type { GlobalLogger } from './telemetry/logs';
-import { globalParams } from './utils';
+import { globalParams, RESERVED_QUEUE_NAME_PREFIX } from './utils';
 
 /**
  * Log a single queue's name and its set parameters. Unset parameters are
@@ -330,6 +330,19 @@ export class WorkflowQueue {
     if (clientSystemDatabase !== undefined) {
       clientSystemDatabases.set(this, clientSystemDatabase);
     }
+  }
+
+  /**
+   * Throws if a user-supplied queue registration is invalid. Internal queues bypass the name
+   * check: the reserved prefix is theirs, and they validate their parameters directly.
+   */
+  static validateQueueRegistration(name: string, params: QueueParameters): void {
+    if (name.startsWith(RESERVED_QUEUE_NAME_PREFIX)) {
+      throw new Error(
+        `Queue name ${name} is reserved: names starting with '${RESERVED_QUEUE_NAME_PREFIX}' belong to DBOS's internal queues.`,
+      );
+    }
+    WorkflowQueue.validateQueueParams(params);
   }
 
   /** Throws if any combination of queue parameters is invalid. */

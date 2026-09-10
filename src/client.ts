@@ -573,7 +573,7 @@ export class DBOSClient {
           "Use 'always_update' or 'never_update'.",
       );
     }
-    WorkflowQueue.validateQueueParams(params);
+    WorkflowQueue.validateQueueRegistration(name, params);
 
     const updateExisting = onConflict === 'always_update';
     const record = { ...WorkflowQueue.recordFromParams(name, params), applicationName };

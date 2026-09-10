@@ -17,12 +17,6 @@ const kafkaConfig: KafkaConfig = {
   logLevel: logLevel.NOTHING,
 };
 
-const kafkaReceiver = new ConfluentKafkaReceiver({
-  clientId: 'dbos-conf-kafka-ordering-test',
-  brokers: [process.env['KAFKA_BROKER'] ?? 'localhost:9092'],
-  logLevel: 0,
-});
-
 const suffix = Math.floor(Math.random() * 1_000_000_000);
 const partitionTopic = `dbos-conf-order-part-${suffix}`;
 const topicOrderTopic = `dbos-conf-order-topic-${suffix}`;
@@ -104,27 +98,36 @@ async function customQueueWorkflow(_topic: string, partition: number, message: C
 
 const customQueueName = `conf-kafka-custom-q-${suffix}`;
 
-const registeredPartition = DBOS.registerWorkflow(partitionWorkflow, { name: 'confPartitionWorkflow' });
-kafkaReceiver.registerConsumer(registeredPartition, partitionTopic, {
-  name: 'confPartitionWorkflow',
-  ordering: 'partition',
-  batchSize: 3,
-  config: { 'group.id': `dbos-conf-order-part-grp-${suffix}` },
-});
+/** Register every consumer. Called after the queue row exists, so launch validates against it. */
+function registerConsumers() {
+  const kafkaReceiver = new ConfluentKafkaReceiver({
+    clientId: 'dbos-conf-kafka-ordering-test',
+    brokers: [process.env['KAFKA_BROKER'] ?? 'localhost:9092'],
+    logLevel: 0,
+  });
 
-const registeredTopic = DBOS.registerWorkflow(topicWorkflow, { name: 'confTopicWorkflow' });
-kafkaReceiver.registerConsumer(registeredTopic, topicOrderTopic, {
-  name: 'confTopicWorkflow',
-  ordering: 'topic',
-  config: { 'group.id': `dbos-conf-order-topic-grp-${suffix}` },
-});
+  const registeredPartition = DBOS.registerWorkflow(partitionWorkflow, { name: 'confPartitionWorkflow' });
+  kafkaReceiver.registerConsumer(registeredPartition, partitionTopic, {
+    name: 'confPartitionWorkflow',
+    ordering: 'partition',
+    batchSize: 3,
+    config: { 'group.id': `dbos-conf-order-part-grp-${suffix}` },
+  });
 
-const registeredCustomQueue = DBOS.registerWorkflow(customQueueWorkflow, { name: 'confCustomQueueWorkflow' });
-kafkaReceiver.registerConsumer(registeredCustomQueue, customQueueTopic, {
-  name: 'confCustomQueueWorkflow',
-  queueName: customQueueName,
-  config: { 'group.id': `dbos-conf-order-customq-grp-${suffix}` },
-});
+  const registeredTopic = DBOS.registerWorkflow(topicWorkflow, { name: 'confTopicWorkflow' });
+  kafkaReceiver.registerConsumer(registeredTopic, topicOrderTopic, {
+    name: 'confTopicWorkflow',
+    ordering: 'topic',
+    config: { 'group.id': `dbos-conf-order-topic-grp-${suffix}` },
+  });
+
+  const registeredCustomQueue = DBOS.registerWorkflow(customQueueWorkflow, { name: 'confCustomQueueWorkflow' });
+  kafkaReceiver.registerConsumer(registeredCustomQueue, customQueueTopic, {
+    name: 'confCustomQueueWorkflow',
+    queueName: customQueueName,
+    config: { 'group.id': `dbos-conf-order-customq-grp-${suffix}` },
+  });
+}
 
 async function validateKafka(config: KafkaConfig) {
   const kafka = new Kafka(config);
@@ -185,12 +188,21 @@ suite('confluent-kafka-receive-ordering', async () => {
         await client.end();
       }
 
+      // Persist the consumer's queue first: the receiver validates it at launch, and a queue with
+      // no row is skipped, so registering it after launch would silence that check.
       DBOS.setConfig({ name: 'conf-kafka-order-test' });
       await DBOS.launch();
-      // The consumer's queue must have a row before the dispatcher will poll it.
       await DBOS.registerQueue(customQueueName, { concurrency: 1 });
+
+      // Start over with a cleared registry so the consumers below are the only registrations. The
+      // queue row survives: shutdown tears down connections, not data.
+      await DBOS.shutdown({ deregister: true });
+
+      registerConsumers();
+      DBOS.setConfig({ name: 'conf-kafka-order-test' });
+      await DBOS.launch();
     },
-    { timeout: 60000 },
+    { timeout: 90000 },
   );
 
   after(
