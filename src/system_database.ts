@@ -5118,6 +5118,7 @@ export class SystemDatabase {
     }
   }
 
+  @dbRetry()
   async updateLastFiredAt(name: string, lastFiredAt: string): Promise<void> {
     await this.pool.query(
       `UPDATE "${this.schemaName}".workflow_schedules SET last_fired_at = $1 WHERE schedule_name = $2`,
@@ -5291,6 +5292,7 @@ export class SystemDatabase {
    * The latest version registered by an application. Defaults to this handle's, so a
    * caller acting for another one — firing its schedule — must name it.
    */
+  @dbRetry()
   async getLatestApplicationVersion(applicationName?: string): Promise<VersionInfo> {
     const owner = applicationName ?? this.appName;
     const params: unknown[] = [];
