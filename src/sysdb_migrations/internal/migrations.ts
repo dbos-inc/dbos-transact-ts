@@ -1077,5 +1077,16 @@ $$ LANGUAGE plpgsql;`,
             ]),
       ],
     },
+    // Dispatch bookkeeping for the removed in-memory event receivers; nothing reads it.
+    {
+      name: '114_drop_event_dispatch_kv',
+      pg: [`DROP TABLE IF EXISTS "${schemaName}"."event_dispatch_kv"`],
+    },
+    // Duplicate of idx_workflow_topic, which covers the same columns in the same order.
+    {
+      name: '115_drop_idx_notifications',
+      online: true,
+      pg: [`DROP INDEX ${isCockroach ? '' : 'CONCURRENTLY'} IF EXISTS "${schemaName}"."idx_notifications"`],
+    },
   ];
 }

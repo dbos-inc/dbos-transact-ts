@@ -1,4 +1,4 @@
-import { DBOSExecutor, DBOSExternalState } from './dbos-executor';
+import { DBOSExecutor } from './dbos-executor';
 import { DatabaseError, Pool, PoolClient, Notification, Client, PoolConfig, ClientBase } from 'pg';
 import {
   DBOSWorkflowConflictError,
@@ -19,7 +19,6 @@ import {
   workflow_events,
   workflow_events_history,
   streams,
-  event_dispatch_kv,
   workflow_schedules,
   application_versions,
   queues,
@@ -3280,65 +3279,6 @@ export class SystemDatabase {
     return { serializedValue: value, serialization: valueSer };
   }
 
-  // Event dispatcher queries / updates
-  @dbRetry()
-  async getEventDispatchState(
-    service: string,
-    workflowName: string,
-    key: string,
-  ): Promise<DBOSExternalState | undefined> {
-    const res = await this.pool.query<event_dispatch_kv>(
-      `SELECT * FROM "${this.schemaName}".event_dispatch_kv
-       WHERE workflow_fn_name = $1 AND service_name = $2 AND key = $3;`,
-      [workflowName, service, key],
-    );
-
-    if (res.rows.length === 0) return undefined;
-
-    return {
-      service: res.rows[0].service_name,
-      workflowFnName: res.rows[0].workflow_fn_name,
-      key: res.rows[0].key,
-      value: res.rows[0].value,
-      updateTime: res.rows[0].update_time,
-      updateSeq:
-        res.rows[0].update_seq !== null && res.rows[0].update_seq !== undefined
-          ? BigInt(res.rows[0].update_seq)
-          : undefined,
-    };
-  }
-
-  @dbRetry()
-  async upsertEventDispatchState(state: DBOSExternalState): Promise<DBOSExternalState> {
-    const res = await this.pool.query<event_dispatch_kv>(
-      `INSERT INTO "${this.schemaName}".event_dispatch_kv (
-        service_name, workflow_fn_name, key, value, update_time, update_seq)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       ON CONFLICT (service_name, workflow_fn_name, key)
-       DO UPDATE SET
-         update_time = GREATEST(EXCLUDED.update_time, event_dispatch_kv.update_time),
-         update_seq =  GREATEST(EXCLUDED.update_seq,  event_dispatch_kv.update_seq),
-         value = CASE WHEN (EXCLUDED.update_time > event_dispatch_kv.update_time 
-            OR EXCLUDED.update_seq > event_dispatch_kv.update_seq 
-            OR (event_dispatch_kv.update_time IS NULL and event_dispatch_kv.update_seq IS NULL)
-         ) THEN EXCLUDED.value ELSE event_dispatch_kv.value END
-       RETURNING value, update_time, update_seq;`,
-      [state.service, state.workflowFnName, state.key, state.value, state.updateTime, state.updateSeq],
-    );
-
-    return {
-      service: state.service,
-      workflowFnName: state.workflowFnName,
-      key: state.key,
-      value: res.rows[0].value,
-      updateTime: res.rows[0].update_time,
-      updateSeq:
-        res.rows[0].update_seq !== undefined && res.rows[0].update_seq !== null
-          ? BigInt(res.rows[0].update_seq)
-          : undefined,
-    };
-  }
-
   // ==================== Streams ====================
   @dbRetry()
   async writeStreamFromStep(
@@ -5178,6 +5118,7 @@ export class SystemDatabase {
     }
   }
 
+  @dbRetry()
   async updateLastFiredAt(name: string, lastFiredAt: string): Promise<void> {
     await this.pool.query(
       `UPDATE "${this.schemaName}".workflow_schedules SET last_fired_at = $1 WHERE schedule_name = $2`,
@@ -5351,6 +5292,7 @@ export class SystemDatabase {
    * The latest version registered by an application. Defaults to this handle's, so a
    * caller acting for another one — firing its schedule — must name it.
    */
+  @dbRetry()
   async getLatestApplicationVersion(applicationName?: string): Promise<VersionInfo> {
     const owner = applicationName ?? this.appName;
     const params: unknown[] = [];

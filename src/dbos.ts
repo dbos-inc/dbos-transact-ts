@@ -10,7 +10,6 @@ import {
 import {
   DBOSConfig,
   DBOSExecutor,
-  DBOSExternalState,
   InternalWorkflowParams,
   DBOS_QUEUE_MIN_PRIORITY,
   DBOS_QUEUE_MAX_PRIORITY,
@@ -50,7 +49,6 @@ import {
   translateDbosConfig,
   translateRuntimeConfig,
 } from './config';
-import { ScheduledArgs, ScheduledReceiver, SchedulerConfig } from './scheduler/scheduler_decorator';
 import {
   AlertHandler,
   associateClassWithExternal,
@@ -613,7 +611,6 @@ export class DBOS {
    * Logs all workflows that can be invoked externally, rather than directly by the applicaton.
    * This includes:
    *   All DBOS event receiver entrypoints (message queues, URLs, etc.)
-   *   Scheduled workflows
    *   Queues
    */
   static logRegisteredEndpoints(): void {
@@ -839,42 +836,6 @@ export class DBOS {
    */
   static isInWorkflow(): boolean {
     return DBOS.isWithinWorkflow() && !DBOS.isInTransaction() && !DBOS.isInStep();
-  }
-
-  //////
-  // Access to system DB, for event receivers etc.
-  //////
-  /**
-   * Get a state item from the system database, which provides a key/value store interface for event dispatchers.
-   *   The full key for the database state should include the service, function, and item.
-   *   Values are versioned.  A version can either be a sequence number (long integer), or a time (high precision floating point).
-   *       If versions are in use, any upsert is discarded if the version field is less than what is already stored.
-   *
-   * Examples of state that could be kept:
-   *   Offsets into kafka topics, per topic partition
-   *   Last time for which a scheduling service completed schedule dispatch
-   *
-   * @param service - should be unique to the event receiver keeping state, to separate from others
-   * @param workflowFnName - function name; should be the fully qualified / unique function name dispatched
-   * @param key - The subitem kept by event receiver service for the function, allowing multiple values to be stored per function
-   * @returns The latest system database state for the specified service+workflow+item
-   */
-  static async getEventDispatchState(svc: string, wfn: string, key: string): Promise<DBOSExternalState | undefined> {
-    ensureDBOSIsLaunched('getEventDispatchState');
-    return await DBOS.#executor.getEventDispatchState(svc, wfn, key);
-  }
-  /**
-   * Set a state item into the system database, which provides a key/value store interface for event dispatchers.
-   *   The full key for the database state should include the service, function, and item; these fields are part of `state`.
-   *   Values are versioned.  A version can either be a sequence number (long integer), or a time (high precision floating point).
-   *     If versions are in use, any upsert is discarded if the version field is less than what is already stored.
-   *
-   * @param state - the service, workflow, item, version, and value to write to the database
-   * @returns The upsert returns the current record, which may be useful if it is more recent than the `state` provided.
-   */
-  static async upsertEventDispatchState(state: DBOSExternalState): Promise<DBOSExternalState> {
-    ensureDBOSIsLaunched('upsertEventDispatchState');
-    return await DBOS.#executor.upsertEventDispatchState(state);
   }
 
   //////
@@ -1736,18 +1697,6 @@ export class DBOS {
     });
   }
 
-  /**
-   * registers a workflow method or function with an invocation schedule
-   * @param func - The workflow method or function to register with an invocation schedule
-   * @param options - Configuration information for the scheduled workflow
-   */
-  static registerScheduled<This, Return>(
-    func: (this: This, ...args: ScheduledArgs) => Promise<Return>,
-    config: SchedulerConfig & FunctionName,
-  ) {
-    ScheduledReceiver.registerScheduled(func, config);
-  }
-
   //////
   // Decorators
   //////
@@ -1767,28 +1716,6 @@ export class DBOS {
       clsreg.reg!.name = name;
     }
     return clsdec;
-  }
-
-  /**
-   * Decorator associating a class static method with an invocation schedule
-   * @param config - The schedule, consisting of a crontab and policy for "make-up work"
-   */
-  static scheduled(config: SchedulerConfig) {
-    function methodDecorator<This, Return>(
-      target: object,
-      propertyKey: PropertyKey,
-      descriptor: TypedPropertyDescriptor<(this: This, ...args: ScheduledArgs) => Promise<Return>>,
-    ) {
-      if (descriptor.value) {
-        DBOS.registerScheduled(descriptor.value, {
-          ...config,
-          ctorOrProto: target,
-          name: String(propertyKey),
-        });
-      }
-      return descriptor;
-    }
-    return methodDecorator;
   }
 
   /**

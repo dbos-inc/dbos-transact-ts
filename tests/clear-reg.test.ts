@@ -10,6 +10,8 @@ describe('clear-reg-tests', () => {
     DBOS.setConfig(config);
   });
 
+  const scheduleName = 'clear_reg_schedule';
+
   test('clear-reg-between-runs', async () => {
     for (let i = 1; i <= 2; ++i) {
       const stepfunc1 = DBOS.registerStep(async () => {
@@ -31,6 +33,11 @@ describe('clear-reg-tests', () => {
 
       await DBOS.launch();
       await DBOS.registerQueue(m.queue.name, { onConflict: 'always_update' });
+      await DBOS.createSchedule({
+        scheduleName,
+        workflowFn: m.DBOSWFTest.scheduledWF,
+        schedule: '* * * * * *',
+      });
       try {
         await expect(wf()).resolves.toBe(`${i}${i}`);
         const wfh = await DBOS.startWorkflow(wf)();
@@ -50,6 +57,7 @@ describe('clear-reg-tests', () => {
         // Wait for scheduled WF to run
         while (!m.DBOSWFTest.ran) await sleepms(100);
       } finally {
+        await DBOS.deleteSchedule(scheduleName);
         if (i === 2) {
           await DBOS.shutdown(); // 2 calls don't hurt
         }

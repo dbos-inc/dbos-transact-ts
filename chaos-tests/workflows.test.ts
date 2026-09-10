@@ -22,8 +22,13 @@ describe('chaos-tests', () => {
     await startDockerPg();
     await dropDatabases(config);
     await DBOS.launch();
-    // Register before the monkey starts: registerQueue's writes are not retried.
+    // Register before the monkey starts: these writes are not retried.
     await DBOS.registerQueue(TestQueues.queueName);
+    await DBOS.createSchedule({
+      scheduleName: 'increment',
+      workflowFn: TestScheduled.increment,
+      schedule: '* * * * * *',
+    });
 
     // Start chaos monkey after setup
     chaosMonkey = new PostgresChaosMonkey();
@@ -118,8 +123,7 @@ describe('chaos-tests', () => {
     static value = 0;
 
     @DBOS.workflow()
-    @DBOS.scheduled({ crontab: '* * * * * *' })
-    static async increment(_scheduled: Date, _actual: Date) {
+    static async increment(_scheduledDate: Date, _context: unknown) {
       TestScheduled.value++;
       return Promise.resolve();
     }

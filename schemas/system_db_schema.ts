@@ -84,18 +84,6 @@ export interface operation_outputs {
   retention_timestamp?: number;
 }
 
-export interface event_dispatch_kv {
-  // Key fields
-  service_name: string;
-  workflow_fn_name: string;
-  key: string;
-
-  // Payload fields
-  value?: string;
-  update_time?: number; // Timestamp of record (for upsert)
-  update_seq?: bigint; // Sequence number of record (for upsert)
-}
-
 export interface streams {
   workflow_uuid: string;
   key: string;
