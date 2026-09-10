@@ -989,6 +989,7 @@ export interface QueueOutput {
   worker_concurrency: number | null;
   rate_limit_max: number | null;
   rate_limit_period_sec: number | null;
+  /** Always true: every queue dispatches in priority order. */
   priority_enabled: boolean;
   partition_queue: boolean;
   polling_interval_sec: number;

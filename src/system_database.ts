@@ -176,7 +176,7 @@ export interface QueueRecord {
   workerConcurrency: number | null;
   rateLimitMax: number | null;
   rateLimitPeriodSec: number | null;
-  priorityEnabled: boolean;
+  /** Derived from the partition limits, which are what partition a queue. */
   partitionQueue: boolean;
   // Any of these being set partitions the queue; each applies per partition.
   partitionConcurrency: number | null;
@@ -196,7 +196,6 @@ const QUEUE_COLUMN_BY_FIELD: Record<keyof QueueRecordUpdate, string> = {
   workerConcurrency: 'worker_concurrency',
   rateLimitMax: 'rate_limit_max',
   rateLimitPeriodSec: 'rate_limit_period_sec',
-  priorityEnabled: 'priority_enabled',
   partitionQueue: 'partition_queue',
   partitionConcurrency: 'partition_concurrency',
   partitionWorkerConcurrency: 'partition_worker_concurrency',
@@ -206,7 +205,7 @@ const QUEUE_COLUMN_BY_FIELD: Record<keyof QueueRecordUpdate, string> = {
 };
 
 const QUEUE_COLUMNS =
-  'name, concurrency, worker_concurrency, rate_limit_max, rate_limit_period_sec, priority_enabled, partition_queue, ' +
+  'name, concurrency, worker_concurrency, rate_limit_max, rate_limit_period_sec, ' +
   'partition_concurrency, partition_worker_concurrency, partition_rate_limit_max, partition_rate_limit_period_sec, ' +
   'polling_interval_sec, application_name';
 
@@ -217,8 +216,10 @@ function queueRecordFromRow(row: queues): QueueRecord {
     workerConcurrency: row.worker_concurrency,
     rateLimitMax: row.rate_limit_max,
     rateLimitPeriodSec: row.rate_limit_period_sec,
-    priorityEnabled: row.priority_enabled,
-    partitionQueue: row.partition_queue,
+    partitionQueue:
+      row.partition_concurrency !== null ||
+      row.partition_worker_concurrency !== null ||
+      (row.partition_rate_limit_max !== null && row.partition_rate_limit_period_sec !== null),
     partitionConcurrency: row.partition_concurrency,
     partitionWorkerConcurrency: row.partition_worker_concurrency,
     partitionRateLimitMax: row.partition_rate_limit_max,
@@ -5373,7 +5374,6 @@ export class SystemDatabase {
           worker_concurrency = EXCLUDED.worker_concurrency,
           rate_limit_max = EXCLUDED.rate_limit_max,
           rate_limit_period_sec = EXCLUDED.rate_limit_period_sec,
-          priority_enabled = EXCLUDED.priority_enabled,
           partition_queue = EXCLUDED.partition_queue,
           partition_concurrency = EXCLUDED.partition_concurrency,
           partition_worker_concurrency = EXCLUDED.partition_worker_concurrency,
@@ -5397,10 +5397,10 @@ export class SystemDatabase {
       await client.query(
         `INSERT INTO "${this.schemaName}".queues
           (name, concurrency, worker_concurrency, rate_limit_max, rate_limit_period_sec,
-           priority_enabled, partition_queue, partition_concurrency, partition_worker_concurrency,
+           partition_queue, partition_concurrency, partition_worker_concurrency,
            partition_rate_limit_max, partition_rate_limit_period_sec,
            polling_interval_sec, updated_at, application_name)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
          ${onConflict}`,
         [
           record.name,
@@ -5408,7 +5408,6 @@ export class SystemDatabase {
           record.workerConcurrency,
           record.rateLimitMax,
           record.rateLimitPeriodSec,
-          record.priorityEnabled,
           record.partitionQueue,
           record.partitionConcurrency,
           record.partitionWorkerConcurrency,
