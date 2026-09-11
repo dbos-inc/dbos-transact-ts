@@ -219,10 +219,6 @@ export interface ListWorkflowStepsOptions {
   offset?: number;
 }
 
-export interface PgTransactionId {
-  txid: string;
-}
-
 /** Enumeration of values for workflow status */
 export const StatusString = {
   /** Workflow has may be running */

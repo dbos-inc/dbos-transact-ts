@@ -10,10 +10,198 @@ import {
   workflow_events_history,
   workflow_status,
 } from '../schemas/system_db_schema';
-import { DBOSJSON, DBOSPortableJSON } from '../src/serialization';
+import { DBOSJSON, DBOSPortableJSON, SERIALIZER_MARKER_KEY, SERIALIZER_MARKER_VALUE } from '../src/serialization';
 import { randomUUID } from 'node:crypto';
 import { DBOSExecutor } from '../src/dbos-executor';
 import { z } from 'zod';
+
+/**
+ * Serialization tests: the wire formats DBOS stores values in.
+ *
+ * Test structure:
+ * 1. "dbos-json-rich-types" - dates, bigints, buffers through the default format
+ * 2. "SuperJSON enhanced types" - Sets, Maps, undefined, RegExp, etc.
+ * 3. "DBOSJSON format" - the marker every value carries, and what happens without it
+ * 4. "portable-serialization-tests" - the portable format, end to end against the database
+ * 5. "custom-serializer-restart-tests" - adding or removing a serializer against existing data
+ * 6. "async-serializer-tests" - serializers that return promises
+ *
+ * The first three need no database; the rest do.
+ *
+ * Caution: Altering results of these tests likely means a stored-data compatibility break.
+ */
+
+describe('dbos-json-rich-types', () => {
+  test('Replace revive dates', () => {
+    const obj = {
+      datesObj: {
+        date1: new Date(2023, 10, 2, 23, 12, 200),
+        date2: new Date(2024, 4, 1, 13, 11, 223),
+      },
+      datesArray: [new Date(2023, 10, 2, 23, 12, 200), new Date(2024, 4, 1, 13, 11, 223)],
+      date: new Date(2024, 4, 1, 13, 11, 223),
+    };
+    const stringified = DBOSJSON.stringify(obj);
+    const parsed = DBOSJSON.parse(stringified) as typeof obj;
+    expect(parsed).toEqual(obj);
+  });
+
+  test('Replace revive buffers', () => {
+    const obj = {
+      stringBuffer: Buffer.from('A utf-8 string', 'utf-8'),
+      buffers: {
+        stringBuffer: Buffer.from('A utf-8 string', 'utf-8'),
+      },
+      bufferArray: [Buffer.from('A utf-8 string', 'utf-8')],
+    };
+    const stringified = DBOSJSON.stringify(obj);
+    const parsed = DBOSJSON.parse(stringified) as typeof obj;
+    expect(parsed).toEqual(obj);
+  });
+
+  test('Replace revive bigint', () => {
+    const obj = {
+      value: BigInt('12345678901234567890'),
+      values: {
+        value: BigInt('12345678901234567890'),
+      },
+      valueArray: [BigInt('12345678901234567890'), BigInt('12345678901234567890'), BigInt('12345678901234567890')],
+    };
+    const stringified = DBOSJSON.stringify(obj);
+    const parsed = DBOSJSON.parse(stringified) as typeof obj;
+    expect(parsed).toEqual(obj);
+  });
+});
+
+describe('SuperJSON enhanced types', () => {
+  test('serializes Sets', () => {
+    const set = new Set([1, 2, 3]);
+    const serialized = DBOSJSON.stringify(set);
+    const deserialized = DBOSJSON.parse(serialized);
+    expect(deserialized).toEqual(set);
+  });
+
+  test('serializes Maps', () => {
+    const map = new Map([
+      ['key1', 'value1'],
+      ['key2', 'value2'],
+    ]);
+    const serialized = DBOSJSON.stringify(map);
+    const deserialized = DBOSJSON.parse(serialized);
+    expect(deserialized).toEqual(map);
+  });
+
+  test('preserves undefined values', () => {
+    const obj = { defined: 'value', undefined: undefined };
+    const serialized = DBOSJSON.stringify(obj);
+    const deserialized = DBOSJSON.parse(serialized) as typeof obj;
+    expect(deserialized).toEqual(obj);
+    expect('undefined' in deserialized).toBe(true);
+  });
+
+  test('serializes RegExp patterns', () => {
+    const regex = /test.*pattern/gi;
+    const serialized = DBOSJSON.stringify(regex);
+    const deserialized = DBOSJSON.parse(serialized) as RegExp;
+    expect(deserialized.source).toBe(regex.source);
+    expect(deserialized.flags).toBe(regex.flags);
+  });
+
+  test('handles NaN and Infinity', () => {
+    const obj = {
+      nan: Number.NaN,
+      inf: Number.POSITIVE_INFINITY,
+      negInf: Number.NEGATIVE_INFINITY,
+    };
+    const serialized = DBOSJSON.stringify(obj);
+    const deserialized = DBOSJSON.parse(serialized) as typeof obj;
+    expect(Number.isNaN(deserialized.nan)).toBe(true);
+    expect(deserialized.inf).toBe(Number.POSITIVE_INFINITY);
+    expect(deserialized.negInf).toBe(Number.NEGATIVE_INFINITY);
+  });
+
+  test('handles circular references', () => {
+    type Obj = { name: string; self?: Obj };
+    const obj: Obj = { name: 'circular' };
+    obj.self = obj;
+
+    const serialized = DBOSJSON.stringify(obj);
+    const deserialized = DBOSJSON.parse(serialized) as Obj;
+
+    expect(deserialized.name).toBe('circular');
+    expect(deserialized.self).toBe(deserialized); // Same reference
+  });
+
+  test('complex nested structures with mixed types', () => {
+    const complex = {
+      set: new Set([1, 2, 3]),
+      map: new Map([['key', 'value']]),
+      date: new Date('2024-01-01'),
+      bigint: BigInt(123456789),
+      buffer: Buffer.from('test'),
+      undefined: undefined,
+      null: null,
+      nested: {
+        regex: /pattern/g,
+        array: [new Set([4, 5, 6])],
+      },
+    };
+    const serialized = DBOSJSON.stringify(complex);
+    const deserialized = DBOSJSON.parse(serialized) as typeof complex;
+
+    expect(deserialized.set).toEqual(complex.set);
+    expect(deserialized.map).toEqual(complex.map);
+    expect(deserialized.date).toEqual(complex.date);
+    expect(deserialized.bigint).toEqual(complex.bigint);
+    expect(deserialized.buffer).toEqual(complex.buffer);
+    expect(deserialized.undefined).toBe(undefined);
+    expect(deserialized.null).toBe(null);
+    expect(deserialized.nested.regex.source).toBe(complex.nested.regex.source);
+    expect(deserialized.nested.array[0]).toEqual(complex.nested.array[0]);
+  });
+});
+
+describe('DBOSJSON format', () => {
+  test('handles null correctly', () => {
+    expect(DBOSJSON.parse(null)).toBe(null);
+    expect(DBOSJSON.parse(undefined)).toBe(null);
+
+    expect(DBOSJSON.parse(DBOSJSON.stringify(null))).toBeNull();
+    expect(DBOSJSON.parse(DBOSJSON.stringify(undefined))).toBeUndefined();
+    expect(DBOSJSON.stringify(null)).toBeTruthy();
+    expect(DBOSJSON.stringify(undefined)).toBeTruthy();
+  });
+
+  test('rejects data it did not write', () => {
+    // Without the marker there is no second format to fall back to
+    const plain = JSON.stringify({ simple: 'object', number: 42 });
+    expect(() => DBOSJSON.parse(plain)).toThrow(TypeError);
+
+    // User data shaped like SuperJSON is still rejected, because it carries no marker
+    const lookalike = JSON.stringify({ json: { foo: 'bar' }, meta: { values: {} } });
+    expect(() => DBOSJSON.parse(lookalike)).toThrow(TypeError);
+  });
+
+  test('new DBOSJSON always includes serializer marker to avoid ambiguity', () => {
+    // Simple values should get our marker
+    const simpleValue = { foo: 'bar' };
+    const serialized = DBOSJSON.stringify(simpleValue);
+    const parsed = JSON.parse(serialized) as { json?: unknown };
+
+    expect(parsed).toHaveProperty('json');
+    expect(parsed).toHaveProperty(SERIALIZER_MARKER_KEY, SERIALIZER_MARKER_VALUE);
+    expect(parsed.json).toEqual(simpleValue);
+
+    // Complex types also get our marker
+    const complexValue = new Set([1, 2, 3]);
+    const complexSerialized = DBOSJSON.stringify(complexValue);
+    const complexParsed = JSON.parse(complexSerialized) as { json?: unknown };
+
+    expect(complexParsed).toHaveProperty('json');
+    expect(complexParsed).toHaveProperty(SERIALIZER_MARKER_KEY, SERIALIZER_MARKER_VALUE);
+    expect(complexParsed).toHaveProperty('meta'); // Complex types have meta from SuperJSON
+  });
+});
 
 async function workflowFunc(s: string, x: number, o: { k: string; v: string[] }, wfid?: string): Promise<string> {
   await DBOS.setEvent('defstat', { status: 'Happy' });
@@ -201,7 +389,7 @@ async function readStatusRow(client: Client, workflowID: string | undefined) {
   );
 }
 
-describe('portable-serizlization-tests', () => {
+describe('portable-serialization-tests', () => {
   let config: DBOSConfig;
   let systemDBClient: Client;
 

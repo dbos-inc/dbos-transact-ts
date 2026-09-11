@@ -13,7 +13,6 @@ import * as protocol from './conductor/protocol';
 
 export type QueueMetadataResponse = QueueParameters & { name: string };
 
-export const WorkflowUUIDHeader = 'dbos-idempotency-key';
 export const WorkflowRecoveryUrl = '/dbos-workflow-recovery';
 export const HealthUrl = '/dbos-healthz';
 export const PerfUrl = '/dbos-perf';

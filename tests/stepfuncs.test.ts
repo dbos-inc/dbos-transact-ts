@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { ConfiguredInstance, DBOS, DBOSConfig } from '../src';
 import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
-import { DBOSInvalidWorkflowTransitionError } from '../src/error';
 
 // Step variant 1: Let DBOS provide the step wrapper making
 //  a reusable function that can be called from multiple places
@@ -272,6 +271,55 @@ const stepFunctionBare = DBOS.registerStep(stepFuncBare, {
   name: 'MyNonWFStep',
 });
 
+// Step variant 4: the `@DBOS.step` decorator, on a static and on an instance method
+const stepQueue = { name: 'stepRejectQ' };
+
+class InstanceStep extends ConfiguredInstance {
+  constructor() {
+    super('Instance');
+  }
+
+  initialize(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  @DBOS.step()
+  async testStep(arg: string, rv?: string): Promise<string> {
+    expect(arg).toBe('a');
+    ++InstanceStep.stepCnt;
+    return Promise.resolve(rv ?? '');
+  }
+
+  static stepCnt = 0;
+  static reset() {
+    InstanceStep.stepCnt = 0;
+  }
+}
+
+const inst = new InstanceStep();
+
+class StaticStep {
+  @DBOS.step()
+  static async testStep(arg: string, rv?: string): Promise<string> {
+    expect(arg).toBe('a');
+    ++StaticStep.stepCnt;
+    return Promise.resolve(rv ?? '');
+  }
+
+  static stepCnt = 0;
+  static reset() {
+    StaticStep.stepCnt = 0;
+  }
+}
+
+class WorkflowsCallingSteps {
+  @DBOS.workflow()
+  static async runFuncs() {
+    expect(await StaticStep.testStep('a', '1')).toBe('1');
+    expect(await inst.testStep('a', '1')).toBe('1');
+  }
+}
+
 // Do this with startWorkflow (in a new form)
 describe('start-workflow-function', () => {
   let config: DBOSConfig;
@@ -284,6 +332,7 @@ describe('start-workflow-function', () => {
 
   beforeEach(async () => {
     await DBOS.launch();
+    await DBOS.registerQueue(stepQueue.name, { onConflict: 'always_update' });
   });
 
   afterEach(async () => {
@@ -345,11 +394,53 @@ describe('start-workflow-function', () => {
     const nwsAfter = (await DBOS.listWorkflows({})).length;
     expect(nwsAfter - nwsBefore).toBe(0);
 
-    //  (If WF requested by providing an ID, this is an error)
+    // An assigned workflow ID is for the next workflow; a step in the closure neither takes nor clears it.
     const wfid = randomUUID();
     await DBOS.withNextWorkflowID(wfid, async () => {
-      await expect(stepFunctionBare()).rejects.toThrow(DBOSInvalidWorkflowTransitionError);
+      await expect(stepFunctionBare()).resolves.toBe('BareStep');
+      await expect(DBOS.runStep(async () => Promise.resolve('inline'), { name: 'MyFirstStep' })).resolves.toBe(
+        'inline',
+      );
+      const handle = await DBOS.startWorkflow(wfFunction)();
+      expect(handle.workflowID).toBe(wfid);
+      await handle.getResult();
     });
+    expect((await DBOS.listWorkflows({ workflowIDs: [wfid] })).length).toBe(1);
+  });
+
+  // The same contract for the decorator, on a static and on an instance method
+  test('decorated-step-outside-wf', async () => {
+    StaticStep.reset();
+    InstanceStep.reset();
+    const wfsBefore = (await DBOS.listWorkflows({})).length;
+
+    // Runs as an ordinary call, checkpointing nothing
+    expect(await StaticStep.testStep('a', '1')).toBe('1');
+    expect(await inst.testStep('a', '1')).toBe('1');
+    expect(StaticStep.stepCnt).toBe(1);
+    expect(InstanceStep.stepCnt).toBe(1);
+    expect((await DBOS.listWorkflows({})).length - wfsBefore).toBe(0);
+
+    // An assigned workflow ID is for the next workflow; a step in the closure leaves it alone
+    const wfid = randomUUID();
+    await DBOS.withNextWorkflowID(wfid, async () => {
+      expect(await StaticStep.testStep('a', '1')).toBe('1');
+      const handle = await DBOS.startWorkflow(WorkflowsCallingSteps).runFuncs();
+      expect(handle.workflowID).toBe(wfid);
+      await handle.getResult();
+    });
+    expect(StaticStep.stepCnt).toBe(3); // two plain calls, plus the workflow's own
+    expect(InstanceStep.stepCnt).toBe(2); // one plain call, plus the workflow's own
+
+    // Steps are not workflows: neither startable nor enqueueable, and neither call runs the body
+    await expect(DBOS.startWorkflow(StaticStep).testStep('a', '1')).rejects.toThrow(
+      /only workflows can be started or enqueued/,
+    );
+    await expect(DBOS.startWorkflow(inst, { queueName: stepQueue.name }).testStep('a', '1')).rejects.toThrow(
+      /only workflows can be started or enqueued/,
+    );
+    expect(StaticStep.stepCnt).toBe(3);
+    expect(InstanceStep.stepCnt).toBe(2);
   });
 
   it('should generate uuid', async () => {

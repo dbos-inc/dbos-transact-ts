@@ -1919,14 +1919,14 @@ describe('test-list-steps', () => {
     }
 
     @DBOS.workflow()
-    static async startFailingStep() {
-      const handle = await DBOS.startWorkflow(TestListSteps).failingStep();
+    static async startFailingChild() {
+      const handle = await DBOS.startWorkflow(TestListSteps).callFailingStep();
       return await handle.getResult();
     }
 
     @DBOS.workflow()
-    static async enqueueFailingStep() {
-      const handle = await DBOS.startWorkflow(TestListSteps, { queueName: queue.name }).failingStep();
+    static async enqueueFailingChild() {
+      const handle = await DBOS.startWorkflow(TestListSteps, { queueName: queue.name }).callFailingStep();
       return await handle.getResult();
     }
 
@@ -2244,10 +2244,10 @@ describe('test-list-steps', () => {
 
   test('test-list-failing-step', async () => {
     // Test calling a failing step directly
-    let wfid = randomUUID();
-    let handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).callFailingStep();
+    const wfid = randomUUID();
+    const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).callFailingStep();
     await expect(handle.getResult()).rejects.toThrow(new Error('fail'));
-    let wfsteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid);
+    const wfsteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid);
     if (!wfsteps) {
       throw new Error('wfsteps is undefined');
     }
@@ -2256,41 +2256,31 @@ describe('test-list-steps', () => {
     expect(wfsteps[0].output).toBe(null);
     expect(wfsteps[0].error).toBeInstanceOf(Error);
     expect(wfsteps[0].childWorkflowID).toBe(null);
-    // Test starting a failing step
-    wfid = randomUUID();
-    handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).startFailingStep();
-    await expect(handle.getResult()).rejects.toThrow(new Error('fail'));
-    wfsteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid);
-    if (!wfsteps) {
-      throw new Error('wfsteps is undefined');
-    }
-    expect(wfsteps.length).toBe(2);
-    expect(wfsteps[0].name).toBe('temp_workflow-step-failingStep');
-    expect(wfsteps[0].output).toBe(null);
-    expect(wfsteps[0].error).toBe(null);
-    expect(wfsteps[0].childWorkflowID).toBe(`${wfid}-0`);
-    expect(wfsteps[1].name).toBe('DBOS.getResult');
-    expect(wfsteps[1].output).toBe(null);
-    expect(wfsteps[1].error).toBeInstanceOf(Error);
-    expect(wfsteps[1].childWorkflowID).toBe(`${wfid}-0`);
-    // Test enqueueing a failing step
-    wfid = randomUUID();
-    handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).enqueueFailingStep();
-    await expect(handle.getResult()).rejects.toThrow(new Error('fail'));
+  });
 
-    wfsteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid);
-    if (!wfsteps) {
-      throw new Error('wfsteps is undefined');
+  test('test-list-failing-child-workflow', async () => {
+    // The child's failure is recorded on the parent's getResult checkpoint, not on the start checkpoint.
+    for (const start of [
+      (id: string) => DBOS.startWorkflow(TestListSteps, { workflowID: id }).startFailingChild(),
+      (id: string) => DBOS.startWorkflow(TestListSteps, { workflowID: id }).enqueueFailingChild(),
+    ]) {
+      const wfid = randomUUID();
+      const handle = await start(wfid);
+      await expect(handle.getResult()).rejects.toThrow(new Error('fail'));
+      const wfsteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid);
+      if (!wfsteps) {
+        throw new Error('wfsteps is undefined');
+      }
+      expect(wfsteps.length).toBe(2);
+      expect(wfsteps[0].name).toBe('callFailingStep');
+      expect(wfsteps[0].output).toBe(null);
+      expect(wfsteps[0].error).toBe(null);
+      expect(wfsteps[0].childWorkflowID).toBe(`${wfid}-0`);
+      expect(wfsteps[1].name).toBe('DBOS.getResult');
+      expect(wfsteps[1].output).toBe(null);
+      expect(wfsteps[1].error).toBeInstanceOf(Error);
+      expect(wfsteps[1].childWorkflowID).toBe(`${wfid}-0`);
     }
-    expect(wfsteps.length).toBe(2);
-    expect(wfsteps[0].name).toBe('temp_workflow-step-failingStep');
-    expect(wfsteps[0].output).toBe(null);
-    expect(wfsteps[0].error).toBe(null);
-    expect(wfsteps[0].childWorkflowID).toBe(`${wfid}-0`);
-    expect(wfsteps[1].name).toBe('DBOS.getResult');
-    expect(wfsteps[1].output).toBe(null);
-    expect(wfsteps[1].error).toBeInstanceOf(Error);
-    expect(wfsteps[1].childWorkflowID).toBe(`${wfid}-0`);
   });
 
   test('test-child-rerun', async () => {

@@ -331,17 +331,8 @@ export function getRegisteredFunctionFullName(func: unknown) {
   return { className, name: funcName };
 }
 
-export function getRegisteredFunctionQualifiedName(func: unknown) {
-  const fn = getRegisteredFunctionFullName(func);
-  return fn.className + '.' + fn.name;
-}
-
 export function getRegisteredFunctionClassName(func: unknown): string {
   return getRegisteredFunctionFullName(func).className;
-}
-
-export function getRegisteredFunctionName(func: unknown): string {
-  return getRegisteredFunctionFullName(func).name;
 }
 
 export function registerFunctionWrapper<This, Args extends unknown[], Return>(
@@ -472,23 +463,6 @@ export function wrapDBOSFunctionAndRegisterByUniqueName<This, Args extends unkno
   r.classReg.registerOperationByName(name, registration);
 
   return registration;
-}
-
-export function wrapDBOSFunctionAndRegisterDec<This, Args extends unknown[], Return>(
-  target: object,
-  propertyKey: PropertyKey,
-  name: string | undefined,
-  descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
-) {
-  if (!descriptor.value) {
-    throw Error('Use of decorator when original method is undefined');
-  }
-
-  const registration = wrapDBOSFunctionAndRegister(target, undefined, propertyKey, name, descriptor.value);
-
-  descriptor.value = registration.wrappedFunction ?? registration.registeredFunction;
-
-  return { descriptor, registration };
 }
 
 export function wrapDBOSFunctionAndRegister<This, Args extends unknown[], Return>(

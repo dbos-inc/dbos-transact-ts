@@ -1,4 +1,4 @@
-import { functionIDGetIncrement, getNextWFID, runWithDataSourceContext } from './context';
+import { functionIDGetIncrement, runWithDataSourceContext } from './context';
 import { DBOS } from './dbos';
 import { DBOSExecutor, OperationType } from './dbos-executor';
 import {
@@ -123,11 +123,6 @@ export async function runTransaction<T>(
   const ds = getTransactionalDataSource(dsn);
 
   if (!DBOS.isWithinWorkflow()) {
-    if (getNextWFID(undefined)) {
-      throw new DBOSInvalidWorkflowTransitionError(
-        `Invalid call to transaction '${funcName}' outside of a workflow; with directive to start a workflow.`,
-      );
-    }
     return await runWithDataSourceContext(0, async () => {
       return await ds.invokeTransactionFunction(options.config ?? {}, undefined, callback);
     });
@@ -198,12 +193,6 @@ export function registerTransaction<This, Args extends unknown[], Return, Config
     const callFunc = reg.registeredFunction ?? reg.origFunction;
 
     if (!DBOS.isWithinWorkflow()) {
-      if (getNextWFID(undefined)) {
-        throw new DBOSInvalidWorkflowTransitionError(
-          `Call to transaction '${funcName}' made without starting workflow`,
-        );
-      }
-
       return await runWithDataSourceContext(0, async () => {
         return await ds.invokeTransactionFunction(config, this, callFunc, ...rawArgs);
       });

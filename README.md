@@ -74,7 +74,7 @@ Workflows are particularly useful for
 ####
 
 DBOS queues help you **durably** run tasks in the background.
-You can enqueue a task (which can be a single step or an entire workflow) from a durable workflow and one of your processes will pick it up for execution.
+You can enqueue a workflow from a durable workflow and one of your processes will pick it up for execution.
 DBOS manages the execution of your tasks: it guarantees that tasks complete, and that their callers get their results without needing to resubmit them, even if your application is interrupted.
 
 Queues also provide flow control, so you can limit the concurrency of your tasks on a per-queue or per-process basis.

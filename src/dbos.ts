@@ -1871,14 +1871,12 @@ export class DBOS {
         return DBOSExecutor.globalInstance!.internalWorkflow(func, wfParams, workflowID, funcNum, ...args);
       }
       if (regOP.stepConfig) {
-        const func = regOP.registeredFunction as TypedAsyncFunction<Args, Return>;
-        return DBOSExecutor.globalInstance!.startStepTempWF(func, wfParams, workflowID, funcNum, ...args);
+        throw new DBOSInvalidWorkflowTransitionError(
+          `Attempt to start or enqueue step '${regOP.name}'; only workflows can be started or enqueued`,
+        );
       }
 
-      throw new DBOSNotRegisteredError(
-        regOP.name,
-        `${regOP.name} is not a registered DBOS workflow, step, or transaction function`,
-      );
+      throw new DBOSNotRegisteredError(regOP.name, `${regOP.name} is not a registered DBOS workflow function`);
     }
   }
 
@@ -1981,9 +1979,10 @@ export class DBOS {
 
   /**
    * Decorator designating a method as a DBOS step.
-   *   A durable checkpoint will be made after the step completes
+   *   Called from a workflow, a durable checkpoint will be made after the step completes
    *   This ensures "at least once" execution of the step, and that the step will not
    *    be executed again once the checkpoint is recorded
+   *   Called outside a workflow, it is an ordinary function call: no checkpoint, retries, or timeout
    *
    * @param config - Configuration information for the step, particularly the retry policy
    */
@@ -2034,18 +2033,7 @@ export class DBOS {
           );
         }
 
-        const wfId = getNextWFID(undefined);
-
-        const wfParams: WorkflowParams = {
-          configuredInstance: inst,
-          workflowUUID: wfId,
-        };
-
-        return await DBOS.#executor.runStepTempWF(
-          registration.registeredFunction as TypedAsyncFunction<Args, Return>,
-          wfParams,
-          ...rawArgs,
-        );
+        return registration.registeredFunction!.call(this, ...rawArgs);
       };
 
       descriptor.value = invokeWrapper;
@@ -2064,9 +2052,10 @@ export class DBOS {
   /**
    * Create a check pointed DBOS step function from  a provided function
    *   Similar to the DBOS.step decorator, but without requiring a decorator
-   *   A durable checkpoint will be made after the step completes
+   *   Called from a workflow, a durable checkpoint will be made after the step completes
    *   This ensures "at least once" execution of the step, and that the step will not
    *    be executed again once the checkpoint is recorded
+   *   Called outside a workflow, it is an ordinary function call: no checkpoint, retries, or timeout
    * @param func - The function to register as a step
    * @param config - Configuration information for the step, particularly the retry policy and name
    */
@@ -2103,11 +2092,6 @@ export class DBOS {
         );
       }
 
-      if (getNextWFID(undefined)) {
-        throw new DBOSInvalidWorkflowTransitionError(
-          `Invalid call to step '${name}' outside of a workflow; with directive to start a workflow.`,
-        );
-      }
       return callFunc.call(this, ...rawArgs);
     };
 
@@ -2141,12 +2125,6 @@ export class DBOS {
         name,
         config,
         null,
-      );
-    }
-
-    if (getNextWFID(undefined)) {
-      throw new DBOSInvalidWorkflowTransitionError(
-        `Invalid call to step '${name}' outside of a workflow; with directive to start a workflow.`,
       );
     }
 

@@ -19,6 +19,11 @@ class TestFunctions extends ConfiguredInstance {
   }
 
   @DBOS.workflow()
+  async doStepWorkflow(name: string) {
+    return await this.doStep(name);
+  }
+
+  @DBOS.workflow()
   async doWorkflow() {
     await this.doStep('');
     return `done ${this.name}`;
@@ -138,10 +143,13 @@ async function main4() {
   DBOS.setConfig(config);
   await DBOS.launch();
 
-  const sres1 = await instA.doStep('a');
+  const sres1 = await instA.doStepWorkflow('a');
   expect(sres1).toBe('step a done from A');
-  const sres2 = await instB.doStep('b');
+  const sres2 = await instB.doStepWorkflow('b');
   expect(sres2).toBe('step b done from B');
+
+  // Outside a workflow the same step is a plain call, still bound to its instance.
+  expect(await instA.doStep('a')).toBe('step a done from A');
 
   await DBOS.shutdown();
 }
@@ -236,7 +244,7 @@ describe('dbos-v2api-tests-main', () => {
     await main3();
   });
 
-  test('temp_step_transaction', async () => {
+  test('instance_step', async () => {
     await main4();
   });
 
