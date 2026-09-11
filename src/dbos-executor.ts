@@ -44,7 +44,7 @@ import {
   getClassRegistrationByName,
   getRegisteredFunctionFullName,
 } from './decorators';
-import { JsonWorkflowArgs, type step_info } from '../schemas/system_db_schema';
+import { JsonWorkflowArgs } from '../schemas/system_db_schema';
 import {
   runInStepContext,
   getNextWFID,
@@ -54,7 +54,7 @@ import {
   DBOSLocalCtx,
   runWithTopContext,
 } from './context';
-import { deserializeError, serializeError } from 'serialize-error';
+import { serializeError } from 'serialize-error';
 import { globalParams, sleepms, INTERNAL_QUEUE_NAME } from './utils';
 import {
   DBOSPortableJSON,
@@ -1407,20 +1407,6 @@ export class DBOSExecutor {
     oc.assumedRole = status.assumedRole;
     oc.serializationType = status.serialization === DBOSPortableJSON.name() ? 'portable' : undefined;
     return oc;
-  }
-
-  async getWorkflowSteps(workflowID: string): Promise<step_info[]> {
-    const outputs = await this.systemDatabase.getAllOperationResults(workflowID);
-    return await Promise.all(
-      outputs.map(async (row) => ({
-        function_id: row.function_id,
-        function_name: row.function_name ?? '<unknown>',
-        child_workflow_id: row.child_workflow_id,
-        output: row.output !== null ? await this.serializer.parse(row.output) : null,
-        error:
-          row.error !== null ? deserializeError(await this.serializer.parse(row.error as unknown as string)) : null,
-      })),
-    );
   }
 
   /**

@@ -457,19 +457,6 @@ describe('concurrency-tests', () => {
     await DBOS.shutdown();
   });
 
-  test('duplicate-transaction', async () => {
-    // Run two transactions concurrently with the same UUID.
-    // Both should return the correct result but only one should execute.
-    const workflowUUID = randomUUID();
-    const results = await Promise.allSettled([
-      (await DBOS.startWorkflow(ConcurrTestClass, { workflowID: workflowUUID }).testReadWriteWorkflow(10)).getResult(),
-      (await DBOS.startWorkflow(ConcurrTestClass, { workflowID: workflowUUID }).testReadWriteWorkflow(10)).getResult(),
-    ]);
-    expect((results[0] as PromiseFulfilledResult<number>).value).toBe(10);
-    expect((results[1] as PromiseFulfilledResult<number>).value).toBe(10);
-    expect(ConcurrTestClass.cnt).toBe(1);
-  });
-
   test('duplicate-dstransaction', async () => {
     // Run two transactions concurrently with the same UUID.
     // Both should return the correct result but only one should execute.
@@ -625,11 +612,6 @@ class ConcurrTestClass {
   static async testReadWriteFunction(id: number) {
     ConcurrTestClass.cnt++;
     return Promise.resolve(id);
-  }
-
-  @DBOS.workflow()
-  static async testReadWriteWorkflow(id: number) {
-    return ConcurrTestClass.testReadWriteFunction(id);
   }
 
   @DBOS.workflow()
