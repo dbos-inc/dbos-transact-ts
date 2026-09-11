@@ -239,9 +239,9 @@ describe('observability-query-timeout', () => {
       );
       // A null serialization routes the value through the handle's own serializer.
       await seed.query(
-        `INSERT INTO "dbos".workflow_events (workflow_uuid, key, value, serialization) VALUES ($1, 'k', '1', NULL)
+        `INSERT INTO "dbos".workflow_events (workflow_uuid, key, value, serialization) VALUES ($1, 'k', $2, NULL)
          ON CONFLICT DO NOTHING`,
-        [workflowID],
+        [workflowID, DBOSJSON.stringify(1)],
       );
 
       const sysdb = makeSysDb(undefined, 2, recording);
