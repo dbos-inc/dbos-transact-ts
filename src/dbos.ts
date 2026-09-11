@@ -2033,11 +2033,6 @@ export class DBOS {
           );
         }
 
-        if (getNextWFID(undefined)) {
-          throw new DBOSInvalidWorkflowTransitionError(
-            `Invalid call to step '${registration.name}' outside of a workflow; with directive to start a workflow.`,
-          );
-        }
         return registration.registeredFunction!.call(this, ...rawArgs);
       };
 
@@ -2097,11 +2092,6 @@ export class DBOS {
         );
       }
 
-      if (getNextWFID(undefined)) {
-        throw new DBOSInvalidWorkflowTransitionError(
-          `Invalid call to step '${name}' outside of a workflow; with directive to start a workflow.`,
-        );
-      }
       return callFunc.call(this, ...rawArgs);
     };
 
@@ -2135,12 +2125,6 @@ export class DBOS {
         name,
         config,
         null,
-      );
-    }
-
-    if (getNextWFID(undefined)) {
-      throw new DBOSInvalidWorkflowTransitionError(
-        `Invalid call to step '${name}' outside of a workflow; with directive to start a workflow.`,
       );
     }
 

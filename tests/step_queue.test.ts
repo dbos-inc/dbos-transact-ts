@@ -106,17 +106,20 @@ describe('queued-wf-tests-simple', () => {
     expect((await DBOS.listWorkflows({})).length - wfsBefore).toBe(0);
   });
 
-  // A step called outside a workflow cannot be given a workflow ID
-  test('step-with-assigned-id', async () => {
-    await DBOS.withNextWorkflowID(randomUUID(), async () => {
-      await expect(StaticStep.testStep('a', '1')).rejects.toThrow(/outside of a workflow; with directive/);
-    });
-    await DBOS.withNextWorkflowID(randomUUID(), async () => {
-      await expect(inst.testStep('a', '1')).rejects.toThrow(/outside of a workflow; with directive/);
+  // An assigned workflow ID belongs to the next workflow; a step in the closure leaves it alone
+  test('step-does-not-consume-assigned-id', async () => {
+    const wfid = randomUUID();
+    await DBOS.withNextWorkflowID(wfid, async () => {
+      expect(await StaticStep.testStep('a', '1')).toBe('1');
+      expect(await inst.testStep('a', '1')).toBe('1');
+      const handle = await DBOS.startWorkflow(WorkflowsCallingSteps).runFuncs();
+      expect(handle.workflowID).toBe(wfid);
+      await handle.getResult();
     });
 
-    expect(StaticStep.stepCnt).toBe(0);
-    expect(InstanceStep.stepCnt).toBe(0);
+    // Two plain calls here, plus the pair the workflow itself makes.
+    expect(StaticStep.stepCnt).toBe(2);
+    expect(InstanceStep.stepCnt).toBe(2);
   });
 
   // Steps are not workflows: they can be neither started nor enqueued
