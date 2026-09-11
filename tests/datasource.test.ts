@@ -477,10 +477,13 @@ describe('decoratorless-api-tests', () => {
     const nwsAfter = (await DBOS.listWorkflows({})).length;
     expect(nwsAfter - nwsBefore).toBe(0);
 
-    //  (If WF requested by providing an ID, this is an error)
-    await DBOS.withNextWorkflowID(wfid, async () => {
-      await expect(DBWFI.tx()).rejects.toThrow(DBOSInvalidWorkflowTransitionError);
+    // An assigned workflow ID is for the next workflow; a bare transaction neither takes nor clears it.
+    const wfid2 = randomUUID();
+    await DBOS.withNextWorkflowID(wfid2, async () => {
+      await expect(DBWFI.tx()).resolves.toBe('My decorated tx result');
+      await expect(DBWFI.wf()).resolves.toBe('My decorated tx result');
     });
+    expect((await DBOS.listWorkflows({ workflowIDs: [wfid2] })).length).toBe(1);
   });
 });
 
