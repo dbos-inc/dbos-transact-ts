@@ -9,7 +9,6 @@ import {
   setWfAndChildrenToPending,
 } from './helpers';
 import { randomUUID } from 'node:crypto';
-import { DBOSInvalidWorkflowTransitionError } from '../src/error';
 
 const queue = { name: 'testQ' };
 
@@ -110,10 +109,10 @@ describe('queued-wf-tests-simple', () => {
   // A step called outside a workflow cannot be given a workflow ID
   test('step-with-assigned-id', async () => {
     await DBOS.withNextWorkflowID(randomUUID(), async () => {
-      await expect(StaticStep.testStep('a', '1')).rejects.toThrow(DBOSInvalidWorkflowTransitionError);
+      await expect(StaticStep.testStep('a', '1')).rejects.toThrow(/outside of a workflow; with directive/);
     });
     await DBOS.withNextWorkflowID(randomUUID(), async () => {
-      await expect(inst.testStep('a', '1')).rejects.toThrow(DBOSInvalidWorkflowTransitionError);
+      await expect(inst.testStep('a', '1')).rejects.toThrow(/outside of a workflow; with directive/);
     });
 
     expect(StaticStep.stepCnt).toBe(0);
@@ -122,8 +121,12 @@ describe('queued-wf-tests-simple', () => {
 
   // Steps are not workflows: they can be neither started nor enqueued
   test('start-step-rejected', async () => {
-    await expect(DBOS.startWorkflow(StaticStep).testStep('a', '1')).rejects.toThrow(DBOSInvalidWorkflowTransitionError);
-    await expect(DBOS.startWorkflow(inst).testStep('a', '1')).rejects.toThrow(DBOSInvalidWorkflowTransitionError);
+    await expect(DBOS.startWorkflow(StaticStep).testStep('a', '1')).rejects.toThrow(
+      /only workflows can be started or enqueued/,
+    );
+    await expect(DBOS.startWorkflow(inst).testStep('a', '1')).rejects.toThrow(
+      /only workflows can be started or enqueued/,
+    );
 
     expect(StaticStep.stepCnt).toBe(0);
     expect(InstanceStep.stepCnt).toBe(0);
@@ -131,10 +134,10 @@ describe('queued-wf-tests-simple', () => {
 
   test('enqueue-step-rejected', async () => {
     await expect(DBOS.startWorkflow(StaticStep, { queueName: queue.name }).testStep('a', '1')).rejects.toThrow(
-      DBOSInvalidWorkflowTransitionError,
+      /only workflows can be started or enqueued/,
     );
     await expect(DBOS.startWorkflow(inst, { queueName: queue.name }).testStep('a', '1')).rejects.toThrow(
-      DBOSInvalidWorkflowTransitionError,
+      /only workflows can be started or enqueued/,
     );
 
     expect(StaticStep.stepCnt).toBe(0);

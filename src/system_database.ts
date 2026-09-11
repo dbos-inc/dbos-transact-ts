@@ -5923,6 +5923,7 @@ export class SystemDatabase {
       Date.now(),
       {
         output,
+        serialization: DBOSPortableJSON.name(),
       },
     );
     return output;

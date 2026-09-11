@@ -69,16 +69,19 @@ describe('failures-tests', () => {
     }
     expect(Date.now() - startTime).toBeGreaterThanOrEqual(1000);
 
-    // A workflow hosts the step, so its retry policy applies.
+    // A workflow hosts the step, so its retry policy and step context apply.
     FailureTestClass.cnt = 0;
+    FailureTestClass.sawStepContext = false;
     await expect(FailureTestClass.alwaysFailsStepWorkflow()).rejects.toThrow(DBOSMaxStepRetriesError);
     expect(FailureTestClass.cnt).toBe(3);
+    expect(FailureTestClass.sawStepContext).toBe(true);
 
     // Called outside a workflow the same step is an ordinary function call: one attempt, raw error.
     FailureTestClass.cnt = 0;
+    FailureTestClass.sawStepContext = true;
     await expect(FailureTestClass.alwaysFailsStep()).rejects.toThrow(new Error('always fails'));
     expect(FailureTestClass.cnt).toBe(1);
-    expect(DBOS.stepStatus).toBeUndefined();
+    expect(FailureTestClass.sawStepContext).toBe(false);
   });
 
   test('nonretry-step', async () => {
@@ -361,10 +364,13 @@ class FailureTestClass extends ConfiguredInstance {
     return FailureTestClass.testFailStep();
   }
 
+  static sawStepContext = false;
+
   // Reads no step context, so it is callable both inside and outside a workflow.
   @DBOS.step({ retriesAllowed: true, intervalSeconds: 0, maxAttempts: 3 })
   static async alwaysFailsStep() {
     FailureTestClass.cnt++;
+    FailureTestClass.sawStepContext = DBOS.stepStatus !== undefined;
     return Promise.reject(new Error('always fails'));
   }
 
