@@ -35,7 +35,9 @@ describe('failures-tests', () => {
     await DBOS.withNextWorkflowID(
       wfUUID1,
       async () =>
-        await expect(FailureTestClass.testStep(11)).rejects.toThrow(new DBOSError('test dbos error with code.', 11)),
+        await expect(FailureTestClass.testStepWorkflow(11)).rejects.toThrow(
+          new DBOSError('test dbos error with code.', 11),
+        ),
     );
 
     const retrievedHandle = DBOS.retrieveWorkflow<string>(wfUUID1);
@@ -45,18 +47,18 @@ describe('failures-tests', () => {
     });
     await expect(retrievedHandle.getResult()).rejects.toThrow(new DBOSError('test dbos error with code.', 11));
 
-    // Test without code.
+    // Outside a workflow a step is a plain call, so the error arrives unwrapped and nothing is recorded.
     await expect(FailureTestClass.testStep()).rejects.toThrow(new DBOSError('test dbos error without code.'));
   });
 
   test('failing-step', async () => {
     let startTime = Date.now();
-    await expect(FailureTestClass.testFailStep()).resolves.toBe(2);
+    await expect(FailureTestClass.testFailStepWorkflow()).resolves.toBe(2);
     expect(Date.now() - startTime).toBeGreaterThanOrEqual(1000);
 
     startTime = Date.now();
     try {
-      await FailureTestClass.testFailStep();
+      await FailureTestClass.testFailStepWorkflow();
       expect(true).toBe(false); // An exception should be thrown first
     } catch (error) {
       const e = error as DBOSMaxStepRetriesError;
@@ -66,6 +68,17 @@ describe('failures-tests', () => {
       expect(e.errors[1].message).toBe('bad number');
     }
     expect(Date.now() - startTime).toBeGreaterThanOrEqual(1000);
+
+    // A workflow hosts the step, so its retry policy applies.
+    FailureTestClass.cnt = 0;
+    await expect(FailureTestClass.alwaysFailsStepWorkflow()).rejects.toThrow(DBOSMaxStepRetriesError);
+    expect(FailureTestClass.cnt).toBe(3);
+
+    // Called outside a workflow the same step is an ordinary function call: one attempt, raw error.
+    FailureTestClass.cnt = 0;
+    await expect(FailureTestClass.alwaysFailsStep()).rejects.toThrow(new Error('always fails'));
+    expect(FailureTestClass.cnt).toBe(1);
+    expect(DBOS.stepStatus).toBeUndefined();
   });
 
   test('nonretry-step', async () => {
@@ -329,6 +342,11 @@ class FailureTestClass extends ConfiguredInstance {
     return Promise.reject(err);
   }
 
+  @DBOS.workflow()
+  static async testStepWorkflow(code?: number) {
+    return FailureTestClass.testStep(code);
+  }
+
   @DBOS.step({ retriesAllowed: true, intervalSeconds: 1, maxAttempts: 2 })
   static async testFailStep() {
     FailureTestClass.cnt++;
@@ -336,6 +354,23 @@ class FailureTestClass extends ConfiguredInstance {
       throw new Error('bad number');
     }
     return Promise.resolve(FailureTestClass.cnt);
+  }
+
+  @DBOS.workflow()
+  static async testFailStepWorkflow() {
+    return FailureTestClass.testFailStep();
+  }
+
+  // Reads no step context, so it is callable both inside and outside a workflow.
+  @DBOS.step({ retriesAllowed: true, intervalSeconds: 0, maxAttempts: 3 })
+  static async alwaysFailsStep() {
+    FailureTestClass.cnt++;
+    return Promise.reject(new Error('always fails'));
+  }
+
+  @DBOS.workflow()
+  static async alwaysFailsStepWorkflow() {
+    return FailureTestClass.alwaysFailsStep();
   }
 
   @DBOS.step({ retriesAllowed: false })

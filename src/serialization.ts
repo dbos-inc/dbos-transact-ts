@@ -171,13 +171,6 @@ export const DBOSPortableJSON: {
 type PathToMember = Array<string | number | symbol>;
 type AnyObject = { [key: string | symbol]: unknown };
 
-/**
- * Roundtrips `value` through serialization.  This doesn't preserve functions by default.
- *   So then, we recursively attach function stubs that throw clear errors, for any
- *   functions present on the original (own props + prototype methods) that
- *   aren't present as functions on the deserialized object.
- * The return is both the deserialized object and its serialized string.
- */
 /** The format a value is written in: the explicit choice, else the configured serializer's own. */
 function serializationName(format: WorkflowSerializationFormat, serializer: DBOSSerializer): string {
   if (format === 'portable') return DBOSPortableJSON.name();
@@ -185,6 +178,13 @@ function serializationName(format: WorkflowSerializationFormat, serializer: DBOS
   return serializer.name();
 }
 
+/**
+ * Roundtrips `value` through serialization.  This doesn't preserve functions by default.
+ *   So then, we recursively attach function stubs that throw clear errors, for any
+ *   functions present on the original (own props + prototype methods) that
+ *   aren't present as functions on the deserialized object.
+ * The return is both the deserialized object and its serialized string.
+ */
 export async function serializeFunctionInputOutput<T>(
   value: T,
   path: PathToMember = [],
