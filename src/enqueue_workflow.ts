@@ -15,7 +15,7 @@ import { buildEnqueueStatus, type EnqueueWorkflowOptions } from './enqueue_optio
 import { RetrievedHandle } from './workflow';
 import type { WorkflowHandle } from './workflow';
 import type { WorkflowStatusInternal } from './system_database';
-import { DBOSError, DBOSInvalidWorkflowTransitionError, DBOSQueueDuplicatedError } from './error';
+import { DBOSInvalidWorkflowTransitionError, DBOSQueueDuplicatedError } from './error';
 import { deserializeResError, serializeResError } from './serialization';
 import { globalParams } from './utils';
 
@@ -77,9 +77,6 @@ export async function enqueueWorkflowWithOptions<T = unknown>(
   }
 
   const resolved = resolveOptions(options, assignedID, callerID, callerFunctionID);
-  if (resolved.queuePartitionKey !== undefined && resolved.deduplicationID !== undefined) {
-    throw new DBOSError('Deduplication is not supported for partitioned queues');
-  }
   const internalStatus: WorkflowStatusInternal = await buildEnqueueStatus(
     resolved,
     exec.serializer,
