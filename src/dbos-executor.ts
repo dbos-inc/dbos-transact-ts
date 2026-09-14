@@ -187,7 +187,6 @@ export interface DBOSConfig {
 
 export interface DBOSRuntimeConfig {
   start: string[];
-  setup: string[];
 }
 
 export interface TelemetryConfig {
@@ -270,11 +269,7 @@ export class DBOSExecutor {
   // System Database
   readonly systemDatabase: SystemDatabase;
 
-  readonly telemetryCollector: TelemetryCollector;
-
   static readonly defaultNotificationTimeoutSec = 60;
-
-  readonly systemDBSchemaName: string;
 
   readonly logger: GlobalLogger;
   readonly ctxLogger: DBOSContextualLogger;
@@ -289,12 +284,10 @@ export class DBOSExecutor {
 
   /* WORKFLOW EXECUTOR LIFE CYCLE MANAGEMENT */
   constructor(readonly config: DBOSConfigInternal) {
-    this.systemDBSchemaName = config.systemDatabaseSchemaName;
-
-    this.telemetryCollector = new TelemetryCollector(new TelemetryExporter(config.telemetry.OTLPExporter));
-    this.logger = new GlobalLogger(this.telemetryCollector, this.config.telemetry.logs, this.appName);
+    const telemetryCollector = new TelemetryCollector(new TelemetryExporter(config.telemetry.OTLPExporter));
+    this.logger = new GlobalLogger(telemetryCollector, this.config.telemetry.logs, this.appName);
     this.ctxLogger = new DBOSContextualLogger(this.logger, () => getActiveSpan());
-    this.tracer = new Tracer(this.telemetryCollector, config.telemetry.otelAttributeFormat);
+    this.tracer = new Tracer(telemetryCollector, config.telemetry.otelAttributeFormat);
     this.serializer = config.serializer;
 
     this.logger.debug('Using Postgres system database');
@@ -304,7 +297,7 @@ export class DBOSExecutor {
       this.serializer,
       this.config.sysDbPoolSize,
       this.config.systemDatabasePool,
-      this.systemDBSchemaName,
+      this.config.systemDatabaseSchemaName,
       this.config.useListenNotify,
       this.config.systemDatabasePollingConcurrency,
       this.config.notificationCoalesceMs,

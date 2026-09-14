@@ -195,7 +195,6 @@ export function translateDbosConfig(options: DBOSConfig): DBOSConfigInternal {
 export function getRuntimeConfig(config: ConfigFile): DBOSRuntimeConfig {
   return {
     start: config.runtimeConfig?.start ?? [],
-    setup: config.runtimeConfig?.setup ?? [],
   };
 }
 

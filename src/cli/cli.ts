@@ -523,11 +523,11 @@ async function getDatabaseURLs(systemDatabaseURL: string | undefined): Promise<{
   }
 }
 
-//Takes an action function(configFile, logger) that returns a numeric exit code.
+//Runs action(migrationCommands, systemDatabaseUrl, logger), which returns a numeric exit code.
 //Logs through the configured OTLP exporter and flushes it after.
 //If action throws, logs the exception and sets the exit code to 1.
 //Finally, terminates the program with the exit code.
-export async function runAndLog(
+async function runAndLog(
   migrationCommands: string[],
   config: DBOSConfigInternal,
   action: (migrationCommands: string[], systemDatabaseUrl: string, logger: GlobalLogger) => Promise<number> | number,

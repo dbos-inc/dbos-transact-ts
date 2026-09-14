@@ -140,10 +140,9 @@ export async function runTransaction<T>(
       operationUUID: DBOS.workflowID,
       operationType: OperationType.TRANSACTION,
       operationName: funcName,
-      authenticatedUser: DBOS.authenticatedUser ?? '',
-      assumedRole: DBOS.assumedRole ?? '',
-      authenticatedRoles: DBOS.authenticatedRoles ?? [],
-      // isolationLevel: txnInfo.config.isolationLevel, // TODO: Pluggable
+      authenticatedUser: DBOS.authenticatedUser,
+      assumedRole: DBOS.assumedRole,
+      authenticatedRoles: DBOS.authenticatedRoles,
     },
     DBOS.span,
   );
@@ -207,10 +206,9 @@ export function registerTransaction<This, Args extends unknown[], Return, Config
         operationUUID: DBOS.workflowID,
         operationType: OperationType.TRANSACTION,
         operationName: funcName,
-        authenticatedUser: DBOS.authenticatedUser ?? '',
-        assumedRole: DBOS.assumedRole ?? '',
-        authenticatedRoles: DBOS.authenticatedRoles ?? [],
-        // isolationLevel: txnInfo.config.isolationLevel, // TODO: Pluggable
+        authenticatedUser: DBOS.authenticatedUser,
+        assumedRole: DBOS.assumedRole,
+        authenticatedRoles: DBOS.authenticatedRoles,
       },
       DBOS.span,
     );

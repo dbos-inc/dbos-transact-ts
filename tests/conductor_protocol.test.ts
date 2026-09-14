@@ -186,14 +186,16 @@ describe('conductor-live-connection', () => {
     await expect(DBOS.listWorkflows({})).resolves.toHaveLength(1);
 
     conductorSocket.send(
-      JSON.stringify(
-        new protocol.RetentionRequest('retention-round-1', {
+      JSON.stringify({
+        type: protocol.MessageType.RETENTION,
+        request_id: 'retention-round-1',
+        body: {
           gc_cutoff_epoch_ms: Date.now() + 60_000,
           // Zero rather than absent: a Conductor that clears the batch size must fall back to
           // the default rather than failing the round, as Python does. Null takes the same path.
           gc_batch_size: 0,
-        }),
-      ),
+        },
+      } satisfies protocol.RetentionRequest),
     );
 
     await retryUntilSuccess(() => {
@@ -210,12 +212,11 @@ describe('conductor-live-connection', () => {
 
     // The round ran off the command loop, so the loop is still serving commands.
     conductorSocket.send(
-      JSON.stringify(
-        new protocol.ListWorkflowsRequest('after-retention', {
-          workflow_uuids: ['no-such-workflow'],
-          sort_desc: false,
-        }),
-      ),
+      JSON.stringify({
+        type: protocol.MessageType.LIST_WORKFLOWS,
+        request_id: 'after-retention',
+        body: { workflow_uuids: ['no-such-workflow'], sort_desc: false },
+      } satisfies protocol.ListWorkflowsRequest),
     );
     await retryUntilSuccess(() => {
       const answers = answersTo('after-retention');
@@ -239,7 +240,11 @@ describe('conductor-live-connection', () => {
     try {
       const request = (requestID: string) =>
         conductorSocket.send(
-          JSON.stringify(new protocol.RetentionRequest(requestID, { gc_cutoff_epoch_ms: Date.now() + 60_000 })),
+          JSON.stringify({
+            type: protocol.MessageType.RETENTION,
+            request_id: requestID,
+            body: { gc_cutoff_epoch_ms: Date.now() + 60_000 },
+          } satisfies protocol.RetentionRequest),
         );
       request('round-a');
       await retryUntilSuccess(() => {
@@ -277,9 +282,11 @@ describe('conductor-live-connection', () => {
     // Field names exactly as Conductor's server sends them.
     const aggregate = (requestID: string, body: protocol.GetWorkflowAggregatesBody) =>
       conductorSocket.send(
-        JSON.stringify(
-          new protocol.GetWorkflowAggregatesRequest(requestID, { group_by_status: true, select_count: true, ...body }),
-        ),
+        JSON.stringify({
+          type: protocol.MessageType.GET_WORKFLOW_AGGREGATES,
+          request_id: requestID,
+          body: { group_by_status: true, select_count: true, ...body },
+        } satisfies protocol.GetWorkflowAggregatesRequest),
       );
     aggregate('by-workflow-id', { workflow_ids: [workflowIDs[0]] });
     aggregate('by-user', { user: ['user-1'] });

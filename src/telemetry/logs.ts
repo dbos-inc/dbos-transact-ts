@@ -322,7 +322,7 @@ const logLevelValues: Record<string, number> = {
 export class DBOSConsoleLogger implements DLogger {
   private readonly levelValue: number;
 
-  constructor(readonly config: LoggerConfig) {
+  constructor(config: LoggerConfig) {
     const level = config.logLevel ?? 'info';
     if (!(level in logLevelValues)) {
       console.warn(
