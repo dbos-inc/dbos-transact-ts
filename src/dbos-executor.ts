@@ -515,12 +515,10 @@ export class DBOSExecutor {
 
     const pctx = { ...getCurrentContextStore() }; // function ID was already incremented...
 
-    // Resolve authentication once: explicit params, then enqueue options, then the ambient context.
+    // Resolve authentication once: explicit params, then the ambient context.
     // The status row, the span, and the workflow's own context must all agree on this.
-    const authenticatedUser =
-      params.authenticatedUser ?? params.enqueueOptions?.authenticatedUser ?? pctx?.authenticatedUser ?? '';
-    const authenticatedRoles =
-      params.authenticatedRoles ?? params.enqueueOptions?.authenticatedRoles ?? pctx?.authenticatedRoles ?? [];
+    const authenticatedUser = params.authenticatedUser ?? pctx?.authenticatedUser ?? '';
+    const authenticatedRoles = params.authenticatedRoles ?? pctx?.authenticatedRoles ?? [];
 
     const wInfo = getFunctionRegistration(wf);
     const wfNames = getRegisteredFunctionFullName(wf);
