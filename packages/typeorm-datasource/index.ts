@@ -306,10 +306,7 @@ export class TypeOrmDataSource implements DBOSDataSource<TypeORMTransactionConfi
 
   #provider: TypeOrmTransactionHandler;
 
-  /**
-   * @deprecated - For readability, use `createFromConfig` or `createFromDataSource`
-   */
-  constructor(
+  private constructor(
     readonly name: string,
     config?: PoolConfig,
     // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
