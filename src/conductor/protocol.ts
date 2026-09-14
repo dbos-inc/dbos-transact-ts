@@ -33,7 +33,6 @@ export enum MessageType {
   LIST_WORKFLOWS = 'list_workflows',
   LIST_QUEUED_WORKFLOWS = 'list_queued_workflows',
   RESUME = 'resume',
-  RESTART = 'restart',
   GET_WORKFLOW = 'get_workflow',
   EXIST_PENDING_WORKFLOWS = 'exist_pending_workflows',
   LIST_STEPS = 'list_steps',
@@ -179,24 +178,6 @@ export class ResumeResponse extends BaseResponse {
   success: boolean;
   constructor(request_id: string, success: boolean, error_message?: string) {
     super(MessageType.RESUME, request_id, error_message);
-    this.success = success;
-  }
-}
-
-export class RestartRequest implements BaseMessage {
-  type = MessageType.RESTART;
-  request_id: string;
-  workflow_id: string;
-  constructor(request_id: string, workflow_id: string) {
-    this.request_id = request_id;
-    this.workflow_id = workflow_id;
-  }
-}
-
-export class RestartResponse extends BaseResponse {
-  success: boolean;
-  constructor(request_id: string, success: boolean, error_message?: string) {
-    super(MessageType.RESTART, request_id, error_message);
     this.success = success;
   }
 }

@@ -202,19 +202,6 @@ export class Conductor {
             const resumeResp = new protocol.ResumeResponse(baseMsg.request_id, resumeSuccess, errorMsg);
             currWebsocket.send(JSON.stringify(resumeResp));
             break;
-          case protocol.MessageType.RESTART:
-            const restartMsg = baseMsg as protocol.RestartRequest;
-            let restartSuccess = true;
-            try {
-              await this.dbosExec.forkWorkflow(restartMsg.workflow_id, 0);
-            } catch (e) {
-              errorMsg = `Exception encountered when restarting workflow ${restartMsg.workflow_id}: ${(e as Error).message}`;
-              this.dbosExec.logger.error(errorMsg);
-              restartSuccess = false;
-            }
-            const restartResp = new protocol.RestartResponse(baseMsg.request_id, restartSuccess, errorMsg);
-            currWebsocket.send(JSON.stringify(restartResp));
-            break;
           case protocol.MessageType.FORK_WORKFLOW:
             const forkMsg = baseMsg as protocol.ForkWorkflowRequest;
             let newWorkflowID = forkMsg.body.new_workflow_id;
