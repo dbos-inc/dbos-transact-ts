@@ -185,10 +185,8 @@ describe('shutdown-workflow-completion-timeout', () => {
 
     let stopSawWorkflowDone: boolean | undefined = undefined;
     const fakeConductor = {
-      isClosed: false,
       stop() {
         stopSawWorkflowDone = conductorOrder.state.done;
-        this.isClosed = true;
       },
       // No retention round to wait for.
       awaitRetention: () => Promise.resolve(),

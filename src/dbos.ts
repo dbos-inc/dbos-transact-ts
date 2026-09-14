@@ -661,9 +661,6 @@ export class DBOS {
       if (executor?.conductor) {
         const conductor = executor.conductor;
         conductor.stop();
-        while (!conductor.isClosed) {
-          await sleepms(500);
-        }
         // Grace only: a round still running past this is cut when the system database is
         // destroyed, so shutdown waits at most this long plus one connect timeout.
         await conductor.awaitRetention();
