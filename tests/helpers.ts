@@ -176,7 +176,6 @@ function withDispatchDeadline<R>(handle: WorkflowHandle<R>, timeoutMs: number): 
       return handle.workflowID;
     },
     getStatus: () => handle.getStatus(),
-    getWorkflowInputs: <T extends unknown[]>() => handle.getWorkflowInputs<T>(),
     getResult: async (options?: Parameters<WorkflowHandle<R>['getResult']>[0]) => {
       const expired = Symbol('expired');
       const pending = handle.getResult(options);

@@ -92,7 +92,6 @@ export async function toWorkflowStatus(
 
     executorId: internal.executorId,
     applicationVersion: internal.applicationVersion,
-    applicationID: internal.applicationID,
     recoveryAttempts: internal.recoveryAttempts,
     createdAt: internal.createdAt!,
     updatedAt: internal.updatedAt,

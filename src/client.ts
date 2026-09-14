@@ -41,14 +41,7 @@ import {
   ReadStreamOffsetOptions,
 } from './dbos';
 import { readStreamCore, readStreamOffsetCore } from './streams';
-import {
-  DBOSJSON,
-  DBOSSerializer,
-  deserializePositionalArgs,
-  deserializeValue,
-  serializeArgs,
-  serializeValue,
-} from './serialization';
+import { DBOSJSON, DBOSSerializer, deserializeValue, serializeArgs, serializeValue } from './serialization';
 import {
   forkWorkflow,
   getWorkflow,
@@ -196,10 +189,6 @@ export class ClientHandle<R> implements WorkflowHandle<R> {
     readonly workflowUUID: string,
   ) {}
 
-  getWorkflowUUID(): string {
-    return this.workflowUUID;
-  }
-
   get workflowID(): string {
     return this.workflowUUID;
   }
@@ -225,15 +214,6 @@ export class ClientHandle<R> implements WorkflowHandle<R> {
       throw new DBOSAwaitedWorkflowExceededMaxRecoveryAttempts(this.workflowID);
     }
     return await DBOSExecutor.reviveResultOrError<R>(res!, this.systemDatabase.getSerializer());
-  }
-
-  async getWorkflowInputs<T extends unknown[]>(): Promise<T> {
-    const status = (await this.systemDatabase.getWorkflowStatus(this.workflowUUID)) as WorkflowStatusInternal;
-    return (await deserializePositionalArgs(
-      status.input,
-      status.serialization,
-      this.systemDatabase.getSerializer(),
-    )) as T;
   }
 }
 

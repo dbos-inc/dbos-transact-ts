@@ -382,6 +382,37 @@ export function runInternalStep<T>(
   return callback();
 }
 
+export async function getResultInternal<T>(
+  workflowID: string,
+  timeoutSeconds?: number,
+  timerFuncID?: number,
+  assignedFuncID?: number,
+  pollingIntervalMs?: number,
+): Promise<T | null> {
+  return await runInternalStep(
+    async () => {
+      const rres = await DBOSExecutor.globalInstance!.systemDatabase.awaitWorkflowResult(
+        workflowID,
+        timeoutSeconds,
+        DBOS.workflowID,
+        timerFuncID,
+        pollingIntervalMs,
+      );
+      if (!rres) return null;
+      if (rres?.cancelled) {
+        throw new DBOSAwaitedWorkflowCancelledError(workflowID);
+      }
+      if (rres?.maxRecoveryAttemptsExceeded) {
+        throw new DBOSAwaitedWorkflowExceededMaxRecoveryAttempts(workflowID);
+      }
+      return await DBOSExecutor.reviveResultOrError<T>(rres, getExecutor().serializer);
+    },
+    'DBOS.getResult',
+    workflowID,
+    assignedFuncID,
+  );
+}
+
 /**
  * Like runInternalStep, but when called from within a workflow, the callback and the step
  * result recording run in the same database transaction (via runTransactionalStep).
@@ -677,16 +708,6 @@ export class DBOS {
     wfQueueRunner.clearRegistrations();
   }
 
-  /** Stop listening for external events (for testing) */
-  static async deactivateEventReceivers() {
-    return DBOSExecutor.globalInstance?.deactivateEventReceivers();
-  }
-
-  /** Start listening for external events (for testing) */
-  static async initEventReceivers() {
-    return DBOSExecutor.globalInstance?.initEventReceivers(this.#dbosConfig?.listenQueues || null);
-  }
-
   // Global DBOS executor instance
   static get #executor() {
     return getExecutor();
@@ -834,38 +855,7 @@ export class DBOS {
       // Reserve the function ID synchronously, before any await.
       timerFuncID = functionIDGetIncrement();
     }
-    return await DBOS.getResultInternal(workflowID, timeoutSeconds, timerFuncID, undefined, pollingIntervalMs);
-  }
-
-  static async getResultInternal<T>(
-    workflowID: string,
-    timeoutSeconds?: number,
-    timerFuncID?: number,
-    assignedFuncID?: number,
-    pollingIntervalMs?: number,
-  ): Promise<T | null> {
-    return await runInternalStep(
-      async () => {
-        const rres = await DBOSExecutor.globalInstance!.systemDatabase.awaitWorkflowResult(
-          workflowID,
-          timeoutSeconds,
-          DBOS.workflowID,
-          timerFuncID,
-          pollingIntervalMs,
-        );
-        if (!rres) return null;
-        if (rres?.cancelled) {
-          throw new DBOSAwaitedWorkflowCancelledError(workflowID);
-        }
-        if (rres?.maxRecoveryAttemptsExceeded) {
-          throw new DBOSAwaitedWorkflowExceededMaxRecoveryAttempts(workflowID);
-        }
-        return await DBOSExecutor.reviveResultOrError<T>(rres, DBOS.#executor.serializer);
-      },
-      'DBOS.getResult',
-      workflowID,
-      assignedFuncID,
-    );
+    return await getResultInternal(workflowID, timeoutSeconds, timerFuncID, undefined, pollingIntervalMs);
   }
 
   /**
@@ -965,7 +955,7 @@ export class DBOS {
 
   /**
    * Query the system database for all queued workflows matching the provided predicate
-   * @param input - `GetQueuedWorkflowsInput` predicate for filtering returned workflows
+   * @param input - `GetWorkflowsInput` predicate for filtering returned workflows
    * @returns `WorkflowStatus` array containing details of the matching workflows
    */
   static async listQueuedWorkflows(input: GetWorkflowsInput): Promise<WorkflowStatus[]> {
