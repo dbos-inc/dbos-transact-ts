@@ -71,7 +71,6 @@ import {
 import { GetWorkflowsInput } from '.';
 
 import { wfQueueRunner } from './wfqueue';
-import { debugTriggerPoint, DEBUG_TRIGGER_WORKFLOW_ENQUEUE } from './debugpoint';
 import { DynamicSchedulerLoop } from './scheduler/scheduler';
 import * as crypto from 'crypto';
 import {
@@ -680,7 +679,6 @@ export class DBOSExecutor {
 
     $deadlineEpochMS = ires.deadlineEpochMS;
     shouldExecute = ires.shouldExecuteOnThisExecutor;
-    await debugTriggerPoint(DEBUG_TRIGGER_WORKFLOW_ENQUEUE);
 
     async function callPromiseWithTimeout(
       callPromise: Promise<R>,
