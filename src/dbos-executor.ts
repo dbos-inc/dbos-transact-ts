@@ -191,8 +191,8 @@ export interface DBOSRuntimeConfig {
 }
 
 export interface TelemetryConfig {
-  logs?: LoggerConfig;
-  OTLPExporter?: OTLPExporterConfig;
+  logs: LoggerConfig;
+  OTLPExporter: OTLPExporterConfig;
   otelAttributeFormat?: OtelAttributeFormat;
 }
 
@@ -291,13 +291,7 @@ export class DBOSExecutor {
   constructor(readonly config: DBOSConfigInternal) {
     this.systemDBSchemaName = config.systemDatabaseSchemaName;
 
-    if (config.telemetry.OTLPExporter) {
-      const OTLPExporter = new TelemetryExporter(config.telemetry.OTLPExporter);
-      this.telemetryCollector = new TelemetryCollector(OTLPExporter);
-    } else {
-      // We always setup a collector to drain the signals queue, even if we don't have an exporter.
-      this.telemetryCollector = new TelemetryCollector();
-    }
+    this.telemetryCollector = new TelemetryCollector(new TelemetryExporter(config.telemetry.OTLPExporter));
     this.logger = new GlobalLogger(this.telemetryCollector, this.config.telemetry.logs, this.appName);
     this.ctxLogger = new DBOSContextualLogger(this.logger, () => getActiveSpan());
     this.tracer = new Tracer(this.telemetryCollector, config.telemetry.otelAttributeFormat);

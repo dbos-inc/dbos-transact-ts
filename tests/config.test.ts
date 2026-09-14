@@ -136,7 +136,7 @@ describe('dbos-config', () => {
         name: 'test-app',
       };
       const config = getDbosConfig(configFile);
-      expect(config.telemetry.logs?.logLevel).toEqual('info');
+      expect(config.telemetry.logs.logLevel).toEqual('info');
     });
 
     test('logLevel specified', () => {
@@ -149,7 +149,7 @@ describe('dbos-config', () => {
         },
       };
       const config = getDbosConfig(configFile);
-      expect(config.telemetry.logs?.logLevel).toEqual('debug');
+      expect(config.telemetry.logs.logLevel).toEqual('debug');
     });
 
     test('logLevel override', () => {
@@ -162,7 +162,7 @@ describe('dbos-config', () => {
         },
       };
       const config = getDbosConfig(configFile, { logLevel: 'error' });
-      expect(config.telemetry.logs?.logLevel).toEqual('error');
+      expect(config.telemetry.logs.logLevel).toEqual('error');
     });
 
     test('returns correct database url', () => {
@@ -352,9 +352,9 @@ describe('dbos-config', () => {
     test('translate passes through a custom logger', () => {
       const myLogger = { info: () => {}, debug: () => {}, warn: () => {}, error: () => {} };
       let internalConfig = translateDbosConfig({ name: 'dbostest', logger: myLogger });
-      expect(internalConfig.telemetry.logs?.logger).toBe(myLogger);
+      expect(internalConfig.telemetry.logs.logger).toBe(myLogger);
       internalConfig = translateDbosConfig({ name: 'dbostest' });
-      expect(internalConfig.telemetry.logs?.logger).toBeUndefined();
+      expect(internalConfig.telemetry.logs.logger).toBeUndefined();
     });
 
     test('translate with db url', () => {
@@ -478,8 +478,8 @@ describe('dbos-config', () => {
       const internalConfig = translateDbosConfig(overwriteConfigForDBOSCloud({}));
       expect(internalConfig.name).toBe('cloud-app-name');
       expect(internalConfig.systemDatabaseUrl).toBe('postgres://a:b@c:2345/cloud_sys_db');
-      expect(internalConfig.telemetry.OTLPExporter?.logsEndpoint).toEqual(['http://otel-collector:4318/v1/logs']);
-      expect(internalConfig.telemetry.OTLPExporter?.tracesEndpoint).toEqual([]);
+      expect(internalConfig.telemetry.OTLPExporter.logsEndpoint).toEqual(['http://otel-collector:4318/v1/logs']);
+      expect(internalConfig.telemetry.OTLPExporter.tracesEndpoint).toEqual([]);
     });
 
     test('getDbosConfig applies the cloud environment', () => {
@@ -490,7 +490,7 @@ describe('dbos-config', () => {
       const internalConfig = getDbosConfig({ name: 'file-app-name' });
       expect(internalConfig.name).toBe('cloud-app-name');
       expect(internalConfig.systemDatabaseUrl).toBe('postgres://a:b@c:2345/cloud_sys_db');
-      expect(internalConfig.telemetry.OTLPExporter?.tracesEndpoint).toEqual(['http://otel-collector:4318/v1/traces']);
+      expect(internalConfig.telemetry.OTLPExporter.tracesEndpoint).toEqual(['http://otel-collector:4318/v1/traces']);
     });
   });
 
