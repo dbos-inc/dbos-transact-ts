@@ -112,7 +112,7 @@ Because each workflow's ID is derived from its topic, partition, consumer group,
 
 ### Concurrency and Rate Limiting
 
-Consumer workflows are enqueued in a [workflow queue](https://docs.dbos.dev/typescript/reference/transactapi/workflow-queues).
+Consumer workflows are enqueued in a [workflow queue](https://docs.dbos.dev/typescript/reference/queues).
 By default they use an internal queue; specify `queueName` to run them on your own queue, for example to apply a concurrency limit.
 A custom queue must not be a partitioned queue, and is only supported with `ordering: 'none'`.
 
@@ -151,7 +151,7 @@ class KafkaTestClass {
     await producer.connect();
 
     try {
-      DBOS.runStep(
+      await DBOS.runStep(
         async () => {
           const message = JSON.stringify({ name, value });
           await producer.send({

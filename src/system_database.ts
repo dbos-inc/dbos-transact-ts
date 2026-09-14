@@ -1835,7 +1835,7 @@ export class SystemDatabase {
     // Insert a patchmarker
     const dn = Date.now();
     await this.pool.query<operation_outputs>(
-      `INSERT INTO ${this.schemaName}.operation_outputs
+      `INSERT INTO "${this.schemaName}".operation_outputs
        (workflow_uuid, function_id, output, error, function_name, child_workflow_id, started_at_epoch_ms, completed_at_epoch_ms, application_name, retention_timestamp)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, (EXTRACT(EPOCH FROM now()) * 1000)::bigint)
        ON CONFLICT DO NOTHING;`,
@@ -5775,7 +5775,7 @@ export class SystemDatabase {
 
     const throwOnFailure = options.throwOnFailure ?? true;
     if (throwOnFailure && result.rowCount !== 1) {
-      throw new DBOSWorkflowConflictError(`Attempt to record transition of nonexistent workflow ${workflowID}`);
+      throw new DBOSNonExistentWorkflowError(`Attempt to record transition of nonexistent workflow ${workflowID}`);
     }
     return result.rowCount ?? 0;
   }
@@ -5797,7 +5797,7 @@ export class SystemDatabase {
   ): Promise<void> {
     try {
       const out = await client.query<operation_outputs>(
-        `INSERT INTO ${this.schemaName}.operation_outputs
+        `INSERT INTO "${this.schemaName}".operation_outputs
          (workflow_uuid, function_id, output, error, function_name, child_workflow_id, started_at_epoch_ms, completed_at_epoch_ms, serialization, application_name, retention_timestamp)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, (EXTRACT(EPOCH FROM now()) * 1000)::bigint)
          ON CONFLICT (workflow_uuid, function_id) DO UPDATE

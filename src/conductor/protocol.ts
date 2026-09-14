@@ -876,8 +876,8 @@ export interface GetWorkflowAggregatesBody {
   executor_id?: string[];
   queue_name?: string[];
   workflow_id_prefix?: string[];
-  workflow_uuids?: string[];
-  authenticated_user?: string[];
+  workflow_ids?: string[];
+  user?: string[];
   forked_from?: string[];
   parent_workflow_id?: string[];
   schedule_name?: string[];

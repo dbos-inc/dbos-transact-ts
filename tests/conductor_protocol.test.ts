@@ -130,10 +130,9 @@ describe('conductor-protocol-string-representations', () => {
   });
 });
 
-// A retention round takes minutes, so the conductor runs it off its command loop. That is a
-// property of the live connection rather than of a wire object, so unlike the suite above
-// this one stands up a real websocket for Conductor's side of it.
-describe('conductor-retention-dispatch', () => {
+// Command dispatch and request parsing are properties of the live connection rather than of a
+// wire object, so unlike the suite above this one stands up a real websocket for Conductor's side of it.
+describe('conductor-live-connection', () => {
   let config: DBOSConfig;
   let server: WebSocketServer;
   let conductorSocket: WebSocket;
@@ -266,5 +265,34 @@ describe('conductor-retention-dispatch', () => {
       warn.mockRestore();
       acquire.mockRestore();
     }
+  });
+
+  test('filters workflow aggregates by the workflow IDs and user Conductor sends', async () => {
+    const workflowIDs = ['agg-filter-a', 'agg-filter-b'];
+    for (const [i, workflowID] of workflowIDs.entries()) {
+      const handle = await DBOS.startWorkflow(retentionWorkflow, { workflowID, authenticatedUser: `user-${i}` })(i);
+      await handle.getResult();
+    }
+
+    // Field names exactly as Conductor's server sends them.
+    const aggregate = (requestID: string, body: protocol.GetWorkflowAggregatesBody) =>
+      conductorSocket.send(
+        JSON.stringify(
+          new protocol.GetWorkflowAggregatesRequest(requestID, { group_by_status: true, select_count: true, ...body }),
+        ),
+      );
+    aggregate('by-workflow-id', { workflow_ids: [workflowIDs[0]] });
+    aggregate('by-user', { user: ['user-1'] });
+    aggregate('unfiltered', {});
+
+    await retryUntilSuccess(() => {
+      const expected = { 'by-workflow-id': 1, 'by-user': 1, unfiltered: 2 };
+      for (const [requestID, count] of Object.entries(expected)) {
+        const answers = answersTo(requestID) as protocol.GetWorkflowAggregatesResponse[];
+        expect(answers).toHaveLength(1);
+        expect(answers[0].error_message).toBeUndefined();
+        expect(answers[0].output).toEqual([expect.objectContaining({ count })]);
+      }
+    });
   });
 });
