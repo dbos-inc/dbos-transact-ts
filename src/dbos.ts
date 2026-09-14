@@ -1211,15 +1211,14 @@ export class DBOS {
   }
 
   /**
-   * This generic setter helps users calling DBOS operation to pass a name,
-   *   later used in seeding a parent OTel span for the operation.
-   * @param callerName - Tracing caller name
-   * @param callback - Function to run with tracing context in place
+   * Runs `callback`. The caller name is not recorded or used.
+   * @param _callerName - Ignored
+   * @param callback - Function to run
    * @returns - Return value from `callback`
    */
-  static async withNamedContext<R>(callerName: string, callback: () => Promise<R>): Promise<R> {
+  static async withNamedContext<R>(_callerName: string, callback: () => Promise<R>): Promise<R> {
     ensureDBOSIsLaunched('tracing');
-    return DBOS.#withTopContext({ operationCaller: callerName }, callback);
+    return DBOS.#withTopContext({}, callback);
   }
 
   /**

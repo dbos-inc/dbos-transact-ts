@@ -502,7 +502,6 @@ export class DBOSExecutor {
     ...args: T
   ): Promise<WorkflowHandle<R>> {
     const workflowID: string = params.workflowUUID ? params.workflowUUID : randomUUID();
-    const presetID: boolean = params.workflowUUID ? true : false;
     const timeoutMS = params.timeoutMS ?? undefined;
     // If a timeout is explicitly specified, use it over any propagated deadline
     const deadlineEpochMS = params.timeoutMS
@@ -813,7 +812,6 @@ export class DBOSExecutor {
             return await runWithParentContext(
               pctx,
               {
-                presetID,
                 workflowTimeoutMS: undefined, // Becomes deadline
                 deadlineEpochMS,
                 workflowId: workflowID,

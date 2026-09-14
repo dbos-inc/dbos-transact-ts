@@ -62,14 +62,6 @@ export interface DBOSLifecycleCallback {
   logRegisteredEndpoints?(): void;
 }
 
-export interface RegistrationDefaults {
-  name: string;
-
-  getRegisteredInfo(reg: AnyConstructor | object | string): unknown;
-
-  externalRegInfo: Map<AnyConstructor | object | string, unknown>;
-}
-
 export interface MethodRegistrationBase {
   name: string;
   className: string;
@@ -119,13 +111,6 @@ export class MethodRegistration<This, Args extends unknown[], Return> implements
   regLocation?: string[];
   externalRegInfo: Map<AnyConstructor | object | string, unknown> = new Map();
 
-  getRegisteredInfo(reg: AnyConstructor | object | string) {
-    if (!this.externalRegInfo.has(reg)) {
-      this.externalRegInfo.set(reg, {});
-    }
-    return this.externalRegInfo.get(reg)!;
-  }
-
   getAssignedType(): 'Workflow' | 'Step' | undefined {
     if (this.workflowConfig) return 'Workflow';
     if (this.stepConfig) return 'Step';
@@ -165,8 +150,6 @@ export class MethodRegistration<This, Args extends unknown[], Return> implements
     this.workflowConfig = wfCfg;
   }
 
-  init: boolean = false;
-
   invoke(pthis: This, args: Args): Promise<Return> {
     const f = this.wrappedFunction ?? this.registeredFunction ?? this.origFunction;
     return f.call(pthis, ...args);
@@ -193,7 +176,7 @@ export abstract class ConfiguredInstance {
   }
 }
 
-export class ClassRegistration implements RegistrationDefaults {
+export class ClassRegistration {
   name: string = '';
   needsInitialized: boolean = true;
 
