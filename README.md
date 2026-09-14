@@ -8,7 +8,7 @@
 
 # DBOS Transact: Lightweight Durable Workflows
 
-#### [Documentation](https://docs.dbos.dev/) &nbsp;&nbsp;•&nbsp;&nbsp; [Examples](https://docs.dbos.dev/examples) &nbsp;&nbsp;•&nbsp;&nbsp; [Github](https://github.com/dbos-inc) &nbsp;&nbsp;•&nbsp;&nbsp; [Discord](https://discord.com/invite/jsmC6pXGgX)
+#### [Documentation](https://docs.dbos.dev/) &nbsp;&nbsp;•&nbsp;&nbsp; [Examples](https://docs.dbos.dev/examples) &nbsp;&nbsp;•&nbsp;&nbsp; [GitHub](https://github.com/dbos-inc) &nbsp;&nbsp;•&nbsp;&nbsp; [Discord](https://discord.com/invite/jsmC6pXGgX)
 
 </div>
 
@@ -30,7 +30,7 @@ For example, you might be building a payments service that must reliably process
 
 Handling failures is costly and complicated, requiring complex state management and recovery logic as well as heavyweight tools like external orchestration services.
 DBOS makes it simpler: annotate your code to checkpoint it in Postgres and automatically recover from any failure.
-DBOS also provides powerful Postgres-backed primitives that makes it easier to write and operate reliable code, including durable queues, notifications, scheduling, event processing, and programmatic workflow management.
+DBOS also provides powerful Postgres-backed primitives that make it easier to write and operate reliable code, including durable queues, notifications, scheduling, event processing, and programmatic workflow management.
 
 ## Features
 
@@ -133,7 +133,7 @@ Handle bugs or failures that affect thousands of workflows with power and flexib
 const client = await DBOSClient.create({ systemDatabaseUrl: process.env.DBOS_SYSTEM_DATABASE_URL! });
 
 // Find all workflows that errored between 3:00 and 5:00 AM UTC on 2025-04-22
-const workflows = await DBOS.listWorkflows({
+const workflows = await client.listWorkflows({
   status: 'ERROR',
   startTime: '2025-04-22T03:00:00Z',
   endTime: '2025-04-22T05:00:00Z',
@@ -141,10 +141,10 @@ const workflows = await DBOS.listWorkflows({
 
 for (const workflow of workflows) {
   // Check which workflows failed due to an outage in a service called from Step 2
-  const steps = await DBOS.listWorkflowSteps(workflow.workflowID);
-  if (steps.length >= 3 && steps[2].error instanceof ServiceOutage) {
+  const steps = await client.listWorkflowSteps(workflow.workflowID);
+  if (steps && steps.length >= 3 && steps[2].error instanceof ServiceOutage) {
     // To recover from the outage, restart those workflows from Step 2
-    await DBOS.forkWorkflow(workflow.workflowID, 2);
+    await client.forkWorkflow(workflow.workflowID, 2);
   }
 }
 ```
@@ -163,7 +163,7 @@ Acknowledge the event immediately while reliably processing it in the background
 For example:
 
 ```ts
-async function handleMessage(request: Request): void {
+async function handleMessage(request: Request): Promise<void> {
   const eventId = request.body['event_id'];
   // Use the event ID as an idempotency key to start the workflow exactly-once
   await DBOS.startWorkflow(messageWorkflow, { workflowID: eventId })(request.body['event']);
@@ -295,7 +295,7 @@ DBOS provides a similar queue abstraction to dedicated queueing systems like Bul
 However, DBOS queues are **durable and Postgres-backed** and integrate with durable workflows.
 For example, in DBOS you can write a durable workflow that enqueues a thousand tasks and waits for their results.
 DBOS checkpoints the workflow and each of its tasks in Postgres, guaranteeing that even if failures or interruptions occur, the tasks will complete and the workflow will collect their results.
-By contrast, BullMQ is Redis-backed and don't provide workflows, so they provide fewer guarantees but better performance.
+By contrast, BullMQ is Redis-backed and doesn't provide workflows, so it provides fewer guarantees but better performance.
 
 **When to use DBOS:** You need the reliability of enqueueing tasks from durable workflows.
 
