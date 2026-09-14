@@ -41,14 +41,7 @@ import {
   DBOSInvalidQueuePriorityError,
   DBOSQueueDuplicatedError,
 } from './error';
-import {
-  getDbosConfig,
-  getRuntimeConfig,
-  overwriteConfigForDBOSCloud,
-  readConfigFile,
-  translateDbosConfig,
-  translateRuntimeConfig,
-} from './config';
+import { getDbosConfig, overwriteConfigForDBOSCloud, readConfigFile, translateDbosConfig } from './config';
 import {
   AlertHandler,
   associateClassWithExternal,
@@ -89,9 +82,6 @@ import {
   SerializationRecipe,
   serializeValue,
 } from './serialization';
-import { DBOSAdminServer } from './adminserver';
-import { Server } from 'http';
-
 import { randomUUID } from 'node:crypto';
 
 import { StepConfig, validateStepConfig } from './step';
@@ -439,7 +429,6 @@ export class DBOS {
   ///////
   // Lifecycle
   ///////
-  static adminServer: Server | undefined = undefined;
   static conductor: Conductor | undefined = undefined;
   // Blocks launch/shutdown overlap: `initialized` goes false before the drain, so it cannot do this job.
   static #shuttingDown: boolean = false;
@@ -473,10 +462,9 @@ export class DBOS {
     const configFile = await readConfigFile();
 
     let internalConfig = DBOS.#dbosConfig ? translateDbosConfig(DBOS.#dbosConfig) : getDbosConfig(configFile);
-    let runtimeConfig = DBOS.#dbosConfig ? translateRuntimeConfig(DBOS.#dbosConfig) : getRuntimeConfig(configFile);
 
     if (process.env.DBOS__CLOUD === 'true') {
-      [internalConfig, runtimeConfig] = overwriteConfigForDBOSCloud(internalConfig, runtimeConfig, configFile);
+      internalConfig = overwriteConfigForDBOSCloud(internalConfig, configFile);
     }
 
     globalParams.enableOTLP = DBOS.#dbosConfig?.enableOTLP ?? defaultEnableOTLP();
@@ -580,31 +568,6 @@ export class DBOS {
       );
       DBOS.conductor.dispatchLoop();
     }
-
-    // Start the DBOS admin server
-    const logger = DBOS.logger;
-    if (runtimeConfig.runAdminServer) {
-      // In DBOS Cloud the admin server is forced on, so there is nothing for the user to act on.
-      if (!globalParams.dbosCloud) {
-        logger.warn('The DBOS admin server is deprecated and will be removed in a future version of DBOS.');
-      }
-      const adminApp = DBOSAdminServer.setupAdminApp(executor);
-      try {
-        await DBOSAdminServer.checkPortAvailabilityIPv4Ipv6(runtimeConfig.admin_port, logger as GlobalLogger);
-        // Wrap the listen call in a promise to properly catch errors
-        DBOS.adminServer = await new Promise((resolve, reject) => {
-          const server = adminApp.listen(runtimeConfig?.admin_port, () => {
-            DBOS.logger.debug(`DBOS Admin Server is running at http://localhost:${runtimeConfig?.admin_port}`);
-            resolve(server);
-          });
-          server.on('error', (err) => {
-            reject(err);
-          });
-        });
-      } catch (e) {
-        logger.warn(`Unable to start DBOS admin server on port ${runtimeConfig.admin_port}`);
-      }
-    }
   }
 
   /**
@@ -624,7 +587,7 @@ export class DBOS {
    * Shut down DBOS processing:
    *   Stops receiving external workflow requests
    *   Stops workflow processing, optionally waiting for workflows running here to finish
-   *   Disconnects from administration / Conductor
+   *   Disconnects from Conductor
    *   Disconnects from the databases
    * @param options Optional shutdown options.
    * @param options.deregister
@@ -658,12 +621,6 @@ export class DBOS {
       // Report uninitialized for the whole teardown; #shuttingDown is what blocks a relaunch.
       if (executor) {
         executor.initialized = false;
-      }
-
-      // Stop the admin server
-      if (DBOS.adminServer) {
-        DBOS.adminServer.close();
-        DBOS.adminServer = undefined;
       }
 
       // Stop background processing, then drain the workflows still running in this process.

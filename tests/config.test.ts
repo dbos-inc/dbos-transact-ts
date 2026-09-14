@@ -8,7 +8,7 @@ import {
   translateDbosConfig,
 } from '../src/config';
 import { AssertionError } from 'assert';
-import { DBOSConfigInternal, DBOSRuntimeConfig } from '../src/dbos-executor';
+import { DBOSConfigInternal } from '../src/dbos-executor';
 import { DBOSJSON } from '../src/serialization';
 
 describe('dbos-config', () => {
@@ -571,46 +571,32 @@ describe('dbos-config', () => {
         },
       },
     };
-    const runtimeConfig: DBOSRuntimeConfig = {
-      admin_port: 0,
-      runAdminServer: false,
-      start: [],
-      setup: [],
-    };
-
     test('throws when cloud db url is missing', () => {
-      expect(() => overwriteConfigForDBOSCloud(internalConfig, runtimeConfig, {})).toThrow();
+      expect(() => overwriteConfigForDBOSCloud(internalConfig, {})).toThrow();
     });
 
     test('uses cloud app name', () => {
       process.env.DBOS_SYSTEM_DATABASE_URL = 'fake://db/url';
-      const [newConfig] = overwriteConfigForDBOSCloud(internalConfig, runtimeConfig, { name: 'cloud-app-name' });
+      const newConfig = overwriteConfigForDBOSCloud(internalConfig, { name: 'cloud-app-name' });
       expect(newConfig.name).toBe('cloud-app-name');
     });
 
     test('uses cloud db url', () => {
       process.env.DBOS_SYSTEM_DATABASE_URL = 'postgres://a:b@c:2345/cloud_db';
-      const [newConfig] = overwriteConfigForDBOSCloud(internalConfig, runtimeConfig, { name: 'cloud-app-name' });
+      const newConfig = overwriteConfigForDBOSCloud(internalConfig, { name: 'cloud-app-name' });
       expect(newConfig.systemDatabaseUrl).toBe('postgres://a:b@c:2345/cloud_db');
     });
 
     test('uses cloud sys db url when set', () => {
       process.env.DBOS_SYSTEM_DATABASE_URL = 'postgres://a:b@c:2345/cloud_sys_db';
-      const [newConfig] = overwriteConfigForDBOSCloud(internalConfig, runtimeConfig, { name: 'cloud-app-name' });
+      const newConfig = overwriteConfigForDBOSCloud(internalConfig, { name: 'cloud-app-name' });
       expect(newConfig.systemDatabaseUrl).toBe('postgres://a:b@c:2345/cloud_sys_db');
-    });
-
-    test('force admin server', () => {
-      process.env.DBOS_SYSTEM_DATABASE_URL = 'fake://db/url';
-      const [, newRuntimeConfig] = overwriteConfigForDBOSCloud(internalConfig, runtimeConfig, {});
-      expect(newRuntimeConfig.admin_port).toBe(3001);
-      expect(newRuntimeConfig.runAdminServer).toBe(true);
     });
 
     test('combine otel endpoints', () => {
       console.log(internalConfig.telemetry.OTLPExporter);
       process.env.DBOS_SYSTEM_DATABASE_URL = 'fake://db/url';
-      const [newConfig] = overwriteConfigForDBOSCloud(internalConfig, runtimeConfig, {
+      const newConfig = overwriteConfigForDBOSCloud(internalConfig, {
         telemetry: {
           OTLPExporter: {
             tracesEndpoint: ['http://otel-collector:4317/traces-from-cloud'],
@@ -632,7 +618,7 @@ describe('dbos-config', () => {
     test('combine otel endpoints no duplicates', () => {
       console.log(internalConfig.telemetry.OTLPExporter);
       process.env.DBOS_SYSTEM_DATABASE_URL = 'fake://db/url';
-      const [newConfig] = overwriteConfigForDBOSCloud(internalConfig, runtimeConfig, {
+      const newConfig = overwriteConfigForDBOSCloud(internalConfig, {
         telemetry: {
           OTLPExporter: {
             tracesEndpoint: ['http://otel-collector:4317/traces'],

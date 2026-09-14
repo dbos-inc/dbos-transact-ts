@@ -163,8 +163,6 @@ export function getDbosConfig(
       addContextMetadata: config.telemetry?.logs?.addContextMetadata,
       otlpTracesEndpoints: toArray(config.telemetry?.OTLPExporter?.tracesEndpoint),
       otlpLogsEndpoints: toArray(config.telemetry?.OTLPExporter?.logsEndpoint),
-      runAdminServer: config.runtimeConfig?.runAdminServer,
-      adminPort: config.runtimeConfig?.admin_port,
       useListenNotify: config.use_listen_notify,
     },
     options.forceConsole,
@@ -229,12 +227,8 @@ export function getRuntimeConfig(config: ConfigFile): DBOSRuntimeConfig {
   return translateRuntimeConfig(config.runtimeConfig);
 }
 
-export function translateRuntimeConfig(
-  config: Partial<DBOSRuntimeConfig & DBOSConfig> /*eww*/ = {},
-): DBOSRuntimeConfig {
+export function translateRuntimeConfig(config: Partial<DBOSRuntimeConfig> = {}): DBOSRuntimeConfig {
   return {
-    runAdminServer: config.runAdminServer ?? false,
-    admin_port: config.admin_port ?? config.adminPort ?? 3001,
     start: config.start ?? [],
     setup: config.setup ?? [],
   };
@@ -242,14 +236,12 @@ export function translateRuntimeConfig(
 
 export function overwriteConfigForDBOSCloud(
   providedDBOSConfig: DBOSConfigInternal,
-  providedRuntimeConfig: DBOSRuntimeConfig,
   configFile: ConfigFile,
-): [DBOSConfigInternal, DBOSRuntimeConfig] {
+): DBOSConfigInternal {
   // Load the DBOS configuration file and force the use of:
   // 1. Use the application name from the file. This is a defensive measure to ensure the application name is whatever it was registered with in the cloud
   // 2. use the database URL from environment var
   // 3. OTLP traces endpoints (add the config data to the provided config)
-  // 4. Force admin_port and runAdminServer
 
   const systemDatabaseUrl = process.env.DBOS_SYSTEM_DATABASE_URL;
   assert(systemDatabaseUrl, 'DBOS_SYSTEM_DATABASE_URL must be set in DBOS Cloud environment');
@@ -276,7 +268,7 @@ export function overwriteConfigForDBOSCloud(
     }
   }
 
-  const overwritenDBOSConfig: DBOSConfigInternal = {
+  return {
     ...providedDBOSConfig,
     name: appName,
     systemDatabaseUrl,
@@ -292,12 +284,4 @@ export function overwriteConfigForDBOSCloud(
       otelAttributeFormat: providedDBOSConfig.telemetry.otelAttributeFormat,
     },
   };
-
-  const overwriteDBOSRuntimeConfig: DBOSRuntimeConfig = {
-    ...providedRuntimeConfig,
-    admin_port: 3001,
-    runAdminServer: true,
-  };
-
-  return [overwritenDBOSConfig, overwriteDBOSRuntimeConfig];
 }

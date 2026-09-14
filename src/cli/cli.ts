@@ -79,9 +79,8 @@ program
   .action(async () => {
     const configFile = await readConfigFile();
     let config = getDbosConfig(configFile);
-    const runtimeConfig = getRuntimeConfig(configFile);
     if (process.env.DBOS__CLOUD === 'true') {
-      [config] = overwriteConfigForDBOSCloud(config, runtimeConfig, configFile);
+      config = overwriteConfigForDBOSCloud(config, configFile);
     }
     const schemaName = configFile.system_database_schema_name ?? 'dbos';
 

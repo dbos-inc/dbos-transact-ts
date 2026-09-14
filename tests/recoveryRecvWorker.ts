@@ -33,10 +33,7 @@ async function main() {
     process.exit(1);
   }
 
-  DBOS.setConfig({
-    ...generateDBOSTestConfig(),
-    runAdminServer: false,
-  });
+  DBOS.setConfig(generateDBOSTestConfig());
   await DBOS.launch();
 
   if (mode === 'start') {
