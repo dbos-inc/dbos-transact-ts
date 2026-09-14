@@ -19,8 +19,6 @@
   },
   "devDependencies": {
     "@types/node": "^20.6.3",
-    "@types/prompt-sync": "^4.2.3",
-    "@types/update-notifier": "^6.0.8",
     "@types/validator": "^13.11.9",
     "typescript": "^5.4.5"
   },
@@ -29,7 +27,6 @@
     "chalk": "4.1.2",
     "commander": "^12.0.0",
     "fast-glob": "^3.3.3",
-    "update-notifier": "^7.0.0",
     "validator": "^13.12.0"
   }
 }
