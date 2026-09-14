@@ -204,9 +204,6 @@ export class ClassRegistration implements RegistrationDefaults {
   name: string = '';
   needsInitialized: boolean = true;
 
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
-  ormEntities: Function[] | { [key: string]: object } = [];
-
   registeredOperationsByName: Map<string, MethodRegistrationBase> = new Map();
   allRegisteredOperations: Map<unknown, MethodRegistrationBase> = new Map();
 

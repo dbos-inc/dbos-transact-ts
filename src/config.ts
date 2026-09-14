@@ -1,7 +1,6 @@
 import { readFile } from './utils';
 import { DBOSConfig, DBOSRuntimeConfig, DBOSConfigInternal } from './dbos-executor';
 import YAML from 'yaml';
-import { writeFileSync } from 'fs';
 import path from 'path';
 import assert from 'assert';
 import { maskDatabaseUrl } from './database_utils';
@@ -69,19 +68,6 @@ export async function readConfigFile(dirPath?: string): Promise<ConfigFile> {
         return undefined; // File does not exist
       }
       throw error; // Rethrow other errors
-    }
-  }
-}
-
-export function writeConfigFile(configFile: ConfigFile, configFilePath: string) {
-  try {
-    const configFileContent = YAML.stringify(configFile);
-    writeFileSync(configFilePath, configFileContent);
-  } catch (e) {
-    if (e instanceof Error) {
-      throw new Error(`Failed to write config to ${configFilePath}: ${e.message}`);
-    } else {
-      throw e;
     }
   }
 }

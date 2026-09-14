@@ -239,12 +239,6 @@ export type DBOSConfigInternal = {
   notificationCoalesceMs?: number;
   observabilityQueryTimeoutMs?: number;
   runMigrations: boolean;
-
-  http?: {
-    cors_middleware?: boolean;
-    credentials?: boolean;
-    allowed_origins?: string[];
-  };
 };
 
 export interface InternalWorkflowParams extends WorkflowParams {
@@ -267,7 +261,6 @@ export interface PrepareEnqueuedWorkflowOptions {
 }
 
 export const OperationType = {
-  HANDLER: 'handler',
   WORKFLOW: 'workflow',
   TRANSACTION: 'transaction',
   STEP: 'step',

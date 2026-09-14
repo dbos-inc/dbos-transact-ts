@@ -34,10 +34,6 @@ const LEGACY_TO_SEMCONV: Readonly<Record<string, string>> = {
   authenticatedUser: 'dbos.user.name',
   authenticatedRoles: 'dbos.user.roles',
   assumedRole: 'dbos.user.assumed_role',
-  requestID: 'dbos.request.id',
-  requestIP: 'dbos.request.ip',
-  requestURL: 'dbos.request.url',
-  requestMethod: 'dbos.request.method',
 };
 
 // As DBOS OTLP is optional, OTLP objects must only be dynamically imported
