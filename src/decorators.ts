@@ -58,7 +58,7 @@ export interface DBOSLifecycleCallback {
   initialize?(): Promise<void>;
   /** Called back upon shutdown (usually in tests) to close connections and free resources */
   destroy?(): Promise<void>;
-  /** Called at launch; Implementers should emit a diagnostic list of all registrations */
+  /** Called by `DBOS.logRegisteredEndpoints`; implementers should emit a diagnostic list of all registrations */
   logRegisteredEndpoints?(): void;
 }
 

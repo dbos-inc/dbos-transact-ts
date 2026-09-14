@@ -159,7 +159,7 @@ export async function runTransaction<T>(
           });
         },
         funcName,
-        // we can be sure workflowID is set because of previous call to assertCurrentWorkflowContext
+        // The isInWorkflow check above guarantees workflowID is set.
         DBOS.workflowID!,
         callnum,
       );

@@ -286,7 +286,7 @@ describe('dbos-config', () => {
   });
 
   describe('getSystemDatabaseUrl', () => {
-    test('uses database_url from config when provided', () => {
+    test('uses system_database_url from config when provided', () => {
       const databaseUrl = getSystemDatabaseUrl({
         name: 'Test App',
         system_database_url: 'postgresql://a:b@c:1234/appdb?connect_timeout=22&sslmode=disable',
@@ -337,12 +337,12 @@ describe('dbos-config', () => {
       expect(url).toBe('postgresql://postgres@localhost:5432/dbostest?sslmode=disable');
     });
 
-    test('throws with invalid database_url format', () => {
+    test('throws with invalid system_database_url format', () => {
       expect(() => getSystemDatabaseUrl({ system_database_url: 'not-a-valid-url' })).toThrow();
     });
 
     test.each(['postgres://host:5432/db', 'postgres://user:pass@:5432/db', 'postgres://user:pass@host:5432/'])(
-      'throws when database_url is missing required fields %s',
+      'throws when system_database_url is missing required fields %s',
       (system_database_url) => {
         expect(() => getSystemDatabaseUrl({ system_database_url })).toThrow();
       },

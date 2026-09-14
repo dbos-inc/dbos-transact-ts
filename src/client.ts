@@ -100,15 +100,11 @@ interface ClientSendOptions {
 export class ClientHandle<R> implements WorkflowHandle<R> {
   constructor(
     readonly systemDatabase: SystemDatabase,
-    readonly workflowUUID: string,
+    readonly workflowID: string,
   ) {}
 
-  get workflowID(): string {
-    return this.workflowUUID;
-  }
-
   async getStatus(): Promise<WorkflowStatus | null> {
-    const status = await this.systemDatabase.getWorkflowStatus(this.workflowUUID);
+    const status = await this.systemDatabase.getWorkflowStatus(this.workflowID);
     return status ? toWorkflowStatus(status, this.systemDatabase.getSerializer()) : null;
   }
 

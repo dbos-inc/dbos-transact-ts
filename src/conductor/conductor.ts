@@ -408,8 +408,7 @@ export class Conductor {
                     this.dbosExec.systemDatabase,
                     retentionBody.gc_cutoff_epoch_ms,
                     retentionBody.gc_rows_threshold,
-                    // Older Conductor versions may not send gc_batch_size, newer ones may send null,
-                    // and a cleared setting may arrive as zero: every one of those takes the default.
+                    // An omitted, null, or zero gc_batch_size takes the default.
                     { batchSize: retentionBody.gc_batch_size || undefined },
                   );
                   if (retentionBody.timeout_cutoff_epoch_ms) {

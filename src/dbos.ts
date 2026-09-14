@@ -600,10 +600,8 @@ export class DBOS {
   }
 
   /**
-   * Logs all workflows that can be invoked externally, rather than directly by the applicaton.
-   * This includes:
-   *   All DBOS event receiver entrypoints (message queues, URLs, etc.)
-   *   Queues
+   * Logs all workflows that can be invoked externally, rather than directly by the application:
+   *   the entrypoints of each registered event receiver (message queues, URLs, etc.)
    */
   static logRegisteredEndpoints(): void {
     if (!DBOSExecutor.globalInstance) return;

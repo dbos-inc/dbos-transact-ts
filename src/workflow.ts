@@ -275,15 +275,11 @@ export interface InternalWFHandle<R> extends WorkflowHandle<R> {
 export class InvokedHandle<R> implements InternalWFHandle<R> {
   constructor(
     readonly workflowPromise: Promise<R>,
-    readonly workflowUUID: string,
+    readonly workflowID: string,
   ) {}
 
-  get workflowID(): string {
-    return this.workflowUUID;
-  }
-
   async getStatus(): Promise<WorkflowStatus | null> {
-    return await DBOS.getWorkflowStatus(this.workflowUUID);
+    return await DBOS.getWorkflowStatus(this.workflowID);
   }
 
   async getResult(optionsOrFuncIdForGet?: PollingOptions | number): Promise<R> {
@@ -294,7 +290,7 @@ export class InvokedHandle<R> implements InternalWFHandle<R> {
         return await this.workflowPromise;
       },
       'DBOS.getResult',
-      this.workflowUUID,
+      this.workflowID,
       funcIdForGet,
     );
   }
@@ -304,21 +300,17 @@ export class InvokedHandle<R> implements InternalWFHandle<R> {
  * The handle returned when retrieving a workflow with DBOSExecutor.retrieve
  */
 export class RetrievedHandle<R> implements InternalWFHandle<R> {
-  constructor(readonly workflowUUID: string) {}
-
-  get workflowID(): string {
-    return this.workflowUUID;
-  }
+  constructor(readonly workflowID: string) {}
 
   async getStatus(): Promise<WorkflowStatus | null> {
-    return await DBOS.getWorkflowStatus(this.workflowUUID);
+    return await DBOS.getWorkflowStatus(this.workflowID);
   }
 
   async getResult(optionsOrFuncIdForGet?: PollingOptions | number): Promise<R> {
     const funcIdForGet = typeof optionsOrFuncIdForGet === 'number' ? optionsOrFuncIdForGet : undefined;
     const pollingIntervalMs = resolvePollingIntervalMs(optionsOrFuncIdForGet);
     return (await getResultInternal<R>(
-      this.workflowUUID,
+      this.workflowID,
       undefined,
       undefined,
       funcIdForGet,

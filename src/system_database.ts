@@ -2737,11 +2737,6 @@ export class SystemDatabase {
     return this.pollLimiter.runExclusive(query);
   }
 
-  /**
-   * Cancellation check for use inside polling wait loops: the status read runs
-   * under the polling limiter so it counts against the same concurrency budget
-   * as the rest of the loop's reads.
-   */
   /** Cancellation check for polling waits: goes through the limiter so readers cannot starve the pool. */
   async checkIfCanceledLimited(workflowID: string): Promise<void> {
     await this.#pollWithLimiter(() => this.#checkIfCanceled(this.pool, workflowID));
