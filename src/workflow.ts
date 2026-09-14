@@ -1,7 +1,7 @@
 import { ConfiguredInstance } from './decorators';
 import { registerSerializationRecipe } from './serialization';
 import { DBOS, getResultInternal, resolvePollingIntervalMs, runInternalStep, type PollingOptions } from './dbos';
-import { DuplicationPolicy, EnqueueOptions } from './system_database';
+import { DuplicationPolicy, InternalEnqueueOptions } from './system_database';
 import { DBOSError } from './error';
 
 /**
@@ -44,7 +44,7 @@ export interface WorkflowParams {
   executeWorkflow?: boolean; // If queueName is set, this will not be run unless executeWorkflow is true.
   timeoutMS?: number | null;
   deadlineEpochMS?: number;
-  enqueueOptions?: EnqueueOptions; // Options for the workflow queue
+  enqueueOptions?: InternalEnqueueOptions; // Options for the workflow queue
   // How to react to a collision on `enqueueOptions.deduplicationID`. When 'return-existing', the
   // executor skips its dedup-error pre-recording at the parent's funcID — the wrapper records the
   // child mapping itself after attaching to the existing workflow.

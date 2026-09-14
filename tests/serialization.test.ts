@@ -264,7 +264,6 @@ class PortableWorkflow {
   static async pwfError() {
     await Promise.resolve();
     PortableWorkflow.lastWfid = DBOS.workflowID;
-    expect(DBOS.defaultSerializationType).toBe('portable');
     throw new Error('Failed!');
   }
 }

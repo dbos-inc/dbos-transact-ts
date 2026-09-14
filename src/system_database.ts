@@ -349,12 +349,16 @@ export interface EnqueueOptions {
   applicationVersion?: string;
   // Number of seconds to delay the workflow before it starts executing. The workflow will be in DELAYED status until the delay expires.
   delaySeconds?: number;
-  // Internal, set only by the debouncer: absolute cap (epoch ms) on how far the delay may extend.
-  debounceDeadlineEpochMS?: number;
-  // Internal, set only by the debouncer: marks the deduplication ID as a debounce key.
-  isDebounced?: boolean;
   // The application the workflow is enqueued for; undefined means the enqueuer's own.
   applicationName?: string;
+}
+
+// Enqueue options only the debouncer sets; kept out of the public EnqueueOptions.
+export interface InternalEnqueueOptions extends EnqueueOptions {
+  // Absolute cap (epoch ms) on how far the delay may extend.
+  debounceDeadlineEpochMS?: number;
+  // Marks the deduplication ID as a debounce key.
+  isDebounced?: boolean;
 }
 
 // Arguments to debounceDelayedWorkflow: identify the debounced workflow by

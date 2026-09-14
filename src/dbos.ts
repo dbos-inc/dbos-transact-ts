@@ -754,7 +754,7 @@ export class DBOS {
   }
 
   /** Use portable serialization by default? */
-  static get defaultSerializationType(): WorkflowSerializationFormat | undefined {
+  static get #defaultSerializationType(): WorkflowSerializationFormat | undefined {
     return getCurrentContextStore()?.serializationType;
   }
 
@@ -1381,7 +1381,7 @@ export class DBOS {
       const sermsg = await serializeValue(
         message,
         DBOS.#executor.serializer,
-        options?.serializationType ?? DBOS.defaultSerializationType,
+        options?.serializationType ?? DBOS.#defaultSerializationType,
       );
       return await DBOSExecutor.globalInstance!.systemDatabase.send(
         DBOS.workflowID!,
@@ -1396,7 +1396,7 @@ export class DBOS {
       const sermsg = await serializeValue(
         message,
         DBOS.#executor.serializer,
-        options?.serializationType ?? DBOS.defaultSerializationType,
+        options?.serializationType ?? DBOS.#defaultSerializationType,
       );
       return DBOSExecutor.globalInstance!.systemDatabase.sendDirect(
         destinationID,
@@ -1468,7 +1468,7 @@ export class DBOS {
       const serevt = await serializeValue(
         value,
         DBOS.#executor.serializer,
-        options?.serializationType ?? DBOS.defaultSerializationType,
+        options?.serializationType ?? DBOS.#defaultSerializationType,
       );
       return DBOSExecutor.globalInstance!.systemDatabase.setEvent(
         DBOS.workflowID!,
@@ -1537,7 +1537,7 @@ export class DBOS {
       const serval = await serializeValue(
         value,
         DBOS.#executor.serializer,
-        options.serializationType ?? DBOS.defaultSerializationType,
+        options.serializationType ?? DBOS.#defaultSerializationType,
       );
       return await DBOSExecutor.globalInstance!.systemDatabase.writeStreamFromWorkflow(
         DBOS.workflowID!,
@@ -1551,7 +1551,7 @@ export class DBOS {
       const serval = await serializeValue(
         value,
         DBOS.#executor.serializer,
-        options.serializationType ?? DBOS.defaultSerializationType,
+        options.serializationType ?? DBOS.#defaultSerializationType,
       );
       return await DBOSExecutor.globalInstance!.systemDatabase.writeStreamFromStep(
         DBOS.workflowID!,
