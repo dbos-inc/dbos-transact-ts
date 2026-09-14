@@ -144,17 +144,6 @@ export interface queues {
   application_name?: string | null; // Owning application. NULL means unclaimed; name stays globally unique.
 }
 
-// This is the deserialized version of operation_outputs
-export interface step_info {
-  function_id: number;
-  function_name: string;
-  output: unknown;
-  error: Error | null;
-  child_workflow_id: string | null;
-  started_at_epoch_ms?: number;
-  completed_at_epoch_ms?: number;
-}
-
 // This is system DB schema for portable inputs / outputs / messages / events / errors
 
 // ---------- Canonical JSON value space ----------
@@ -171,7 +160,6 @@ export type JsonWorkflowArgs = {
   positionalArgs?: JsonArray;
   namedArgs?: JsonObject;
 };
-export type JsonWorkflowResult = JsonValue;
 export interface JsonWorkflowErrorData {
   name: string; // Error name
   message: string; // Human-readable ;-) string
@@ -189,7 +177,3 @@ export class PortableWorkflowError extends Error {
     super(message);
   }
 }
-
-// --------- Notification(Message) and WF event
-export type JsonMessage = JsonValue;
-export type JsonEvent = JsonValue;

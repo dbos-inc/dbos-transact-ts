@@ -1,9 +1,7 @@
-import { type SystemDatabase } from './system_database';
 import { ConfiguredInstance } from './decorators';
 import { registerSerializationRecipe } from './serialization';
 import { DBOS, getResultInternal, resolvePollingIntervalMs, runInternalStep, type PollingOptions } from './dbos';
 import { DuplicationPolicy, EnqueueOptions } from './system_database';
-import { DBOSExecutor } from './dbos-executor';
 import { DBOSError } from './error';
 
 /**
@@ -276,10 +274,8 @@ export interface InternalWFHandle<R> extends WorkflowHandle<R> {
  */
 export class InvokedHandle<R> implements InternalWFHandle<R> {
   constructor(
-    readonly systemDatabase: SystemDatabase,
     readonly workflowPromise: Promise<R>,
     readonly workflowUUID: string,
-    readonly workflowName: string,
   ) {}
 
   get workflowID(): string {
@@ -308,10 +304,7 @@ export class InvokedHandle<R> implements InternalWFHandle<R> {
  * The handle returned when retrieving a workflow with DBOSExecutor.retrieve
  */
 export class RetrievedHandle<R> implements InternalWFHandle<R> {
-  constructor(
-    readonly systemDatabase: SystemDatabase,
-    readonly workflowUUID: string,
-  ) {}
+  constructor(readonly workflowUUID: string) {}
 
   get workflowID(): string {
     return this.workflowUUID;
@@ -342,5 +335,5 @@ registerSerializationRecipe<WorkflowHandle<unknown>, { wfid: string }>({
   serialize: (v: WorkflowHandle<unknown>) => {
     return { wfid: v.workflowID };
   },
-  deserialize: (s: { wfid: string }) => new RetrievedHandle(DBOSExecutor.globalInstance!.systemDatabase, s.wfid),
+  deserialize: (s: { wfid: string }) => new RetrievedHandle(s.wfid),
 });

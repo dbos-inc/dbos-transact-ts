@@ -935,7 +935,7 @@ export class DBOS {
           'Invalid call to `retrieveWorkflow` inside a `transaction` or `step`',
         );
       }
-      return new RetrievedHandle(DBOSExecutor.globalInstance!.systemDatabase, workflowID);
+      return new RetrievedHandle(workflowID);
     }
     return DBOS.#executor.retrieveWorkflow(workflowID);
   }
@@ -1878,7 +1878,7 @@ export class DBOS {
               { childWorkflowID: existingID },
             );
           }
-          return new RetrievedHandle<Return>(DBOSExecutor.globalInstance!.systemDatabase, existingID);
+          return new RetrievedHandle<Return>(existingID);
         }
         // The prior workflow's deduplication_id was cleared between our INSERT and
         // the lookup (it completed or was cancelled). Loop and try to claim the slot.
@@ -2412,7 +2412,7 @@ export class DBOS {
     }
     const executor = DBOSExecutor.globalInstance!;
     const workflowID = await triggerScheduleImpl(executor.systemDatabase, executor.serializer, name);
-    return new RetrievedHandle(executor.systemDatabase, workflowID);
+    return new RetrievedHandle(workflowID);
   }
 
   static async backfillSchedule(name: string, start: Date, end: Date): Promise<WorkflowHandle<unknown>[]> {
@@ -2422,7 +2422,7 @@ export class DBOS {
     }
     const executor = DBOSExecutor.globalInstance!;
     const workflowIDs = await backfillScheduleImpl(executor.systemDatabase, executor.serializer, name, start, end);
-    return workflowIDs.map((id) => new RetrievedHandle(executor.systemDatabase, id));
+    return workflowIDs.map((id) => new RetrievedHandle(id));
   }
 
   // ==================== Application Versions ====================

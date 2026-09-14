@@ -6,9 +6,12 @@
 import { execSync } from 'child_process';
 import { Client } from 'pg';
 import { generateDBOSTestConfig } from './helpers';
-import { ExistenceCheck } from '../src/system_database';
 import { DBOS } from '../src';
 import { DBOSConfig } from '../dist/src';
+
+interface ExistenceCheck {
+  exists: boolean;
+}
 
 describe('schema-command-tests', () => {
   test('test schema command with system database URL argument', async () => {

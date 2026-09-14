@@ -9,7 +9,6 @@ export const SHARED_MIGRATION_BASE = 100;
 export type DBMigration = {
   name?: string;
   pg?: ReadonlyArray<string>;
-  sqlite3?: ReadonlyArray<string>;
   /**
    * If true, the migration is executed without wrapping it in any helper that
    * suppresses errors, and its statements must be safe to run outside a

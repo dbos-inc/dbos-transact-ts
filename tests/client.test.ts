@@ -15,6 +15,7 @@ import {
   DBOSQueueDuplicatedError,
   DBOSAwaitedWorkflowCancelledError,
   DBOSAwaitedWorkflowExceededMaxRecoveryAttempts,
+  DBOSInvalidQueuePriorityError,
 } from '../src/error';
 import { randomUUID } from 'crypto';
 import { DBOSConfig } from '../src/dbos-executor';
@@ -634,6 +635,28 @@ describe('DBOSClient', () => {
       expect(result3).toBe('ghi');
       // They should be processed in order of priority
       expect(ClientTest.inorder_results).toEqual(['abc', 'ghi', 'def']);
+    } finally {
+      await client.destroy();
+    }
+  });
+
+  test('DBOSClient-enqueue-validates-options', async () => {
+    await DBOS.launch();
+    await registerTestQueue();
+
+    const client = await DBOSClient.create({ systemDatabaseUrl });
+    const options = { workflowName: 'priorityTest', workflowClassName: 'ClientTest', queueName: 'testQueue' };
+
+    try {
+      await expect(client.enqueue({ ...options, priority: 0 }, 'abc')).rejects.toBeInstanceOf(
+        DBOSInvalidQueuePriorityError,
+      );
+      await expect(client.enqueuePortable({ ...options, priority: 2 ** 31 }, ['abc'])).rejects.toBeInstanceOf(
+        DBOSInvalidQueuePriorityError,
+      );
+      await expect(client.enqueue({ ...options, workflowID: '  ' }, 'abc')).rejects.toThrow(
+        'workflow IDs must be non-empty',
+      );
     } finally {
       await client.destroy();
     }

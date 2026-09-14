@@ -392,10 +392,6 @@ export interface DebounceResult {
 //     caller are discarded and the handle resolves with the original workflow's result.
 export type DuplicationPolicy = 'reject' | 'return-existing';
 
-export interface ExistenceCheck {
-  exists: boolean;
-}
-
 export interface MetricData {
   metricType: string;
   metricName: string;

@@ -751,14 +751,6 @@ export interface ApplicationVersionOutput {
   created_at: number;
 }
 
-export class ListApplicationVersionsRequest implements BaseMessage {
-  type = MessageType.LIST_APPLICATION_VERSIONS;
-  request_id: string;
-  constructor(request_id: string) {
-    this.request_id = request_id;
-  }
-}
-
 export class ListApplicationVersionsResponse extends BaseResponse {
   output: ApplicationVersionOutput[];
   constructor(request_id: string, output: ApplicationVersionOutput[], error_message?: string) {

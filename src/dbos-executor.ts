@@ -606,7 +606,7 @@ export class DBOSExecutor {
         if (result.error) {
           throw await deserializeResError(result.error, result.serialization ?? null, this.serializer);
         }
-        return new RetrievedHandle(this.systemDatabase, result.childWorkflowID!);
+        return new RetrievedHandle(result.childWorkflowID!);
       }
     }
     let ires: Awaited<ReturnType<SystemDatabase['initWorkflowStatus']>>;
@@ -626,7 +626,7 @@ export class DBOSExecutor {
       // Only a PENDING row owns its outcome, so a row moved on since the claim would run for nothing.
       if (claimed.status !== StatusString.PENDING) {
         this.tracer.endSpan(span);
-        return new RetrievedHandle(this.systemDatabase, workflowID);
+        return new RetrievedHandle(workflowID);
       }
       ires = {
         status: claimed.status,
@@ -895,9 +895,9 @@ export class DBOSExecutor {
       );
 
       // Return the normal handle that doesn't capture errors.
-      return new InvokedHandle(this.systemDatabase, workflowPromise, workflowID, wf.name);
+      return new InvokedHandle(workflowPromise, workflowID);
     } else {
-      return new RetrievedHandle(this.systemDatabase, workflowID);
+      return new RetrievedHandle(workflowID);
     }
   }
 
@@ -1142,7 +1142,7 @@ export class DBOSExecutor {
    * Retrieve a handle for a workflow UUID.
    */
   retrieveWorkflow<R>(workflowID: string): WorkflowHandle<R> {
-    return new RetrievedHandle(this.systemDatabase, workflowID);
+    return new RetrievedHandle(workflowID);
   }
 
   async runInternalStep<T>(
