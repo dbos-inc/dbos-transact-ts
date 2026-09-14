@@ -83,8 +83,7 @@ export function allMigrations(
     {
       name: '20240201213211_replica_identity',
       pg: [
-        `create extension if not exists "uuid-ossp"`,
-        `alter table "${schemaName}"."notifications" add column "message_uuid" text not null default uuid_generate_v4()`,
+        `alter table "${schemaName}"."notifications" add column "message_uuid" text not null default gen_random_uuid()`,
         `alter table "${schemaName}"."notifications" add constraint "notifications_pkey" primary key ("message_uuid")`,
       ],
     },
