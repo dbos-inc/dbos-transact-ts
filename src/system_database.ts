@@ -273,7 +273,6 @@ export interface GetWorkflowAggregatesInput {
   wasForkedFrom?: boolean;
   parentWorkflowID?: string[];
   hasParent?: boolean;
-  queuesOnly?: boolean;
   attributes?: Record<string, unknown>;
   scheduleName?: string[];
   // Count only these owning applications'. By default, only this application's.
@@ -4315,14 +4314,6 @@ export class SystemDatabase {
     // Unset scopes to this application, as on every other observability query.
     whereClauses.push(this.#observabilityFilter('application_name', input.applicationName, params));
     paramIdx = params.length + 1;
-
-    // Only workflows that are actively enqueued.
-    if (input.queuesOnly) {
-      whereClauses.push(`queue_name IS NOT NULL`);
-      whereClauses.push(`status IN ($${paramIdx}, $${paramIdx + 1}, $${paramIdx + 2})`);
-      params.push(StatusString.ENQUEUED, StatusString.PENDING, StatusString.DELAYED);
-      paramIdx += 3;
-    }
 
     if (input.wasForkedFrom !== undefined) {
       whereClauses.push(`was_forked_from = $${paramIdx}`);

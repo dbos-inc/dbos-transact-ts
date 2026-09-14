@@ -49,7 +49,6 @@ export function defaultEnableOTLP() {
 
 export const globalParams = {
   appVersion: process.env.DBOS__APPVERSION || '', // The one true source of appVersion
-  wasComputed: false, // Was app version set or computed? Stored procs don't support computed versions.
   executorID: process.env.DBOS__VMID || 'local', // The one true source of executorID
   appName: undefined as string | undefined, // Set at launch from the configured application name; undefined until the first launch
   appID: process.env.DBOS__APPID || '', // The one true source of appID
@@ -183,16 +182,6 @@ export function interruptibleSleep(ms: number, signal: AbortSignal): Promise<voi
     signal.addEventListener('abort', onAbort, { once: true });
   });
 }
-
-/** Resolve once `signal` aborts. One-shot listener, auto-removed on fire. */
-export function waitForAbort(signal: AbortSignal): Promise<void> {
-  if (signal.aborted) return Promise.resolve();
-  return new Promise<void>((resolve) => {
-    signal.addEventListener('abort', () => resolve(), { once: true });
-  });
-}
-
-export type ValuesOf<T> = T[keyof T];
 
 // Capture original functions
 const originalStdoutWrite = process.stdout.write.bind(process.stdout);

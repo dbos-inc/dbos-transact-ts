@@ -1,4 +1,4 @@
-import { interruptibleSleep, Semaphore, waitForAbort } from '../src/utils';
+import { interruptibleSleep, Semaphore } from '../src/utils';
 
 describe('interruptibleSleep', () => {
   it('resolves after the timeout when the signal is never aborted', async () => {
@@ -51,25 +51,6 @@ describe('interruptibleSleep', () => {
 
     addSpy.mockRestore();
     removeSpy.mockRestore();
-  });
-});
-
-describe('waitForAbort', () => {
-  it('resolves when the signal is aborted', async () => {
-    const controller = new AbortController();
-    const start = Date.now();
-    const wait = waitForAbort(controller.signal);
-    setTimeout(() => controller.abort(), 20);
-    await wait;
-    expect(Date.now() - start).toBeLessThan(500);
-  });
-
-  it('resolves immediately if the signal is already aborted', async () => {
-    const controller = new AbortController();
-    controller.abort();
-    const start = Date.now();
-    await waitForAbort(controller.signal);
-    expect(Date.now() - start).toBeLessThan(50);
   });
 });
 

@@ -258,14 +258,6 @@ describe('dbos-config', () => {
       expect(config.telemetry.logs?.logLevel).toEqual('error');
     });
 
-    test('forceConsole override', () => {
-      const configFile: ConfigFile = {
-        name: 'test-app',
-      };
-      const config = getDbosConfig(configFile, { forceConsole: true });
-      expect(config.telemetry.logs?.forceConsole).toBeTruthy();
-    });
-
     test('returns correct database url', () => {
       const configFile: ConfigFile = {
         name: 'test-app',
@@ -393,7 +385,6 @@ describe('dbos-config', () => {
           logs: {
             logLevel: 'info',
             addContextMetadata: undefined,
-            forceConsole: false,
           },
           OTLPExporter: {
             tracesEndpoint: undefined,
@@ -459,39 +450,6 @@ describe('dbos-config', () => {
       expect(internalConfig.telemetry.logs?.logger).toBeUndefined();
     });
 
-    test('translate with force console', () => {
-      const internalConfig = translateDbosConfig(
-        {
-          name: 'dbostest',
-        },
-        true,
-      );
-      expect(internalConfig).toEqual({
-        name: 'dbostest',
-        systemDatabaseUrl:
-          'postgresql://postgres:dbos@localhost:5432/dbostest_dbos_sys?connect_timeout=10&sslmode=disable',
-        sysDbPoolSize: undefined,
-        systemDatabasePool: undefined,
-        systemDatabaseSchemaName: 'dbos',
-        schedulerPollingIntervalMs: undefined,
-        serializer: DBOSJSON,
-        useListenNotify: true,
-        runMigrations: true,
-        telemetry: {
-          logs: {
-            logLevel: 'info',
-            addContextMetadata: undefined,
-            forceConsole: true,
-          },
-          OTLPExporter: {
-            tracesEndpoint: undefined,
-            logsEndpoint: undefined,
-          },
-          otelAttributeFormat: 'legacy',
-        },
-      });
-    });
-
     test('translate with db url', () => {
       const internalConfig = translateDbosConfig({
         systemDatabaseUrl:
@@ -512,7 +470,6 @@ describe('dbos-config', () => {
           logs: {
             logLevel: 'info',
             addContextMetadata: undefined,
-            forceConsole: false,
           },
           OTLPExporter: {
             tracesEndpoint: undefined,
@@ -541,7 +498,6 @@ describe('dbos-config', () => {
           logs: {
             logLevel: 'info',
             addContextMetadata: undefined,
-            forceConsole: false,
           },
           OTLPExporter: {
             tracesEndpoint: undefined,

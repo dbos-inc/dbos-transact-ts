@@ -168,8 +168,6 @@ export class GlobalLogger {
       new transports.Console({
         format: getConsoleFormat(),
         level: config?.logLevel || 'info',
-        silent: config?.silent || false,
-        forceConsole: config?.forceConsole || false,
       }),
     );
     let otlpTransport: OTLPLogQueueTransport | undefined = undefined;

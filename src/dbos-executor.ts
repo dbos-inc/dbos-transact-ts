@@ -216,9 +216,7 @@ export interface OTLPExporterConfig {
 
 export interface LoggerConfig {
   logLevel?: string;
-  silent?: boolean;
   addContextMetadata?: boolean;
-  forceConsole?: boolean;
   logger?: DLogger;
 }
 
@@ -267,10 +265,6 @@ export const OperationType = {
   STEP: 'step',
 } as const;
 
-export interface DBOSExecutorOptions {
-  systemDatabase?: SystemDatabase;
-}
-
 export class DBOSExecutor {
   initialized: boolean;
   conductor: Conductor | undefined = undefined;
@@ -295,10 +289,7 @@ export class DBOSExecutor {
   static globalInstance: DBOSExecutor | undefined = undefined;
 
   /* WORKFLOW EXECUTOR LIFE CYCLE MANAGEMENT */
-  constructor(
-    readonly config: DBOSConfigInternal,
-    { systemDatabase }: DBOSExecutorOptions = {},
-  ) {
+  constructor(readonly config: DBOSConfigInternal) {
     this.systemDBSchemaName = config.systemDatabaseSchemaName;
 
     if (config.telemetry.OTLPExporter) {
@@ -313,25 +304,20 @@ export class DBOSExecutor {
     this.tracer = new Tracer(this.telemetryCollector, config.telemetry.otelAttributeFormat);
     this.serializer = config.serializer;
 
-    if (systemDatabase) {
-      this.logger.debug('Using provided system database'); // XXX print the name or something
-      this.systemDatabase = systemDatabase;
-    } else {
-      this.logger.debug('Using Postgres system database');
-      this.systemDatabase = new SystemDatabase(
-        this.config.systemDatabaseUrl,
-        this.logger,
-        this.serializer,
-        this.config.sysDbPoolSize,
-        this.config.systemDatabasePool,
-        this.systemDBSchemaName,
-        this.config.useListenNotify,
-        this.config.systemDatabasePollingConcurrency,
-        this.config.notificationCoalesceMs,
-        this.appName,
-        this.config.observabilityQueryTimeoutMs,
-      );
-    }
+    this.logger.debug('Using Postgres system database');
+    this.systemDatabase = new SystemDatabase(
+      this.config.systemDatabaseUrl,
+      this.logger,
+      this.serializer,
+      this.config.sysDbPoolSize,
+      this.config.systemDatabasePool,
+      this.systemDBSchemaName,
+      this.config.useListenNotify,
+      this.config.systemDatabasePollingConcurrency,
+      this.config.notificationCoalesceMs,
+      this.appName,
+      this.config.observabilityQueryTimeoutMs,
+    );
 
     new DynamicSchedulerLoop(config.schedulerPollingIntervalMs); // Create the dynamic scheduler, which registers itself.
 
@@ -372,7 +358,6 @@ export class DBOSExecutor {
     // Compute the application version if not provided
     if (globalParams.appVersion === '') {
       globalParams.appVersion = this.computeAppVersion();
-      globalParams.wasComputed = true;
     }
 
     // Any initialization hooks

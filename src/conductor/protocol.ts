@@ -890,7 +890,6 @@ export interface GetWorkflowAggregatesBody {
   parent_workflow_id?: string[];
   schedule_name?: string[];
   application_name?: string[];
-  queues_only?: boolean;
   was_forked_from?: boolean;
   has_parent?: boolean;
   attributes?: Record<string, unknown>;

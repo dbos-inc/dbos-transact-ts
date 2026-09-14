@@ -793,7 +793,6 @@ export class Conductor {
                 parentWorkflowID: aggBody.parent_workflow_id,
                 scheduleName: aggBody.schedule_name,
                 applicationName: aggBody.application_name,
-                queuesOnly: aggBody.queues_only,
                 wasForkedFrom: aggBody.was_forked_from,
                 hasParent: aggBody.has_parent,
                 attributes: aggBody.attributes,

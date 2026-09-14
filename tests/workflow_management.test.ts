@@ -4736,42 +4736,6 @@ describe('test-workflow-aggregates', () => {
     expect(empty.length).toBe(0);
   });
 
-  test('filter-by-queues-only', async () => {
-    AggWorkflows.blockEvent = new Event();
-
-    // Three workflows enqueued and blocked: ENQUEUED/PENDING with queue_name set.
-    const blocked: WorkflowHandle<unknown>[] = [];
-    for (let i = 0; i < 3; i++) {
-      blocked.push(await DBOS.startWorkflow(AggWorkflows, { queueName: 'agg-test-queue' }).blockingWorkflow());
-    }
-    // Two completed, non-queued workflows (SUCCESS, no queue).
-    for (let i = 0; i < 2; i++) await AggWorkflows.successWorkflow();
-
-    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
-
-    // queuesOnly counts only the actively enqueued workflows.
-    const results = await sysdb.getWorkflowAggregates({
-      groupByQueueName: true,
-      queuesOnly: true,
-      selectCount: true,
-    });
-    expect(results.length).toBe(1);
-    expect(results[0].group['queue_name']).toBe('agg-test-queue');
-    expect(results[0].count).toBe(3);
-
-    // Release the blocked workflows so they complete before shutdown.
-    AggWorkflows.blockEvent.set();
-    await Promise.all(blocked.map((h) => h.getResult()));
-
-    // Once complete, none are actively enqueued.
-    const afterDone = await sysdb.getWorkflowAggregates({
-      groupByQueueName: true,
-      queuesOnly: true,
-      selectCount: true,
-    });
-    expect(afterDone.length).toBe(0);
-  });
-
   test('filter-by-schedule-name', async () => {
     // schedule_name is only populated by the persistent scheduler; set it directly
     // on completed workflows to exercise the aggregate filter deterministically.

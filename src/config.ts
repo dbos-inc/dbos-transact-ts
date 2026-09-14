@@ -21,7 +21,6 @@ export interface ConfigFile {
     logs?: {
       addContextMetadata?: boolean;
       logLevel?: string;
-      silent?: boolean;
     };
     OTLPExporter?: {
       // naming nit: oltp_exporter
@@ -132,7 +131,6 @@ export function getDbosConfig(
   config: ConfigFile,
   options: {
     logLevel?: string;
-    forceConsole?: boolean;
   } = {},
 ): DBOSConfigInternal {
   assert(
@@ -153,14 +151,14 @@ export function getDbosConfig(
   if (process.env.DBOS__CLOUD === 'true') {
     dbosConfig = overwriteConfigForDBOSCloud(dbosConfig);
   }
-  return translateDbosConfig(dbosConfig, options.forceConsole);
+  return translateDbosConfig(dbosConfig);
 }
 
 function toArray(endpoint: string | string[] | undefined): Array<string> {
   return endpoint ? (Array.isArray(endpoint) ? endpoint : [endpoint]) : [];
 }
 
-export function translateDbosConfig(options: DBOSConfig, forceConsole: boolean = false): DBOSConfigInternal {
+export function translateDbosConfig(options: DBOSConfig): DBOSConfigInternal {
   if (
     options.maxConcurrentQueueDispatches !== undefined &&
     (!Number.isInteger(options.maxConcurrentQueueDispatches) || options.maxConcurrentQueueDispatches <= 0)
@@ -192,7 +190,6 @@ export function translateDbosConfig(options: DBOSConfig, forceConsole: boolean =
       logs: {
         logLevel: options.logLevel || 'info',
         addContextMetadata: options.addContextMetadata,
-        forceConsole,
         logger: options.logger,
       },
       OTLPExporter: {
