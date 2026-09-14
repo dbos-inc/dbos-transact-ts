@@ -39,7 +39,6 @@ type Options = postgres.Options<{}>;
 const asyncLocalCtx = new AsyncLocalStorage<PostgresDataSourceContext>();
 
 class PostgresTransactionHandler implements DataSourceTransactionHandler {
-  readonly dsType = 'PostgresDataSource';
   #dbField: Sql | undefined;
   readonly schemaName: string;
 

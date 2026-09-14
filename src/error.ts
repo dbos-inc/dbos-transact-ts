@@ -202,7 +202,7 @@ export class DBOSStreamTimeoutError extends DBOSError {
   }
 }
 
-export const StreamNondeterminism = 34;
+const StreamNondeterminism = 34;
 /** Exception raised when concurrent stream reads would make replay depend on scheduling. */
 export class DBOSStreamNondeterminismError extends DBOSError {
   constructor(
@@ -220,7 +220,7 @@ export class DBOSStreamNondeterminismError extends DBOSError {
   }
 }
 
-export const QueryTimeout = 35;
+const QueryTimeout = 35;
 /** Exception raised when a read-only observability query exceeds its statement timeout. */
 export class DBOSQueryTimeoutError extends DBOSError {
   constructor(readonly timeoutMS: number) {

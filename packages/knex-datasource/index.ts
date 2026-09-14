@@ -39,7 +39,6 @@ export type TransactionConfig = Pick<Knex.TransactionConfig, 'isolationLevel' | 
 const asyncLocalCtx = new AsyncLocalStorage<KnexDataSourceContext>();
 
 class KnexTransactionHandler implements DataSourceTransactionHandler {
-  readonly dsType = 'KnexDataSource';
   #knexDBField: Knex | undefined;
   readonly schemaName: string;
 

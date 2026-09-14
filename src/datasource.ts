@@ -19,7 +19,6 @@ import { SuperJSON } from 'superjson';
  */
 export interface DataSourceTransactionHandler {
   readonly name: string;
-  readonly dsType: string;
 
   /**
    * Will be called by DBOS during launch.
@@ -116,11 +115,10 @@ export interface DBOSDataSource<Config extends { name?: string }> {
 export async function runTransaction<T>(
   callback: () => Promise<T>,
   funcName: string,
-  options: { dsName?: string; config?: unknown } = {},
+  options: { dsName: string; config?: unknown },
 ) {
   ensureDBOSIsLaunched('transactions');
-  const dsn = options.dsName ?? '<default>';
-  const ds = getTransactionalDataSource(dsn);
+  const ds = getTransactionalDataSource(options.dsName);
 
   if (!DBOS.isWithinWorkflow()) {
     return await runWithDataSourceContext(0, async () => {
@@ -182,14 +180,12 @@ export function registerTransaction<This, Args extends unknown[], Return, Config
   func: (this: This, ...args: Args) => Promise<Return>,
   config?: Config,
 ): (this: This, ...args: Args) => Promise<Return> {
-  const dsn = dsName ?? '<default>';
-
   const funcName = config?.name ?? func.name;
   const reg = wrapDBOSFunctionAndRegister(config?.ctorOrProto, config?.className, funcName, funcName, func);
 
   const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
     ensureDBOSIsLaunched('transactions');
-    const ds = getTransactionalDataSource(dsn);
+    const ds = getTransactionalDataSource(dsName);
     const callFunc = reg.registeredFunction ?? reg.origFunction;
 
     if (!DBOS.isWithinWorkflow()) {
@@ -375,8 +371,4 @@ export function isPGRetriableTransactionError(error: unknown): boolean {
 
 export function isPGKeyConflictError(error: unknown): boolean {
   return getPGErrorCode(error) === '23505';
-}
-
-export function isPGFailedSqlTransactionError(error: unknown): boolean {
-  return getPGErrorCode(error) === '25P02';
 }

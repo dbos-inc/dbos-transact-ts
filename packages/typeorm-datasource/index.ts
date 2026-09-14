@@ -39,7 +39,6 @@ interface transaction_completion {
 }
 
 class TypeOrmTransactionHandler implements DataSourceTransactionHandler {
-  readonly dsType = 'TypeOrm';
   #createdDataSource: DataSource | undefined;
   readonly schemaName: string;
 

@@ -10,7 +10,6 @@ import {
   createTransactionCompletionTablePG,
   isPGRetriableTransactionError,
   isPGKeyConflictError,
-  isPGFailedSqlTransactionError,
   registerTransaction,
   runTransaction,
   PGIsolationLevel as IsolationLevel,
@@ -86,10 +85,6 @@ class KnexDSTH implements DataSourceTransactionHandler {
   async destroy(): Promise<void> {
     await this.knexInstance?.destroy();
     this.knexInstance = undefined;
-  }
-
-  get dsType(): string {
-    return 'DBOSKnex';
   }
 
   createInstance() {
@@ -175,7 +170,8 @@ class KnexDSTH implements DataSourceTransactionHandler {
                 //  1. The transaction is marked failed, but the user code did not throw.
                 //      Bad on them.  We will throw an error (this will get recorded) and not retry.
                 //  2. There was a key conflict in the statement, and we need to use the fetched output
-                if (isPGFailedSqlTransactionError(error)) {
+                // SQLSTATE 25P02: the transaction was already aborted.
+                if ((error as { code?: unknown }).code === '25P02') {
                   DBOS.logger.error(
                     `In workflow ${wfid}, Postgres aborted a transaction but the function '${funcname}' did not raise an exception.  Please ensure that the transaction method raises an exception if the database transaction is aborted.`,
                   );
@@ -506,7 +502,6 @@ type CompletionRow = { output: string | null; error: string | null };
  */
 class ProbeTransactionHandler implements DataSourceTransactionHandler {
   readonly name = 'probe-ds';
-  readonly dsType = 'ProbeDataSource';
   #poolField: Pool | undefined;
 
   async initialize(): Promise<void> {

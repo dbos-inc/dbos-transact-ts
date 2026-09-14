@@ -43,7 +43,6 @@ interface DrizzleConnection {
 }
 
 class DrizzleTransactionHandler implements DataSourceTransactionHandler {
-  readonly dsType = 'drizzle';
   #connection: DrizzleConnection | undefined;
   readonly schemaName: string;
   readonly #userProvidedPool: boolean;
