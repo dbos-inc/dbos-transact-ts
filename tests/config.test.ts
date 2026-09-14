@@ -67,54 +67,6 @@ describe('dbos-config', () => {
       });
     });
 
-    test('handles single string endpoints', async () => {
-      const mockConfigFile = `
-        name: 'test-app'
-        telemetry:
-            OTLPExporter:
-                tracesEndpoint: http://otel-collector:4317/from-file
-                logsEndpoint: http://otel-collector:4317/logs
-        `;
-      jest.spyOn(utils, 'readFile').mockResolvedValue(mockConfigFile);
-
-      const cfg: ConfigFile = await readConfigFile();
-      expect(cfg).toEqual({
-        name: 'test-app',
-        telemetry: {
-          OTLPExporter: {
-            tracesEndpoint: 'http://otel-collector:4317/from-file',
-            logsEndpoint: 'http://otel-collector:4317/logs',
-          },
-        },
-      });
-    });
-
-    test('handles string array endpoints', async () => {
-      const mockConfigFile = `
-        name: 'test-app'
-        telemetry:
-            OTLPExporter:
-                tracesEndpoint:
-                  - http://otel-collector:4317/from-file
-                  - http://otel-collector:4317/from-file2
-                logsEndpoint:
-                  - http://otel-collector:4317/logs
-                  - http://otel-collector:4317/logs2
-        `;
-      jest.spyOn(utils, 'readFile').mockResolvedValue(mockConfigFile);
-
-      const cfg: ConfigFile = await readConfigFile();
-      expect(cfg).toEqual({
-        name: 'test-app',
-        telemetry: {
-          OTLPExporter: {
-            tracesEndpoint: ['http://otel-collector:4317/from-file', 'http://otel-collector:4317/from-file2'],
-            logsEndpoint: ['http://otel-collector:4317/logs', 'http://otel-collector:4317/logs2'],
-          },
-        },
-      });
-    });
-
     class FakeNotFoundError extends Error {
       readonly code = 'ENOENT';
     }
@@ -179,42 +131,6 @@ describe('dbos-config', () => {
   });
 
   describe('getDbosConfig', () => {
-    test('translates otlp endpoints from string to list', () => {
-      const configFile: ConfigFile = {
-        name: 'test-app',
-        telemetry: {
-          OTLPExporter: {
-            tracesEndpoint: 'http://otel-collector:4317/from-file',
-            logsEndpoint: 'http://otel-collector:4317/logs',
-          },
-        },
-      };
-      const config = getDbosConfig(configFile);
-      expect(config.telemetry.OTLPExporter?.tracesEndpoint).toEqual(['http://otel-collector:4317/from-file']);
-      expect(config.telemetry.OTLPExporter?.logsEndpoint).toEqual(['http://otel-collector:4317/logs']);
-    });
-
-    test('support array oltp endpoints', () => {
-      const configFile: ConfigFile = {
-        name: 'test-app',
-        telemetry: {
-          OTLPExporter: {
-            tracesEndpoint: ['http://otel-collector:4317/from-file', 'http://otel-collector:4317/from-file2'],
-            logsEndpoint: ['http://otel-collector:4317/logs', 'http://otel-collector:4317/logs2'],
-          },
-        },
-      };
-      const config = getDbosConfig(configFile);
-      expect(config.telemetry?.OTLPExporter?.tracesEndpoint).toEqual([
-        'http://otel-collector:4317/from-file',
-        'http://otel-collector:4317/from-file2',
-      ]);
-      expect(config.telemetry?.OTLPExporter?.logsEndpoint).toEqual([
-        'http://otel-collector:4317/logs',
-        'http://otel-collector:4317/logs2',
-      ]);
-    });
-
     test('logLevel default', () => {
       const configFile: ConfigFile = {
         name: 'test-app',

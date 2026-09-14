@@ -19,16 +19,9 @@ export interface ConfigFile {
   };
   telemetry?: {
     logs?: {
-      addContextMetadata?: boolean;
       logLevel?: string;
     };
-    OTLPExporter?: {
-      // naming nit: oltp_exporter
-      logsEndpoint?: string | string[];
-      tracesEndpoint?: string | string[];
-    };
   };
-  use_listen_notify?: boolean;
   runtimeConfig?: Partial<DBOSRuntimeConfig>; // naming nit: runtime_config
 }
 
@@ -143,19 +136,11 @@ export function getDbosConfig(
     systemDatabaseUrl: config.system_database_url,
     systemDatabaseSchemaName: config.system_database_schema_name,
     logLevel: options.logLevel ?? config.telemetry?.logs?.logLevel,
-    addContextMetadata: config.telemetry?.logs?.addContextMetadata,
-    otlpTracesEndpoints: toArray(config.telemetry?.OTLPExporter?.tracesEndpoint),
-    otlpLogsEndpoints: toArray(config.telemetry?.OTLPExporter?.logsEndpoint),
-    useListenNotify: config.use_listen_notify,
   };
   if (process.env.DBOS__CLOUD === 'true') {
     dbosConfig = overwriteConfigForDBOSCloud(dbosConfig);
   }
   return translateDbosConfig(dbosConfig);
-}
-
-function toArray(endpoint: string | string[] | undefined): Array<string> {
-  return endpoint ? (Array.isArray(endpoint) ? endpoint : [endpoint]) : [];
 }
 
 export function translateDbosConfig(options: DBOSConfig): DBOSConfigInternal {
