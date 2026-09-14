@@ -461,7 +461,6 @@ export class DBOS {
   ///////
   // Lifecycle
   ///////
-  static conductor: Conductor | undefined = undefined;
   // Blocks launch/shutdown overlap: `initialized` goes false before the drain, so it cannot do this job.
   static #shuttingDown: boolean = false;
 
@@ -571,8 +570,8 @@ export class DBOS {
       const cloudConductorURL = process.env.DBOS__CONDUCTOR_URL;
       if (cloudAppName && cloudConductorKey && cloudConductorURL) {
         DBOS.logger.debug('Starting Conductor connection (DBOS Cloud)');
-        DBOS.conductor = new Conductor(DBOSExecutor.globalInstance, cloudAppName, cloudConductorKey, cloudConductorURL);
-        DBOS.conductor.dispatchLoop();
+        executor.conductor = new Conductor(executor, cloudAppName, cloudConductorKey, cloudConductorURL);
+        executor.conductor.dispatchLoop();
       }
     } else if (options?.conductorKey) {
       if (!options.conductorURL) {
@@ -590,14 +589,14 @@ export class DBOS {
       }
       const appName = DBOSExecutor.globalInstance.appName;
       assert(appName, 'Application name must be set in configuration in order to use DBOS Conductor');
-      DBOS.conductor = new Conductor(
-        DBOSExecutor.globalInstance,
+      executor.conductor = new Conductor(
+        executor,
         appName,
         options.conductorKey,
         options.conductorURL,
         executorMetadata,
       );
-      DBOS.conductor.dispatchLoop();
+      executor.conductor.dispatchLoop();
     }
   }
 
@@ -662,15 +661,16 @@ export class DBOS {
       }
 
       // Stop the conductor
-      if (DBOS.conductor) {
-        DBOS.conductor.stop();
-        while (!DBOS.conductor.isClosed) {
+      if (executor?.conductor) {
+        const conductor = executor.conductor;
+        conductor.stop();
+        while (!conductor.isClosed) {
           await sleepms(500);
         }
         // Grace only: a round still running past this is cut when the system database is
         // destroyed, so shutdown waits at most this long plus one connect timeout.
-        await DBOS.conductor.awaitRetention();
-        DBOS.conductor = undefined;
+        await conductor.awaitRetention();
+        executor.conductor = undefined;
       }
 
       // Disconnect the executor from the databases

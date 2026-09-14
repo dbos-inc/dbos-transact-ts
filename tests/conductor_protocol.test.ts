@@ -168,7 +168,7 @@ describe('conductor-retention-dispatch', () => {
   afterEach(async () => {
     // shutdown() returns once it has asked the socket to close, but ws finishes the handshake
     // afterwards, and its close handler logs. Wait for it, or that log lands after teardown.
-    const socket = DBOS.conductor?.websocket;
+    const socket = DBOSExecutor.globalInstance?.conductor?.websocket;
     const closed =
       socket === undefined || socket.readyState === WebSocket.CLOSED
         ? Promise.resolve()

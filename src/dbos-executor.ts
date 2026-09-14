@@ -26,6 +26,7 @@ import {
 } from './workflow';
 
 import { type StepConfig, validateStepConfig } from './step';
+import type { Conductor } from './conductor/conductor';
 import { TelemetryCollector } from './telemetry/collector';
 import { getActiveSpan, runWithTrace, SpanStatusCode, Tracer } from './telemetry/traces';
 import { DBOSContextualLogger, DLogger, GlobalLogger } from './telemetry/logs';
@@ -272,6 +273,7 @@ export interface DBOSExecutorOptions {
 
 export class DBOSExecutor {
   initialized: boolean;
+  conductor: Conductor | undefined = undefined;
   // System Database
   readonly systemDatabase: SystemDatabase;
 
