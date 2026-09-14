@@ -138,6 +138,11 @@ export interface DBOSConfig {
    */
   otelAttributeFormat?: OtelAttributeFormat;
 
+  /** @deprecated Ignored: the admin server has been removed. */
+  adminPort?: number;
+  /** @deprecated Ignored: the admin server has been removed. */
+  runAdminServer?: boolean;
+
   applicationVersion?: string;
   executorID?: string;
 
