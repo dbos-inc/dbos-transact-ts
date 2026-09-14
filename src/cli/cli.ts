@@ -472,7 +472,6 @@ queueCommands
         systemDatabaseUrl: urls.systemDatabaseURL,
       });
       try {
-        // TOD: Review!
         const output = await client.listQueuedWorkflows(input);
         console.log(JSON.stringify(output.map((wf) => inspectUnsafeFields(wf, ['input', 'output', 'error']))));
       } finally {

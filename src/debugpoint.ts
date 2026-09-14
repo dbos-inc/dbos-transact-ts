@@ -3,7 +3,7 @@ export class DebugAction {
   asyncCallback?: () => Promise<void>;
 }
 
-export const pointTriggers: Map<string, DebugAction> = new Map();
+const pointTriggers: Map<string, DebugAction> = new Map();
 
 export async function debugTriggerPoint(name: string): Promise<void> {
   if (pointTriggers.has(name)) {

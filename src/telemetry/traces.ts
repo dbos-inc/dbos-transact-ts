@@ -5,7 +5,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 /* eslint-disable @typescript-eslint/no-require-imports */
 import type { Span } from '@opentelemetry/sdk-trace-base';
-import type { SpanContext } from '@opentelemetry/api';
 import { TelemetryCollector } from './collector';
 import { globalParams } from '../utils';
 import type { BasicTracerProvider as BasicTracerProviderType } from '@opentelemetry/sdk-trace-base';
@@ -16,7 +15,7 @@ import type { OtelAttributeFormat } from '../dbos-executor';
 // on the same attribute schema once `otelAttributeFormat: 'semconv'` is
 // selected on both sides.
 //
-// `startSpan` / `startSpanWithContext` sweep the supplied attributes dict
+// `startSpan` sweeps the supplied attributes dict
 // through `resolveAttributeName`, so call sites can pass legacy DBOS keys
 // directly and have them remapped automatically when
 // `otelAttributeFormat === 'semconv'`. Keys not in this table pass through
@@ -165,7 +164,7 @@ export class Tracer {
 
   constructor(
     private readonly telemetryCollector: TelemetryCollector,
-    otelAttributeFormat: OtelAttributeFormat = 'legacy',
+    otelAttributeFormat: OtelAttributeFormat,
   ) {
     this.applicationID = globalParams.appID;
     this.executorID = globalParams.executorID;
@@ -177,7 +176,7 @@ export class Tracer {
    * the span, per `otelAttributeFormat`. Returns the original key for
    * unknown attributes.
    *
-   * Attributes passed into `startSpan` / `startSpanWithContext` are remapped
+   * Attributes passed into `startSpan` are remapped
    * automatically via this method, so call sites don't need to invoke it
    * directly. Exposed for code paths that write attributes after span
    * creation (e.g. `endSpan`, ad-hoc `setAttribute` calls).
@@ -198,20 +197,6 @@ export class Tracer {
       remapped[LEGACY_TO_SEMCONV[k] ?? k] = v;
     }
     return remapped;
-  }
-
-  startSpanWithContext(spanContext: unknown, name: string, attributes?: Attributes): DBOSSpan {
-    if (!globalParams.tracingEnabled) {
-      return new StubSpan();
-    }
-    const opentelemetry = require('@opentelemetry/api');
-    const tracer = opentelemetry.trace.getTracer('dbos-tracer');
-    const ctx = opentelemetry.trace.setSpanContext(opentelemetry.context.active(), spanContext as SpanContext);
-    return tracer.startSpan(
-      name,
-      { startTime: performance.now(), attributes: this.remapAttributes(attributes) },
-      ctx,
-    ) as Span;
   }
 
   startSpan(name: string, attributes?: Attributes, inputSpan?: DBOSSpan): DBOSSpan {

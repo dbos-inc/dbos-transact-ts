@@ -192,7 +192,7 @@ export interface DBOSRuntimeConfig {
 export interface TelemetryConfig {
   logs: LoggerConfig;
   OTLPExporter: OTLPExporterConfig;
-  otelAttributeFormat?: OtelAttributeFormat;
+  otelAttributeFormat: OtelAttributeFormat;
 }
 
 /**

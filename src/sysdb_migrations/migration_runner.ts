@@ -33,8 +33,7 @@ export async function getCurrentSysDBVersion(client: ClientBase, schemaName: str
   );
   if (verRes.rowCount === 0) return 0;
 
-  const raw = verRes.rows[0].version;
-  const n = typeof raw === 'string' ? Number(raw) : Number(raw);
+  const n = Number(verRes.rows[0].version);
   return Number.isFinite(n) ? n : 0;
 }
 
