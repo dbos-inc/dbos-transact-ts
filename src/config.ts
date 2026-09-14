@@ -224,13 +224,9 @@ export function translateDbosConfig(options: DBOSConfig, forceConsole: boolean =
 }
 
 export function getRuntimeConfig(config: ConfigFile): DBOSRuntimeConfig {
-  return translateRuntimeConfig(config.runtimeConfig);
-}
-
-export function translateRuntimeConfig(config: Partial<DBOSRuntimeConfig> = {}): DBOSRuntimeConfig {
   return {
-    start: config.start ?? [],
-    setup: config.setup ?? [],
+    start: config.runtimeConfig?.start ?? [],
+    setup: config.runtimeConfig?.setup ?? [],
   };
 }
 
