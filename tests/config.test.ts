@@ -8,8 +8,9 @@ import {
   translateDbosConfig,
 } from '../src/config';
 import { AssertionError } from 'assert';
-import { DBOSConfigInternal } from '../src/dbos-executor';
+import { DBOSConfig } from '../src/dbos-executor';
 import { DBOSJSON } from '../src/serialization';
+import { DBOS } from '../src';
 
 describe('dbos-config', () => {
   beforeEach(() => {
@@ -553,82 +554,86 @@ describe('dbos-config', () => {
   });
 
   describe('overwriteConfigForDBOSCloud', () => {
-    const internalConfig: DBOSConfigInternal = {
+    const config: DBOSConfig = {
       name: 'my-app',
       systemDatabaseUrl: 'postgres://foo:bar@father:1234/blahblahblah',
-      systemDatabaseSchemaName: 'dbos',
-      serializer: DBOSJSON,
-      useListenNotify: true,
-      runMigrations: true,
-      telemetry: {
-        logs: {
-          logLevel: 'info',
-          forceConsole: false,
-        },
-        OTLPExporter: {
-          tracesEndpoint: ['http://otel-collector:4317/traces'],
-          logsEndpoint: ['http://otel-collector:4317/logs'],
-        },
-      },
+      systemDatabaseSchemaName: 'my_schema',
+      otlpTracesEndpoints: ['http://otel-collector:4317/traces'],
+      otlpLogsEndpoints: ['http://otel-collector:4317/logs'],
     };
+
     test('throws when cloud db url is missing', () => {
-      expect(() => overwriteConfigForDBOSCloud(internalConfig, {})).toThrow();
+      expect(() => overwriteConfigForDBOSCloud(config)).toThrow(AssertionError);
     });
 
     test('uses cloud app name', () => {
       process.env.DBOS_SYSTEM_DATABASE_URL = 'fake://db/url';
-      const newConfig = overwriteConfigForDBOSCloud(internalConfig, { name: 'cloud-app-name' });
-      expect(newConfig.name).toBe('cloud-app-name');
+      process.env.DBOS_APP_NAME = 'cloud-app-name';
+      expect(overwriteConfigForDBOSCloud(config).name).toBe('cloud-app-name');
     });
 
-    test('uses cloud db url', () => {
-      process.env.DBOS_SYSTEM_DATABASE_URL = 'postgres://a:b@c:2345/cloud_db';
-      const newConfig = overwriteConfigForDBOSCloud(internalConfig, { name: 'cloud-app-name' });
-      expect(newConfig.systemDatabaseUrl).toBe('postgres://a:b@c:2345/cloud_db');
+    test('keeps configured app name when cloud app name is unset', () => {
+      process.env.DBOS_SYSTEM_DATABASE_URL = 'fake://db/url';
+      expect(overwriteConfigForDBOSCloud(config).name).toBe('my-app');
     });
 
-    test('uses cloud sys db url when set', () => {
+    test('uses cloud sys db url', () => {
       process.env.DBOS_SYSTEM_DATABASE_URL = 'postgres://a:b@c:2345/cloud_sys_db';
-      const newConfig = overwriteConfigForDBOSCloud(internalConfig, { name: 'cloud-app-name' });
+      const newConfig = overwriteConfigForDBOSCloud(config);
       expect(newConfig.systemDatabaseUrl).toBe('postgres://a:b@c:2345/cloud_sys_db');
+      expect(newConfig.systemDatabaseSchemaName).toBe('my_schema');
     });
 
     test('combine otel endpoints', () => {
-      console.log(internalConfig.telemetry.OTLPExporter);
       process.env.DBOS_SYSTEM_DATABASE_URL = 'fake://db/url';
-      const newConfig = overwriteConfigForDBOSCloud(internalConfig, {
-        telemetry: {
-          OTLPExporter: {
-            tracesEndpoint: ['http://otel-collector:4317/traces-from-cloud'],
-            logsEndpoint: ['http://otel-collector:4317/logs-from-cloud'],
-          },
-        },
-      });
-      expect(newConfig.telemetry.OTLPExporter?.logsEndpoint).toEqual([
+      process.env.DBOS__OTLP_TRACES_ENDPOINT = 'http://otel-collector:4318/v1/traces';
+      process.env.DBOS__OTLP_LOGS_ENDPOINT = 'http://otel-collector:4318/v1/logs';
+      const newConfig = overwriteConfigForDBOSCloud(config);
+      expect(newConfig.otlpLogsEndpoints).toEqual([
         'http://otel-collector:4317/logs',
-        'http://otel-collector:4317/logs-from-cloud',
+        'http://otel-collector:4318/v1/logs',
       ]);
-      expect(newConfig.telemetry.OTLPExporter?.tracesEndpoint).toEqual([
+      expect(newConfig.otlpTracesEndpoints).toEqual([
         'http://otel-collector:4317/traces',
-        'http://otel-collector:4317/traces-from-cloud',
+        'http://otel-collector:4318/v1/traces',
       ]);
-      console.log(internalConfig.telemetry.OTLPExporter);
     });
 
     test('combine otel endpoints no duplicates', () => {
-      console.log(internalConfig.telemetry.OTLPExporter);
       process.env.DBOS_SYSTEM_DATABASE_URL = 'fake://db/url';
-      const newConfig = overwriteConfigForDBOSCloud(internalConfig, {
-        telemetry: {
-          OTLPExporter: {
-            tracesEndpoint: ['http://otel-collector:4317/traces'],
-            logsEndpoint: ['http://otel-collector:4317/logs'],
-          },
-        },
-      });
-      expect(newConfig.telemetry.OTLPExporter?.logsEndpoint).toEqual(['http://otel-collector:4317/logs']);
-      expect(newConfig.telemetry.OTLPExporter?.tracesEndpoint).toEqual(['http://otel-collector:4317/traces']);
-      console.log(internalConfig.telemetry.OTLPExporter);
+      process.env.DBOS__OTLP_TRACES_ENDPOINT = 'http://otel-collector:4317/traces';
+      process.env.DBOS__OTLP_LOGS_ENDPOINT = 'http://otel-collector:4317/logs';
+      const newConfig = overwriteConfigForDBOSCloud(config);
+      expect(newConfig.otlpLogsEndpoints).toEqual(['http://otel-collector:4317/logs']);
+      expect(newConfig.otlpTracesEndpoints).toEqual(['http://otel-collector:4317/traces']);
+    });
+
+    test('works without any provided config', () => {
+      process.env.DBOS_SYSTEM_DATABASE_URL = 'postgres://a:b@c:2345/cloud_sys_db';
+      process.env.DBOS_APP_NAME = 'cloud-app-name';
+      process.env.DBOS__OTLP_LOGS_ENDPOINT = 'http://otel-collector:4318/v1/logs';
+      const internalConfig = translateDbosConfig(overwriteConfigForDBOSCloud({}));
+      expect(internalConfig.name).toBe('cloud-app-name');
+      expect(internalConfig.systemDatabaseUrl).toBe('postgres://a:b@c:2345/cloud_sys_db');
+      expect(internalConfig.telemetry.OTLPExporter?.logsEndpoint).toEqual(['http://otel-collector:4318/v1/logs']);
+      expect(internalConfig.telemetry.OTLPExporter?.tracesEndpoint).toEqual([]);
+    });
+
+    test('getDbosConfig applies the cloud environment', () => {
+      process.env.DBOS__CLOUD = 'true';
+      process.env.DBOS_SYSTEM_DATABASE_URL = 'postgres://a:b@c:2345/cloud_sys_db';
+      process.env.DBOS_APP_NAME = 'cloud-app-name';
+      process.env.DBOS__OTLP_TRACES_ENDPOINT = 'http://otel-collector:4318/v1/traces';
+      const internalConfig = getDbosConfig({ name: 'file-app-name' });
+      expect(internalConfig.name).toBe('cloud-app-name');
+      expect(internalConfig.systemDatabaseUrl).toBe('postgres://a:b@c:2345/cloud_sys_db');
+      expect(internalConfig.telemetry.OTLPExporter?.tracesEndpoint).toEqual(['http://otel-collector:4318/v1/traces']);
+    });
+  });
+
+  describe('DBOS.launch', () => {
+    test('requires setConfig outside DBOS Cloud', async () => {
+      await expect(DBOS.launch()).rejects.toThrow('call DBOS.setConfig before DBOS.launch');
     });
   });
 });

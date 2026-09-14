@@ -40,8 +40,9 @@ import {
   DBOSUnexpectedStepError,
   DBOSInvalidQueuePriorityError,
   DBOSQueueDuplicatedError,
+  DBOSInitializationError,
 } from './error';
-import { getDbosConfig, overwriteConfigForDBOSCloud, readConfigFile, translateDbosConfig } from './config';
+import { overwriteConfigForDBOSCloud, translateDbosConfig } from './config';
 import {
   AlertHandler,
   associateClassWithExternal,
@@ -459,13 +460,12 @@ export class DBOS {
       throw new DBOSError('Cannot call DBOS.launch while DBOS.shutdown is in progress.');
     }
 
-    const configFile = await readConfigFile();
-
-    let internalConfig = DBOS.#dbosConfig ? translateDbosConfig(DBOS.#dbosConfig) : getDbosConfig(configFile);
-
-    if (process.env.DBOS__CLOUD === 'true') {
-      internalConfig = overwriteConfigForDBOSCloud(internalConfig, configFile);
+    const config =
+      process.env.DBOS__CLOUD === 'true' ? overwriteConfigForDBOSCloud(DBOS.#dbosConfig ?? {}) : DBOS.#dbosConfig;
+    if (!config) {
+      throw new DBOSInitializationError('No DBOS configuration was provided: call DBOS.setConfig before DBOS.launch.');
     }
+    const internalConfig = translateDbosConfig(config);
 
     globalParams.enableOTLP = DBOS.#dbosConfig?.enableOTLP ?? defaultEnableOTLP();
     globalParams.tracingEnabled = DBOS.#dbosConfig?.tracingEnabled || globalParams.enableOTLP;

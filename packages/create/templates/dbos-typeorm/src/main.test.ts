@@ -4,6 +4,7 @@ import request from 'supertest';
 
 describe('operations-test', () => {
   beforeAll(async () => {
+    DBOS.setConfig({ name: 'dbos-typeorm', systemDatabaseUrl: process.env.DBOS_SYSTEM_DATABASE_URL });
     await DBOS.launch();
   });
 

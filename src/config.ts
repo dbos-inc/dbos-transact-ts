@@ -154,19 +154,20 @@ export function getDbosConfig(
     `Config file specifies invalid language ${config.language}`,
   );
 
-  return translateDbosConfig(
-    {
-      name: config.name,
-      systemDatabaseUrl: config.system_database_url,
-      systemDatabaseSchemaName: config.system_database_schema_name,
-      logLevel: options.logLevel ?? config.telemetry?.logs?.logLevel,
-      addContextMetadata: config.telemetry?.logs?.addContextMetadata,
-      otlpTracesEndpoints: toArray(config.telemetry?.OTLPExporter?.tracesEndpoint),
-      otlpLogsEndpoints: toArray(config.telemetry?.OTLPExporter?.logsEndpoint),
-      useListenNotify: config.use_listen_notify,
-    },
-    options.forceConsole,
-  );
+  let dbosConfig: DBOSConfig = {
+    name: config.name,
+    systemDatabaseUrl: config.system_database_url,
+    systemDatabaseSchemaName: config.system_database_schema_name,
+    logLevel: options.logLevel ?? config.telemetry?.logs?.logLevel,
+    addContextMetadata: config.telemetry?.logs?.addContextMetadata,
+    otlpTracesEndpoints: toArray(config.telemetry?.OTLPExporter?.tracesEndpoint),
+    otlpLogsEndpoints: toArray(config.telemetry?.OTLPExporter?.logsEndpoint),
+    useListenNotify: config.use_listen_notify,
+  };
+  if (process.env.DBOS__CLOUD === 'true') {
+    dbosConfig = overwriteConfigForDBOSCloud(dbosConfig);
+  }
+  return translateDbosConfig(dbosConfig, options.forceConsole);
 }
 
 function toArray(endpoint: string | string[] | undefined): Array<string> {
@@ -230,54 +231,20 @@ export function getRuntimeConfig(config: ConfigFile): DBOSRuntimeConfig {
   };
 }
 
-export function overwriteConfigForDBOSCloud(
-  providedDBOSConfig: DBOSConfigInternal,
-  configFile: ConfigFile,
-): DBOSConfigInternal {
-  // Load the DBOS configuration file and force the use of:
-  // 1. Use the application name from the file. This is a defensive measure to ensure the application name is whatever it was registered with in the cloud
-  // 2. use the database URL from environment var
-  // 3. OTLP traces endpoints (add the config data to the provided config)
-
+// DBOS Cloud supplies the registered app name, system database, and OTLP collector through environment variables.
+export function overwriteConfigForDBOSCloud(config: DBOSConfig): DBOSConfig {
   const systemDatabaseUrl = process.env.DBOS_SYSTEM_DATABASE_URL;
   assert(systemDatabaseUrl, 'DBOS_SYSTEM_DATABASE_URL must be set in DBOS Cloud environment');
 
-  const appName = configFile.name ?? providedDBOSConfig.name;
-
-  const logsSet = new Set(providedDBOSConfig.telemetry.OTLPExporter?.logsEndpoint);
-  const logsEndpoint = configFile.telemetry?.OTLPExporter?.logsEndpoint;
-  if (logsEndpoint) {
-    if (Array.isArray(logsEndpoint)) {
-      logsEndpoint.forEach((endpoint) => logsSet.add(endpoint));
-    } else {
-      logsSet.add(logsEndpoint);
-    }
-  }
-
-  const tracesSet = new Set(providedDBOSConfig.telemetry.OTLPExporter?.tracesEndpoint);
-  const tracesEndpoint = configFile.telemetry?.OTLPExporter?.tracesEndpoint;
-  if (tracesEndpoint) {
-    if (Array.isArray(tracesEndpoint)) {
-      tracesEndpoint.forEach((endpoint) => tracesSet.add(endpoint));
-    } else {
-      tracesSet.add(tracesEndpoint);
-    }
-  }
-
   return {
-    ...providedDBOSConfig,
-    name: appName,
+    ...config,
+    name: process.env.DBOS_APP_NAME || config.name,
     systemDatabaseUrl,
-    systemDatabaseSchemaName: configFile.system_database_schema_name ?? providedDBOSConfig.systemDatabaseSchemaName,
-    telemetry: {
-      logs: {
-        ...providedDBOSConfig.telemetry.logs,
-      },
-      OTLPExporter: {
-        logsEndpoint: Array.from(logsSet).filter((e) => !!e),
-        tracesEndpoint: Array.from(tracesSet).filter((e) => !!e),
-      },
-      otelAttributeFormat: providedDBOSConfig.telemetry.otelAttributeFormat,
-    },
+    otlpLogsEndpoints: withEndpoint(config.otlpLogsEndpoints, process.env.DBOS__OTLP_LOGS_ENDPOINT),
+    otlpTracesEndpoints: withEndpoint(config.otlpTracesEndpoints, process.env.DBOS__OTLP_TRACES_ENDPOINT),
   };
+}
+
+function withEndpoint(endpoints: string[] | undefined, endpoint: string | undefined): string[] {
+  return Array.from(new Set([...(endpoints ?? []), endpoint])).filter((e): e is string => !!e);
 }

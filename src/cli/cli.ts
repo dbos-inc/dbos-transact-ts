@@ -1,12 +1,5 @@
 #!/usr/bin/env node
-import {
-  dbosConfigFilePath,
-  getDbosConfig,
-  getRuntimeConfig,
-  getSystemDatabaseUrl,
-  overwriteConfigForDBOSCloud,
-  readConfigFile,
-} from '../config';
+import { dbosConfigFilePath, getDbosConfig, getRuntimeConfig, getSystemDatabaseUrl, readConfigFile } from '../config';
 import { Command } from 'commander';
 import { DBOSConfigInternal } from '../dbos-executor';
 import { migrate } from './migrate';
@@ -78,10 +71,7 @@ program
   .description('Perform a database migration')
   .action(async () => {
     const configFile = await readConfigFile();
-    let config = getDbosConfig(configFile);
-    if (process.env.DBOS__CLOUD === 'true') {
-      config = overwriteConfigForDBOSCloud(config, configFile);
-    }
+    const config = getDbosConfig(configFile);
     const schemaName = configFile.system_database_schema_name ?? 'dbos';
 
     await runAndLog(configFile.database?.migrate ?? [], config, (cmds, url, logger) =>
