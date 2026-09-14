@@ -505,7 +505,7 @@ if (!process.argv.slice(2).length) {
 async function getDatabaseURLs(systemDatabaseURL: string | undefined): Promise<{
   systemDatabaseURL: string;
 }> {
-  if (process.env.DBOS__CLOUD === 'true') {
+  if (globalParams.dbosCloud) {
     return {
       systemDatabaseURL: process.env.DBOS_SYSTEM_DATABASE_URL!,
     };

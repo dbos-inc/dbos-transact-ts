@@ -1,4 +1,4 @@
-import { readFile } from './utils';
+import { globalParams, readFile } from './utils';
 import { DBOSConfig, DBOSRuntimeConfig, DBOSConfigInternal } from './dbos-executor';
 import YAML from 'yaml';
 import path from 'path';
@@ -137,7 +137,7 @@ export function getDbosConfig(
     systemDatabaseSchemaName: config.system_database_schema_name,
     logLevel: options.logLevel ?? config.telemetry?.logs?.logLevel,
   };
-  if (process.env.DBOS__CLOUD === 'true') {
+  if (globalParams.dbosCloud) {
     dbosConfig = overwriteConfigForDBOSCloud(dbosConfig);
   }
   return translateDbosConfig(dbosConfig);

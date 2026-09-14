@@ -42,17 +42,12 @@ function loadDbosVersion(): string {
   }
 }
 
-// Enable OTLP by default only in DBOS Cloud. Otherwise, enable through configuration.
-export function defaultEnableOTLP() {
-  return process.env.DBOS__CLOUD === 'true';
-}
-
 export const globalParams = {
   appVersion: process.env.DBOS__APPVERSION || '', // The one true source of appVersion
   executorID: process.env.DBOS__VMID || 'local', // The one true source of executorID
   appName: undefined as string | undefined, // Set at launch from the configured application name; undefined until the first launch
   appID: process.env.DBOS__APPID || '', // The one true source of appID
-  enableOTLP: defaultEnableOTLP(), // Whether OTLP is enabled
+  enableOTLP: process.env.DBOS__CLOUD === 'true', // Whether OTLP is enabled; on by default only in DBOS Cloud
   tracingEnabled: false, // Whether span creation is active (enableOTLP or external TracerProvider)
   dbosVersion: loadDbosVersion(), // The version of the DBOS library
   dbosCloud: process.env.DBOS__CLOUD === 'true', // Whether running in DBOS Cloud

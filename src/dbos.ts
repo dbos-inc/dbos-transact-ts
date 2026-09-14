@@ -75,7 +75,7 @@ import {
   clearAllRegistrations,
   getRegisteredFunctionFullName,
 } from './decorators';
-import { defaultEnableOTLP, globalParams, INTERNAL_QUEUE_NAME, sleepConfig, sleepms } from './utils';
+import { globalParams, INTERNAL_QUEUE_NAME, sleepConfig, sleepms } from './utils';
 import {
   deserializeValue,
   JSONValue,
@@ -490,14 +490,13 @@ export class DBOS {
       throw new DBOSError('Cannot call DBOS.launch while DBOS.shutdown is in progress.');
     }
 
-    const config =
-      process.env.DBOS__CLOUD === 'true' ? overwriteConfigForDBOSCloud(DBOS.#dbosConfig ?? {}) : DBOS.#dbosConfig;
+    const config = globalParams.dbosCloud ? overwriteConfigForDBOSCloud(DBOS.#dbosConfig ?? {}) : DBOS.#dbosConfig;
     if (!config) {
       throw new DBOSInitializationError('No DBOS configuration was provided: call DBOS.setConfig before DBOS.launch.');
     }
     const internalConfig = translateDbosConfig(config);
 
-    globalParams.enableOTLP = DBOS.#dbosConfig?.enableOTLP ?? defaultEnableOTLP();
+    globalParams.enableOTLP = DBOS.#dbosConfig?.enableOTLP ?? globalParams.dbosCloud;
     globalParams.tracingEnabled = DBOS.#dbosConfig?.tracingEnabled || globalParams.enableOTLP;
 
     if (!isTraceContextWorking()) installTraceContextManager(internalConfig.name);
@@ -515,7 +514,7 @@ export class DBOS {
     globalParams.appVersion = process.env.DBOS__APPVERSION || '';
     globalParams.executorID = process.env.DBOS__VMID || 'local';
     // In DBOS Cloud, instead use the value supplied through environment variables.
-    if (process.env.DBOS__CLOUD !== 'true') {
+    if (!globalParams.dbosCloud) {
       if (DBOS.#dbosConfig?.applicationVersion) {
         globalParams.appVersion = DBOS.#dbosConfig.applicationVersion;
       } else if (DBOS.#dbosConfig?.enablePatching) {

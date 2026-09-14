@@ -483,14 +483,20 @@ describe('dbos-config', () => {
     });
 
     test('getDbosConfig applies the cloud environment', () => {
-      process.env.DBOS__CLOUD = 'true';
+      // DBOS__CLOUD is read once at import, so set the flag it produces.
+      const wasCloud = utils.globalParams.dbosCloud;
+      utils.globalParams.dbosCloud = true;
       process.env.DBOS_SYSTEM_DATABASE_URL = 'postgres://a:b@c:2345/cloud_sys_db';
       process.env.DBOS_APP_NAME = 'cloud-app-name';
       process.env.DBOS__OTLP_TRACES_ENDPOINT = 'http://otel-collector:4318/v1/traces';
-      const internalConfig = getDbosConfig({ name: 'file-app-name' });
-      expect(internalConfig.name).toBe('cloud-app-name');
-      expect(internalConfig.systemDatabaseUrl).toBe('postgres://a:b@c:2345/cloud_sys_db');
-      expect(internalConfig.telemetry.OTLPExporter.tracesEndpoint).toEqual(['http://otel-collector:4318/v1/traces']);
+      try {
+        const internalConfig = getDbosConfig({ name: 'file-app-name' });
+        expect(internalConfig.name).toBe('cloud-app-name');
+        expect(internalConfig.systemDatabaseUrl).toBe('postgres://a:b@c:2345/cloud_sys_db');
+        expect(internalConfig.telemetry.OTLPExporter.tracesEndpoint).toEqual(['http://otel-collector:4318/v1/traces']);
+      } finally {
+        utils.globalParams.dbosCloud = wasCloud;
+      }
     });
   });
 
