@@ -1,7 +1,6 @@
 // Welcome to DBOS!
 
 // This is the Quickstart TypeORM template app. It greets visitors, counting how many total greetings were made.
-// To learn how to run this app, visit the TypeORM tutorial: https://docs.dbos.dev/tutorials/using-typeorm
 
 import express, { Request, Response } from 'express';
 import { DBOS } from '@dbos-inc/dbos-sdk';

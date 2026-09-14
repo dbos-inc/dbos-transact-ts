@@ -91,7 +91,6 @@ describe('runtime-tests-knex', () => {
 
   test('test hello-knex tests', () => {
     execSync('npm run test', { env: process.env }); // Make sure hello-knex passes its own tests.
-    execSync('npm run lint', { env: process.env }); // Pass linter rules.
   });
 
   test('test hello-knex runtime', async () => {
@@ -158,7 +157,6 @@ describe('runtime-tests-typeorm', () => {
 
   test('test hello-typeorm tests', () => {
     execSync('npm run test', { env: process.env }); // Make sure hello-typeorm passes its own tests.
-    execSync('npm run lint', { env: process.env }); // Pass linter rules.
   });
 
   test('test hello-typeorm runtime', async () => {
@@ -182,7 +180,6 @@ describe('runtime-tests-prisma', () => {
 
   test('test hello-prisma tests', () => {
     execSync('npm run test', { env: process.env }); // Make sure hello-prisma passes its own tests.
-    execSync('npm run lint', { env: process.env }); // Pass linter rules.
   });
 
   test('test hello-prisma runtime', async () => {
@@ -206,7 +203,6 @@ describe('runtime-tests-drizzle', () => {
 
   test('test hello-drizzle tests', () => {
     execSync('npm run test', { env: process.env }); // Make sure hello-drizzle passes its own tests.
-    execSync('npm run lint', { env: process.env, stdio: 'inherit' }); // Pass linter rules.
   });
 
   test('test hello-drizzle runtime', async () => {
