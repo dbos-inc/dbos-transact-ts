@@ -1,7 +1,23 @@
 name: Test DBOS
 
 on:
-  workflow_call:
+  push:
+    branches:
+      - main
+      - release/*
+    paths-ignore:
+      - 'README.md'
+  pull_request:
+    branches:
+      - main
+      - release/*
+    types:
+      - ready_for_review
+      - opened
+      - reopened
+      - synchronize
+    paths-ignore:
+      - 'README.md'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
