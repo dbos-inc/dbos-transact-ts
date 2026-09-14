@@ -88,9 +88,6 @@ export interface MethodRegistrationBase {
   // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
   origFunction: Function; // Function that the app provided
 
-  // Add an interceptor that, when function is run, get a chance to process arguments / throw errors
-  addEntryInterceptor(func: (reg: MethodRegistrationBase, args: unknown[]) => unknown[], seqNum?: number): void;
-
   invoke(pthis: unknown, args: unknown[]): unknown;
 }
 
@@ -99,12 +96,8 @@ export class MethodRegistration<This, Args extends unknown[], Return> implements
   className: string = '';
   classReg: ClassRegistration;
 
-  // Interceptors
-  onEnter: { seqNum: number; func: (reg: MethodRegistrationBase, args: unknown[]) => unknown[] }[] = [];
-  addEntryInterceptor(func: (reg: MethodRegistrationBase, args: unknown[]) => unknown[], seqNum: number = 10) {
-    this.onEnter.push({ seqNum, func });
-    this.onEnter.sort((a, b) => a.seqNum - b.seqNum);
-  }
+  // Validates (and may transform) arguments before the function runs; set from a workflow's inputSchema.
+  validateArgs?: (args: unknown[]) => unknown[];
 
   constructor(
     classReg: ClassRegistration,
@@ -398,11 +391,7 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
     methReg.className = classReg.name;
 
     const wrappedMethod = async function (this: This, ...rawArgs: Args) {
-      let validatedArgs = rawArgs;
-      for (const vf of methReg.onEnter) {
-        validatedArgs = vf.func(methReg, validatedArgs) as Args;
-      }
-
+      const validatedArgs = methReg.validateArgs ? (methReg.validateArgs(rawArgs) as Args) : rawArgs;
       return methReg.origFunction.call(this, ...validatedArgs);
     };
     Object.defineProperty(wrappedMethod, 'name', {
