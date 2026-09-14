@@ -138,12 +138,9 @@ export interface DBOSConfig {
    */
   otelAttributeFormat?: OtelAttributeFormat;
 
-  /** @deprecated The admin server is deprecated and will be removed in a future version of DBOS. */
+  /** @deprecated Ignored: the admin server has been removed. */
   adminPort?: number;
-  /**
-   * Whether to run the admin server. Defaults to `false` outside DBOS Cloud.
-   * @deprecated The admin server is deprecated and will be removed in a future version of DBOS.
-   */
+  /** @deprecated Ignored: the admin server has been removed. */
   runAdminServer?: boolean;
 
   applicationVersion?: string;
@@ -189,10 +186,6 @@ export interface DBOSConfig {
 }
 
 export interface DBOSRuntimeConfig {
-  /** @deprecated The admin server is deprecated and will be removed in a future version of DBOS. */
-  admin_port: number;
-  /** @deprecated The admin server is deprecated and will be removed in a future version of DBOS. */
-  runAdminServer: boolean;
   start: string[];
   setup: string[];
 }
@@ -1288,7 +1281,7 @@ export class DBOSExecutor {
     }
   }
 
-  async deactivateEventReceivers(stopQueueThread: boolean = true) {
+  async deactivateEventReceivers() {
     this.logger.debug('Deactivating lifecycle listeners');
     for (const lcl of getLifecycleListeners()) {
       try {
@@ -1300,14 +1293,12 @@ export class DBOSExecutor {
     }
 
     this.logger.debug('Deactivating queue runner');
-    if (stopQueueThread) {
-      try {
-        wfQueueRunner.stop();
-        await this.#wfqEnded;
-      } catch (err) {
-        const e = err as Error;
-        this.logger.warn(`Error destroying wf queue runner: ${e.message}`);
-      }
+    try {
+      wfQueueRunner.stop();
+      await this.#wfqEnded;
+    } catch (err) {
+      const e = err as Error;
+      this.logger.warn(`Error destroying wf queue runner: ${e.message}`);
     }
   }
 

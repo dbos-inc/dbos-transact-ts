@@ -34,10 +34,10 @@ export function allMigrations(
     {
       name: '20240123183021_tables',
       pg: [
-        `create table "${schemaName}"."operation_outputs" ("workflow_uuid" text not null, "function_id" int4 not null, "output" text, "error" text, constraint "operation_outputs_pkey" primary key ("workflow_uuid", "function_id"))`,
+        `create table "${schemaName}"."operation_outputs" ("workflow_uuid" text not null, "function_id" int4 not null, "function_name" text not null default '', "output" text, "error" text, constraint "operation_outputs_pkey" primary key ("workflow_uuid", "function_id"))`,
         `create table "${schemaName}"."workflow_inputs" ("workflow_uuid" text not null, "inputs" text not null, constraint "workflow_inputs_pkey" primary key ("workflow_uuid"))`,
         `create table "${schemaName}"."workflow_status" ("workflow_uuid" text, "status" text, "name" text, "authenticated_user" text, "assumed_role" text, "authenticated_roles" text, "request" text, "output" text, "error" text, "executor_id" text, constraint "workflow_status_pkey" primary key ("workflow_uuid"))`,
-        `create table "${schemaName}"."notifications" ("destination_uuid" text not null, "topic" text, "message" text not null, "created_at_epoch_ms" bigint not null default (EXTRACT(EPOCH FROM now())*1000)::bigint)`,
+        `create table "${schemaName}"."notifications" ("message_uuid" text not null default gen_random_uuid(), "destination_uuid" text not null, "topic" text, "message" text not null, "created_at_epoch_ms" bigint not null default (EXTRACT(EPOCH FROM now()) * 1000.0)::bigint)`,
         `create table "${schemaName}"."workflow_events" ("workflow_uuid" text not null, "key" text not null, "value" text not null, constraint "workflow_events_pkey" primary key ("workflow_uuid", "key"))`,
       ],
     },
@@ -77,14 +77,13 @@ export function allMigrations(
     {
       name: '20240124015239_status_timestamp',
       pg: [
-        `alter table "${schemaName}"."workflow_status" add column "created_at" bigint not null default (EXTRACT(EPOCH FROM now())*1000)::bigint, add column "updated_at" bigint not null default (EXTRACT(EPOCH FROM now())*1000)::bigint`,
+        `alter table "${schemaName}"."workflow_status" add column "created_at" bigint not null default (EXTRACT(EPOCH FROM now()) * 1000.0)::bigint, add column "updated_at" bigint not null default (EXTRACT(EPOCH FROM now()) * 1000.0)::bigint`,
       ],
     },
     {
       name: '20240201213211_replica_identity',
       pg: [
-        `create extension if not exists "uuid-ossp"`,
-        `alter table "${schemaName}"."notifications" add column "message_uuid" text not null default uuid_generate_v4()`,
+        `alter table "${schemaName}"."notifications" add column if not exists "message_uuid" text not null default gen_random_uuid()`,
         `alter table "${schemaName}"."notifications" add constraint "notifications_pkey" primary key ("message_uuid")`,
       ],
     },
@@ -94,8 +93,10 @@ export function allMigrations(
         `create index "workflow_status_created_at_index" on "${schemaName}"."workflow_status" ("created_at")`,
         `alter table "${schemaName}"."operation_outputs" add constraint "operation_outputs_workflow_uuid_foreign" foreign key ("workflow_uuid") references "${schemaName}"."workflow_status" ("workflow_uuid") on update CASCADE on delete CASCADE`,
         `alter table "${schemaName}"."workflow_inputs" add constraint "workflow_inputs_workflow_uuid_foreign" foreign key ("workflow_uuid") references "${schemaName}"."workflow_status" ("workflow_uuid") on update CASCADE on delete CASCADE`,
-        `alter table "${schemaName}"."notifications" add constraint "notifications_destination_uuid_foreign" foreign key ("destination_uuid") references "${schemaName}"."workflow_status" ("workflow_uuid") on update CASCADE on delete CASCADE`,
-        `alter table "${schemaName}"."workflow_events" add constraint "workflow_events_workflow_uuid_foreign" foreign key ("workflow_uuid") references "${schemaName}"."workflow_status" ("workflow_uuid") on update CASCADE on delete CASCADE`,
+        // Previous versions may call this "notifications_destination_uuid_foreign".
+        `alter table "${schemaName}"."notifications" add constraint "notifications_destination_uuid_fkey" foreign key ("destination_uuid") references "${schemaName}"."workflow_status" ("workflow_uuid") on update CASCADE on delete CASCADE`,
+        // Previous versions may call this "workflow_events_workflow_uuid_foreign".
+        `alter table "${schemaName}"."workflow_events" add constraint "workflow_events_workflow_uuid_fkey" foreign key ("workflow_uuid") references "${schemaName}"."workflow_status" ("workflow_uuid") on update CASCADE on delete CASCADE`,
       ],
     },
     {
@@ -122,7 +123,7 @@ export function allMigrations(
     },
     {
       name: '20240621000000_workflow_tries',
-      pg: [`alter table "${schemaName}"."workflow_status" add column "recovery_attempts" bigint default '0'`],
+      pg: [`alter table "${schemaName}"."workflow_status" add column "recovery_attempts" bigint default 0`],
     },
     {
       name: '20240924000000_workflowqueue',
@@ -140,7 +141,9 @@ export function allMigrations(
     },
     {
       name: '20250312171547_function_name_op_outputs',
-      pg: [`alter table "${schemaName}"."operation_outputs" add column "function_name" text not null default ''`],
+      pg: [
+        `alter table "${schemaName}"."operation_outputs" add column if not exists "function_name" text not null default ''`,
+      ],
     },
     {
       name: '20250319190617_add_childid_opoutputs',
@@ -183,7 +186,8 @@ export function allMigrations(
       name: '20252806000000_streaming',
       pg: [
         `create table "${schemaName}"."streams" ("workflow_uuid" text not null, "key" text not null, "value" text not null, "offset" int4 not null, constraint "streams_pkey" primary key ("workflow_uuid", "key", "offset"))`,
-        `alter table "${schemaName}"."streams" add constraint "streams_workflow_uuid_foreign" foreign key ("workflow_uuid") references "${schemaName}"."workflow_status" ("workflow_uuid") on update CASCADE on delete CASCADE`,
+        // Previous versions may call this "streams_workflow_uuid_foreign".
+        `alter table "${schemaName}"."streams" add constraint "streams_workflow_uuid_fkey" foreign key ("workflow_uuid") references "${schemaName}"."workflow_status" ("workflow_uuid") on update CASCADE on delete CASCADE`,
       ],
     },
     {
@@ -214,7 +218,7 @@ export function allMigrations(
       ],
     },
     {
-      pg: [`ALTER TABLE "${schemaName}"."workflow_status" ADD COLUMN "owner_xid" VARCHAR(40) DEFAULT NULL`],
+      pg: [`ALTER TABLE "${schemaName}"."workflow_status" ADD COLUMN "owner_xid" TEXT DEFAULT NULL`],
     },
     {
       pg: [
