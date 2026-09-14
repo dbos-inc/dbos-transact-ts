@@ -1599,7 +1599,7 @@ export class DBOS {
   ): AsyncGenerator<T, void, unknown> {
     ensureDBOSIsLaunched('readStream');
     const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
-    yield* readStreamCore<T>(sysdb, sysdb.getSerializer(), workflowID, key, {
+    yield* readStreamCore<T>(sysdb, sysdb.serializer, workflowID, key, {
       offset: resolveStreamOffset(options),
       pollingIntervalMs: resolveStreamPollingIntervalMs(options) ?? sysdb.dbPollingIntervalStreamMs,
       timeoutMS: resolveStreamTimeoutMS(options),
@@ -1628,7 +1628,7 @@ export class DBOS {
   ): Promise<T> {
     ensureDBOSIsLaunched('readStreamOffset');
     const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
-    return await readStreamOffsetCore<T>(sysdb, sysdb.getSerializer(), workflowID, key, {
+    return await readStreamOffsetCore<T>(sysdb, sysdb.serializer, workflowID, key, {
       offset: resolveStreamOffset({ ...options, offset }),
       pollingIntervalMs: resolveStreamPollingIntervalMs(options) ?? sysdb.dbPollingIntervalStreamMs,
       timeoutMS: resolveStreamTimeoutMS(options),

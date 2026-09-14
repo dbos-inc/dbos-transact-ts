@@ -105,7 +105,7 @@ export class ClientHandle<R> implements WorkflowHandle<R> {
 
   async getStatus(): Promise<WorkflowStatus | null> {
     const status = await this.systemDatabase.getWorkflowStatus(this.workflowID);
-    return status ? toWorkflowStatus(status, this.systemDatabase.getSerializer()) : null;
+    return status ? toWorkflowStatus(status, this.systemDatabase.serializer) : null;
   }
 
   async getResult(options?: PollingOptions): Promise<R> {
@@ -123,7 +123,7 @@ export class ClientHandle<R> implements WorkflowHandle<R> {
     if (res?.maxRecoveryAttemptsExceeded) {
       throw new DBOSAwaitedWorkflowExceededMaxRecoveryAttempts(this.workflowID);
     }
-    return await DBOSExecutor.reviveResultOrError<R>(res!, this.systemDatabase.getSerializer());
+    return await DBOSExecutor.reviveResultOrError<R>(res!, this.systemDatabase.serializer);
   }
 }
 

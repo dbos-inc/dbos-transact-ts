@@ -699,7 +699,7 @@ describe('dbos-streaming-tests', () => {
     });
 
     const deser = async (v: { serializedValue: string; serialization: string | null } | undefined) =>
-      v === undefined ? undefined : await deserializeValue(v.serializedValue, v.serialization, sysdb.getSerializer());
+      v === undefined ? undefined : await deserializeValue(v.serializedValue, v.serialization, sysdb.serializer);
 
     // The value at the offset and the status, together.
     let r = await sysdb.readStreamValue(wfid, 's', 0);
@@ -1121,7 +1121,7 @@ describe('dbos-streaming-tests', () => {
     // Extend the stream now the readers are done, so a live re-read would see more than they did.
     const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
     for (const value of ['d', 'e']) {
-      const serval = await serializeValue(value, sysdb.getSerializer(), undefined);
+      const serval = await serializeValue(value, sysdb.serializer, undefined);
       await sysdb.writeStreamFromStep(writerID, 100, streamKey, serval.serializedValue!, serval.serialization);
     }
     const liveValues: unknown[] = [];
@@ -1388,7 +1388,7 @@ describe('dbos-streaming-tests', () => {
       const insertLater = (value: string, delayMs: number) =>
         setTimeout(() => {
           void (async () => {
-            const serval = await serializeValue(value, sysdb.getSerializer(), undefined);
+            const serval = await serializeValue(value, sysdb.serializer, undefined);
             await sysdb.writeStreamFromStep(wfid, 100, streamKey, serval.serializedValue!, serval.serialization);
           })();
         }, delayMs);

@@ -1076,9 +1076,6 @@ export class SystemDatabase {
       client.release();
     }
   }
-  getSerializer(): DBOSSerializer {
-    return this.serializer;
-  }
 
   // ==================== Application Ownership ====================
 
