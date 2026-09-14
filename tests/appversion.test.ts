@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto';
 import { DBOS, DBOSClient, StatusString } from '../src';
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
+import { globalParams } from '../src/utils';
 import { generateDBOSTestConfig, recoverPendingWorkflows, setUpDBOSTestSysDb } from './helpers';
 
 describe('test-app-version', () => {
@@ -132,6 +133,36 @@ describe('test-app-version', () => {
     // Verify those values are set on workflows
     expect(status?.applicationVersion).toBe(testVersion);
     expect(status?.executorId).toBe(testExecutorID);
+  });
+
+  test('test-setting-executor-id', async () => {
+    const originalVMID = process.env.DBOS__VMID;
+    const originalCloud = globalParams.dbosCloud;
+    try {
+      // An empty DBOS__VMID is an unset one
+      process.env.DBOS__VMID = '';
+      await DBOS.launch();
+      expect(DBOS.executorID).toBe('local');
+      await DBOS.shutdown();
+
+      // Conductor assigns its own executor ID off DBOS Cloud
+      process.env.DBOS__VMID = 'cloud-vm';
+      await DBOS.launch({ conductorKey: 'test-key', conductorURL: 'ws://127.0.0.1:1' });
+      expect(DBOS.executorID).not.toBe('cloud-vm');
+      await DBOS.shutdown();
+
+      // On DBOS Cloud the platform names the process, and a key passed in code is not used
+      globalParams.dbosCloud = true;
+      await DBOS.launch({ conductorKey: 'test-key', conductorURL: 'ws://127.0.0.1:1' });
+      expect(DBOS.executorID).toBe('cloud-vm');
+    } finally {
+      globalParams.dbosCloud = originalCloud;
+      if (originalVMID === undefined) {
+        delete process.env.DBOS__VMID;
+      } else {
+        process.env.DBOS__VMID = originalVMID;
+      }
+    }
   });
 
   test('test-version-registration-on-launch', async () => {
