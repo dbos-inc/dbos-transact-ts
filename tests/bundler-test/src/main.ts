@@ -21,11 +21,10 @@ async function main() {
     console.log('Starting DBOS bundler test app...');
 
     // Configure DBOS with minimal configuration
-    const config = {
+    DBOS.setConfig({
       name: 'bundler-test',
-      database_url: process.env.DBOS_DATABASE_URL,
-    };
-    DBOS.setConfig(config);
+      systemDatabaseUrl: process.env.DBOS_SYSTEM_DATABASE_URL,
+    });
 
     // Initialize DBOS
     await DBOS.launch();

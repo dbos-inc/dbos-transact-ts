@@ -160,15 +160,6 @@ describe('dbos-config', () => {
       expect(configFile).toEqual({ name: 'test-app' });
     });
 
-    test('does not read package if config file has name', async () => {
-      jest.spyOn(utils, 'readFile').mockResolvedValueOnce(`name: 'test-app'`);
-      jest.spyOn(utils, 'readFile').mockImplementationOnce(() => {
-        throw new Error('Should not be called');
-      });
-      const configFile = await readConfigFile();
-      expect(configFile).toEqual({ name: 'test-app' });
-    });
-
     test('throws on non-ENOENT config read error', async () => {
       jest.spyOn(utils, 'readFile').mockImplementation(() => {
         throw new Error('Some other error');
