@@ -138,6 +138,7 @@ describe('test-app-version', () => {
   test('test-setting-executor-id', async () => {
     const originalVMID = process.env.DBOS__VMID;
     const originalCloud = globalParams.dbosCloud;
+    const originalSysDbUrl = process.env.DBOS_SYSTEM_DATABASE_URL;
     try {
       // An empty DBOS__VMID is an unset one
       process.env.DBOS__VMID = '';
@@ -152,6 +153,8 @@ describe('test-app-version', () => {
       await DBOS.shutdown();
 
       // On DBOS Cloud the platform names the process, and a key passed in code is not used
+      // DBOS Cloud supplies the system database through the environment
+      process.env.DBOS_SYSTEM_DATABASE_URL = config.systemDatabaseUrl;
       globalParams.dbosCloud = true;
       await DBOS.launch({ conductorKey: 'test-key', conductorURL: 'ws://127.0.0.1:1' });
       expect(DBOS.executorID).toBe('cloud-vm');
@@ -161,6 +164,11 @@ describe('test-app-version', () => {
         delete process.env.DBOS__VMID;
       } else {
         process.env.DBOS__VMID = originalVMID;
+      }
+      if (originalSysDbUrl === undefined) {
+        delete process.env.DBOS_SYSTEM_DATABASE_URL;
+      } else {
+        process.env.DBOS_SYSTEM_DATABASE_URL = originalSysDbUrl;
       }
     }
   });
