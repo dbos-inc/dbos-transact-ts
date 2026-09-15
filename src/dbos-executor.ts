@@ -87,7 +87,7 @@ import { Pool } from 'pg';
 interface DBOSNull {}
 const dbosNull: DBOSNull = {};
 
-export const DBOS_QUEUE_MIN_PRIORITY = 1;
+export const DBOS_QUEUE_MIN_PRIORITY = 0;
 export const DBOS_QUEUE_MAX_PRIORITY = 2 ** 31 - 1; // 2,147,483,647
 
 /* Interface for DBOS configuration */

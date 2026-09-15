@@ -341,7 +341,7 @@ export interface WorkflowStatusInternal {
 export interface EnqueueOptions {
   // Unique ID for deduplication on a queue
   deduplicationID?: string;
-  // Priority of the workflow on the queue, starting from 1 ~ 2,147,483,647. Default 0 (highest priority).
+  // Priority of the workflow on the queue, 0 ~ 2,147,483,647. Default 0 (highest priority).
   priority?: number;
   // Partition key for partitioned queues
   queuePartitionKey?: string;

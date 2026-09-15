@@ -135,7 +135,7 @@ export interface WorkflowStatus {
   readonly deadlineEpochMS?: number;
   // Unique queue deduplication ID, if any. Deduplication IDs are unset when the workflow completes.
   readonly deduplicationID?: string;
-  // Priority of the workflow on a queue, starting from 1 ~ 2,147,483,647. Default 0 (highest priority).
+  // Priority of the workflow on a queue, 0 ~ 2,147,483,647. Default 0 (highest priority).
   readonly priority: number;
   // If this workflow is enqueued on a partitioned queue, its partition key
   readonly queuePartitionKey?: string;

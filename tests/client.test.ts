@@ -648,7 +648,9 @@ describe('DBOSClient', () => {
     const options = { workflowName: 'priorityTest', workflowClassName: 'ClientTest', queueName: 'testQueue' };
 
     try {
-      await expect(client.enqueue({ ...options, priority: 0 }, 'abc')).rejects.toBeInstanceOf(
+      const zeroPriority = await client.enqueue<typeof ClientTest.priorityTest>({ ...options, priority: 0 }, 'zero');
+      expect(await zeroPriority.getResult()).toBe('zero');
+      await expect(client.enqueue({ ...options, priority: -1 }, 'abc')).rejects.toBeInstanceOf(
         DBOSInvalidQueuePriorityError,
       );
       await expect(client.enqueuePortable({ ...options, priority: 2 ** 31 }, ['abc'])).rejects.toBeInstanceOf(
