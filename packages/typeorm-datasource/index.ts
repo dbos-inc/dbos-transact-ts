@@ -17,6 +17,7 @@ import {
   checkSchemaInstallationPG,
 } from '@dbos-inc/dbos-sdk/datasource';
 import { DataSource, EntityManager } from 'typeorm';
+import type { PostgresConnectionOptions } from 'typeorm/driver/postgres/PostgresConnectionOptions';
 import { AsyncLocalStorage } from 'async_hooks';
 import { SuperJSON } from 'superjson';
 
@@ -65,9 +66,10 @@ class TypeOrmTransactionHandler implements DataSourceTransactionHandler {
       host: config.host,
       port: config.port,
       username: config.user,
-      // password: config.password,
+      // TypeORM passes password and ssl to pg unchanged but types them more narrowly than pg does.
+      password: config.password as PostgresConnectionOptions['password'],
       database: config.database,
-      // ssl: config.ssl,
+      ssl: config.ssl as PostgresConnectionOptions['ssl'],
       connectTimeoutMS: config.connectionTimeoutMillis,
       poolSize: config.max,
     });
