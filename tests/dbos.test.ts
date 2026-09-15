@@ -1061,6 +1061,7 @@ describe('custom-pool-test', () => {
     assert(systemDatabaseURL);
     let pool = new Pool({ connectionString: systemDatabaseURL });
     let config: DBOSConfig = {
+      name: baseConfig.name,
       systemDatabaseUrl: 'postgres://fake:nonsense@badhost:1111/no_database',
       systemDatabasePool: pool,
       useListenNotify: false,
@@ -1082,6 +1083,7 @@ describe('custom-pool-test', () => {
     await ensurePGDatabase(baseConfig.systemDatabaseUrl!, { info: () => {}, warn: () => {} });
     pool = new Pool({ connectionString: systemDatabaseURL });
     config = {
+      name: baseConfig.name,
       systemDatabaseUrl: 'postgres://fake:nonsense@badhost:1111/no_database',
       systemDatabasePool: pool,
       useListenNotify: false,

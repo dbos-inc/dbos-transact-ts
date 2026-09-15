@@ -92,7 +92,8 @@ export const DBOS_QUEUE_MAX_PRIORITY = 2 ** 31 - 1; // 2,147,483,647
 
 /* Interface for DBOS configuration */
 export interface DBOSConfig {
-  name?: string;
+  /** Application name; scopes this app's workflows, queues, and schedules in the system database. */
+  name: string;
 
   systemDatabaseUrl?: string;
   systemDatabasePoolSize?: number;

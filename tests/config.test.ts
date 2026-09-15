@@ -504,5 +504,12 @@ describe('dbos-config', () => {
     test('requires setConfig outside DBOS Cloud', async () => {
       await expect(DBOS.launch()).rejects.toThrow('call DBOS.setConfig before DBOS.launch');
     });
+
+    test('requires an application name', async () => {
+      // JavaScript callers can omit the name the type requires.
+      DBOS.setConfig({ systemDatabaseUrl: 'postgres://postgres:dbos@localhost:5432/unnamed_sys' } as DBOSConfig);
+      await expect(DBOS.launch()).rejects.toThrow('No application name was provided');
+      expect(DBOS.isInitialized()).toBe(false);
+    });
   });
 });

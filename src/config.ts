@@ -131,7 +131,7 @@ export function getDbosConfig(
     `Config file specifies invalid language ${config.language}`,
   );
 
-  let dbosConfig: DBOSConfig = {
+  let dbosConfig: Partial<DBOSConfig> = {
     name: config.name,
     systemDatabaseUrl: config.system_database_url,
     systemDatabaseSchemaName: config.system_database_schema_name,
@@ -143,7 +143,7 @@ export function getDbosConfig(
   return translateDbosConfig(dbosConfig);
 }
 
-export function translateDbosConfig(options: DBOSConfig): DBOSConfigInternal {
+export function translateDbosConfig(options: Partial<DBOSConfig>): DBOSConfigInternal {
   if (
     options.maxConcurrentQueueDispatches !== undefined &&
     (!Number.isInteger(options.maxConcurrentQueueDispatches) || options.maxConcurrentQueueDispatches <= 0)
@@ -199,7 +199,7 @@ export function getRuntimeConfig(config: ConfigFile): DBOSRuntimeConfig {
 }
 
 // DBOS Cloud supplies the registered app name, system database, and OTLP collector through environment variables.
-export function overwriteConfigForDBOSCloud(config: DBOSConfig): DBOSConfig {
+export function overwriteConfigForDBOSCloud(config: Partial<DBOSConfig>): Partial<DBOSConfig> {
   const systemDatabaseUrl = process.env.DBOS_SYSTEM_DATABASE_URL;
   assert(systemDatabaseUrl, 'DBOS_SYSTEM_DATABASE_URL must be set in DBOS Cloud environment');
 
