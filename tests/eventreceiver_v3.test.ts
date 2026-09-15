@@ -1,4 +1,4 @@
-import { DBOS, DBOSConfig, DBOSLifecycleCallback } from '../src';
+import { DBOS, DBOSConfig } from '../src';
 import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
 
 export interface ERDefaults {
@@ -12,9 +12,7 @@ export interface ERSpecifics {
 // Listener class
 const sleepms = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-class ERD implements DBOSLifecycleCallback {
-  initialized = false;
-
+class ERD {
   async deliver3Events() {
     for (let i = 1; i <= 3; ++i) {
       await sleepms(100);
@@ -29,16 +27,6 @@ class ERD implements DBOSLifecycleCallback {
         });
       }
     }
-  }
-
-  async destroy() {
-    this.initialized = false;
-    return Promise.resolve();
-  }
-
-  async initialize() {
-    this.initialized = true;
-    return Promise.resolve();
   }
 }
 

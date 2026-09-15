@@ -44,7 +44,6 @@ import {
   DEBUG_TRIGGER_BETWEEN_PARTITION_DISPATCHES,
   DEBUG_TRIGGER_FIND_AND_MARK_AFTER_SELECT,
   DEBUG_TRIGGER_PARTITIONED_DEQUEUE_AFTER_CANDIDATES,
-  // DEBUG_TRIGGER_WORKFLOW_ENQUEUE,
   setDebugTrigger,
 } from '../src/debugpoint';
 import assert from 'node:assert';
@@ -1575,8 +1574,8 @@ describe('enqueue-options', () => {
     // Workflow 1 should run first (priority 1), then 3 (priority 3), then 2 (priority 4)
     expect(SetPriorityTest.executionOrder).toEqual([1, 3, 2]);
 
-    // Test invalid priority
-    await expect(DBOS.setWorkflowPriority('some-id', 0)).rejects.toBeInstanceOf(DBOSInvalidQueuePriorityError);
+    // 0, the default priority, is accepted; anything outside [0, max] is not
+    await expect(DBOS.setWorkflowPriority('some-id', 0)).resolves.toBeUndefined();
     await expect(DBOS.setWorkflowPriority('some-id', -1)).rejects.toBeInstanceOf(DBOSInvalidQueuePriorityError);
     await expect(DBOS.setWorkflowPriority('some-id', DBOS_QUEUE_MAX_PRIORITY + 1)).rejects.toBeInstanceOf(
       DBOSInvalidQueuePriorityError,

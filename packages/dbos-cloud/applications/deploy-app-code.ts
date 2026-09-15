@@ -176,7 +176,6 @@ async function createJavaZipData(logger: CLILogger, deployConfigFile: string): P
 
 export async function deployAppCode(
   host: string,
-  rollback: boolean,
   previousVersion: string | null,
   verbose: boolean,
   targetDatabaseName: string | null = null, // Used for changing database instance
@@ -355,9 +354,7 @@ export async function deployAppCode(
 
     // Submit the deploy request
     let url = '';
-    if (rollback) {
-      url = `https://${host}/v1alpha1/${userCredentials.organization}/applications/${appName}/rollback`;
-    } else if (targetDatabaseName !== null) {
+    if (targetDatabaseName !== null) {
       url = `https://${host}/v1alpha1/${userCredentials.organization}/applications/${appName}/changedbinstance`;
     } else {
       url = `https://${host}/v1alpha1/${userCredentials.organization}/applications/${appName}`;

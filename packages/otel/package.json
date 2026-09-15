@@ -20,7 +20,6 @@
     "@opentelemetry/core": "^2.8.0",
     "@opentelemetry/exporter-logs-otlp-proto": "^0.219.0",
     "@opentelemetry/exporter-trace-otlp-proto": "^0.219.0",
-    "@opentelemetry/resources": "^2.8.0",
     "@opentelemetry/sdk-logs": "^0.219.0",
     "@opentelemetry/sdk-trace-base": "^2.8.0",
     "winston": "^3.17.0",

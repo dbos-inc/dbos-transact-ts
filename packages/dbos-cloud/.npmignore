@@ -5,7 +5,6 @@
 !*.d.ts
 
 # individual repo files that shouldn't be published
-Gruntfile.js
 tsconfig.json
 
 # ignore any packed packages in the repo

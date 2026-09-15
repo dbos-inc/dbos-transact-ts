@@ -3,7 +3,6 @@ import { Command } from 'commander';
 import { init, isValidApplicationName, listTemplates } from './init.js';
 import fs from 'fs';
 import path from 'path';
-import { Package } from 'update-notifier';
 import { input, select } from '@inquirer/prompts';
 
 const program = new Command();
@@ -14,7 +13,9 @@ const program = new Command();
 
 import { fileURLToPath } from 'url';
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
-const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json')).toString()) as Package;
+const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json')).toString()) as {
+  version: string;
+};
 program.version(packageJson.version);
 
 program

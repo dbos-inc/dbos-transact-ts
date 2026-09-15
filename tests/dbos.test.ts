@@ -297,8 +297,8 @@ describe('dbos-tests', () => {
       workflowID: workflowUUID,
       status: StatusString.PENDING,
       workflowName: RetrieveWorkflowStatus.testStatusWorkflow.name,
+      input: [123, 'hello'],
     });
-    await expect(workflowHandle.getWorkflowInputs()).resolves.toMatchObject([123, 'hello']);
 
     // getResult with a timeout ... it'll time out.
     await expect(DBOS.getResult<string>(workflowUUID, 0.1)).resolves.toBeNull();
@@ -1061,6 +1061,7 @@ describe('custom-pool-test', () => {
     assert(systemDatabaseURL);
     let pool = new Pool({ connectionString: systemDatabaseURL });
     let config: DBOSConfig = {
+      name: baseConfig.name,
       systemDatabaseUrl: 'postgres://fake:nonsense@badhost:1111/no_database',
       systemDatabasePool: pool,
       useListenNotify: false,
@@ -1082,6 +1083,7 @@ describe('custom-pool-test', () => {
     await ensurePGDatabase(baseConfig.systemDatabaseUrl!, { info: () => {}, warn: () => {} });
     pool = new Pool({ connectionString: systemDatabaseURL });
     config = {
+      name: baseConfig.name,
       systemDatabaseUrl: 'postgres://fake:nonsense@badhost:1111/no_database',
       systemDatabasePool: pool,
       useListenNotify: false,

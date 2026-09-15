@@ -273,7 +273,6 @@ export interface GetWorkflowAggregatesInput {
   wasForkedFrom?: boolean;
   parentWorkflowID?: string[];
   hasParent?: boolean;
-  queuesOnly?: boolean;
   attributes?: Record<string, unknown>;
   scheduleName?: string[];
   // Count only these owning applications'. By default, only this application's.
@@ -342,7 +341,7 @@ export interface WorkflowStatusInternal {
 export interface EnqueueOptions {
   // Unique ID for deduplication on a queue
   deduplicationID?: string;
-  // Priority of the workflow on the queue, starting from 1 ~ 2,147,483,647. Default 0 (highest priority).
+  // Priority of the workflow on the queue, 0 ~ 2,147,483,647. Default 0 (highest priority).
   priority?: number;
   // Partition key for partitioned queues
   queuePartitionKey?: string;
@@ -350,16 +349,16 @@ export interface EnqueueOptions {
   applicationVersion?: string;
   // Number of seconds to delay the workflow before it starts executing. The workflow will be in DELAYED status until the delay expires.
   delaySeconds?: number;
-  // Internal, set only by the debouncer: absolute cap (epoch ms) on how far the delay may extend.
-  debounceDeadlineEpochMS?: number;
-  // Internal, set only by the debouncer: marks the deduplication ID as a debounce key.
-  isDebounced?: boolean;
   // The application the workflow is enqueued for; undefined means the enqueuer's own.
   applicationName?: string;
-  // The authenticated user recorded on the workflow. Defaults to the caller's ambient authenticated user, if any.
-  authenticatedUser?: string;
-  // The authenticated roles recorded on the workflow. Defaults to the caller's ambient authenticated roles, if any.
-  authenticatedRoles?: string[];
+}
+
+// Enqueue options only the debouncer sets; kept out of the public EnqueueOptions.
+export interface InternalEnqueueOptions extends EnqueueOptions {
+  // Absolute cap (epoch ms) on how far the delay may extend.
+  debounceDeadlineEpochMS?: number;
+  // Marks the deduplication ID as a debounce key.
+  isDebounced?: boolean;
 }
 
 // Arguments to debounceDelayedWorkflow: identify the debounced workflow by
@@ -396,10 +395,6 @@ export interface DebounceResult {
 //   'return-existing': return a handle to the existing workflow; arguments passed by the colliding
 //     caller are discarded and the handle resolves with the original workflow's result.
 export type DuplicationPolicy = 'reject' | 'return-existing';
-
-export interface ExistenceCheck {
-  exists: boolean;
-}
 
 export interface MetricData {
   metricType: string;
@@ -1080,9 +1075,6 @@ export class SystemDatabase {
     } finally {
       client.release();
     }
-  }
-  getSerializer(): DBOSSerializer {
-    return this.serializer;
   }
 
   // ==================== Application Ownership ====================
@@ -1844,7 +1836,7 @@ export class SystemDatabase {
     // Insert a patchmarker
     const dn = Date.now();
     await this.pool.query<operation_outputs>(
-      `INSERT INTO ${this.schemaName}.operation_outputs
+      `INSERT INTO "${this.schemaName}".operation_outputs
        (workflow_uuid, function_id, output, error, function_name, child_workflow_id, started_at_epoch_ms, completed_at_epoch_ms, application_name, retention_timestamp)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, (EXTRACT(EPOCH FROM now()) * 1000)::bigint)
        ON CONFLICT DO NOTHING;`,
@@ -2724,11 +2716,9 @@ export class SystemDatabase {
     }
     if (this.workflowEventsMap.map.size > 0) {
       this.logger.warn('Workflow events map is not empty - shutdown is not clean.');
-      //throw new Error('Workflow events map is not empty - shutdown is not clean.');
     }
     if (this.notificationsMap.map.size > 0) {
       this.logger.warn('Message notification map is not empty - shutdown is not clean.');
-      //throw new Error('Message notification map is not empty - shutdown is not clean.');
     }
   }
 
@@ -2746,11 +2736,6 @@ export class SystemDatabase {
     return this.pollLimiter.runExclusive(query);
   }
 
-  /**
-   * Cancellation check for use inside polling wait loops: the status read runs
-   * under the polling limiter so it counts against the same concurrency budget
-   * as the rest of the loop's reads.
-   */
   /** Cancellation check for polling waits: goes through the limiter so readers cannot starve the pool. */
   async checkIfCanceledLimited(workflowID: string): Promise<void> {
     await this.#pollWithLimiter(() => this.#checkIfCanceled(this.pool, workflowID));
@@ -4320,14 +4305,6 @@ export class SystemDatabase {
     whereClauses.push(this.#observabilityFilter('application_name', input.applicationName, params));
     paramIdx = params.length + 1;
 
-    // Only workflows that are actively enqueued.
-    if (input.queuesOnly) {
-      whereClauses.push(`queue_name IS NOT NULL`);
-      whereClauses.push(`status IN ($${paramIdx}, $${paramIdx + 1}, $${paramIdx + 2})`);
-      params.push(StatusString.ENQUEUED, StatusString.PENDING, StatusString.DELAYED);
-      paramIdx += 3;
-    }
-
     if (input.wasForkedFrom !== undefined) {
       whereClauses.push(`was_forked_from = $${paramIdx}`);
       params.push(input.wasForkedFrom);
@@ -5797,7 +5774,7 @@ export class SystemDatabase {
 
     const throwOnFailure = options.throwOnFailure ?? true;
     if (throwOnFailure && result.rowCount !== 1) {
-      throw new DBOSWorkflowConflictError(`Attempt to record transition of nonexistent workflow ${workflowID}`);
+      throw new DBOSNonExistentWorkflowError(`Attempt to record transition of nonexistent workflow ${workflowID}`);
     }
     return result.rowCount ?? 0;
   }
@@ -5819,7 +5796,7 @@ export class SystemDatabase {
   ): Promise<void> {
     try {
       const out = await client.query<operation_outputs>(
-        `INSERT INTO ${this.schemaName}.operation_outputs
+        `INSERT INTO "${this.schemaName}".operation_outputs
          (workflow_uuid, function_id, output, error, function_name, child_workflow_id, started_at_epoch_ms, completed_at_epoch_ms, serialization, application_name, retention_timestamp)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, (EXTRACT(EPOCH FROM now()) * 1000)::bigint)
          ON CONFLICT (workflow_uuid, function_id) DO UPDATE

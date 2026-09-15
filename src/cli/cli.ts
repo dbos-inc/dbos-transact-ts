@@ -1,12 +1,5 @@
 #!/usr/bin/env node
-import {
-  dbosConfigFilePath,
-  getDbosConfig,
-  getRuntimeConfig,
-  getSystemDatabaseUrl,
-  overwriteConfigForDBOSCloud,
-  readConfigFile,
-} from '../config';
+import { dbosConfigFilePath, getDbosConfig, getRuntimeConfig, getSystemDatabaseUrl, readConfigFile } from '../config';
 import { Command } from 'commander';
 import { DBOSConfigInternal } from '../dbos-executor';
 import { migrate } from './migrate';
@@ -48,7 +41,10 @@ program
       console.error('No start commands provided in the configuration file.');
       exit(1);
     } else {
-      const logger = getGlobalLogger(dbosConfig);
+      const logger = new GlobalLogger(
+        new TelemetryCollector(new TelemetryExporter(dbosConfig.telemetry.OTLPExporter)),
+        dbosConfig.telemetry.logs,
+      );
       for (const command of runtimeConfig.start) {
         try {
           const ret = await runCommand(command, logger);
@@ -61,16 +57,6 @@ program
         }
       }
     }
-
-    function getGlobalLogger(configFile: DBOSConfigInternal): GlobalLogger {
-      if (configFile.telemetry?.OTLPExporter) {
-        return new GlobalLogger(
-          new TelemetryCollector(new TelemetryExporter(configFile.telemetry.OTLPExporter)),
-          configFile.telemetry?.logs,
-        );
-      }
-      return new GlobalLogger();
-    }
   });
 
 program
@@ -78,10 +64,7 @@ program
   .description('Perform a database migration')
   .action(async () => {
     const configFile = await readConfigFile();
-    let config = getDbosConfig(configFile);
-    if (process.env.DBOS__CLOUD === 'true') {
-      config = overwriteConfigForDBOSCloud(config, configFile);
-    }
+    const config = getDbosConfig(configFile);
     const schemaName = configFile.system_database_schema_name ?? 'dbos';
 
     await runAndLog(configFile.database?.migrate ?? [], config, (cmds, url, logger) =>
@@ -489,7 +472,6 @@ queueCommands
         systemDatabaseUrl: urls.systemDatabaseURL,
       });
       try {
-        // TOD: Review!
         const output = await client.listQueuedWorkflows(input);
         console.log(JSON.stringify(output.map((wf) => inspectUnsafeFields(wf, ['input', 'output', 'error']))));
       } finally {
@@ -522,7 +504,7 @@ if (!process.argv.slice(2).length) {
 async function getDatabaseURLs(systemDatabaseURL: string | undefined): Promise<{
   systemDatabaseURL: string;
 }> {
-  if (process.env.DBOS__CLOUD === 'true') {
+  if (globalParams.dbosCloud) {
     return {
       systemDatabaseURL: process.env.DBOS_SYSTEM_DATABASE_URL!,
     };
@@ -540,42 +522,26 @@ async function getDatabaseURLs(systemDatabaseURL: string | undefined): Promise<{
   }
 }
 
-//Takes an action function(configFile, logger) that returns a numeric exit code.
-//If otel exporter is specified in configFile, adds it to the logger and flushes it after.
+//Runs action(migrationCommands, systemDatabaseUrl, logger), which returns a numeric exit code.
+//Logs through the configured OTLP exporter and flushes it after.
 //If action throws, logs the exception and sets the exit code to 1.
 //Finally, terminates the program with the exit code.
-export async function runAndLog(
+async function runAndLog(
   migrationCommands: string[],
   config: DBOSConfigInternal,
   action: (migrationCommands: string[], systemDatabaseUrl: string, logger: GlobalLogger) => Promise<number> | number,
 ) {
-  let logger = new GlobalLogger();
-  let terminate = undefined;
-  if (config.telemetry.OTLPExporter) {
-    logger = new GlobalLogger(
-      new TelemetryCollector(
-        new TelemetryExporter({
-          logsEndpoint: config.telemetry.OTLPExporter.logsEndpoint ?? [],
-          tracesEndpoint: config.telemetry.OTLPExporter.tracesEndpoint ?? [],
-        }),
-      ),
-      config.telemetry?.logs,
-    );
-    terminate = (code: number) => {
-      void logger.destroy().finally(() => {
-        process.exit(code);
-      });
-    };
-  } else {
-    terminate = (code: number) => {
-      process.exit(code);
-    };
-  }
+  const logger = new GlobalLogger(
+    new TelemetryCollector(new TelemetryExporter(config.telemetry.OTLPExporter)),
+    config.telemetry.logs,
+  );
   let returnCode = 1;
   try {
     returnCode = await action(migrationCommands, config.systemDatabaseUrl, logger);
   } catch (e) {
     logger.error(e);
   }
-  terminate(returnCode);
+  void logger.destroy().finally(() => {
+    process.exit(returnCode);
+  });
 }

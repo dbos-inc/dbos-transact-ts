@@ -229,7 +229,6 @@ applicationCommands
     ) => {
       const exitCode = await deployAppCode(
         DBOSCloudHost,
-        false,
         options.previousVersion ?? null,
         options.verbose ?? false,
         null,
@@ -257,7 +256,6 @@ applicationCommands
     ) => {
       const exitCode = await deployAppCode(
         DBOSCloudHost,
-        false,
         options.previousVersion ?? null,
         options.verbose ?? false,
         options.database,

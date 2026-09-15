@@ -28,18 +28,20 @@ const kafkaConfig = {
 const kafkaReceiver = new ConfluentKafkaReceiver(kafkaConfig);
 ```
 
-Finally, register a DBOS workflow as a Kafka topic consumer via the `KafkaReceiver` instance.
-This can be done with the `KafkaReceiver.consumer` decorator or the `KafkaReceiver.registerConsumer` function.
+Finally, register a DBOS workflow as a Kafka topic consumer via the `ConfluentKafkaReceiver` instance.
+This can be done with the `ConfluentKafkaReceiver.consumer` decorator or the `ConfluentKafkaReceiver.registerConsumer` function.
 
 ```ts
+import { KafkaJS } from '@confluentinc/kafka-javascript';
+
 class KafkaExample {
   @kafkaReceiver.consumer('example-topic')
   @DBOS.workflow()
-  static async consumerWorkflow(topic: string, partition: number, message: ConfluentKafkaJS.Message) {
+  static async consumerWorkflow(topic: string, partition: number, message: KafkaJS.Message) {
     DBOS.logger.info(`Message received: ${message.value}`);
   }
 
-  static async registeredConsumerWorkflow(topic: string, partition: number, message: ConfluentKafkaJS.Message) {
+  static async registeredConsumerWorkflow(topic: string, partition: number, message: KafkaJS.Message) {
     DBOS.logger.info(`Message received: ${message.value}`);
   }
 }
@@ -60,21 +62,21 @@ to use when executing the workflow.
 ```ts
 class KafkaExample {
   @kafkaReceiver.consumer('example-topic', {
-    config: { groupId: 'custom-group-id' },
+    config: { 'group.id': 'custom-group-id' },
   })
   @DBOS.workflow()
-  static async consumerWorkflow(topic: string, partition: number, message: KafkaMessage) {
+  static async consumerWorkflow(topic: string, partition: number, message: KafkaJS.Message) {
     DBOS.logger.info(`Message received: ${message.value}`);
   }
 
-  static async registeredConsumerWorkflow(topic: string, partition: number, message: KafkaMessage) {
+  static async registeredConsumerWorkflow(topic: string, partition: number, message: KafkaJS.Message) {
     DBOS.logger.info(`Message received: ${message.value}`);
   }
 }
 
 KafkaExample.registeredConsumerWorkflow = DBOS.registerWorkflow(KafkaExample.registeredConsumerWorkflow);
 kafkaReceiver.registerConsumer(KafkaExample.registeredConsumerWorkflow, 'another-example-topic', {
-  config: { groupId: 'custom-group-id' },
+  config: { 'group.id': 'custom-group-id' },
 });
 ```
 
@@ -109,7 +111,7 @@ Because each workflow's ID is derived from its topic, partition, consumer group,
 
 ### Concurrency and Rate Limiting
 
-Consumer workflows are enqueued in a [workflow queue](https://docs.dbos.dev/typescript/reference/transactapi/workflow-queues).
+Consumer workflows are enqueued in a [workflow queue](https://docs.dbos.dev/typescript/reference/queues).
 By default they use an internal queue; specify `queueName` to run them on your own queue, for example to apply a concurrency limit.
 A custom queue must not be a partitioned queue, and is only supported with `ordering: 'none'`.
 
@@ -117,11 +119,11 @@ A custom queue must not be a partitioned queue, and is only supported with `orde
 class KafkaExample {
   @kafkaReceiver.consumer('example-topic', { queueName: 'example-queue' })
   @DBOS.workflow()
-  static async consumerWorkflow(topic: string, partition: number, message: KafkaMessage) {
+  static async consumerWorkflow(topic: string, partition: number, message: KafkaJS.Message) {
     DBOS.logger.info(`Message received: ${message.value}`);
   }
 
-  static async registeredConsumerWorkflow(topic: string, partition: number, message: KafkaMessage) {
+  static async registeredConsumerWorkflow(topic: string, partition: number, message: KafkaJS.Message) {
     DBOS.logger.info(`Message received: ${message.value}`);
   }
 }
@@ -134,7 +136,7 @@ kafkaReceiver.registerConsumer(KafkaExample.registeredConsumerWorkflow, 'another
 
 ## Sending Messages
 
-Sending Kafka messages is done directly using the KafkaJS library.
+Sending Kafka messages is done directly using the Confluent client's KafkaJS-compatible API.
 You can wrap the message send call in a DBOS Step to make it reliable.
 
 ```ts
@@ -149,7 +151,7 @@ class KafkaTestClass {
     await producer.connect();
 
     try {
-      DBOS.runStep(
+      await DBOS.runStep(
         async () => {
           const message = JSON.stringify({ name, value });
           await producer.send({

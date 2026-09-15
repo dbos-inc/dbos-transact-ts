@@ -130,10 +130,9 @@ describe('conductor-protocol-string-representations', () => {
   });
 });
 
-// A retention round takes minutes, so the conductor runs it off its command loop. That is a
-// property of the live connection rather than of a wire object, so unlike the suite above
-// this one stands up a real websocket for Conductor's side of it.
-describe('conductor-retention-dispatch', () => {
+// Command dispatch and request parsing are properties of the live connection rather than of a
+// wire object, so unlike the suite above this one stands up a real websocket for Conductor's side of it.
+describe('conductor-live-connection', () => {
   let config: DBOSConfig;
   let server: WebSocketServer;
   let conductorSocket: WebSocket;
@@ -168,7 +167,7 @@ describe('conductor-retention-dispatch', () => {
   afterEach(async () => {
     // shutdown() returns once it has asked the socket to close, but ws finishes the handshake
     // afterwards, and its close handler logs. Wait for it, or that log lands after teardown.
-    const socket = DBOS.conductor?.websocket;
+    const socket = DBOSExecutor.globalInstance?.conductor?.websocket;
     const closed =
       socket === undefined || socket.readyState === WebSocket.CLOSED
         ? Promise.resolve()
@@ -187,14 +186,16 @@ describe('conductor-retention-dispatch', () => {
     await expect(DBOS.listWorkflows({})).resolves.toHaveLength(1);
 
     conductorSocket.send(
-      JSON.stringify(
-        new protocol.RetentionRequest('retention-round-1', {
+      JSON.stringify({
+        type: protocol.MessageType.RETENTION,
+        request_id: 'retention-round-1',
+        body: {
           gc_cutoff_epoch_ms: Date.now() + 60_000,
           // Zero rather than absent: a Conductor that clears the batch size must fall back to
           // the default rather than failing the round, as Python does. Null takes the same path.
           gc_batch_size: 0,
-        }),
-      ),
+        },
+      } satisfies protocol.RetentionRequest),
     );
 
     await retryUntilSuccess(() => {
@@ -211,12 +212,11 @@ describe('conductor-retention-dispatch', () => {
 
     // The round ran off the command loop, so the loop is still serving commands.
     conductorSocket.send(
-      JSON.stringify(
-        new protocol.ListWorkflowsRequest('after-retention', {
-          workflow_uuids: ['no-such-workflow'],
-          sort_desc: false,
-        }),
-      ),
+      JSON.stringify({
+        type: protocol.MessageType.LIST_WORKFLOWS,
+        request_id: 'after-retention',
+        body: { workflow_uuids: ['no-such-workflow'], sort_desc: false },
+      } satisfies protocol.ListWorkflowsRequest),
     );
     await retryUntilSuccess(() => {
       const answers = answersTo('after-retention');
@@ -240,7 +240,11 @@ describe('conductor-retention-dispatch', () => {
     try {
       const request = (requestID: string) =>
         conductorSocket.send(
-          JSON.stringify(new protocol.RetentionRequest(requestID, { gc_cutoff_epoch_ms: Date.now() + 60_000 })),
+          JSON.stringify({
+            type: protocol.MessageType.RETENTION,
+            request_id: requestID,
+            body: { gc_cutoff_epoch_ms: Date.now() + 60_000 },
+          } satisfies protocol.RetentionRequest),
         );
       request('round-a');
       await retryUntilSuccess(() => {
@@ -266,5 +270,36 @@ describe('conductor-retention-dispatch', () => {
       warn.mockRestore();
       acquire.mockRestore();
     }
+  });
+
+  test('filters workflow aggregates by the workflow IDs and user Conductor sends', async () => {
+    const workflowIDs = ['agg-filter-a', 'agg-filter-b'];
+    for (const [i, workflowID] of workflowIDs.entries()) {
+      const handle = await DBOS.startWorkflow(retentionWorkflow, { workflowID, authenticatedUser: `user-${i}` })(i);
+      await handle.getResult();
+    }
+
+    // Field names exactly as Conductor's server sends them.
+    const aggregate = (requestID: string, body: protocol.GetWorkflowAggregatesBody) =>
+      conductorSocket.send(
+        JSON.stringify({
+          type: protocol.MessageType.GET_WORKFLOW_AGGREGATES,
+          request_id: requestID,
+          body: { group_by_status: true, select_count: true, ...body },
+        } satisfies protocol.GetWorkflowAggregatesRequest),
+      );
+    aggregate('by-workflow-id', { workflow_ids: [workflowIDs[0]] });
+    aggregate('by-user', { user: ['user-1'] });
+    aggregate('unfiltered', {});
+
+    await retryUntilSuccess(() => {
+      const expected = { 'by-workflow-id': 1, 'by-user': 1, unfiltered: 2 };
+      for (const [requestID, count] of Object.entries(expected)) {
+        const answers = answersTo(requestID) as protocol.GetWorkflowAggregatesResponse[];
+        expect(answers).toHaveLength(1);
+        expect(answers[0].error_message).toBeUndefined();
+        expect(answers[0].output).toEqual([expect.objectContaining({ count })]);
+      }
+    });
   });
 });

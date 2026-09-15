@@ -17,6 +17,7 @@ import {
   checkSchemaInstallationPG,
 } from '@dbos-inc/dbos-sdk/datasource';
 import { DataSource, EntityManager } from 'typeorm';
+import type { PostgresConnectionOptions } from 'typeorm/driver/postgres/PostgresConnectionOptions';
 import { AsyncLocalStorage } from 'async_hooks';
 import { SuperJSON } from 'superjson';
 
@@ -39,7 +40,6 @@ interface transaction_completion {
 }
 
 class TypeOrmTransactionHandler implements DataSourceTransactionHandler {
-  readonly dsType = 'TypeOrm';
   #createdDataSource: DataSource | undefined;
   readonly schemaName: string;
 
@@ -66,9 +66,10 @@ class TypeOrmTransactionHandler implements DataSourceTransactionHandler {
       host: config.host,
       port: config.port,
       username: config.user,
-      // password: config.password,
+      // TypeORM passes password and ssl to pg unchanged but types them more narrowly than pg does.
+      password: config.password as PostgresConnectionOptions['password'],
       database: config.database,
-      // ssl: config.ssl,
+      ssl: config.ssl as PostgresConnectionOptions['ssl'],
       connectTimeoutMS: config.connectionTimeoutMillis,
       poolSize: config.max,
     });
@@ -306,10 +307,7 @@ export class TypeOrmDataSource implements DBOSDataSource<TypeORMTransactionConfi
 
   #provider: TypeOrmTransactionHandler;
 
-  /**
-   * @deprecated - For readability, use `createFromConfig` or `createFromDataSource`
-   */
-  constructor(
+  private constructor(
     readonly name: string,
     config?: PoolConfig,
     // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type

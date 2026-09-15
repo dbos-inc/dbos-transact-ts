@@ -103,10 +103,10 @@ describe('shutdown-workflow-completion-timeout', () => {
       await pendingShutdown;
       pendingShutdown = undefined;
     }
-    DBOS.conductor = undefined;
     // Not isInitialized(): shutdown clears that before the drain, so a shutdown that failed
     // partway leaves an executor here that still needs closing.
     if (DBOSExecutor.globalInstance) {
+      DBOSExecutor.globalInstance.conductor = undefined;
       await DBOS.shutdown();
     }
     const failure = pendingShutdownError;
@@ -185,15 +185,14 @@ describe('shutdown-workflow-completion-timeout', () => {
 
     let stopSawWorkflowDone: boolean | undefined = undefined;
     const fakeConductor = {
-      isClosed: false,
       stop() {
         stopSawWorkflowDone = conductorOrder.state.done;
-        this.isClosed = true;
       },
       // No retention round to wait for.
       awaitRetention: () => Promise.resolve(),
     };
-    DBOS.conductor = fakeConductor as unknown as Conductor;
+    const executor = DBOSExecutor.globalInstance!;
+    executor.conductor = fakeConductor as unknown as Conductor;
 
     const shutdownPromise = trackShutdown(DBOS.shutdown({ workflowCompletionTimeoutMS: 10000 }));
     try {
@@ -204,7 +203,7 @@ describe('shutdown-workflow-completion-timeout', () => {
       await shutdownPromise;
     }
     expect(stopSawWorkflowDone).toBe(true);
-    expect(DBOS.conductor).toBeUndefined();
+    expect(executor.conductor).toBeUndefined();
   }, 20000);
 
   test('shutdown-does-not-wait-when-no-timeout-is-given', async () => {

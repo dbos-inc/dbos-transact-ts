@@ -37,7 +37,7 @@ export interface EnqueueWorkflowOptions {
   deduplicationID?: string;
   /** Serialization for the enqueued arguments. */
   serializationType?: WorkflowSerializationFormat;
-  /** Priority on the queue, 1 ~ 2,147,483,647. Default 0 (highest priority). */
+  /** Priority on the queue, 0 ~ 2,147,483,647. Default 0 (highest priority). */
   priority?: number;
   /** Partition key for partitioned queues. */
   queuePartitionKey?: string;

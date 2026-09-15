@@ -19,10 +19,10 @@ async function wfFunctionGuts() {
   //
   // Note that the app can write its own retry loop, based on
   // its own policy, its own understanding of retriable errors,
-  // and then just replace `DBOS.runAsWorkflowStep` in the below
-  // whith the app's utility. Whether retries are recorded or not
+  // and then just replace `DBOS.runStep` in the below
+  // with the app's utility. Whether retries are recorded or not
   // would then depend entirely on whether the app puts this loop
-  // inside or outside its call to `DBOS.runAsWorkflowStep`.
+  // inside or outside its call to `DBOS.runStep`.
   const p1 = await DBOS.runStep(
     async () => {
       return Promise.resolve('My first step result');

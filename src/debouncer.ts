@@ -11,7 +11,7 @@ import {
 } from './decorators';
 import { DBOSError, DBOSQueueDuplicatedError, getDBOSErrorCode, QueueDedupIDDuplicated } from './error';
 import { serializeArgs, serializeFunctionInputOutput } from './serialization';
-import { DebounceResult } from './system_database';
+import { DebounceResult, InternalEnqueueOptions } from './system_database';
 import { INTERNAL_QUEUE_NAME } from './utils';
 import { WorkflowHandle, WorkflowSerializationFormat } from './workflow';
 import { PortableWorkflowError } from '../schemas/system_db_schema';
@@ -213,6 +213,14 @@ export class Debouncer<Args extends unknown[], Return> {
       // action === 'enqueue': the key is free, create a fresh debounced workflow.
       const debounceDeadlineEpochMS = this.cfg.debounceTimeoutMs ? Date.now() + this.cfg.debounceTimeoutMs : undefined;
       try {
+        const enqueueOptions: InternalEnqueueOptions = {
+          applicationVersion: this.cfg.startWorkflowParams?.enqueueOptions?.applicationVersion,
+          deduplicationID,
+          delaySeconds: debouncePeriodMs / 1000,
+          debounceDeadlineEpochMS,
+          isDebounced: true,
+          applicationName: this.cfg.applicationName,
+        };
         // A null timeout detaches any propagated workflow deadline: a debounce delay can be long,
         // so an inherited absolute deadline could expire before the debounced workflow ever runs.
         const handle = await DBOS.startWorkflow(func, {
@@ -222,16 +230,7 @@ export class Debouncer<Args extends unknown[], Return> {
           workflowAttributes: this.cfg.startWorkflowParams?.workflowAttributes,
           authenticatedUser: this.cfg.startWorkflowParams?.authenticatedUser,
           authenticatedRoles: this.cfg.startWorkflowParams?.authenticatedRoles,
-          enqueueOptions: {
-            applicationVersion: this.cfg.startWorkflowParams?.enqueueOptions?.applicationVersion,
-            authenticatedUser: this.cfg.startWorkflowParams?.enqueueOptions?.authenticatedUser,
-            authenticatedRoles: this.cfg.startWorkflowParams?.enqueueOptions?.authenticatedRoles,
-            deduplicationID,
-            delaySeconds: debouncePeriodMs / 1000,
-            debounceDeadlineEpochMS,
-            isDebounced: true,
-            applicationName: this.cfg.applicationName,
-          },
+          enqueueOptions,
         })(...args);
         return handle as WorkflowHandle<Return>;
       } catch (e) {
@@ -313,13 +312,8 @@ export class DebouncerClient {
             workflowTimeoutMS: this.cfg.startWorkflowParams?.timeoutMS ?? undefined,
             appVersion: this.cfg.startWorkflowParams?.enqueueOptions?.applicationVersion,
             attributes: this.cfg.startWorkflowParams?.workflowAttributes,
-            // Flat options, so apply the precedence the executor gives the nested form.
-            authenticatedUser:
-              this.cfg.startWorkflowParams?.authenticatedUser ??
-              this.cfg.startWorkflowParams?.enqueueOptions?.authenticatedUser,
-            authenticatedRoles:
-              this.cfg.startWorkflowParams?.authenticatedRoles ??
-              this.cfg.startWorkflowParams?.enqueueOptions?.authenticatedRoles,
+            authenticatedUser: this.cfg.startWorkflowParams?.authenticatedUser,
+            authenticatedRoles: this.cfg.startWorkflowParams?.authenticatedRoles,
             deduplicationID,
             delaySeconds: debouncePeriodMs / 1000,
             serializationType: this.serializationType,

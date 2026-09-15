@@ -5,19 +5,19 @@ import { randomUUID } from 'node:crypto';
 
 export async function listWorkflows(sysdb: SystemDatabase, input: GetWorkflowsInput): Promise<WorkflowStatus[]> {
   const workflows = await sysdb.listWorkflows(input);
-  return await Promise.all(workflows.map((wf) => toWorkflowStatus(wf, sysdb.getSerializer())));
+  return await Promise.all(workflows.map((wf) => toWorkflowStatus(wf, sysdb.serializer)));
 }
 
 export async function listQueuedWorkflows(sysdb: SystemDatabase, input: GetWorkflowsInput) {
   input.queuesOnly = true;
   input.loadOutput = false;
   const workflows = await sysdb.listWorkflows(input);
-  return await Promise.all(workflows.map((wf) => toWorkflowStatus(wf, sysdb.getSerializer())));
+  return await Promise.all(workflows.map((wf) => toWorkflowStatus(wf, sysdb.serializer)));
 }
 
 export async function getWorkflow(sysdb: SystemDatabase, workflowID: string): Promise<WorkflowStatus | undefined> {
   const status = await sysdb.getWorkflowStatus(workflowID);
-  return status ? await toWorkflowStatus(status, sysdb.getSerializer()) : undefined;
+  return status ? await toWorkflowStatus(status, sysdb.serializer) : undefined;
 }
 
 export async function listWorkflowSteps(
@@ -37,10 +37,8 @@ export async function listWorkflowSteps(
     $steps.map(async (step) => ({
       functionID: step.function_id,
       name: step.function_name ?? '',
-      output:
-        loadOutput && step.output ? await safeParse(sysdb.getSerializer(), step.output, step.serialization) : null,
-      error:
-        loadOutput && step.error ? await safeParseError(sysdb.getSerializer(), step.error, step.serialization) : null,
+      output: loadOutput && step.output ? await safeParse(sysdb.serializer, step.output, step.serialization) : null,
+      error: loadOutput && step.error ? await safeParseError(sysdb.serializer, step.error, step.serialization) : null,
       childWorkflowID: step.child_workflow_id,
       startedAtEpochMs: step.started_at_epoch_ms ? Number(step.started_at_epoch_ms) : undefined,
       completedAtEpochMs: step.completed_at_epoch_ms ? Number(step.completed_at_epoch_ms) : undefined,
@@ -92,7 +90,6 @@ export async function toWorkflowStatus(
 
     executorId: internal.executorId,
     applicationVersion: internal.applicationVersion,
-    applicationID: internal.applicationID,
     recoveryAttempts: internal.recoveryAttempts,
     createdAt: internal.createdAt!,
     updatedAt: internal.updatedAt,

@@ -126,8 +126,6 @@ function portableJsonReplacer(_key: string, value: unknown): unknown {
     }
     if (!allStringKeys) {
       throw new TypeError(`Attempt to do portable JSON serialization of a map with non-string keys`);
-      // Other option: list of [key,value] pairs (portable, but needs schema/consumer intent)
-      // return Array.from(value.entries());
     }
 
     const obj: Record<string, unknown> = {};
@@ -139,8 +137,6 @@ function portableJsonReplacer(_key: string, value: unknown): unknown {
 
   if (value instanceof Error) {
     return { name: value.name, message: value.message };
-    // If you want stack too:
-    // return { name: value.name, message: value.message, stack: value.stack };
   }
 
   return value;

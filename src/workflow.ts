@@ -1,10 +1,7 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-import { type SystemDatabase, WorkflowStatusInternal } from './system_database';
 import { ConfiguredInstance } from './decorators';
-import { deserializePositionalArgs, registerSerializationRecipe } from './serialization';
-import { DBOS, resolvePollingIntervalMs, runInternalStep, type PollingOptions } from './dbos';
-import { DuplicationPolicy, EnqueueOptions } from './system_database';
-import { DBOSExecutor } from './dbos-executor';
+import { registerSerializationRecipe } from './serialization';
+import { DBOS, getResultInternal, resolvePollingIntervalMs, runInternalStep, type PollingOptions } from './dbos';
+import { DuplicationPolicy, InternalEnqueueOptions } from './system_database';
 import { DBOSError } from './error';
 
 /**
@@ -47,7 +44,7 @@ export interface WorkflowParams {
   executeWorkflow?: boolean; // If queueName is set, this will not be run unless executeWorkflow is true.
   timeoutMS?: number | null;
   deadlineEpochMS?: number;
-  enqueueOptions?: EnqueueOptions; // Options for the workflow queue
+  enqueueOptions?: InternalEnqueueOptions; // Options for the workflow queue
   // How to react to a collision on `enqueueOptions.deduplicationID`. When 'return-existing', the
   // executor skips its dedup-error pre-recording at the parent's funcID — the wrapper records the
   // child mapping itself after attaching to the existing workflow.
@@ -138,7 +135,7 @@ export interface WorkflowStatus {
   readonly deadlineEpochMS?: number;
   // Unique queue deduplication ID, if any. Deduplication IDs are unset when the workflow completes.
   readonly deduplicationID?: string;
-  // Priority of the workflow on a queue, starting from 1 ~ 2,147,483,647. Default 0 (highest priority).
+  // Priority of the workflow on a queue, 0 ~ 2,147,483,647. Default 0 (highest priority).
   readonly priority: number;
   // If this workflow is enqueued on a partitioned queue, its partition key
   readonly queuePartitionKey?: string;
@@ -164,8 +161,6 @@ export interface WorkflowStatus {
   readonly scheduleName?: string;
 
   // INTERNAL
-  // Deprecated field
-  readonly applicationID: string;
   // The number of times this workflow has been started.
   readonly recoveryAttempts?: number;
 }
@@ -268,10 +263,6 @@ export interface WorkflowHandle<R> {
    * Return the workflow's ID
    */
   get workflowID(): string;
-  /**
-   * Return the workflow's inputs
-   */
-  getWorkflowInputs<T extends any[]>(): Promise<T>;
 }
 
 export interface InternalWFHandle<R> extends WorkflowHandle<R> {
@@ -283,22 +274,12 @@ export interface InternalWFHandle<R> extends WorkflowHandle<R> {
  */
 export class InvokedHandle<R> implements InternalWFHandle<R> {
   constructor(
-    readonly systemDatabase: SystemDatabase,
     readonly workflowPromise: Promise<R>,
-    readonly workflowUUID: string,
-    readonly workflowName: string,
+    readonly workflowID: string,
   ) {}
 
-  getWorkflowUUID(): string {
-    return this.workflowUUID;
-  }
-
-  get workflowID(): string {
-    return this.workflowUUID;
-  }
-
   async getStatus(): Promise<WorkflowStatus | null> {
-    return await DBOS.getWorkflowStatus(this.workflowUUID);
+    return await DBOS.getWorkflowStatus(this.workflowID);
   }
 
   async getResult(optionsOrFuncIdForGet?: PollingOptions | number): Promise<R> {
@@ -309,18 +290,9 @@ export class InvokedHandle<R> implements InternalWFHandle<R> {
         return await this.workflowPromise;
       },
       'DBOS.getResult',
-      this.workflowUUID,
+      this.workflowID,
       funcIdForGet,
     );
-  }
-
-  async getWorkflowInputs<T extends any[]>(): Promise<T> {
-    const status = (await this.systemDatabase.getWorkflowStatus(this.workflowUUID)) as WorkflowStatusInternal;
-    return (await deserializePositionalArgs(
-      status.input,
-      status.serialization,
-      this.systemDatabase.getSerializer(),
-    )) as T;
   }
 }
 
@@ -328,42 +300,22 @@ export class InvokedHandle<R> implements InternalWFHandle<R> {
  * The handle returned when retrieving a workflow with DBOSExecutor.retrieve
  */
 export class RetrievedHandle<R> implements InternalWFHandle<R> {
-  constructor(
-    readonly systemDatabase: SystemDatabase,
-    readonly workflowUUID: string,
-  ) {}
-
-  getWorkflowUUID(): string {
-    return this.workflowUUID;
-  }
-
-  get workflowID(): string {
-    return this.workflowUUID;
-  }
+  constructor(readonly workflowID: string) {}
 
   async getStatus(): Promise<WorkflowStatus | null> {
-    return await DBOS.getWorkflowStatus(this.workflowUUID);
+    return await DBOS.getWorkflowStatus(this.workflowID);
   }
 
   async getResult(optionsOrFuncIdForGet?: PollingOptions | number): Promise<R> {
     const funcIdForGet = typeof optionsOrFuncIdForGet === 'number' ? optionsOrFuncIdForGet : undefined;
     const pollingIntervalMs = resolvePollingIntervalMs(optionsOrFuncIdForGet);
-    return (await DBOS.getResultInternal<R>(
-      this.workflowUUID,
+    return (await getResultInternal<R>(
+      this.workflowID,
       undefined,
       undefined,
       funcIdForGet,
       pollingIntervalMs,
     )) as Promise<R>;
-  }
-
-  async getWorkflowInputs<T extends any[]>(): Promise<T> {
-    const status = (await this.systemDatabase.getWorkflowStatus(this.workflowUUID)) as WorkflowStatusInternal;
-    return (await deserializePositionalArgs(
-      status.input,
-      status.serialization,
-      this.systemDatabase.getSerializer(),
-    )) as T;
   }
 }
 
@@ -375,5 +327,5 @@ registerSerializationRecipe<WorkflowHandle<unknown>, { wfid: string }>({
   serialize: (v: WorkflowHandle<unknown>) => {
     return { wfid: v.workflowID };
   },
-  deserialize: (s: { wfid: string }) => new RetrievedHandle(DBOSExecutor.globalInstance!.systemDatabase, s.wfid),
+  deserialize: (s: { wfid: string }) => new RetrievedHandle(s.wfid),
 });

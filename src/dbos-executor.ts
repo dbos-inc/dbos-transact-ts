@@ -26,6 +26,7 @@ import {
 } from './workflow';
 
 import { type StepConfig, validateStepConfig } from './step';
+import type { Conductor } from './conductor/conductor';
 import { TelemetryCollector } from './telemetry/collector';
 import { getActiveSpan, runWithTrace, SpanStatusCode, Tracer } from './telemetry/traces';
 import { DBOSContextualLogger, DLogger, GlobalLogger } from './telemetry/logs';
@@ -70,7 +71,6 @@ import {
 import { GetWorkflowsInput } from '.';
 
 import { wfQueueRunner } from './wfqueue';
-import { debugTriggerPoint, DEBUG_TRIGGER_WORKFLOW_ENQUEUE } from './debugpoint';
 import { DynamicSchedulerLoop } from './scheduler/scheduler';
 import * as crypto from 'crypto';
 import {
@@ -87,12 +87,13 @@ import { Pool } from 'pg';
 interface DBOSNull {}
 const dbosNull: DBOSNull = {};
 
-export const DBOS_QUEUE_MIN_PRIORITY = 1;
+export const DBOS_QUEUE_MIN_PRIORITY = 0;
 export const DBOS_QUEUE_MAX_PRIORITY = 2 ** 31 - 1; // 2,147,483,647
 
 /* Interface for DBOS configuration */
 export interface DBOSConfig {
-  name?: string;
+  /** Application name; scopes this app's workflows, queues, and schedules in the system database. */
+  name: string;
 
   systemDatabaseUrl?: string;
   systemDatabasePoolSize?: number;
@@ -187,13 +188,12 @@ export interface DBOSConfig {
 
 export interface DBOSRuntimeConfig {
   start: string[];
-  setup: string[];
 }
 
 export interface TelemetryConfig {
-  logs?: LoggerConfig;
-  OTLPExporter?: OTLPExporterConfig;
-  otelAttributeFormat?: OtelAttributeFormat;
+  logs: LoggerConfig;
+  OTLPExporter: OTLPExporterConfig;
+  otelAttributeFormat: OtelAttributeFormat;
 }
 
 /**
@@ -215,9 +215,7 @@ export interface OTLPExporterConfig {
 
 export interface LoggerConfig {
   logLevel?: string;
-  silent?: boolean;
   addContextMetadata?: boolean;
-  forceConsole?: boolean;
   logger?: DLogger;
 }
 
@@ -239,12 +237,6 @@ export type DBOSConfigInternal = {
   notificationCoalesceMs?: number;
   observabilityQueryTimeoutMs?: number;
   runMigrations: boolean;
-
-  http?: {
-    cors_middleware?: boolean;
-    credentials?: boolean;
-    allowed_origins?: string[];
-  };
 };
 
 export interface InternalWorkflowParams extends WorkflowParams {
@@ -267,26 +259,18 @@ export interface PrepareEnqueuedWorkflowOptions {
 }
 
 export const OperationType = {
-  HANDLER: 'handler',
   WORKFLOW: 'workflow',
   TRANSACTION: 'transaction',
   STEP: 'step',
 } as const;
 
-export interface DBOSExecutorOptions {
-  systemDatabase?: SystemDatabase;
-}
-
 export class DBOSExecutor {
   initialized: boolean;
+  conductor: Conductor | undefined = undefined;
   // System Database
   readonly systemDatabase: SystemDatabase;
 
-  readonly telemetryCollector: TelemetryCollector;
-
   static readonly defaultNotificationTimeoutSec = 60;
-
-  readonly systemDBSchemaName: string;
 
   readonly logger: GlobalLogger;
   readonly ctxLogger: DBOSContextualLogger;
@@ -300,43 +284,27 @@ export class DBOSExecutor {
   static globalInstance: DBOSExecutor | undefined = undefined;
 
   /* WORKFLOW EXECUTOR LIFE CYCLE MANAGEMENT */
-  constructor(
-    readonly config: DBOSConfigInternal,
-    { systemDatabase }: DBOSExecutorOptions = {},
-  ) {
-    this.systemDBSchemaName = config.systemDatabaseSchemaName;
-
-    if (config.telemetry.OTLPExporter) {
-      const OTLPExporter = new TelemetryExporter(config.telemetry.OTLPExporter);
-      this.telemetryCollector = new TelemetryCollector(OTLPExporter);
-    } else {
-      // We always setup a collector to drain the signals queue, even if we don't have an exporter.
-      this.telemetryCollector = new TelemetryCollector();
-    }
-    this.logger = new GlobalLogger(this.telemetryCollector, this.config.telemetry.logs, this.appName);
+  constructor(readonly config: DBOSConfigInternal) {
+    const telemetryCollector = new TelemetryCollector(new TelemetryExporter(config.telemetry.OTLPExporter));
+    this.logger = new GlobalLogger(telemetryCollector, this.config.telemetry.logs, this.appName);
     this.ctxLogger = new DBOSContextualLogger(this.logger, () => getActiveSpan());
-    this.tracer = new Tracer(this.telemetryCollector, config.telemetry.otelAttributeFormat);
+    this.tracer = new Tracer(telemetryCollector, config.telemetry.otelAttributeFormat);
     this.serializer = config.serializer;
 
-    if (systemDatabase) {
-      this.logger.debug('Using provided system database'); // XXX print the name or something
-      this.systemDatabase = systemDatabase;
-    } else {
-      this.logger.debug('Using Postgres system database');
-      this.systemDatabase = new SystemDatabase(
-        this.config.systemDatabaseUrl,
-        this.logger,
-        this.serializer,
-        this.config.sysDbPoolSize,
-        this.config.systemDatabasePool,
-        this.systemDBSchemaName,
-        this.config.useListenNotify,
-        this.config.systemDatabasePollingConcurrency,
-        this.config.notificationCoalesceMs,
-        this.appName,
-        this.config.observabilityQueryTimeoutMs,
-      );
-    }
+    this.logger.debug('Using Postgres system database');
+    this.systemDatabase = new SystemDatabase(
+      this.config.systemDatabaseUrl,
+      this.logger,
+      this.serializer,
+      this.config.sysDbPoolSize,
+      this.config.systemDatabasePool,
+      this.config.systemDatabaseSchemaName,
+      this.config.useListenNotify,
+      this.config.systemDatabasePollingConcurrency,
+      this.config.notificationCoalesceMs,
+      this.appName,
+      this.config.observabilityQueryTimeoutMs,
+    );
 
     new DynamicSchedulerLoop(config.schedulerPollingIntervalMs); // Create the dynamic scheduler, which registers itself.
 
@@ -377,7 +345,6 @@ export class DBOSExecutor {
     // Compute the application version if not provided
     if (globalParams.appVersion === '') {
       globalParams.appVersion = this.computeAppVersion();
-      globalParams.wasComputed = true;
     }
 
     // Any initialization hooks
@@ -507,7 +474,6 @@ export class DBOSExecutor {
     ...args: T
   ): Promise<WorkflowHandle<R>> {
     const workflowID: string = params.workflowUUID ? params.workflowUUID : randomUUID();
-    const presetID: boolean = params.workflowUUID ? true : false;
     const timeoutMS = params.timeoutMS ?? undefined;
     // If a timeout is explicitly specified, use it over any propagated deadline
     const deadlineEpochMS = params.timeoutMS
@@ -522,12 +488,10 @@ export class DBOSExecutor {
 
     const pctx = { ...getCurrentContextStore() }; // function ID was already incremented...
 
-    // Resolve authentication once: explicit params, then enqueue options, then the ambient context.
+    // Resolve authentication once: explicit params, then the ambient context.
     // The status row, the span, and the workflow's own context must all agree on this.
-    const authenticatedUser =
-      params.authenticatedUser ?? params.enqueueOptions?.authenticatedUser ?? pctx?.authenticatedUser ?? '';
-    const authenticatedRoles =
-      params.authenticatedRoles ?? params.enqueueOptions?.authenticatedRoles ?? pctx?.authenticatedRoles ?? [];
+    const authenticatedUser = params.authenticatedUser ?? pctx?.authenticatedUser ?? '';
+    const authenticatedRoles = params.authenticatedRoles ?? pctx?.authenticatedRoles ?? [];
 
     const wInfo = getFunctionRegistration(wf);
     const wfNames = getRegisteredFunctionFullName(wf);
@@ -629,7 +593,7 @@ export class DBOSExecutor {
         if (result.error) {
           throw await deserializeResError(result.error, result.serialization ?? null, this.serializer);
         }
-        return new RetrievedHandle(this.systemDatabase, result.childWorkflowID!);
+        return new RetrievedHandle(result.childWorkflowID!);
       }
     }
     let ires: Awaited<ReturnType<SystemDatabase['initWorkflowStatus']>>;
@@ -649,7 +613,7 @@ export class DBOSExecutor {
       // Only a PENDING row owns its outcome, so a row moved on since the claim would run for nothing.
       if (claimed.status !== StatusString.PENDING) {
         this.tracer.endSpan(span);
-        return new RetrievedHandle(this.systemDatabase, workflowID);
+        return new RetrievedHandle(workflowID);
       }
       ires = {
         status: claimed.status,
@@ -703,7 +667,6 @@ export class DBOSExecutor {
 
     $deadlineEpochMS = ires.deadlineEpochMS;
     shouldExecute = ires.shouldExecuteOnThisExecutor;
-    await debugTriggerPoint(DEBUG_TRIGGER_WORKFLOW_ENQUEUE);
 
     async function callPromiseWithTimeout(
       callPromise: Promise<R>,
@@ -820,7 +783,6 @@ export class DBOSExecutor {
             return await runWithParentContext(
               pctx,
               {
-                presetID,
                 workflowTimeoutMS: undefined, // Becomes deadline
                 deadlineEpochMS,
                 workflowId: workflowID,
@@ -919,9 +881,9 @@ export class DBOSExecutor {
       );
 
       // Return the normal handle that doesn't capture errors.
-      return new InvokedHandle(this.systemDatabase, workflowPromise, workflowID, wf.name);
+      return new InvokedHandle(workflowPromise, workflowID);
     } else {
-      return new RetrievedHandle(this.systemDatabase, workflowID);
+      return new RetrievedHandle(workflowID);
     }
   }
 
@@ -1166,7 +1128,7 @@ export class DBOSExecutor {
    * Retrieve a handle for a workflow UUID.
    */
   retrieveWorkflow<R>(workflowID: string): WorkflowHandle<R> {
-    return new RetrievedHandle(this.systemDatabase, workflowID);
+    return new RetrievedHandle(workflowID);
   }
 
   async runInternalStep<T>(

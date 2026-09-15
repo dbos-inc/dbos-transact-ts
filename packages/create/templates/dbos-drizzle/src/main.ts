@@ -1,7 +1,6 @@
 // Welcome to DBOS!
 
 // This is the Quickstart Drizzle template app. It greets visitors, counting how many total greetings were made.
-// To learn how to run this app, visit the Drizzle tutorial: https://docs.dbos.dev/tutorials/using-drizzle
 
 import express, { Request, Response } from 'express';
 import { DBOS } from '@dbos-inc/dbos-sdk';
