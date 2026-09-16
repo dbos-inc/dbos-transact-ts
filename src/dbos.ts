@@ -154,7 +154,7 @@ export interface StartWorkflowParams {
   /** The authenticated roles recorded on the workflow. Defaults to the caller's ambient authenticated roles, if any. */
   authenticatedRoles?: string[];
   // How to handle a collision with another workflow that has the same
-  // `enqueueOptions.deduplicationID` on the same queue.
+  // `enqueueOptions.deduplicationID` on the same queue, in any partition.
   //   'reject' (default): throw `DBOSQueueDuplicatedError`.
   //   'return-existing': return a handle to the existing workflow instead of throwing.
   //     Requires `queueName` and `enqueueOptions.deduplicationID`. Arguments passed by the
@@ -1740,13 +1740,9 @@ export class DBOS {
 
     // Param-only checks: reading the queue's own config would cost a roundtrip on every enqueue.
     if (queueName) {
-      const queuePartitionKey = params.enqueueOptions?.queuePartitionKey;
       const priority = params.enqueueOptions?.priority;
       if (priority !== undefined && (priority < DBOS_QUEUE_MIN_PRIORITY || priority > DBOS_QUEUE_MAX_PRIORITY)) {
         throw new DBOSInvalidQueuePriorityError(priority, DBOS_QUEUE_MIN_PRIORITY, DBOS_QUEUE_MAX_PRIORITY);
-      }
-      if (queuePartitionKey && params.enqueueOptions?.deduplicationID) {
-        throw Error('Deduplication is not supported for partitioned queues');
       }
     } else {
       // Only the queue machinery reads these, and a stored dedup ID becomes a unique-constraint violation once anything assigns the row a queue name; applicationVersion is excluded because it still selects recovery executors.

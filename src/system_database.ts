@@ -339,7 +339,7 @@ export interface WorkflowStatusInternal {
 }
 
 export interface EnqueueOptions {
-  // Unique ID for deduplication on a queue
+  // Unique ID for deduplication on a queue, shared across all of its partitions
   deduplicationID?: string;
   // Priority of the workflow on the queue, 0 ~ 2,147,483,647. Default 0 (highest priority).
   priority?: number;
@@ -390,7 +390,7 @@ export interface DebounceResult {
 }
 
 // How to handle a collision with another workflow that has the same `enqueueOptions.deduplicationID`
-// on the same queue.
+// on the same queue, in any partition.
 //   'reject' (default): throw `DBOSQueueDuplicatedError`.
 //   'return-existing': return a handle to the existing workflow; arguments passed by the colliding
 //     caller are discarded and the handle resolves with the original workflow's result.
