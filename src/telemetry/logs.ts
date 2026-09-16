@@ -168,8 +168,6 @@ export class GlobalLogger {
       new transports.Console({
         format: getConsoleFormat(),
         level: config?.logLevel || 'info',
-        silent: config?.silent || false,
-        forceConsole: config?.forceConsole || false,
       }),
     );
     let otlpTransport: OTLPLogQueueTransport | undefined = undefined;
@@ -324,7 +322,7 @@ const logLevelValues: Record<string, number> = {
 export class DBOSConsoleLogger implements DLogger {
   private readonly levelValue: number;
 
-  constructor(readonly config: LoggerConfig) {
+  constructor(config: LoggerConfig) {
     const level = config.logLevel ?? 'info';
     if (!(level in logLevelValues)) {
       console.warn(

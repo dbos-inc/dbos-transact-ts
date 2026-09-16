@@ -78,10 +78,21 @@ class StepTimeoutTestClass {
     return await StepTimeoutTestClass.slowStepGuts();
   }
 
+  @DBOS.workflow()
+  static async noRetriesStepWorkflow() {
+    return await StepTimeoutTestClass.noRetriesStep();
+  }
+
   @DBOS.step()
   static async plainStep() {
+    expect(DBOS.stepStatus).toBeDefined();
     expect(DBOS.stepStatus?.timeoutSignal).toBeUndefined();
     return Promise.resolve('plain');
+  }
+
+  @DBOS.workflow()
+  static async plainStepWorkflow() {
+    return await StepTimeoutTestClass.plainStep();
   }
 
   @DBOS.workflow()
@@ -219,7 +230,9 @@ describe('step-timeout-tests', () => {
   test('timeout-applies-without-retries', async () => {
     StepTimeoutTestClass.hangAttempts = 1;
 
-    await expect(StepTimeoutTestClass.noRetriesStep()).rejects.toThrow(new DBOSStepTimeoutError('noRetriesStep', 200));
+    await expect(StepTimeoutTestClass.noRetriesStepWorkflow()).rejects.toThrow(
+      new DBOSStepTimeoutError('noRetriesStep', 200),
+    );
     expect(StepTimeoutTestClass.attempts).toBe(1);
     expect(StepTimeoutTestClass.abortsObserved).toBe(1);
   });
@@ -239,7 +252,7 @@ describe('step-timeout-tests', () => {
   });
 
   test('no-timeout-no-signal', async () => {
-    await expect(StepTimeoutTestClass.plainStep()).resolves.toBe('plain');
+    await expect(StepTimeoutTestClass.plainStepWorkflow()).resolves.toBe('plain');
   });
 
   test('uncooperative-zombie-resolution-is-discarded', async () => {

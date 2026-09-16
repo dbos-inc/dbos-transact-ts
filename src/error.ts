@@ -35,24 +35,10 @@ export class DBOSNotRegisteredError extends DBOSError {
   }
 }
 
-const ConfigKeyTypeError = 14;
-export class DBOSConfigKeyTypeError extends DBOSError {
-  constructor(configKey: string, expectedType: string, actualType: string) {
-    super(`${configKey} should be of type ${expectedType}, but got ${actualType}`, ConfigKeyTypeError);
-  }
-}
-
 const NonExistentWorkflowError = 16;
 export class DBOSNonExistentWorkflowError extends DBOSError {
   constructor(msg: string) {
     super(msg, NonExistentWorkflowError);
-  }
-}
-
-const FailLoadOperationsError = 17;
-export class DBOSFailLoadOperationsError extends DBOSError {
-  constructor(msg: string) {
-    super(msg, FailLoadOperationsError);
   }
 }
 

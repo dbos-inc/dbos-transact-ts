@@ -5,6 +5,7 @@ import { garbageCollect, globalTimeout } from '../src/workflow_management';
 import { cutoffPastAllCompletions, generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
 import { globalParams } from '../src/utils';
 import type { GetWorkflowsInput } from '../src/workflow';
+import { DBOSJSON } from '../src/serialization';
 
 type NoArgWorkflow = () => Promise<unknown>;
 
@@ -326,8 +327,8 @@ describe('application-name', () => {
     ] as const) {
       await client.query(
         `INSERT INTO dbos.workflow_schedules (schedule_id, schedule_name, workflow_name, schedule, status, context, application_name)
-         VALUES ($1, $2, 'scheduled', '0 0 1 1 *', 'ACTIVE', 'null', $3)`,
-        [scheduleID, name, owner],
+         VALUES ($1, $2, 'scheduled', '0 0 1 1 *', 'ACTIVE', $4, $3)`,
+        [scheduleID, name, owner, DBOSJSON.stringify(null)],
       );
     }
     for (const [name, owner] of [

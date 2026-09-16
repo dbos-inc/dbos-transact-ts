@@ -1,4 +1,4 @@
-import { functionIDGetIncrement, getNextWFID, runWithDataSourceContext } from './context';
+import { functionIDGetIncrement, runWithDataSourceContext } from './context';
 import { DBOS } from './dbos';
 import { DBOSExecutor, OperationType } from './dbos-executor';
 import {
@@ -19,7 +19,6 @@ import { SuperJSON } from 'superjson';
  */
 export interface DataSourceTransactionHandler {
   readonly name: string;
-  readonly dsType: string;
 
   /**
    * Will be called by DBOS during launch.
@@ -116,18 +115,12 @@ export interface DBOSDataSource<Config extends { name?: string }> {
 export async function runTransaction<T>(
   callback: () => Promise<T>,
   funcName: string,
-  options: { dsName?: string; config?: unknown } = {},
+  options: { dsName: string; config?: unknown },
 ) {
   ensureDBOSIsLaunched('transactions');
-  const dsn = options.dsName ?? '<default>';
-  const ds = getTransactionalDataSource(dsn);
+  const ds = getTransactionalDataSource(options.dsName);
 
   if (!DBOS.isWithinWorkflow()) {
-    if (getNextWFID(undefined)) {
-      throw new DBOSInvalidWorkflowTransitionError(
-        `Invalid call to transaction '${funcName}' outside of a workflow; with directive to start a workflow.`,
-      );
-    }
     return await runWithDataSourceContext(0, async () => {
       return await ds.invokeTransactionFunction(options.config ?? {}, undefined, callback);
     });
@@ -147,10 +140,9 @@ export async function runTransaction<T>(
       operationUUID: DBOS.workflowID,
       operationType: OperationType.TRANSACTION,
       operationName: funcName,
-      authenticatedUser: DBOS.authenticatedUser ?? '',
-      assumedRole: DBOS.assumedRole ?? '',
-      authenticatedRoles: DBOS.authenticatedRoles ?? [],
-      // isolationLevel: txnInfo.config.isolationLevel, // TODO: Pluggable
+      authenticatedUser: DBOS.authenticatedUser,
+      assumedRole: DBOS.assumedRole,
+      authenticatedRoles: DBOS.authenticatedRoles,
     },
     DBOS.span,
   );
@@ -164,7 +156,7 @@ export async function runTransaction<T>(
           });
         },
         funcName,
-        // we can be sure workflowID is set because of previous call to assertCurrentWorkflowContext
+        // The isInWorkflow check above guarantees workflowID is set.
         DBOS.workflowID!,
         callnum,
       );
@@ -187,23 +179,15 @@ export function registerTransaction<This, Args extends unknown[], Return, Config
   func: (this: This, ...args: Args) => Promise<Return>,
   config?: Config,
 ): (this: This, ...args: Args) => Promise<Return> {
-  const dsn = dsName ?? '<default>';
-
   const funcName = config?.name ?? func.name;
   const reg = wrapDBOSFunctionAndRegister(config?.ctorOrProto, config?.className, funcName, funcName, func);
 
   const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
     ensureDBOSIsLaunched('transactions');
-    const ds = getTransactionalDataSource(dsn);
+    const ds = getTransactionalDataSource(dsName);
     const callFunc = reg.registeredFunction ?? reg.origFunction;
 
     if (!DBOS.isWithinWorkflow()) {
-      if (getNextWFID(undefined)) {
-        throw new DBOSInvalidWorkflowTransitionError(
-          `Call to transaction '${funcName}' made without starting workflow`,
-        );
-      }
-
       return await runWithDataSourceContext(0, async () => {
         return await ds.invokeTransactionFunction(config, this, callFunc, ...rawArgs);
       });
@@ -222,10 +206,9 @@ export function registerTransaction<This, Args extends unknown[], Return, Config
         operationUUID: DBOS.workflowID,
         operationType: OperationType.TRANSACTION,
         operationName: funcName,
-        authenticatedUser: DBOS.authenticatedUser ?? '',
-        assumedRole: DBOS.assumedRole ?? '',
-        authenticatedRoles: DBOS.authenticatedRoles ?? [],
-        // isolationLevel: txnInfo.config.isolationLevel, // TODO: Pluggable
+        authenticatedUser: DBOS.authenticatedUser,
+        assumedRole: DBOS.assumedRole,
+        authenticatedRoles: DBOS.authenticatedRoles,
       },
       DBOS.span,
     );
@@ -386,8 +369,4 @@ export function isPGRetriableTransactionError(error: unknown): boolean {
 
 export function isPGKeyConflictError(error: unknown): boolean {
   return getPGErrorCode(error) === '23505';
-}
-
-export function isPGFailedSqlTransactionError(error: unknown): boolean {
-  return getPGErrorCode(error) === '25P02';
 }

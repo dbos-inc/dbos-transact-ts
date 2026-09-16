@@ -1,6 +1,5 @@
 .dbos/
 .vscode/
-!packages/create/templates/**/.vscode
 packages/create/templates/**/package-lock.json
 tests/**/package-lock.json
 packages/**/package-lock.json

@@ -47,7 +47,6 @@ interface KyselyDataSourceContext<DB> {
 const asyncLocalCtx = new AsyncLocalStorage();
 
 class KyselyTransactionHandler implements DataSourceTransactionHandler {
-  readonly dsType = 'KyselyDataSource';
   #kyselyDBField: Kysely<DBOSKyselyTables>;
   readonly schemaName: string;
   readonly poolConfig: PoolConfig | undefined;

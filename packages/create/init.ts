@@ -168,7 +168,6 @@ export async function init(appName: string, templateName: string) {
   fs.writeFileSync(packageJsonName, JSON.stringify(packageJson, null, 2), 'utf-8');
   updateLocalFileDependency(appName, packageJson.dependencies);
   execSync('npm i --no-fund --loglevel=error', { cwd: appName, stdio: 'inherit' });
-  execSync('npm install --no-fund --save-dev @dbos-inc/dbos-cloud@latest', { cwd: appName, stdio: 'inherit' });
   console.log('Application initialized successfully!');
 }
 

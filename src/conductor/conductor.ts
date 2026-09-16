@@ -24,7 +24,6 @@ export class Conductor {
   url: string;
   websocket: WebSocket | undefined = undefined;
   isShuttingDown = false; // Is in the process of shutting down the connection
-  isClosed = false; // Has the connection been fully closed
   pingPeriodMs = 20000; // Time in milliseconds to wait before sending a ping message to the conductor
   pingTimeoutMs = 15000; // Time in milliseconds to wait for a response to a ping message before considering the connection dead
   pingIntervalTimeout: IntervalTimeout | undefined = undefined; // Combined interval and timeout for pinging Conductor
@@ -201,19 +200,6 @@ export class Conductor {
             }
             const resumeResp = new protocol.ResumeResponse(baseMsg.request_id, resumeSuccess, errorMsg);
             currWebsocket.send(JSON.stringify(resumeResp));
-            break;
-          case protocol.MessageType.RESTART:
-            const restartMsg = baseMsg as protocol.RestartRequest;
-            let restartSuccess = true;
-            try {
-              await this.dbosExec.forkWorkflow(restartMsg.workflow_id, 0);
-            } catch (e) {
-              errorMsg = `Exception encountered when restarting workflow ${restartMsg.workflow_id}: ${(e as Error).message}`;
-              this.dbosExec.logger.error(errorMsg);
-              restartSuccess = false;
-            }
-            const restartResp = new protocol.RestartResponse(baseMsg.request_id, restartSuccess, errorMsg);
-            currWebsocket.send(JSON.stringify(restartResp));
             break;
           case protocol.MessageType.FORK_WORKFLOW:
             const forkMsg = baseMsg as protocol.ForkWorkflowRequest;
@@ -421,8 +407,7 @@ export class Conductor {
                     this.dbosExec.systemDatabase,
                     retentionBody.gc_cutoff_epoch_ms,
                     retentionBody.gc_rows_threshold,
-                    // Older Conductor versions may not send gc_batch_size, newer ones may send null,
-                    // and a cleared setting may arrive as zero: every one of those takes the default.
+                    // An omitted, null, or zero gc_batch_size takes the default.
                     { batchSize: retentionBody.gc_batch_size || undefined },
                   );
                   if (retentionBody.timeout_cutoff_epoch_ms) {
@@ -800,13 +785,12 @@ export class Conductor {
                 executorId: aggBody.executor_id,
                 queueName: aggBody.queue_name,
                 workflowIdPrefix: aggBody.workflow_id_prefix,
-                workflowIDs: aggBody.workflow_uuids,
-                authenticatedUser: aggBody.authenticated_user,
+                workflowIDs: aggBody.workflow_ids,
+                authenticatedUser: aggBody.user,
                 forkedFrom: aggBody.forked_from,
                 parentWorkflowID: aggBody.parent_workflow_id,
                 scheduleName: aggBody.schedule_name,
                 applicationName: aggBody.application_name,
-                queuesOnly: aggBody.queues_only,
                 wasForkedFrom: aggBody.was_forked_from,
                 hasParent: aggBody.has_parent,
                 attributes: aggBody.attributes,
@@ -872,7 +856,7 @@ export class Conductor {
                 worker_concurrency: q.workerConcurrency,
                 rate_limit_max: q.rateLimitMax,
                 rate_limit_period_sec: q.rateLimitPeriodSec,
-                priority_enabled: q.priorityEnabled,
+                priority_enabled: true,
                 partition_queue: q.partitionQueue,
                 polling_interval_sec: q.pollingIntervalSec,
                 application_name: q.applicationName ?? null,
@@ -900,7 +884,7 @@ export class Conductor {
                   worker_concurrency: queue.workerConcurrency,
                   rate_limit_max: queue.rateLimitMax,
                   rate_limit_period_sec: queue.rateLimitPeriodSec,
-                  priority_enabled: queue.priorityEnabled,
+                  priority_enabled: true,
                   partition_queue: queue.partitionQueue,
                   polling_interval_sec: queue.pollingIntervalSec,
                   application_name: queue.applicationName ?? null,
@@ -988,6 +972,5 @@ export class Conductor {
     if (this.websocket) {
       this.websocket.close();
     }
-    this.isClosed = true;
   }
 }

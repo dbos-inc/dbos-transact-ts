@@ -34,7 +34,7 @@ import {
   sleepms,
 } from './utils';
 import { GlobalLogger } from './telemetry/logs';
-import { QueueRateLimit, resolveQueueLimits, WorkflowQueue } from './wfqueue';
+import { QueueRateLimit, WorkflowQueue } from './wfqueue';
 import { createHash, randomUUID } from 'crypto';
 import { getClientConfig } from './utils';
 import { ensurePGDatabase, maskDatabaseUrl } from './database_utils';
@@ -176,7 +176,7 @@ export interface QueueRecord {
   workerConcurrency: number | null;
   rateLimitMax: number | null;
   rateLimitPeriodSec: number | null;
-  priorityEnabled: boolean;
+  /** Derived from the partition limits, which are what partition a queue. */
   partitionQueue: boolean;
   // Any of these being set partitions the queue; each applies per partition.
   partitionConcurrency: number | null;
@@ -196,7 +196,6 @@ const QUEUE_COLUMN_BY_FIELD: Record<keyof QueueRecordUpdate, string> = {
   workerConcurrency: 'worker_concurrency',
   rateLimitMax: 'rate_limit_max',
   rateLimitPeriodSec: 'rate_limit_period_sec',
-  priorityEnabled: 'priority_enabled',
   partitionQueue: 'partition_queue',
   partitionConcurrency: 'partition_concurrency',
   partitionWorkerConcurrency: 'partition_worker_concurrency',
@@ -206,7 +205,7 @@ const QUEUE_COLUMN_BY_FIELD: Record<keyof QueueRecordUpdate, string> = {
 };
 
 const QUEUE_COLUMNS =
-  'name, concurrency, worker_concurrency, rate_limit_max, rate_limit_period_sec, priority_enabled, partition_queue, ' +
+  'name, concurrency, worker_concurrency, rate_limit_max, rate_limit_period_sec, ' +
   'partition_concurrency, partition_worker_concurrency, partition_rate_limit_max, partition_rate_limit_period_sec, ' +
   'polling_interval_sec, application_name';
 
@@ -217,8 +216,10 @@ function queueRecordFromRow(row: queues): QueueRecord {
     workerConcurrency: row.worker_concurrency,
     rateLimitMax: row.rate_limit_max,
     rateLimitPeriodSec: row.rate_limit_period_sec,
-    priorityEnabled: row.priority_enabled,
-    partitionQueue: row.partition_queue,
+    partitionQueue:
+      row.partition_concurrency !== null ||
+      row.partition_worker_concurrency !== null ||
+      (row.partition_rate_limit_max !== null && row.partition_rate_limit_period_sec !== null),
     partitionConcurrency: row.partition_concurrency,
     partitionWorkerConcurrency: row.partition_worker_concurrency,
     partitionRateLimitMax: row.partition_rate_limit_max,
@@ -272,7 +273,6 @@ export interface GetWorkflowAggregatesInput {
   wasForkedFrom?: boolean;
   parentWorkflowID?: string[];
   hasParent?: boolean;
-  queuesOnly?: boolean;
   attributes?: Record<string, unknown>;
   scheduleName?: string[];
   // Count only these owning applications'. By default, only this application's.
@@ -341,7 +341,7 @@ export interface WorkflowStatusInternal {
 export interface EnqueueOptions {
   // Unique ID for deduplication on a queue
   deduplicationID?: string;
-  // Priority of the workflow on the queue, starting from 1 ~ 2,147,483,647. Default 0 (highest priority).
+  // Priority of the workflow on the queue, 0 ~ 2,147,483,647. Default 0 (highest priority).
   priority?: number;
   // Partition key for partitioned queues
   queuePartitionKey?: string;
@@ -349,16 +349,16 @@ export interface EnqueueOptions {
   applicationVersion?: string;
   // Number of seconds to delay the workflow before it starts executing. The workflow will be in DELAYED status until the delay expires.
   delaySeconds?: number;
-  // Internal, set only by the debouncer: absolute cap (epoch ms) on how far the delay may extend.
-  debounceDeadlineEpochMS?: number;
-  // Internal, set only by the debouncer: marks the deduplication ID as a debounce key.
-  isDebounced?: boolean;
   // The application the workflow is enqueued for; undefined means the enqueuer's own.
   applicationName?: string;
-  // The authenticated user recorded on the workflow. Defaults to the caller's ambient authenticated user, if any.
-  authenticatedUser?: string;
-  // The authenticated roles recorded on the workflow. Defaults to the caller's ambient authenticated roles, if any.
-  authenticatedRoles?: string[];
+}
+
+// Enqueue options only the debouncer sets; kept out of the public EnqueueOptions.
+export interface InternalEnqueueOptions extends EnqueueOptions {
+  // Absolute cap (epoch ms) on how far the delay may extend.
+  debounceDeadlineEpochMS?: number;
+  // Marks the deduplication ID as a debounce key.
+  isDebounced?: boolean;
 }
 
 // Arguments to debounceDelayedWorkflow: identify the debounced workflow by
@@ -395,10 +395,6 @@ export interface DebounceResult {
 //   'return-existing': return a handle to the existing workflow; arguments passed by the colliding
 //     caller are discarded and the handle resolves with the original workflow's result.
 export type DuplicationPolicy = 'reject' | 'return-existing';
-
-export interface ExistenceCheck {
-  exists: boolean;
-}
 
 export interface MetricData {
   metricType: string;
@@ -1079,9 +1075,6 @@ export class SystemDatabase {
     } finally {
       client.release();
     }
-  }
-  getSerializer(): DBOSSerializer {
-    return this.serializer;
   }
 
   // ==================== Application Ownership ====================
@@ -1843,7 +1836,7 @@ export class SystemDatabase {
     // Insert a patchmarker
     const dn = Date.now();
     await this.pool.query<operation_outputs>(
-      `INSERT INTO ${this.schemaName}.operation_outputs
+      `INSERT INTO "${this.schemaName}".operation_outputs
        (workflow_uuid, function_id, output, error, function_name, child_workflow_id, started_at_epoch_ms, completed_at_epoch_ms, application_name, retention_timestamp)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, (EXTRACT(EPOCH FROM now()) * 1000)::bigint)
        ON CONFLICT DO NOTHING;`,
@@ -2723,11 +2716,9 @@ export class SystemDatabase {
     }
     if (this.workflowEventsMap.map.size > 0) {
       this.logger.warn('Workflow events map is not empty - shutdown is not clean.');
-      //throw new Error('Workflow events map is not empty - shutdown is not clean.');
     }
     if (this.notificationsMap.map.size > 0) {
       this.logger.warn('Message notification map is not empty - shutdown is not clean.');
-      //throw new Error('Message notification map is not empty - shutdown is not clean.');
     }
   }
 
@@ -2745,11 +2736,6 @@ export class SystemDatabase {
     return this.pollLimiter.runExclusive(query);
   }
 
-  /**
-   * Cancellation check for use inside polling wait loops: the status read runs
-   * under the polling limiter so it counts against the same concurrency budget
-   * as the rest of the loop's reads.
-   */
   /** Cancellation check for polling waits: goes through the limiter so readers cannot starve the pool. */
   async checkIfCanceledLimited(workflowID: string): Promise<void> {
     await this.#pollWithLimiter(() => this.#checkIfCanceled(this.pool, workflowID));
@@ -3641,17 +3627,16 @@ export class SystemDatabase {
     partitionLocalRunningCount: number = 0,
   ): Promise<string[]> {
     const claimedIDs: string[] = [];
-    const limits = resolveQueueLimits(queue);
     const partitionParams: string[] = queuePartitionKey !== undefined ? [queuePartitionKey] : [];
     // Shares a concurrency or rate limit budget with other executors.
     const hasSharedBudget =
-      limits.globalConcurrency !== undefined ||
-      limits.partitionConcurrency !== undefined ||
-      limits.rateLimit !== undefined ||
-      limits.partitionRateLimit !== undefined;
+      queue.concurrency !== undefined ||
+      queue.partitionConcurrency !== undefined ||
+      queue.rateLimit !== undefined ||
+      queue.partitionRateLimit !== undefined;
     // Shares that budget across partitions too, so sweeps of different partitions read disjoint rows and could each spend it.
     const hasWriteSkew =
-      queuePartitionKey !== undefined && (limits.globalConcurrency !== undefined || limits.rateLimit !== undefined);
+      queuePartitionKey !== undefined && (queue.concurrency !== undefined || queue.rateLimit !== undefined);
 
     const client = await this.#connect();
     try {
@@ -3702,48 +3687,48 @@ export class SystemDatabase {
       // Compute maxTasks, the number of workflows startable under every flow control limit on this queue.
       let maxTasks = Infinity;
 
-      if (limits.workerConcurrency !== undefined) {
+      if (queue.workerConcurrency !== undefined) {
         // Use the in-memory registry for this worker's running count — avoids a DB round trip.
-        maxTasks = Math.min(maxTasks, Math.max(0, limits.workerConcurrency - localRunningCount));
+        maxTasks = Math.min(maxTasks, Math.max(0, queue.workerConcurrency - localRunningCount));
       }
-      if (limits.partitionWorkerConcurrency !== undefined) {
-        maxTasks = Math.min(maxTasks, Math.max(0, limits.partitionWorkerConcurrency - partitionLocalRunningCount));
+      if (queue.partitionWorkerConcurrency !== undefined) {
+        maxTasks = Math.min(maxTasks, Math.max(0, queue.partitionWorkerConcurrency - partitionLocalRunningCount));
       }
       if (maxTasks <= 0) {
         await client.query('COMMIT');
         return claimedIDs;
       }
 
-      if (limits.rateLimit !== undefined) {
+      if (queue.rateLimit !== undefined) {
         // Bound the claim by the limiter's remaining slots so a backlogged queue locks only what it can start.
-        maxTasks = Math.min(maxTasks, await rateLimitRemaining(limits.rateLimit, false));
+        maxTasks = Math.min(maxTasks, await rateLimitRemaining(queue.rateLimit, false));
       }
-      if (limits.partitionRateLimit !== undefined) {
-        maxTasks = Math.min(maxTasks, await rateLimitRemaining(limits.partitionRateLimit, true));
+      if (queue.partitionRateLimit !== undefined) {
+        maxTasks = Math.min(maxTasks, await rateLimitRemaining(queue.partitionRateLimit, true));
       }
       if (maxTasks <= 0) {
         await client.query('COMMIT');
         return claimedIDs;
       }
 
-      if (limits.globalConcurrency !== undefined) {
+      if (queue.concurrency !== undefined) {
         // Global concurrency still requires a DB query since other workers may be running workflows too.
         const totalRunningTasks = await pendingCount(false);
-        if (totalRunningTasks > limits.globalConcurrency) {
+        if (totalRunningTasks > queue.concurrency) {
           this.logger.warn(
-            `Total running tasks (${totalRunningTasks}) exceeds the global concurrency limit (${limits.globalConcurrency})`,
+            `Total running tasks (${totalRunningTasks}) exceeds the global concurrency limit (${queue.concurrency})`,
           );
         }
-        maxTasks = Math.min(maxTasks, Math.max(0, limits.globalConcurrency - totalRunningTasks));
+        maxTasks = Math.min(maxTasks, Math.max(0, queue.concurrency - totalRunningTasks));
       }
-      if (limits.partitionConcurrency !== undefined) {
+      if (queue.partitionConcurrency !== undefined) {
         const partitionRunningTasks = await pendingCount(true);
-        if (partitionRunningTasks > limits.partitionConcurrency) {
+        if (partitionRunningTasks > queue.partitionConcurrency) {
           this.logger.warn(
-            `Total running tasks (${partitionRunningTasks}) on partition ${queuePartitionKey} of queue ${queue.name} exceeds the partition concurrency limit (${limits.partitionConcurrency})`,
+            `Total running tasks (${partitionRunningTasks}) on partition ${queuePartitionKey} of queue ${queue.name} exceeds the partition concurrency limit (${queue.partitionConcurrency})`,
           );
         }
-        maxTasks = Math.min(maxTasks, Math.max(0, limits.partitionConcurrency - partitionRunningTasks));
+        maxTasks = Math.min(maxTasks, Math.max(0, queue.partitionConcurrency - partitionRunningTasks));
       }
       // Return immediately if there are no available tasks due to flow control limits
       if (maxTasks <= 0) {
@@ -3791,7 +3776,7 @@ export class SystemDatabase {
           StatusString.PENDING,
           executorID,
           appVersion,
-          limits.rateLimit !== undefined || limits.partitionRateLimit !== undefined,
+          queue.rateLimit !== undefined || queue.partitionRateLimit !== undefined,
           workflowIDs,
           StatusString.ENQUEUED,
           // Claim an unclaimed row for this application; a nameless dequeuer leaves ownership untouched.
@@ -3847,18 +3832,17 @@ export class SystemDatabase {
     appVersion: string,
     maxTasks: number = Infinity,
   ): Promise<string[]> {
-    const limits = resolveQueueLimits(queue);
     if (
-      limits.partitionConcurrency !== 1 ||
-      limits.globalConcurrency !== undefined ||
-      limits.rateLimit !== undefined ||
-      limits.partitionRateLimit !== undefined
+      queue.partitionConcurrency !== 1 ||
+      queue.concurrency !== undefined ||
+      queue.rateLimit !== undefined ||
+      queue.partitionRateLimit !== undefined
     ) {
       throw new DBOSError(
         `Batched partitioned dequeue requires a queue with partition concurrency 1 and no queue-wide concurrency or rate limit: ${queue.name}`,
       );
     }
-    // partitionWorkerConcurrency needs no handling here: any value above 0 is capped at partition concurrency 1, which the PENDING gate already enforces globally, and 0 makes the caller's maxTasks 0.
+    // partitionWorkerConcurrency needs no handling here: it cannot exceed partition concurrency 1, which the PENDING gate already enforces globally.
     const client = await this.#connect();
     try {
       await client.query('BEGIN');
@@ -4320,14 +4304,6 @@ export class SystemDatabase {
     // Unset scopes to this application, as on every other observability query.
     whereClauses.push(this.#observabilityFilter('application_name', input.applicationName, params));
     paramIdx = params.length + 1;
-
-    // Only workflows that are actively enqueued.
-    if (input.queuesOnly) {
-      whereClauses.push(`queue_name IS NOT NULL`);
-      whereClauses.push(`status IN ($${paramIdx}, $${paramIdx + 1}, $${paramIdx + 2})`);
-      params.push(StatusString.ENQUEUED, StatusString.PENDING, StatusString.DELAYED);
-      paramIdx += 3;
-    }
 
     if (input.wasForkedFrom !== undefined) {
       whereClauses.push(`was_forked_from = $${paramIdx}`);
@@ -5400,7 +5376,8 @@ export class SystemDatabase {
            priority_enabled, partition_queue, partition_concurrency, partition_worker_concurrency,
            partition_rate_limit_max, partition_rate_limit_period_sec,
            polling_interval_sec, updated_at, application_name)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+         -- priority_enabled is vestigial: every queue dispatches in priority order.
+         VALUES ($1, $2, $3, $4, $5, TRUE, $6, $7, $8, $9, $10, $11, $12, $13)
          ${onConflict}`,
         [
           record.name,
@@ -5408,7 +5385,6 @@ export class SystemDatabase {
           record.workerConcurrency,
           record.rateLimitMax,
           record.rateLimitPeriodSec,
-          record.priorityEnabled,
           record.partitionQueue,
           record.partitionConcurrency,
           record.partitionWorkerConcurrency,
@@ -5798,7 +5774,7 @@ export class SystemDatabase {
 
     const throwOnFailure = options.throwOnFailure ?? true;
     if (throwOnFailure && result.rowCount !== 1) {
-      throw new DBOSWorkflowConflictError(`Attempt to record transition of nonexistent workflow ${workflowID}`);
+      throw new DBOSNonExistentWorkflowError(`Attempt to record transition of nonexistent workflow ${workflowID}`);
     }
     return result.rowCount ?? 0;
   }
@@ -5820,7 +5796,7 @@ export class SystemDatabase {
   ): Promise<void> {
     try {
       const out = await client.query<operation_outputs>(
-        `INSERT INTO ${this.schemaName}.operation_outputs
+        `INSERT INTO "${this.schemaName}".operation_outputs
          (workflow_uuid, function_id, output, error, function_name, child_workflow_id, started_at_epoch_ms, completed_at_epoch_ms, serialization, application_name, retention_timestamp)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, (EXTRACT(EPOCH FROM now()) * 1000)::bigint)
          ON CONFLICT (workflow_uuid, function_id) DO UPDATE
@@ -5924,6 +5900,7 @@ export class SystemDatabase {
       Date.now(),
       {
         output,
+        serialization: DBOSPortableJSON.name(),
       },
     );
     return output;

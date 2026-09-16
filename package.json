@@ -1,7 +1,7 @@
 {
   "name": "@dbos-inc/dbos-sdk",
   "version": "0.0.0-placeholder",
-  "description": "A Typescript framework built on the database",
+  "description": "Lightweight durable workflows built on Postgres",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -66,7 +66,6 @@
   "scripts": {
     "build": "tsc --project tsconfig.json && npm run --workspaces build",
     "lint": "eslint --ignore-pattern **/coverage/ .",
-    "setversion": "npm run --workspaces setversion && grunt setversion",
     "test": "npm run build && npm run test:packages && npm run test:unit",
     "test:unit": "jest ./tests --coverage --collectCoverageFrom='src/**/*' --detectOpenHandles",
     "test:packages": "npm run --workspaces test",

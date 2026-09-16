@@ -2,6 +2,7 @@ import { DBOSError } from './error';
 
 /**
  * Configuration options for a `DBOS.step` function
+ * These apply when a workflow hosts the step; called outside a workflow, a step is an ordinary function call
  */
 export interface StepConfig {
   /** If `true`, the step will be retried if it throws an exception (default false) */

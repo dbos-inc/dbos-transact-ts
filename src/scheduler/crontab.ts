@@ -96,7 +96,7 @@ function convertAsterisk(expression: string, replacement: string) {
 }
 
 // Based on position in full crontab, convert asterisk to appropriate range
-export function convertAsterisksToRanges(expressions: string[]) {
+function convertAsterisksToRanges(expressions: string[]) {
   expressions[0] = convertAsterisk(expressions[0], '0-59');
   expressions[1] = convertAsterisk(expressions[1], '0-59');
   expressions[2] = convertAsterisk(expressions[2], '0-23');

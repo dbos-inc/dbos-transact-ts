@@ -35,7 +35,6 @@ export { NodePostgresTransactionOptions };
 const asyncLocalCtx = new AsyncLocalStorage<NodePostgresDataSourceContext>();
 
 class NodePostgresTransactionHandler implements DataSourceTransactionHandler {
-  readonly dsType = 'NodePostgresDataSource';
   #poolField: Pool | undefined;
   readonly schemaName: string;
 

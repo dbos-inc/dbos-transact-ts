@@ -5,6 +5,7 @@ import { Client } from 'pg';
 
 describe('operations-test', () => {
   beforeAll(async () => {
+    DBOS.setConfig({ name: 'dbos-drizzle', systemDatabaseUrl: process.env.DBOS_SYSTEM_DATABASE_URL });
     await DBOS.launch();
   });
 

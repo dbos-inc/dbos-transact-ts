@@ -712,34 +712,19 @@ describe('debouncer-tests', () => {
     }
   });
 
-  test('test-debounce-records-authentication-from-either-option', async () => {
-    // A huge period keeps each workflow DELAYED, so the recorded row can be read before it runs.
-    const viaEnqueueOptions = new Debouncer({
+  test('test-debounce-records-authentication', async () => {
+    // A huge period keeps the workflow DELAYED, so the recorded row can be read before it runs.
+    const debouncer = new Debouncer({
       workflow,
-      startWorkflowParams: { enqueueOptions: { authenticatedUser: 'alice', authenticatedRoles: ['admin'] } },
+      startWorkflowParams: { authenticatedUser: 'carol', authenticatedRoles: ['ops'] },
     });
-    const enqueueOptionsHandle = await viaEnqueueOptions.debounce('auth-enqueue-options', 1000000000, 1);
-    const enqueueOptionsStatus = await getSysDB().getWorkflowStatus(enqueueOptionsHandle.workflowID);
-    expect(enqueueOptionsStatus?.status).toBe(StatusString.DELAYED);
-    expect(enqueueOptionsStatus?.authenticatedUser).toBe('alice');
-    expect(enqueueOptionsStatus?.authenticatedRoles).toEqual(['admin']);
+    const handle = await debouncer.debounce('auth-start-params', 1000000000, 1);
+    const status = await getSysDB().getWorkflowStatus(handle.workflowID);
+    expect(status?.status).toBe(StatusString.DELAYED);
+    expect(status?.authenticatedUser).toBe('carol');
+    expect(status?.authenticatedRoles).toEqual(['ops']);
 
-    // The top-level fields win over the enqueueOptions ones, as they do on a plain startWorkflow.
-    const bothSet = new Debouncer({
-      workflow,
-      startWorkflowParams: {
-        authenticatedUser: 'carol',
-        authenticatedRoles: ['ops'],
-        enqueueOptions: { authenticatedUser: 'alice', authenticatedRoles: ['admin'] },
-      },
-    });
-    const bothSetHandle = await bothSet.debounce('auth-both-set', 1000000000, 1);
-    const bothSetStatus = await getSysDB().getWorkflowStatus(bothSetHandle.workflowID);
-    expect(bothSetStatus?.authenticatedUser).toBe('carol');
-    expect(bothSetStatus?.authenticatedRoles).toEqual(['ops']);
-
-    await DBOS.cancelWorkflow(enqueueOptionsHandle.workflowID);
-    await DBOS.cancelWorkflow(bothSetHandle.workflowID);
+    await DBOS.cancelWorkflow(handle.workflowID);
   }, 30000);
 
   test('test-debounce-bounce-path-does-not-leak-pinned-id', async () => {

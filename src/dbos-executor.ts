@@ -23,10 +23,10 @@ import {
   type ListWorkflowStepsOptions,
   WorkflowConfig,
   DEFAULT_MAX_RECOVERY_ATTEMPTS,
-  WorkflowSerializationFormat,
 } from './workflow';
 
 import { type StepConfig, validateStepConfig } from './step';
+import type { Conductor } from './conductor/conductor';
 import { TelemetryCollector } from './telemetry/collector';
 import { getActiveSpan, runWithTrace, SpanStatusCode, Tracer } from './telemetry/traces';
 import { DBOSContextualLogger, DLogger, GlobalLogger } from './telemetry/logs';
@@ -34,8 +34,6 @@ import { TelemetryExporter } from './telemetry/exporters';
 import { SystemDatabase, type WorkflowStatusInternal, type SystemDatabaseStoredResult } from './system_database';
 import { randomUUID } from 'node:crypto';
 import {
-  getRegisteredFunctionClassName,
-  getRegisteredFunctionName,
   getConfiguredInstance,
   getLifecycleListeners,
   UntypedAsyncFunction,
@@ -47,7 +45,7 @@ import {
   getClassRegistrationByName,
   getRegisteredFunctionFullName,
 } from './decorators';
-import { JsonWorkflowArgs, type step_info } from '../schemas/system_db_schema';
+import { JsonWorkflowArgs } from '../schemas/system_db_schema';
 import {
   runInStepContext,
   getNextWFID,
@@ -57,7 +55,7 @@ import {
   DBOSLocalCtx,
   runWithTopContext,
 } from './context';
-import { deserializeError, serializeError } from 'serialize-error';
+import { serializeError } from 'serialize-error';
 import { globalParams, sleepms, INTERNAL_QUEUE_NAME } from './utils';
 import {
   DBOSPortableJSON,
@@ -69,12 +67,10 @@ import {
   serializeFunctionInputOutputWithSerializer,
   serializeResError,
   serializeResErrorWithSerializer,
-  serializeValue,
 } from './serialization';
 import { GetWorkflowsInput } from '.';
 
 import { wfQueueRunner } from './wfqueue';
-import { debugTriggerPoint, DEBUG_TRIGGER_WORKFLOW_ENQUEUE } from './debugpoint';
 import { DynamicSchedulerLoop } from './scheduler/scheduler';
 import * as crypto from 'crypto';
 import {
@@ -91,12 +87,13 @@ import { Pool } from 'pg';
 interface DBOSNull {}
 const dbosNull: DBOSNull = {};
 
-export const DBOS_QUEUE_MIN_PRIORITY = 1;
+export const DBOS_QUEUE_MIN_PRIORITY = 0;
 export const DBOS_QUEUE_MAX_PRIORITY = 2 ** 31 - 1; // 2,147,483,647
 
 /* Interface for DBOS configuration */
 export interface DBOSConfig {
-  name?: string;
+  /** Application name; scopes this app's workflows, queues, and schedules in the system database. */
+  name: string;
 
   systemDatabaseUrl?: string;
   systemDatabasePoolSize?: number;
@@ -142,12 +139,9 @@ export interface DBOSConfig {
    */
   otelAttributeFormat?: OtelAttributeFormat;
 
-  /** @deprecated The admin server is deprecated and will be removed in a future version of DBOS. */
+  /** @deprecated Ignored: the admin server has been removed. */
   adminPort?: number;
-  /**
-   * Whether to run the admin server. Defaults to `false` outside DBOS Cloud.
-   * @deprecated The admin server is deprecated and will be removed in a future version of DBOS.
-   */
+  /** @deprecated Ignored: the admin server has been removed. */
   runAdminServer?: boolean;
 
   applicationVersion?: string;
@@ -193,18 +187,13 @@ export interface DBOSConfig {
 }
 
 export interface DBOSRuntimeConfig {
-  /** @deprecated The admin server is deprecated and will be removed in a future version of DBOS. */
-  admin_port: number;
-  /** @deprecated The admin server is deprecated and will be removed in a future version of DBOS. */
-  runAdminServer: boolean;
   start: string[];
-  setup: string[];
 }
 
 export interface TelemetryConfig {
-  logs?: LoggerConfig;
-  OTLPExporter?: OTLPExporterConfig;
-  otelAttributeFormat?: OtelAttributeFormat;
+  logs: LoggerConfig;
+  OTLPExporter: OTLPExporterConfig;
+  otelAttributeFormat: OtelAttributeFormat;
 }
 
 /**
@@ -226,9 +215,7 @@ export interface OTLPExporterConfig {
 
 export interface LoggerConfig {
   logLevel?: string;
-  silent?: boolean;
   addContextMetadata?: boolean;
-  forceConsole?: boolean;
   logger?: DLogger;
 }
 
@@ -250,18 +237,9 @@ export type DBOSConfigInternal = {
   notificationCoalesceMs?: number;
   observabilityQueryTimeoutMs?: number;
   runMigrations: boolean;
-
-  http?: {
-    cors_middleware?: boolean;
-    credentials?: boolean;
-    allowed_origins?: string[];
-  };
 };
 
 export interface InternalWorkflowParams extends WorkflowParams {
-  readonly tempWfType?: string;
-  readonly tempWfName?: string;
-  readonly tempWfClass?: string;
   /** Set only by queue dispatch: the claimed row this run was started from. */
   readonly dequeuedStatus?: WorkflowStatusInternal;
 }
@@ -281,34 +259,18 @@ export interface PrepareEnqueuedWorkflowOptions {
 }
 
 export const OperationType = {
-  HANDLER: 'handler',
   WORKFLOW: 'workflow',
   TRANSACTION: 'transaction',
   STEP: 'step',
 } as const;
 
-export const TempWorkflowType = {
-  step: 'step',
-  send: 'send',
-} as const;
-
-export interface DBOSExecutorOptions {
-  systemDatabase?: SystemDatabase;
-}
-
 export class DBOSExecutor {
   initialized: boolean;
+  conductor: Conductor | undefined = undefined;
   // System Database
   readonly systemDatabase: SystemDatabase;
 
-  // Temporary workflows are created by calling transaction/send/recv directly from the executor class
-  static readonly #tempWorkflowName = 'temp_workflow';
-
-  readonly telemetryCollector: TelemetryCollector;
-
   static readonly defaultNotificationTimeoutSec = 60;
-
-  readonly systemDBSchemaName: string;
 
   readonly logger: GlobalLogger;
   readonly ctxLogger: DBOSContextualLogger;
@@ -322,43 +284,27 @@ export class DBOSExecutor {
   static globalInstance: DBOSExecutor | undefined = undefined;
 
   /* WORKFLOW EXECUTOR LIFE CYCLE MANAGEMENT */
-  constructor(
-    readonly config: DBOSConfigInternal,
-    { systemDatabase }: DBOSExecutorOptions = {},
-  ) {
-    this.systemDBSchemaName = config.systemDatabaseSchemaName;
-
-    if (config.telemetry.OTLPExporter) {
-      const OTLPExporter = new TelemetryExporter(config.telemetry.OTLPExporter);
-      this.telemetryCollector = new TelemetryCollector(OTLPExporter);
-    } else {
-      // We always setup a collector to drain the signals queue, even if we don't have an exporter.
-      this.telemetryCollector = new TelemetryCollector();
-    }
-    this.logger = new GlobalLogger(this.telemetryCollector, this.config.telemetry.logs, this.appName);
+  constructor(readonly config: DBOSConfigInternal) {
+    const telemetryCollector = new TelemetryCollector(new TelemetryExporter(config.telemetry.OTLPExporter));
+    this.logger = new GlobalLogger(telemetryCollector, this.config.telemetry.logs, this.appName);
     this.ctxLogger = new DBOSContextualLogger(this.logger, () => getActiveSpan());
-    this.tracer = new Tracer(this.telemetryCollector, config.telemetry.otelAttributeFormat);
+    this.tracer = new Tracer(telemetryCollector, config.telemetry.otelAttributeFormat);
     this.serializer = config.serializer;
 
-    if (systemDatabase) {
-      this.logger.debug('Using provided system database'); // XXX print the name or something
-      this.systemDatabase = systemDatabase;
-    } else {
-      this.logger.debug('Using Postgres system database');
-      this.systemDatabase = new SystemDatabase(
-        this.config.systemDatabaseUrl,
-        this.logger,
-        this.serializer,
-        this.config.sysDbPoolSize,
-        this.config.systemDatabasePool,
-        this.systemDBSchemaName,
-        this.config.useListenNotify,
-        this.config.systemDatabasePollingConcurrency,
-        this.config.notificationCoalesceMs,
-        this.appName,
-        this.config.observabilityQueryTimeoutMs,
-      );
-    }
+    this.logger.debug('Using Postgres system database');
+    this.systemDatabase = new SystemDatabase(
+      this.config.systemDatabaseUrl,
+      this.logger,
+      this.serializer,
+      this.config.sysDbPoolSize,
+      this.config.systemDatabasePool,
+      this.config.systemDatabaseSchemaName,
+      this.config.useListenNotify,
+      this.config.systemDatabasePollingConcurrency,
+      this.config.notificationCoalesceMs,
+      this.appName,
+      this.config.observabilityQueryTimeoutMs,
+    );
 
     new DynamicSchedulerLoop(config.schedulerPollingIntervalMs); // Create the dynamic scheduler, which registers itself.
 
@@ -399,7 +345,6 @@ export class DBOSExecutor {
     // Compute the application version if not provided
     if (globalParams.appVersion === '') {
       globalParams.appVersion = this.computeAppVersion();
-      globalParams.wasComputed = true;
     }
 
     // Any initialization hooks
@@ -438,7 +383,6 @@ export class DBOSExecutor {
     }
   }
 
-  // This could return WF, or the function underlying a temp wf
   #getFunctionInfoFromWFStatus(wf: WorkflowStatusInternal) {
     const methReg = getFunctionRegistrationByName(wf.workflowClassName, wf.workflowName);
     return { methReg, configuredInst: getConfiguredInstance(wf.workflowClassName, wf.workflowConfigName) };
@@ -530,7 +474,6 @@ export class DBOSExecutor {
     ...args: T
   ): Promise<WorkflowHandle<R>> {
     const workflowID: string = params.workflowUUID ? params.workflowUUID : randomUUID();
-    const presetID: boolean = params.workflowUUID ? true : false;
     const timeoutMS = params.timeoutMS ?? undefined;
     // If a timeout is explicitly specified, use it over any propagated deadline
     const deadlineEpochMS = params.timeoutMS
@@ -545,30 +488,20 @@ export class DBOSExecutor {
 
     const pctx = { ...getCurrentContextStore() }; // function ID was already incremented...
 
-    // Resolve authentication once: explicit params, then enqueue options, then the ambient context.
+    // Resolve authentication once: explicit params, then the ambient context.
     // The status row, the span, and the workflow's own context must all agree on this.
-    const authenticatedUser =
-      params.authenticatedUser ?? params.enqueueOptions?.authenticatedUser ?? pctx?.authenticatedUser ?? '';
-    const authenticatedRoles =
-      params.authenticatedRoles ?? params.enqueueOptions?.authenticatedRoles ?? pctx?.authenticatedRoles ?? [];
+    const authenticatedUser = params.authenticatedUser ?? pctx?.authenticatedUser ?? '';
+    const authenticatedRoles = params.authenticatedRoles ?? pctx?.authenticatedRoles ?? [];
 
-    let wConfig: WorkflowConfig = {};
     const wInfo = getFunctionRegistration(wf);
     const wfNames = getRegisteredFunctionFullName(wf);
-    let wfname = wfNames.name;
-    let wfclassname = wfNames.className;
+    const wfname = wfNames.name;
+    const wfclassname = wfNames.className;
 
-    const isTempWorkflow = DBOSExecutor.#tempWorkflowName === wfname || !!params.tempWfType;
-
-    if (!isTempWorkflow) {
-      if (!wInfo || !wInfo.workflowConfig) {
-        throw new DBOSNotRegisteredError(wf.name);
-      }
-      wConfig = wInfo.workflowConfig;
-    } else if (params.tempWfName) {
-      wfname = params.tempWfName;
-      wfclassname = params.tempWfClass ?? '';
+    if (!wInfo || !wInfo.workflowConfig) {
+      throw new DBOSNotRegisteredError(wf.name);
     }
+    const wConfig: WorkflowConfig = wInfo.workflowConfig;
 
     const maxRecoveryAttempts = wConfig.maxRecoveryAttempts
       ? wConfig.maxRecoveryAttempts
@@ -649,10 +582,6 @@ export class DBOSExecutor {
       applicationName: ownerAppName,
     };
 
-    if (isTempWorkflow) {
-      internalStatus.workflowName = `${DBOSExecutor.#tempWorkflowName}-${params.tempWfType}-${params.tempWfName}`;
-    }
-
     let $deadlineEpochMS: number | undefined = undefined;
     let shouldExecute: boolean | undefined = undefined;
 
@@ -664,7 +593,7 @@ export class DBOSExecutor {
         if (result.error) {
           throw await deserializeResError(result.error, result.serialization ?? null, this.serializer);
         }
-        return new RetrievedHandle(this.systemDatabase, result.childWorkflowID!);
+        return new RetrievedHandle(result.childWorkflowID!);
       }
     }
     let ires: Awaited<ReturnType<SystemDatabase['initWorkflowStatus']>>;
@@ -684,7 +613,7 @@ export class DBOSExecutor {
       // Only a PENDING row owns its outcome, so a row moved on since the claim would run for nothing.
       if (claimed.status !== StatusString.PENDING) {
         this.tracer.endSpan(span);
-        return new RetrievedHandle(this.systemDatabase, workflowID);
+        return new RetrievedHandle(workflowID);
       }
       ires = {
         status: claimed.status,
@@ -738,7 +667,6 @@ export class DBOSExecutor {
 
     $deadlineEpochMS = ires.deadlineEpochMS;
     shouldExecute = ires.shouldExecuteOnThisExecutor;
-    await debugTriggerPoint(DEBUG_TRIGGER_WORKFLOW_ENQUEUE);
 
     async function callPromiseWithTimeout(
       callPromise: Promise<R>,
@@ -855,7 +783,6 @@ export class DBOSExecutor {
             return await runWithParentContext(
               pctx,
               {
-                presetID,
                 workflowTimeoutMS: undefined, // Becomes deadline
                 deadlineEpochMS,
                 workflowId: workflowID,
@@ -954,44 +881,10 @@ export class DBOSExecutor {
       );
 
       // Return the normal handle that doesn't capture errors.
-      return new InvokedHandle(this.systemDatabase, workflowPromise, workflowID, wf.name);
+      return new InvokedHandle(workflowPromise, workflowID);
     } else {
-      return new RetrievedHandle(this.systemDatabase, workflowID);
+      return new RetrievedHandle(workflowID);
     }
-  }
-
-  async runStepTempWF<T extends unknown[], R>(
-    stepFn: TypedAsyncFunction<T, R>,
-    params: WorkflowParams,
-    ...args: T
-  ): Promise<R> {
-    return await (await this.startStepTempWF(stepFn, params, undefined, undefined, ...args)).getResult();
-  }
-
-  async startStepTempWF<T extends unknown[], R>(
-    stepFn: TypedAsyncFunction<T, R>,
-    params: InternalWorkflowParams,
-    callerWFID?: string,
-    callerFunctionID?: number,
-    ...args: T
-  ): Promise<WorkflowHandle<R>> {
-    // Create a workflow and call external.
-    const temp_workflow = async (...args: T) => {
-      return await this.callStepFunction(stepFn, undefined, undefined, params.configuredInstance ?? null, ...args);
-    };
-
-    return await this.internalWorkflow(
-      temp_workflow,
-      {
-        ...params,
-        tempWfType: TempWorkflowType.step,
-        tempWfName: getRegisteredFunctionName(stepFn),
-        tempWfClass: getRegisteredFunctionClassName(stepFn),
-      },
-      callerWFID,
-      callerFunctionID,
-      ...args,
-    );
   }
 
   /**
@@ -1235,7 +1128,7 @@ export class DBOSExecutor {
    * Retrieve a handle for a workflow UUID.
    */
   retrieveWorkflow<R>(workflowID: string): WorkflowHandle<R> {
-    return new RetrievedHandle(this.systemDatabase, workflowID);
+    return new RetrievedHandle(workflowID);
   }
 
   async runInternalStep<T>(
@@ -1350,7 +1243,7 @@ export class DBOSExecutor {
     }
   }
 
-  async deactivateEventReceivers(stopQueueThread: boolean = true) {
+  async deactivateEventReceivers() {
     this.logger.debug('Deactivating lifecycle listeners');
     for (const lcl of getLifecycleListeners()) {
       try {
@@ -1362,14 +1255,12 @@ export class DBOSExecutor {
     }
 
     this.logger.debug('Deactivating queue runner');
-    if (stopQueueThread) {
-      try {
-        wfQueueRunner.stop();
-        await this.#wfqEnded;
-      } catch (err) {
-        const e = err as Error;
-        this.logger.warn(`Error destroying wf queue runner: ${e.message}`);
-      }
+    try {
+      wfQueueRunner.stop();
+      await this.#wfqEnded;
+    } catch (err) {
+      const e = err as Error;
+      this.logger.warn(`Error destroying wf queue runner: ${e.message}`);
     }
   }
 
@@ -1456,78 +1347,9 @@ export class DBOSExecutor {
       });
     }
 
-    // Should be temporary workflows. Parse the name of the workflow.
-    const wfName = wfStatus.workflowName;
-    const nameArr = wfName.split('-');
-    if (!nameArr[0].startsWith(DBOSExecutor.#tempWorkflowName)) {
-      throw new DBOSError(
-        `Cannot find workflow function for a non-temporary workflow, ID ${workflowID}, class '${wfStatus.workflowClassName}', function '${wfName}'; did you change your code?`,
-      );
-    }
-
-    if (nameArr[1] === TempWorkflowType.step) {
-      const stepReg = getFunctionRegistrationByName(wfStatus.workflowClassName, nameArr[2]);
-      if (!stepReg?.stepConfig) {
-        this.logger.error(`Cannot find step info for ID ${workflowID}, name ${nameArr[2]}`);
-        throw new DBOSNotRegisteredError(nameArr[2]);
-      }
-      return await runWithTopContext(recoverCtx, async () => {
-        return await this.startStepTempWF(
-          stepReg.registeredFunction as UntypedAsyncFunction,
-          {
-            workflowUUID: workflowID,
-            configuredInstance: configuredInst,
-            queueName: wfStatus.queueName, // Probably null
-            enqueueOptions,
-            executeWorkflow: true,
-            dequeuedStatus: wfStatus,
-          },
-          undefined,
-          undefined,
-          ...inputs,
-        );
-      });
-    } else if (nameArr[1] === TempWorkflowType.send) {
-      // Backwards compatibility: recover send temp workflows created before sendDirect was introduced.
-      const swf = async (
-        destinationID: string,
-        message: unknown,
-        topic?: string,
-        serialization?: WorkflowSerializationFormat | null,
-      ) => {
-        const ctx = getCurrentContextStore();
-        // Reserve the function ID synchronously, before any await.
-        const functionID: number = functionIDGetIncrement();
-        const sermsg = await serializeValue(message, this.serializer, serialization ?? undefined);
-        await this.systemDatabase.send(
-          ctx!.workflowId!,
-          functionID,
-          destinationID,
-          sermsg.serializedValue,
-          topic,
-          sermsg.serialization,
-        );
-      };
-      const temp_workflow = swf as UntypedAsyncFunction;
-      return await runWithTopContext(recoverCtx, async () => {
-        return this.workflow(
-          temp_workflow,
-          {
-            tempWfName: nameArr[2],
-            tempWfType: TempWorkflowType.send,
-            workflowUUID: workflowID,
-            queueName: wfStatus.queueName,
-            enqueueOptions,
-            executeWorkflow: true,
-            dequeuedStatus: wfStatus,
-          },
-          ...inputs,
-        );
-      });
-    } else {
-      this.logger.error(`Unrecognized temporary workflow! UUID ${workflowID}, name ${wfName}`);
-      throw new DBOSNotRegisteredError(wfName);
-    }
+    throw new DBOSError(
+      `Cannot find workflow function for ID ${workflowID}, class '${wfStatus.workflowClassName}', function '${wfStatus.workflowName}'; did you change your code?`,
+    );
   }
 
   #getRecoveryContext(_workflowID: string, status: WorkflowStatusInternal): DBOSLocalCtx {
@@ -1538,20 +1360,6 @@ export class DBOSExecutor {
     oc.assumedRole = status.assumedRole;
     oc.serializationType = status.serialization === DBOSPortableJSON.name() ? 'portable' : undefined;
     return oc;
-  }
-
-  async getWorkflowSteps(workflowID: string): Promise<step_info[]> {
-    const outputs = await this.systemDatabase.getAllOperationResults(workflowID);
-    return await Promise.all(
-      outputs.map(async (row) => ({
-        function_id: row.function_id,
-        function_name: row.function_name ?? '<unknown>',
-        child_workflow_id: row.child_workflow_id,
-        output: row.output !== null ? await this.serializer.parse(row.output) : null,
-        error:
-          row.error !== null ? deserializeError(await this.serializer.parse(row.error as unknown as string)) : null,
-      })),
-    );
   }
 
   /**

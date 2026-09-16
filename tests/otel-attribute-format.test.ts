@@ -29,10 +29,6 @@ const EXPECTED_LEGACY_TO_SEMCONV: Readonly<Record<string, string>> = {
   authenticatedUser: 'dbos.user.name',
   authenticatedRoles: 'dbos.user.roles',
   assumedRole: 'dbos.user.assumed_role',
-  requestID: 'dbos.request.id',
-  requestIP: 'dbos.request.ip',
-  requestURL: 'dbos.request.url',
-  requestMethod: 'dbos.request.method',
 };
 
 // A representative value for each legacy attribute key, used by the
@@ -48,10 +44,6 @@ const ALL_LEGACY_ATTRS = {
   authenticatedUser: 'alice',
   authenticatedRoles: ['admin'],
   assumedRole: 'admin',
-  requestID: 'rid-1',
-  requestIP: '1.2.3.4',
-  requestURL: '/x',
-  requestMethod: 'GET',
 };
 
 function findSpanByName(spans: readonly ReadableSpan[], name: string): ReadableSpan | undefined {

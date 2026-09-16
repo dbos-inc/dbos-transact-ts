@@ -1,7 +1,23 @@
 name: Test DBOS
 
 on:
-  workflow_call:
+  push:
+    branches:
+      - main
+      - release/*
+    paths-ignore:
+      - 'README.md'
+  pull_request:
+    branches:
+      - main
+      - release/*
+    types:
+      - ready_for_review
+      - opened
+      - reopened
+      - synchronize
+    paths-ignore:
+      - 'README.md'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
@@ -60,10 +76,7 @@ jobs:
         env:
           PGPASSWORD: dbos
           DB_PASSWORD: dbos
-          DB_USER: postgres
           DBOS_COCKROACHDB_URL: postgresql://root@localhost:26257/postgres
-          NPM_AUTH_TOKEN: ${{secrets.GITHUB_TOKEN}}
-          SILENCE_LOGS: true
 
   # The workspace packages test independently of the SDK's own suite, so they run as their own job
   package-test:
@@ -111,11 +124,7 @@ jobs:
           npm run test:packages
         env:
           PGPASSWORD: dbos
-          DB_PASSWORD: dbos
-          DB_USER: postgres
           KAFKA_BROKER: localhost:9092
-          NPM_AUTH_TOKEN: ${{secrets.GITHUB_TOKEN}}
-          SILENCE_LOGS: true
 
   package-check:
     runs-on: ubuntu-latest

@@ -13,17 +13,15 @@ import {
 } from './system_database';
 
 import { DLogger, GlobalLogger } from './telemetry/logs';
-import { randomUUID } from 'node:crypto';
 import {
   type GetWorkflowsInput,
-  StatusString,
   type StepInfo,
   type ListWorkflowStepsOptions,
   type WorkflowHandle,
   WorkflowSerializationFormat,
   type WorkflowStatus,
-  validateWorkflowAttributes,
 } from './workflow';
+import { buildEnqueueStatus, type EnqueueWorkflowOptions } from './enqueue_options';
 import {
   type GetEventOptions,
   type PollingOptions,
@@ -41,14 +39,7 @@ import {
   ReadStreamOffsetOptions,
 } from './dbos';
 import { readStreamCore, readStreamOffsetCore } from './streams';
-import {
-  DBOSJSON,
-  DBOSSerializer,
-  deserializePositionalArgs,
-  deserializeValue,
-  serializeArgs,
-  serializeValue,
-} from './serialization';
+import { DBOSJSON, DBOSSerializer, deserializeValue, serializeValue } from './serialization';
 import {
   forkWorkflow,
   getWorkflow,
@@ -78,83 +69,10 @@ import { validateCrontab, validateTimezone } from './scheduler/crontab';
 import { logQueue, RegisterQueueOptions, WorkflowQueue } from './wfqueue';
 
 /**
- * EnqueueOptions defines the options that can be passed to the `enqueue` method of the DBOSClient.
- * This includes parameters like queue name, workflow name, workflow class name, and other optional settings.
+ * Options for the `enqueue` methods of the DBOSClient: the options of `DBOS.enqueueWorkflowWithOptions`,
+ * plus how to handle a deduplication collision.
  */
-export interface ClientEnqueueOptions {
-  /**
-   * The name of the queue to which the workflow will be enqueued.
-   */
-  queueName: string;
-  /**
-   * The name of the method that will be invoked when the workflow runs.
-   */
-  workflowName: string;
-  /**
-   * The name of the class containing the method that will be invoked when the workflow runs.
-   * If not provided, an empty string will be used as the class name.
-   */
-  workflowClassName?: string;
-  /**
-   * The name of the ConfiguredInstance containing the method that will be invoked when the workflow runs.
-   * If not provided, an empty string will be used as the configured instance name.
-   */
-  workflowConfigName?: string;
-  /**
-   * An optional identifier for the workflow to ensure idempotency.
-   * If not provided, a new UUID will be generated.
-   */
-  workflowID?: string;
-  /**
-   * The application version associated with this workflow.
-   * If not provided, the version of the DBOS app that first dequeues the workflow will be used.
-   */
-  appVersion?: string;
-  /**
-   * Timeout for the workflow execution in milliseconds.
-   * Note, timeout starts when the workflow is dequeued.
-   * If not provided, the workflow timeout will not be set and the workflow will run to completion.
-   */
-  workflowTimeoutMS?: number;
-  /**
-   * An ID used to identify enqueues workflows that will be used for de-duplication.
-   * If not provided, no de-duplication will be performed.
-   */
-  deduplicationID?: string;
-
-  /**
-   * Serialization to use for enqueued request
-   *   Default is to use the serialization for JS/TS, as this is the most flexible
-   *   If `portable_json` is specified, a more limited JSON serialization is used,
-   *    allowing cross-language enqueues of workflows with simple semantics
-   */
-  serializationType?: WorkflowSerializationFormat;
-
-  /**
-   * An optional priority for the workflow.
-   * Workflows with higher priority will be dequeued first.
-   */
-  priority?: number;
-
-  /**
-   * The authenticated user to record on the enqueued workflow.
-   */
-  authenticatedUser?: string;
-
-  /**
-   * The authenticated roles to record on the enqueued workflow.
-   */
-  authenticatedRoles?: string[];
-  /**
-   * Partition key for partitioned queues.
-   * Required when enqueueing on a partitioned queue.
-   */
-  queuePartitionKey?: string;
-  /**
-   * Number of seconds to delay the workflow before it starts executing.
-   * The workflow will be in DELAYED status until the delay expires, then transition to ENQUEUED.
-   */
-  delaySeconds?: number;
+export interface ClientEnqueueOptions extends EnqueueWorkflowOptions {
   /**
    * How to handle a collision with another workflow that has the same `deduplicationID`
    * on the same queue.
@@ -164,17 +82,6 @@ export interface ClientEnqueueOptions {
    *     and the handle resolves with the original workflow's result.
    */
   duplicationPolicy?: DuplicationPolicy;
-  /**
-   * Custom key-value attributes to attach to the workflow at creation.
-   * Attributes are searchable via the `attributes` filter of `listWorkflows`.
-   */
-  attributes?: Record<string, unknown>;
-  /**
-   * The application that owns and runs this workflow. Defaults to the enqueuer's own
-   * application. Leaving both unset enqueues an unclaimed workflow, which any
-   * application sharing the system database may run.
-   */
-  applicationName?: string;
 }
 
 /**
@@ -193,20 +100,12 @@ interface ClientSendOptions {
 export class ClientHandle<R> implements WorkflowHandle<R> {
   constructor(
     readonly systemDatabase: SystemDatabase,
-    readonly workflowUUID: string,
+    readonly workflowID: string,
   ) {}
 
-  getWorkflowUUID(): string {
-    return this.workflowUUID;
-  }
-
-  get workflowID(): string {
-    return this.workflowUUID;
-  }
-
   async getStatus(): Promise<WorkflowStatus | null> {
-    const status = await this.systemDatabase.getWorkflowStatus(this.workflowUUID);
-    return status ? toWorkflowStatus(status, this.systemDatabase.getSerializer()) : null;
+    const status = await this.systemDatabase.getWorkflowStatus(this.workflowID);
+    return status ? toWorkflowStatus(status, this.systemDatabase.serializer) : null;
   }
 
   async getResult(options?: PollingOptions): Promise<R> {
@@ -224,16 +123,7 @@ export class ClientHandle<R> implements WorkflowHandle<R> {
     if (res?.maxRecoveryAttemptsExceeded) {
       throw new DBOSAwaitedWorkflowExceededMaxRecoveryAttempts(this.workflowID);
     }
-    return await DBOSExecutor.reviveResultOrError<R>(res!, this.systemDatabase.getSerializer());
-  }
-
-  async getWorkflowInputs<T extends unknown[]>(): Promise<T> {
-    const status = (await this.systemDatabase.getWorkflowStatus(this.workflowUUID)) as WorkflowStatusInternal;
-    return (await deserializePositionalArgs(
-      status.input,
-      status.serialization,
-      this.systemDatabase.getSerializer(),
-    )) as T;
+    return await DBOSExecutor.reviveResultOrError<R>(res!, this.systemDatabase.serializer);
   }
 }
 
@@ -364,47 +254,14 @@ export class DBOSClient {
     namedArgs?: { [key: string]: unknown },
     defaultSerializationType?: WorkflowSerializationFormat,
   ): Promise<WorkflowStatusInternal> {
-    validateWorkflowAttributes(options.attributes);
-    const { workflowName, workflowClassName, workflowConfigName, queueName, appVersion } = options;
-    const workflowUUID = options.workflowID ?? randomUUID();
-
-    const serparam = await serializeArgs(
+    return await buildEnqueueStatus(
+      // Fall back to the client's own application, if it was given one.
+      { ...options, applicationName: options.applicationName ?? this.systemDatabase.appName },
+      this.serializer,
       args,
       namedArgs,
-      this.serializer,
-      options?.serializationType ?? defaultSerializationType,
+      defaultSerializationType,
     );
-    const delayUntilEpochMS =
-      options.delaySeconds !== undefined && options.delaySeconds > 0
-        ? Date.now() + options.delaySeconds * 1000
-        : undefined;
-    return {
-      workflowUUID: workflowUUID,
-      status: delayUntilEpochMS !== undefined ? StatusString.DELAYED : StatusString.ENQUEUED,
-      workflowName: workflowName,
-      workflowClassName: workflowClassName ?? '',
-      workflowConfigName: workflowConfigName ?? '',
-      queueName: queueName,
-      authenticatedUser: options.authenticatedUser ?? '',
-      output: null,
-      error: null,
-      assumedRole: '',
-      authenticatedRoles: options.authenticatedRoles ?? [],
-      executorId: '',
-      applicationVersion: appVersion,
-      applicationID: '',
-      timeoutMS: options.workflowTimeoutMS,
-      deadlineEpochMS: undefined,
-      input: serparam.serializedValue,
-      deduplicationID: options.deduplicationID,
-      priority: options.priority ?? 0,
-      queuePartitionKey: options.queuePartitionKey,
-      serialization: serparam.serialization,
-      delayUntilEpochMS,
-      attributes: options.attributes,
-      // Fall back to the client's own application, if it was given one.
-      applicationName: options.applicationName ?? this.systemDatabase.appName,
-    };
   }
 
   /**

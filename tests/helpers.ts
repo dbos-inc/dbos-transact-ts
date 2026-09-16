@@ -1,7 +1,7 @@
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import { DBOS, StatusString, type WorkflowHandle } from '../src';
 import { getClientConfig, INTERNAL_QUEUE_NAME, sleepms } from '../src/utils';
-import { isValidDatabaseName, translateDbosConfig } from '../src/config';
+import { translateDbosConfig } from '../src/config';
 import { ensureSystemDatabase } from '../src/system_database';
 import { GlobalLogger } from '../src/telemetry/logs';
 import { deriveDatabaseUrl, dropPGDatabase, ensurePGDatabase, maskDatabaseUrl } from '../src/database_utils';
@@ -34,36 +34,18 @@ export async function ensureTestDatabase(databaseUrl: string) {
   }
 }
 
-function getSysDatabaseUrlFromUserDb(userDB: string) {
-  const url = new URL(userDB);
-  const dbName = url.pathname.slice(1);
-  if (!isValidDatabaseName(dbName)) {
-    throw new Error(`Database name in ${maskDatabaseUrl(userDB)} is invalid.`);
-  }
-  const sysDbName = `${dbName}_dbos_sys`;
-  url.pathname = `/${sysDbName}`;
-  return url.toString();
-}
-
 export function generateDBOSTestConfig(): DBOSConfig {
-  const _silenceLogs = process.env.SILENCE_LOGS === 'true';
-
-  let databaseUrl = process.env.DBOS_TEST_DB_URL;
-  if (!databaseUrl) {
-    const dbPassword: string | undefined = process.env.DB_PASSWORD || process.env.PGPASSWORD;
-    if (!dbPassword) {
-      throw new Error('DB_PASSWORD or PGPASSWORD environment variable not set');
-    }
-    databaseUrl = `postgresql://postgres:${dbPassword}@localhost:5432/dbostest?sslmode=disable`;
-  }
-  const systemDatabaseUrl = getSysDatabaseUrlFromUserDb(databaseUrl);
-
-  const isCockroach = new URL(databaseUrl).port === '26257';
+  const dbPassword = process.env.DB_PASSWORD || process.env.PGPASSWORD || 'dbos';
+  const url = new URL(
+    process.env.DBOS_TEST_DB_URL ?? `postgresql://postgres:${dbPassword}@localhost:5432/dbostest?sslmode=disable`,
+  );
+  // DBOS_TEST_DB_URL names the test database; the system database is named after it.
+  url.pathname = `${url.pathname}_dbos_sys`;
 
   return {
     name: 'dbostest',
-    systemDatabaseUrl,
-    ...(isCockroach ? { useListenNotify: false } : {}),
+    systemDatabaseUrl: url.toString(),
+    ...(url.port === '26257' ? { useListenNotify: false } : {}),
   };
 }
 
@@ -176,7 +158,6 @@ function withDispatchDeadline<R>(handle: WorkflowHandle<R>, timeoutMs: number): 
       return handle.workflowID;
     },
     getStatus: () => handle.getStatus(),
-    getWorkflowInputs: <T extends unknown[]>() => handle.getWorkflowInputs<T>(),
     getResult: async (options?: Parameters<WorkflowHandle<R>['getResult']>[0]) => {
       const expired = Symbol('expired');
       const pending = handle.getResult(options);

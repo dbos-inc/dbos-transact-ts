@@ -72,7 +72,7 @@ export async function enqueueWorkflowWithOptions<T = unknown>(
       if (recorded.error) {
         throw await deserializeResError(recorded.error, recorded.serialization ?? null, exec.serializer);
       }
-      return new RetrievedHandle<T>(sysdb, recorded.childWorkflowID!);
+      return new RetrievedHandle<T>(recorded.childWorkflowID!);
     }
   }
 
@@ -127,5 +127,5 @@ export async function enqueueWorkflowWithOptions<T = unknown>(
     );
   }
 
-  return new RetrievedHandle<T>(sysdb, internalStatus.workflowUUID);
+  return new RetrievedHandle<T>(internalStatus.workflowUUID);
 }

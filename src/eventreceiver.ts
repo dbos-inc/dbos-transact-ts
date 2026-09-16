@@ -60,7 +60,7 @@ export function registerPollerQueue(name: string): void {
 }
 
 /** How a receiver declares the process-local queues it enqueues onto. */
-export { registerInternalQueue } from './wfqueue';
+export { registerInternalQueue, isPartitionedQueue } from './wfqueue';
 
 /**
  * Look up a queue by name: one of DBOS's own process-local queues if there is one under that

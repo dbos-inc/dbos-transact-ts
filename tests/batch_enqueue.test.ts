@@ -81,7 +81,7 @@ describe('batch-enqueue', () => {
   });
 
   test('prepareEnqueuedWorkflow builds an ENQUEUED row, ignoring the ambient context', async () => {
-    const partitioned = registerInternalQueue(`ctx-part-${randomUUID()}`, { partitionQueue: true });
+    const partitioned = registerInternalQueue(`ctx-part-${randomUUID()}`, { partitionConcurrency: 1 });
     // Build under an authenticated context. The normal enqueue path copies these fields off the
     // context store; this one documents that it does not, so the context must be present for the
     // assertions below to mean anything.

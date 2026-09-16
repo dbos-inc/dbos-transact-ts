@@ -33,7 +33,6 @@ export enum MessageType {
   LIST_WORKFLOWS = 'list_workflows',
   LIST_QUEUED_WORKFLOWS = 'list_queued_workflows',
   RESUME = 'resume',
-  RESTART = 'restart',
   GET_WORKFLOW = 'get_workflow',
   EXIST_PENDING_WORKFLOWS = 'exist_pending_workflows',
   LIST_STEPS = 'list_steps',
@@ -104,14 +103,9 @@ export class ExecutorInfoResponse extends BaseResponse {
   }
 }
 
-export class RecoveryRequest implements BaseMessage {
-  type = MessageType.RECOVERY;
-  request_id: string;
+export interface RecoveryRequest extends BaseMessage {
+  type: MessageType.RECOVERY;
   executor_ids: string[];
-  constructor(request_id: string, executor_ids: string[]) {
-    this.request_id = request_id;
-    this.executor_ids = executor_ids;
-  }
 }
 
 export class RecoveryResponse extends BaseResponse {
@@ -122,16 +116,11 @@ export class RecoveryResponse extends BaseResponse {
   }
 }
 
-export class CancelRequest implements BaseMessage {
-  type = MessageType.CANCEL;
-  request_id: string;
+export interface CancelRequest extends BaseMessage {
+  type: MessageType.CANCEL;
   workflow_id: string;
-  cancel_children: boolean = false;
+  cancel_children: boolean;
   workflow_ids?: string[];
-  constructor(request_id: string, workflow_id: string) {
-    this.request_id = request_id;
-    this.workflow_id = workflow_id;
-  }
 }
 
 export class CancelResponse extends BaseResponse {
@@ -142,17 +131,11 @@ export class CancelResponse extends BaseResponse {
   }
 }
 
-export class DeleteRequest implements BaseMessage {
-  type = MessageType.DELETE;
-  request_id: string;
+export interface DeleteRequest extends BaseMessage {
+  type: MessageType.DELETE;
   workflow_id: string;
   delete_children: boolean;
   workflow_ids?: string[];
-  constructor(request_id: string, workflow_id: string, delete_children: boolean = false) {
-    this.request_id = request_id;
-    this.workflow_id = workflow_id;
-    this.delete_children = delete_children;
-  }
 }
 
 export class DeleteResponse extends BaseResponse {
@@ -163,40 +146,17 @@ export class DeleteResponse extends BaseResponse {
   }
 }
 
-export class ResumeRequest implements BaseMessage {
-  type = MessageType.RESUME;
-  request_id: string;
+export interface ResumeRequest extends BaseMessage {
+  type: MessageType.RESUME;
   workflow_id: string;
   workflow_ids?: string[];
   queue_name?: string;
-  constructor(request_id: string, workflow_id: string) {
-    this.request_id = request_id;
-    this.workflow_id = workflow_id;
-  }
 }
 
 export class ResumeResponse extends BaseResponse {
   success: boolean;
   constructor(request_id: string, success: boolean, error_message?: string) {
     super(MessageType.RESUME, request_id, error_message);
-    this.success = success;
-  }
-}
-
-export class RestartRequest implements BaseMessage {
-  type = MessageType.RESTART;
-  request_id: string;
-  workflow_id: string;
-  constructor(request_id: string, workflow_id: string) {
-    this.request_id = request_id;
-    this.workflow_id = workflow_id;
-  }
-}
-
-export class RestartResponse extends BaseResponse {
-  success: boolean;
-  constructor(request_id: string, success: boolean, error_message?: string) {
-    super(MessageType.RESTART, request_id, error_message);
     this.success = success;
   }
 }
@@ -320,14 +280,9 @@ export class WorkflowSteps {
   }
 }
 
-export class ListWorkflowsRequest implements BaseMessage {
-  type = MessageType.LIST_WORKFLOWS;
-  request_id: string;
+export interface ListWorkflowsRequest extends BaseMessage {
+  type: MessageType.LIST_WORKFLOWS;
   body: ListWorkflowsBody;
-  constructor(request_id: string, body: ListWorkflowsBody) {
-    this.request_id = request_id;
-    this.body = body;
-  }
 }
 
 export class ListWorkflowsResponse extends BaseResponse {
@@ -367,14 +322,9 @@ export interface ListQueuedWorkflowsBody {
   application_name?: string | string[];
 }
 
-export class ListQueuedWorkflowsRequest implements BaseMessage {
-  type = MessageType.LIST_QUEUED_WORKFLOWS;
-  request_id: string;
+export interface ListQueuedWorkflowsRequest extends BaseMessage {
+  type: MessageType.LIST_QUEUED_WORKFLOWS;
   body: ListQueuedWorkflowsBody;
-  constructor(request_id: string, body: ListQueuedWorkflowsBody) {
-    this.request_id = request_id;
-    this.body = body;
-  }
 }
 
 export class ListQueuedWorkflowsResponse extends BaseResponse {
@@ -385,16 +335,11 @@ export class ListQueuedWorkflowsResponse extends BaseResponse {
   }
 }
 
-export class GetWorkflowRequest implements BaseMessage {
-  type = MessageType.GET_WORKFLOW;
-  request_id: string;
+export interface GetWorkflowRequest extends BaseMessage {
+  type: MessageType.GET_WORKFLOW;
   workflow_id: string;
   load_input?: boolean;
   load_output?: boolean;
-  constructor(request_id: string, workflow_id: string) {
-    this.request_id = request_id;
-    this.workflow_id = workflow_id;
-  }
 }
 
 export class GetWorkflowResponse extends BaseResponse {
@@ -405,16 +350,10 @@ export class GetWorkflowResponse extends BaseResponse {
   }
 }
 
-export class ExistPendingWorkflowsRequest implements BaseMessage {
-  type = MessageType.EXIST_PENDING_WORKFLOWS;
-  request_id: string;
+export interface ExistPendingWorkflowsRequest extends BaseMessage {
+  type: MessageType.EXIST_PENDING_WORKFLOWS;
   executor_id: string;
   application_version: string;
-  constructor(request_id: string, executor_id: string, application_version: string) {
-    this.request_id = request_id;
-    this.executor_id = executor_id;
-    this.application_version = application_version;
-  }
 }
 
 export class ExistPendingWorkflowsResponse extends BaseResponse {
@@ -425,17 +364,12 @@ export class ExistPendingWorkflowsResponse extends BaseResponse {
   }
 }
 
-export class ListStepsRequest implements BaseMessage {
-  type = MessageType.LIST_STEPS;
-  request_id: string;
+export interface ListStepsRequest extends BaseMessage {
+  type: MessageType.LIST_STEPS;
   workflow_id: string;
   load_output?: boolean;
   limit?: number;
   offset?: number;
-  constructor(request_id: string, workflow_id: string) {
-    this.request_id = request_id;
-    this.workflow_id = workflow_id;
-  }
 }
 
 export class ListStepsResponse extends BaseResponse {
@@ -455,14 +389,9 @@ export interface ForkWorkflowBody {
   queue_partition_key?: string;
 }
 
-export class ForkWorkflowRequest implements BaseMessage {
-  type = MessageType.FORK_WORKFLOW;
-  request_id: string;
+export interface ForkWorkflowRequest extends BaseMessage {
+  type: MessageType.FORK_WORKFLOW;
   body: ForkWorkflowBody;
-  constructor(request_id: string, body: ForkWorkflowBody) {
-    this.request_id = request_id;
-    this.body = body;
-  }
 }
 
 export class ForkWorkflowResponse extends BaseResponse {
@@ -484,14 +413,9 @@ export interface ForkFromFailureBody {
   from_step_name?: string;
 }
 
-export class ForkFromFailureRequest implements BaseMessage {
-  type = MessageType.FORK_FROM_FAILURE;
-  request_id: string;
+export interface ForkFromFailureRequest extends BaseMessage {
+  type: MessageType.FORK_FROM_FAILURE;
   body: ForkFromFailureBody;
-  constructor(request_id: string, body: ForkFromFailureBody) {
-    this.request_id = request_id;
-    this.body = body;
-  }
 }
 
 export class ForkFromFailureResponse extends BaseResponse {
@@ -510,14 +434,9 @@ export interface RetentionBody {
   timeout_cutoff_epoch_ms?: number;
 }
 
-export class RetentionRequest implements BaseMessage {
-  type = MessageType.RETENTION;
-  request_id: string;
+export interface RetentionRequest extends BaseMessage {
+  type: MessageType.RETENTION;
   body: RetentionBody;
-  constructor(request_id: string, body: RetentionBody) {
-    this.request_id = request_id;
-    this.body = body;
-  }
 }
 
 export class RetentionResponse extends BaseResponse {
@@ -528,27 +447,13 @@ export class RetentionResponse extends BaseResponse {
   }
 }
 
-export class GetMetricsRequest implements BaseMessage {
-  type = MessageType.GET_METRICS;
-  request_id: string;
+export interface GetMetricsRequest extends BaseMessage {
+  type: MessageType.GET_METRICS;
   start_time: string;
   end_time: string;
   metric_class: string;
   // Optional so a Conductor predating the field still deserializes, as unscoped.
   application_name?: string[];
-  constructor(
-    request_id: string,
-    start_time: string,
-    end_time: string,
-    metric_class: string,
-    application_name?: string[],
-  ) {
-    this.request_id = request_id;
-    this.start_time = start_time;
-    this.end_time = end_time;
-    this.metric_class = metric_class;
-    this.application_name = application_name;
-  }
 }
 
 export class MetricDataOutput {
@@ -570,16 +475,10 @@ export class GetMetricsResponse extends BaseResponse {
   }
 }
 
-export class ExportWorkflowRequest implements BaseMessage {
-  type = MessageType.EXPORT_WORKFLOW;
-  request_id: string;
+export interface ExportWorkflowRequest extends BaseMessage {
+  type: MessageType.EXPORT_WORKFLOW;
   workflow_id: string;
   export_children: boolean;
-  constructor(request_id: string, workflow_id: string, export_children: boolean = false) {
-    this.request_id = request_id;
-    this.workflow_id = workflow_id;
-    this.export_children = export_children;
-  }
 }
 
 export class ExportWorkflowResponse extends BaseResponse {
@@ -590,14 +489,9 @@ export class ExportWorkflowResponse extends BaseResponse {
   }
 }
 
-export class ImportWorkflowRequest implements BaseMessage {
-  type = MessageType.IMPORT_WORKFLOW;
-  request_id: string;
+export interface ImportWorkflowRequest extends BaseMessage {
+  type: MessageType.IMPORT_WORKFLOW;
   serialized_workflow: string;
-  constructor(request_id: string, serialized_workflow: string) {
-    this.request_id = request_id;
-    this.serialized_workflow = serialized_workflow;
-  }
 }
 
 export class ImportWorkflowResponse extends BaseResponse {
@@ -648,14 +542,9 @@ export interface ListSchedulesBody {
   load_context?: boolean;
 }
 
-export class ListSchedulesRequest implements BaseMessage {
-  type = MessageType.LIST_SCHEDULES;
-  request_id: string;
+export interface ListSchedulesRequest extends BaseMessage {
+  type: MessageType.LIST_SCHEDULES;
   body: ListSchedulesBody;
-  constructor(request_id: string, body: ListSchedulesBody) {
-    this.request_id = request_id;
-    this.body = body;
-  }
 }
 
 export class ListSchedulesResponse extends BaseResponse {
@@ -666,15 +555,10 @@ export class ListSchedulesResponse extends BaseResponse {
   }
 }
 
-export class GetScheduleRequest implements BaseMessage {
-  type = MessageType.GET_SCHEDULE;
-  request_id: string;
+export interface GetScheduleRequest extends BaseMessage {
+  type: MessageType.GET_SCHEDULE;
   schedule_name: string;
   load_context?: boolean;
-  constructor(request_id: string, schedule_name: string) {
-    this.request_id = request_id;
-    this.schedule_name = schedule_name;
-  }
 }
 
 export class GetScheduleResponse extends BaseResponse {
@@ -685,14 +569,9 @@ export class GetScheduleResponse extends BaseResponse {
   }
 }
 
-export class PauseScheduleRequest implements BaseMessage {
-  type = MessageType.PAUSE_SCHEDULE;
-  request_id: string;
+export interface PauseScheduleRequest extends BaseMessage {
+  type: MessageType.PAUSE_SCHEDULE;
   schedule_name: string;
-  constructor(request_id: string, schedule_name: string) {
-    this.request_id = request_id;
-    this.schedule_name = schedule_name;
-  }
 }
 
 export class PauseScheduleResponse extends BaseResponse {
@@ -703,14 +582,9 @@ export class PauseScheduleResponse extends BaseResponse {
   }
 }
 
-export class ResumeScheduleRequest implements BaseMessage {
-  type = MessageType.RESUME_SCHEDULE;
-  request_id: string;
+export interface ResumeScheduleRequest extends BaseMessage {
+  type: MessageType.RESUME_SCHEDULE;
   schedule_name: string;
-  constructor(request_id: string, schedule_name: string) {
-    this.request_id = request_id;
-    this.schedule_name = schedule_name;
-  }
 }
 
 export class ResumeScheduleResponse extends BaseResponse {
@@ -721,14 +595,9 @@ export class ResumeScheduleResponse extends BaseResponse {
   }
 }
 
-export class TriggerScheduleRequest implements BaseMessage {
-  type = MessageType.TRIGGER_SCHEDULE;
-  request_id: string;
+export interface TriggerScheduleRequest extends BaseMessage {
+  type: MessageType.TRIGGER_SCHEDULE;
   schedule_name: string;
-  constructor(request_id: string, schedule_name: string) {
-    this.request_id = request_id;
-    this.schedule_name = schedule_name;
-  }
 }
 
 export class TriggerScheduleResponse extends BaseResponse {
@@ -739,18 +608,11 @@ export class TriggerScheduleResponse extends BaseResponse {
   }
 }
 
-export class BackfillScheduleRequest implements BaseMessage {
-  type = MessageType.BACKFILL_SCHEDULE;
-  request_id: string;
+export interface BackfillScheduleRequest extends BaseMessage {
+  type: MessageType.BACKFILL_SCHEDULE;
   schedule_name: string;
   start: string;
   end: string;
-  constructor(request_id: string, schedule_name: string, start: string, end: string) {
-    this.request_id = request_id;
-    this.schedule_name = schedule_name;
-    this.start = start;
-    this.end = end;
-  }
 }
 
 export class BackfillScheduleResponse extends BaseResponse {
@@ -770,14 +632,6 @@ export interface ApplicationVersionOutput {
   created_at: number;
 }
 
-export class ListApplicationVersionsRequest implements BaseMessage {
-  type = MessageType.LIST_APPLICATION_VERSIONS;
-  request_id: string;
-  constructor(request_id: string) {
-    this.request_id = request_id;
-  }
-}
-
 export class ListApplicationVersionsResponse extends BaseResponse {
   output: ApplicationVersionOutput[];
   constructor(request_id: string, output: ApplicationVersionOutput[], error_message?: string) {
@@ -786,14 +640,9 @@ export class ListApplicationVersionsResponse extends BaseResponse {
   }
 }
 
-export class SetLatestApplicationVersionRequest implements BaseMessage {
-  type = MessageType.SET_LATEST_APPLICATION_VERSION;
-  request_id: string;
+export interface SetLatestApplicationVersionRequest extends BaseMessage {
+  type: MessageType.SET_LATEST_APPLICATION_VERSION;
   version_name: string;
-  constructor(request_id: string, version_name: string) {
-    this.request_id = request_id;
-    this.version_name = version_name;
-  }
 }
 
 export class SetLatestApplicationVersionResponse extends BaseResponse {
@@ -823,14 +672,9 @@ export interface StreamEntryOutput {
   values: string[];
 }
 
-export class GetWorkflowEventsRequest implements BaseMessage {
-  type = MessageType.GET_WORKFLOW_EVENTS;
-  request_id: string;
+export interface GetWorkflowEventsRequest extends BaseMessage {
+  type: MessageType.GET_WORKFLOW_EVENTS;
   workflow_id: string;
-  constructor(request_id: string, workflow_id: string) {
-    this.request_id = request_id;
-    this.workflow_id = workflow_id;
-  }
 }
 
 export class GetWorkflowEventsResponse extends BaseResponse {
@@ -841,14 +685,9 @@ export class GetWorkflowEventsResponse extends BaseResponse {
   }
 }
 
-export class GetWorkflowNotificationsRequest implements BaseMessage {
-  type = MessageType.GET_WORKFLOW_NOTIFICATIONS;
-  request_id: string;
+export interface GetWorkflowNotificationsRequest extends BaseMessage {
+  type: MessageType.GET_WORKFLOW_NOTIFICATIONS;
   workflow_id: string;
-  constructor(request_id: string, workflow_id: string) {
-    this.request_id = request_id;
-    this.workflow_id = workflow_id;
-  }
 }
 
 export class GetWorkflowNotificationsResponse extends BaseResponse {
@@ -859,14 +698,9 @@ export class GetWorkflowNotificationsResponse extends BaseResponse {
   }
 }
 
-export class GetWorkflowStreamsRequest implements BaseMessage {
-  type = MessageType.GET_WORKFLOW_STREAMS;
-  request_id: string;
+export interface GetWorkflowStreamsRequest extends BaseMessage {
+  type: MessageType.GET_WORKFLOW_STREAMS;
   workflow_id: string;
-  constructor(request_id: string, workflow_id: string) {
-    this.request_id = request_id;
-    this.workflow_id = workflow_id;
-  }
 }
 
 export class GetWorkflowStreamsResponse extends BaseResponse {
@@ -903,26 +737,20 @@ export interface GetWorkflowAggregatesBody {
   executor_id?: string[];
   queue_name?: string[];
   workflow_id_prefix?: string[];
-  workflow_uuids?: string[];
-  authenticated_user?: string[];
+  workflow_ids?: string[];
+  user?: string[];
   forked_from?: string[];
   parent_workflow_id?: string[];
   schedule_name?: string[];
   application_name?: string[];
-  queues_only?: boolean;
   was_forked_from?: boolean;
   has_parent?: boolean;
   attributes?: Record<string, unknown>;
 }
 
-export class GetWorkflowAggregatesRequest implements BaseMessage {
-  type = MessageType.GET_WORKFLOW_AGGREGATES;
-  request_id: string;
+export interface GetWorkflowAggregatesRequest extends BaseMessage {
+  type: MessageType.GET_WORKFLOW_AGGREGATES;
   body: GetWorkflowAggregatesBody;
-  constructor(request_id: string, body: GetWorkflowAggregatesBody) {
-    this.request_id = request_id;
-    this.body = body;
-  }
 }
 
 export interface WorkflowAggregateOutput {
@@ -957,14 +785,9 @@ export interface GetStepAggregatesBody {
   application_name?: string[];
 }
 
-export class GetStepAggregatesRequest implements BaseMessage {
-  type = MessageType.GET_STEP_AGGREGATES;
-  request_id: string;
+export interface GetStepAggregatesRequest extends BaseMessage {
+  type: MessageType.GET_STEP_AGGREGATES;
   body: GetStepAggregatesBody;
-  constructor(request_id: string, body: GetStepAggregatesBody) {
-    this.request_id = request_id;
-    this.body = body;
-  }
 }
 
 export interface StepAggregateOutput {
@@ -989,6 +812,7 @@ export interface QueueOutput {
   worker_concurrency: number | null;
   rate_limit_max: number | null;
   rate_limit_period_sec: number | null;
+  /** Always true: every queue dispatches in priority order. */
   priority_enabled: boolean;
   partition_queue: boolean;
   polling_interval_sec: number;
@@ -1003,15 +827,10 @@ export interface ListQueuesBody {
   application_name?: string | string[];
 }
 
-export class ListQueuesRequest implements BaseMessage {
-  type = MessageType.LIST_QUEUES;
-  request_id: string;
+export interface ListQueuesRequest extends BaseMessage {
+  type: MessageType.LIST_QUEUES;
   // Optional: a Conductor that predates the filter sends no body.
   body?: ListQueuesBody;
-  constructor(request_id: string, body?: ListQueuesBody) {
-    this.request_id = request_id;
-    this.body = body;
-  }
 }
 
 export class ListQueuesResponse extends BaseResponse {
@@ -1022,14 +841,9 @@ export class ListQueuesResponse extends BaseResponse {
   }
 }
 
-export class GetQueueRequest implements BaseMessage {
-  type = MessageType.GET_QUEUE;
-  request_id: string;
+export interface GetQueueRequest extends BaseMessage {
+  type: MessageType.GET_QUEUE;
   name: string;
-  constructor(request_id: string, name: string) {
-    this.request_id = request_id;
-    this.name = name;
-  }
 }
 
 export class GetQueueResponse extends BaseResponse {

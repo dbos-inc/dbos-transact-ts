@@ -9,7 +9,6 @@ export const SHARED_MIGRATION_BASE = 100;
 export type DBMigration = {
   name?: string;
   pg?: ReadonlyArray<string>;
-  sqlite3?: ReadonlyArray<string>;
   /**
    * If true, the migration is executed without wrapping it in any helper that
    * suppresses errors, and its statements must be safe to run outside a
@@ -34,18 +33,16 @@ export async function getCurrentSysDBVersion(client: ClientBase, schemaName: str
   );
   if (verRes.rowCount === 0) return 0;
 
-  const raw = verRes.rows[0].version;
-  const n = typeof raw === 'string' ? Number(raw) : Number(raw);
+  const n = Number(verRes.rows[0].version);
   return Number.isFinite(n) ? n : 0;
 }
 
 export type PgMigratorOptions = {
-  ignoreErrorCodes?: ReadonlySet<string>;
   onWarn?: (msg: string, err?: unknown) => void;
   isCockroach?: boolean;
 };
 
-const DEFAULT_IGNORABLE_CODES = new Set<string>([
+const IGNORABLE_CODES = new Set<string>([
   // Relation / object already exists
   '42P07', // duplicate_table
   '42710', // duplicate_object (e.g., index)
@@ -60,9 +57,9 @@ function isPgErrorLike(x: unknown): x is PgErrorLike {
   return typeof x === 'object' && x !== null && ('code' in x || 'message' in x);
 }
 
-function isDDLAlreadyAppliedPgError(err: unknown, ignoreCodes: ReadonlySet<string>): boolean {
+function isDDLAlreadyAppliedPgError(err: unknown): boolean {
   if (!isPgErrorLike(err)) return false;
-  if (err.code && ignoreCodes.has(err.code)) return true;
+  if (err.code && IGNORABLE_CODES.has(err.code)) return true;
   const msg = err.message ?? '';
   // Fallback on message matching (best-effort)
   return /already exists/i.test(msg) || /duplicate/i.test(msg) || /multiple.*?not allowed/i.test(msg);
@@ -72,14 +69,13 @@ function isDDLAlreadyAppliedPgError(err: unknown, ignoreCodes: ReadonlySet<strin
 async function runStatementsIgnoring(
   client: ClientBase,
   stmts: ReadonlyArray<string>,
-  ignoreCodes: ReadonlySet<string>,
   warn: (m: string, e?: unknown) => void,
 ): Promise<void> {
   for (const s of stmts) {
     try {
       await client.query(s, []);
     } catch (err) {
-      if (isDDLAlreadyAppliedPgError(err, ignoreCodes)) {
+      if (isDDLAlreadyAppliedPgError(err)) {
         warn(`Ignoring migration error; migration was likely already applied.  Occurred while executing: ${s}`, err);
         continue;
       }
@@ -159,7 +155,7 @@ async function bumpMigrationVersion(client: ClientBase, schemaName: string, vers
  * - Applies migrations in order
  * - After each migration, persists `dbos_migrations.version` so partial
  *   progress is recorded
- * - Warns if current version > max known (likely newer software concurrently)
+ * - Changes nothing if current version > max known (likely newer software running concurrently)
  */
 export async function runSysMigrationsPg(
   client: ClientBase,
@@ -170,28 +166,17 @@ export async function runSysMigrationsPg(
   fromVersion: number;
   toVersion: number;
   appliedCount: number;
-  skippedCount: number;
-  notice?: string;
 }> {
-  const { ignoreErrorCodes = DEFAULT_IGNORABLE_CODES, onWarn = (m) => console.info(m), isCockroach = false } = opts;
+  const { onWarn = (m) => console.info(m), isCockroach = false } = opts;
 
   const current = await getCurrentSysDBVersion(client, schemaName);
   const maxKnown = allMigrations.length;
 
   if (current > maxKnown) {
-    return {
-      fromVersion: current,
-      toVersion: current,
-      appliedCount: 0,
-      skippedCount: allMigrations.length,
-      notice:
-        `Database version (${current}) is ahead of this build's max (${maxKnown}). ` +
-        `A newer software version may be running concurrently.`,
-    };
+    return { fromVersion: current, toVersion: current, appliedCount: 0 };
   }
 
   let applied = 0;
-  let skipped = 0;
   let lastAppliedVersion = current;
   let loggedInfo = false;
 
@@ -200,14 +185,12 @@ export async function runSysMigrationsPg(
     const m = allMigrations[i];
     const v = i + 1;
     if (v <= current) {
-      skipped++;
       continue;
     }
 
     // Renumbering onto the shared base leaves long runs of empty migrations; skip them without a round trip.
     const stmts = m.pg ?? [];
     if (stmts.length === 0) {
-      skipped++;
       continue;
     }
 
@@ -232,7 +215,7 @@ export async function runSysMigrationsPg(
       // Shared migrations commit all-or-nothing: a peer must never find the function 105 replaces missing mid-migration.
       await runStatementsTransactionally(client, stmts, schemaName, v);
     } else {
-      await runStatementsIgnoring(client, stmts, ignoreErrorCodes, warnWithCause);
+      await runStatementsIgnoring(client, stmts, warnWithCause);
       await bumpMigrationVersion(client, schemaName, v);
     }
     applied++;
@@ -245,14 +228,5 @@ export async function runSysMigrationsPg(
     lastAppliedVersion = maxKnown;
   }
 
-  return {
-    fromVersion: current,
-    toVersion: lastAppliedVersion,
-    appliedCount: applied,
-    skippedCount: skipped,
-    notice:
-      current < maxKnown && applied === 0 && skipped > 0
-        ? 'Nothing to apply; DB is already up-to-date relative to known migrations.'
-        : undefined,
-  };
+  return { fromVersion: current, toVersion: lastAppliedVersion, appliedCount: applied };
 }

@@ -2,6 +2,7 @@ import { DBOS, DBOSLifecycleCallback, Error as DBOSErrors, FunctionName } from '
 import type { WorkflowQueue } from '@dbos-inc/dbos-sdk';
 import {
   registerInternalQueue,
+  isPartitionedQueue,
   getQueue,
   enqueueWorkflows,
   prepareEnqueuedWorkflow,
@@ -9,7 +10,7 @@ import {
   registerPollerQueue,
 } from '@dbos-inc/dbos-sdk/eventreceiver';
 
-import { KafkaJS, LibrdKafkaError as KafkaError } from '@confluentinc/kafka-javascript';
+import { KafkaJS } from '@confluentinc/kafka-javascript';
 
 export type KafkaArgs = [string, number, KafkaJS.Message];
 type KafkaMessageHandler<Return> = (...args: KafkaArgs) => Promise<Return>;
@@ -57,12 +58,6 @@ interface KafkaMethodConfig {
   consumerQueueName?: string;
 }
 
-interface KafkaRetryConfig {
-  maxRetries: number;
-  retryTime: number;
-  multiplier: number;
-}
-
 export interface KafkaConsumerOptions {
   queueName?: string;
   config?: KafkaJS.ConsumerConstructorConfig;
@@ -78,13 +73,6 @@ function safeGroupName(className: string, methodName: string, topics: Array<stri
     .map((r) => r.replaceAll(/[^a-zA-Z0-9\\-]/g, ''))
     .join('-');
   return `dbos-kafka-group-${safeGroupIdPart}`.slice(0, 255);
-}
-
-function isKafkaError(e: unknown): e is KafkaError {
-  if (e && typeof e === 'object') {
-    return 'code' in e && typeof e.code === 'number';
-  }
-  return false;
 }
 
 function groupIdOf(config: KafkaJS.ConsumerConstructorConfig): string | undefined {
@@ -246,10 +234,7 @@ export class ConfluentKafkaReceiver implements DBOSLifecycleCallback {
   readonly #consumers = new Array<KafkaJS.Consumer>();
   #abortController = new AbortController();
 
-  constructor(
-    private readonly config: KafkaJS.KafkaConfig,
-    private readonly retryConfig: KafkaRetryConfig = { maxRetries: 5, retryTime: 300, multiplier: 2 },
-  ) {
+  constructor(private readonly config: KafkaJS.KafkaConfig) {
     DBOS.registerLifecycleCallback(this);
   }
 
@@ -296,7 +281,7 @@ export class ConfluentKafkaReceiver implements DBOSLifecycleCallback {
     }
     // A consumer may name a queue that does not exist yet: it can be registered after launch.
     if (queue === null) return;
-    if (queue.partitionQueue) {
+    if (isPartitionedQueue(queue)) {
       throw new Error(
         `Kafka consumer ${funcName}'s queue ${queueName} is a partitioned queue, which a custom Kafka ` +
           `queue must not be; use ordering="partition" or "topic" for ordered processing`,
@@ -312,7 +297,6 @@ export class ConfluentKafkaReceiver implements DBOSLifecycleCallback {
 
   async initialize() {
     this.#abortController = new AbortController();
-    const { maxRetries, multiplier } = this.retryConfig;
     const clientId = this.config.clientId ?? 'dbos-confluent-kafka-receiver';
     const kafka = new KafkaJS.Kafka({ kafkaJS: { ...this.config, clientId } });
 
@@ -370,24 +354,7 @@ export class ConfluentKafkaReceiver implements DBOSLifecycleCallback {
       this.#consumers.push(consumer);
       try {
         await consumer.connect();
-
-        // A temporary workaround for https://github.com/tulios/kafkajs/pull/1558 until it gets fixed
-        // If topic auto-creation is on and you try to subscribe to a nonexistent topic, KafkaJS should retry until the topic is created.
-        // However, it has a bug where it won't. Thus, we retry instead.
-        let { retryTime } = this.retryConfig;
-        for (let i = 1; i <= maxRetries; i++) {
-          try {
-            await consumer.subscribe({ topics });
-            break;
-          } catch (e) {
-            if (isKafkaError(e) && e.code === 3 && i < maxRetries) {
-              await sleepms(retryTime);
-              retryTime *= multiplier;
-            } else {
-              throw e;
-            }
-          }
-        }
+        await consumer.subscribe({ topics });
 
         const ordering = methodConfig.ordering ?? 'none';
         const queueName = methodConfig.consumerQueueName ?? KAFKA_QUEUE_NAME;

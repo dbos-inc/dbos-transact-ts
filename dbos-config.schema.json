@@ -13,10 +13,6 @@
       "description": "The language used in your application",
       "enum": ["node", "python"]
     },
-    "database_url": {
-      "type": "string",
-      "description": "The URL of the application database"
-    },
     "system_database_url": {
       "type": "string",
       "description": "The URL of the system database"
@@ -31,8 +27,7 @@
       "properties": {
         "app_db_name": {
           "type": "string",
-          "description": "The name of the application database. DEPRECATED: Use database_url instead",
-          "deprecated": true
+          "description": "The name of the application database in DBOS Cloud"
         },
         "migrate": {
           "type": "array",
@@ -51,51 +46,9 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "addContextMetadata": {
-              "type": "boolean",
-              "description": "Adds contextual information, such as workflow UUID, to each log entry"
-            },
             "logLevel": {
               "type": "string",
-              "description": "A filter on what logs should be printed to the standard output"
-            },
-            "silent": {
-              "type": "boolean",
-              "description": "Silences the logger such that nothing is printed to the standard output"
-            }
-          }
-        },
-        "OTLPExporter": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "logsEndpoint": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  }
-                }
-              ],
-              "description": "The URL of an OTLP collector to which to export logs"
-            },
-            "tracesEndpoint": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  }
-                }
-              ],
-              "description": "The URL of an OTLP collector to which to export traces"
+              "description": "A filter on what the `dbos start` and `dbos migrate` commands log to the standard output"
             }
           }
         }
@@ -105,16 +58,6 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "admin_port": {
-          "type": "number",
-          "deprecated": true,
-          "description": "The port number of the admin server (Default: 3001). Deprecated: the admin server will be removed in a future version of DBOS."
-        },
-        "runAdminServer": {
-          "type": "boolean",
-          "deprecated": true,
-          "description": "Whether to run the admin server (Default: false). Deprecated: the admin server will be removed in a future version of DBOS."
-        },
         "start": {
           "type": "array",
           "items": {

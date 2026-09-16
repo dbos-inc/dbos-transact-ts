@@ -114,8 +114,7 @@ describe('sysdb migration runner', () => {
     // The duplicate notifications index is dropped; the one it duplicated stays.
     expect(await indexExists(client, 'idx_notifications')).toBe(false);
     expect(await indexExists(client, 'idx_workflow_topic')).toBe(true);
-    // Dispatch bookkeeping for the removed in-memory event receivers.
-    expect(await tableExists(client, 'event_dispatch_kv')).toBe(false);
+    expect(await tableExists(client, 'event_dispatch_kv')).toBe(true);
   });
 
   // application_name stays nullable everywhere (NULL is what SDKs predating it write); addressing names stay globally unique.

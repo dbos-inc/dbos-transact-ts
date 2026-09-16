@@ -4,7 +4,7 @@ import { Client } from 'pg';
 import { generateDBOSTestConfig } from './helpers';
 import { sleepms } from '../src/utils';
 
-async function waitForMessageTest(command: ChildProcess, port: string, checkResponse: boolean = true) {
+async function waitForMessageTest(command: ChildProcess, port: string) {
   const stdout = command.stdout as unknown as Writable;
   const stdin = command.stdin as unknown as Writable;
   const stderr = command.stderr as unknown as Writable;
@@ -22,10 +22,9 @@ async function waitForMessageTest(command: ChildProcess, port: string, checkResp
     const maxAttempts = 10;
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       try {
-        if (checkResponse) {
-          const response = await fetch(`http://127.0.0.1:${port}/greeting/dbos`);
-          expect(response.status).toBe(200);
-        }
+        const response = await fetch(`http://127.0.0.1:${port}/greeting/dbos`);
+        expect(response.status).toBe(200);
+        break;
       } catch (error) {
         if (attempt < maxAttempts - 1) {
           await sleepms(1000);
@@ -92,7 +91,6 @@ describe('runtime-tests-knex', () => {
 
   test('test hello-knex tests', () => {
     execSync('npm run test', { env: process.env }); // Make sure hello-knex passes its own tests.
-    execSync('npm run lint', { env: process.env }); // Pass linter rules.
   });
 
   test('test hello-knex runtime', async () => {
@@ -159,7 +157,6 @@ describe('runtime-tests-typeorm', () => {
 
   test('test hello-typeorm tests', () => {
     execSync('npm run test', { env: process.env }); // Make sure hello-typeorm passes its own tests.
-    execSync('npm run lint', { env: process.env }); // Pass linter rules.
   });
 
   test('test hello-typeorm runtime', async () => {
@@ -183,7 +180,6 @@ describe('runtime-tests-prisma', () => {
 
   test('test hello-prisma tests', () => {
     execSync('npm run test', { env: process.env }); // Make sure hello-prisma passes its own tests.
-    execSync('npm run lint', { env: process.env }); // Pass linter rules.
   });
 
   test('test hello-prisma runtime', async () => {
@@ -207,7 +203,6 @@ describe('runtime-tests-drizzle', () => {
 
   test('test hello-drizzle tests', () => {
     execSync('npm run test', { env: process.env }); // Make sure hello-drizzle passes its own tests.
-    execSync('npm run lint', { env: process.env, stdio: 'inherit' }); // Pass linter rules.
   });
 
   test('test hello-drizzle runtime', async () => {

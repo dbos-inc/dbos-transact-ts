@@ -174,7 +174,7 @@ describe('enqueue-workflow-with-options', () => {
     expect(Number(rows[0].count)).toBe(1);
   });
 
-  test('records authentication from explicit options, ambient context, or enqueue options', async () => {
+  test('records authentication from explicit options or ambient context', async () => {
     await DBOS.launch();
     await DBOS.registerQueue(QUEUE);
 
@@ -189,12 +189,13 @@ describe('enqueue-workflow-with-options', () => {
       )
     ).getResult();
 
-    // `enqueueOptions` carries the same fields for a queued workflow.
+    // Explicit params also apply to a queued workflow.
     const enqueued = await (
       await DBOS.startWorkflow(authWorkflow, {
         workflowID: 'auth-enqueued',
         queueName: QUEUE,
-        enqueueOptions: { authenticatedUser: 'bob', authenticatedRoles: ['reader'] },
+        authenticatedUser: 'bob',
+        authenticatedRoles: ['reader'],
       })()
     ).getResult();
 

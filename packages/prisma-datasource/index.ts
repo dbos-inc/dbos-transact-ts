@@ -57,7 +57,6 @@ export type TransactionConfig = {
 const asyncLocalCtx = new AsyncLocalStorage<PrismaDataSourceContext>();
 
 class PrismaTransactionHandler implements DataSourceTransactionHandler {
-  readonly dsType = 'PrismaDataSource';
   readonly schemaName: string;
 
   constructor(

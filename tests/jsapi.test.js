@@ -1,7 +1,6 @@
 const { randomUUID } = require('node:crypto');
 const { ConfiguredInstance, DBOS } = require('../src');
 const { generateDBOSTestConfig, setUpDBOSTestSysDb } = require('./helpers');
-const { DBOSInvalidWorkflowTransitionError } = require('../src/error');
 
 async function stepFunctionInternal() {
   expect(DBOS.isInStep()).toBe(true);
@@ -294,10 +293,18 @@ describe('start-workflow-function', () => {
     const nwsAfter = (await DBOS.listWorkflows({})).length;
     expect(nwsAfter - nwsBefore).toBe(0);
 
+    // An assigned workflow ID is for the next workflow; a step in the closure neither takes nor clears it.
     const wfid = randomUUID();
     await DBOS.withNextWorkflowID(wfid, async () => {
-      await expect(stepFunctionBare()).rejects.toThrow(DBOSInvalidWorkflowTransitionError);
+      await expect(stepFunctionBare()).resolves.toBe('BareStep');
+      await expect(DBOS.runStep(async () => Promise.resolve('inline'), { name: 'MyFirstStep' })).resolves.toBe(
+        'inline',
+      );
+      const handle = await DBOS.startWorkflow(wfFunction)();
+      expect(handle.workflowID).toBe(wfid);
+      await handle.getResult();
     });
+    expect((await DBOS.listWorkflows({ workflowIDs: [wfid] })).length).toBe(1);
   });
 
   it('should generate uuid', async () => {

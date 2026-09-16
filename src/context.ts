@@ -22,20 +22,15 @@ export interface DBOSContextOptions {
   authenticatedUser?: string;
   authenticatedRoles?: string[];
   assumedRole?: string;
-  operationType?: string; // A custom helper for users to set a operation type of their choice. Intended for functions setting a pctx to run DBOS operations from.
-  operationCaller?: string; // This is made to pass through the operationName to DBOS contexts, and potentially the caller span name.
   workflowTimeoutMS?: number | null;
   serializationType?: WorkflowSerializationFormat;
 }
 
 export interface DBOSLocalCtx extends DBOSContextOptions {
-  parentCtx?: DBOSLocalCtx;
   workflowId?: string;
   curWFFunctionId?: number; // If currently in a WF, the current call number / ID
   activeStreamReads?: number; // Checkpointed stream reads that have reserved a step but not yet recorded it
-  presetID?: boolean;
   deadlineEpochMS?: number;
-  inRecovery?: boolean;
   curStepFunctionId?: number; // If currently in a step, its function ID
   stepStatus?: StepStatus; // If currently in a step, its public status object
   curTxFunctionId?: number; // If currently in a tx, its function ID
@@ -125,7 +120,6 @@ export async function runWithParentContext<R>(
     {
       ...pctx,
       ...ctx,
-      parentCtx: pctx,
     },
     callback,
   );
@@ -138,7 +132,6 @@ export async function runWithDataSourceContext<R>(callnum: number, callback: () 
     {
       ...pctx,
       curTxFunctionId: callnum,
-      parentCtx: pctx,
       logger: DBOSExecutor.globalInstance!.ctxLogger,
     },
     callback,
@@ -169,7 +162,6 @@ export async function runInStepContext<R>(
     {
       stepStatus: stepStatus,
       curStepFunctionId: stepID,
-      parentCtx: pctx,
       logger: DBOSExecutor.globalInstance!.ctxLogger,
     },
     callback,
