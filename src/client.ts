@@ -75,7 +75,7 @@ import { logQueue, RegisterQueueOptions, WorkflowQueue } from './wfqueue';
 export interface ClientEnqueueOptions extends EnqueueWorkflowOptions {
   /**
    * How to handle a collision with another workflow that has the same `deduplicationID`
-   * on the same queue.
+   * on the same queue, in any partition.
    *   `'reject'` (default): throw `DBOSQueueDuplicatedError`.
    *   `'return-existing'`: return a handle to the existing workflow instead of throwing.
    *     Requires `deduplicationID`. Arguments passed by the colliding caller are discarded

@@ -154,7 +154,7 @@ export interface StartWorkflowParams {
   /** The authenticated roles recorded on the workflow. Defaults to the caller's ambient authenticated roles, if any. */
   authenticatedRoles?: string[];
   // How to handle a collision with another workflow that has the same
-  // `enqueueOptions.deduplicationID` on the same queue.
+  // `enqueueOptions.deduplicationID` on the same queue, in any partition.
   //   'reject' (default): throw `DBOSQueueDuplicatedError`.
   //   'return-existing': return a handle to the existing workflow instead of throwing.
   //     Requires `queueName` and `enqueueOptions.deduplicationID`. Arguments passed by the

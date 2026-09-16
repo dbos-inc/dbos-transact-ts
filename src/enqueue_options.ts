@@ -33,7 +33,7 @@ export interface EnqueueWorkflowOptions {
   appVersion?: string;
   /** Timeout in milliseconds, measured from the moment the workflow is dequeued. */
   workflowTimeoutMS?: number;
-  /** Deduplication ID on the queue; no deduplication is performed if unset. */
+  /** Deduplication ID, unique across the whole queue including all partitions; no deduplication is performed if unset. */
   deduplicationID?: string;
   /** Serialization for the enqueued arguments. */
   serializationType?: WorkflowSerializationFormat;

@@ -1983,9 +1983,7 @@ describe('queue-time-outs', () => {
   );
 
   test('partitioned-queue-deduplication', async () => {
-    // A deduplication ID is scoped to the whole queue, not to one partition: the unique
-    // index is on (queue_name, deduplication_id) and the lookup behind 'return-existing'
-    // has no partition filter. Callers wanting per-partition dedup prefix the partition key.
+    // A deduplication ID spans every partition of its queue; per-partition dedup means prefixing the partition key.
     const dedupID = 'partition-dedup-key';
     const partitionA = 'dedup-a';
     const partitionB = 'dedup-b';

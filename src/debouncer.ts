@@ -84,7 +84,7 @@ function rejectConflictingOptions(params: StartWorkflowParams | undefined, rejec
   }
   if (enqueueOptions?.queuePartitionKey !== undefined) {
     throw new DBOSError(
-      'Cannot debounce a workflow with a queue partition key set: partitioned queues do not support deduplication, which debouncing requires.',
+      'Cannot debounce a workflow with a queue partition key set: partition keys are not supported for debounced workflows.',
     );
   }
   if (params?.duplicationPolicy === 'return-existing') {
