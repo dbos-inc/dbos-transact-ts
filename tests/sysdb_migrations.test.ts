@@ -96,20 +96,30 @@ describe('sysdb migration runner', () => {
     // The new partial indexes should exist; the broad indexes they replace should not.
     expect(await indexExists(client, 'idx_workflow_status_pending')).toBe(true);
     expect(await indexExists(client, 'idx_workflow_status_failed')).toBe(true);
-    expect(await indexExists(client, 'idx_workflow_status_in_flight')).toBe(true);
+    expect(await indexExists(client, 'idx_workflow_status_in_flight_v2')).toBe(true);
     expect(await indexExists(client, 'idx_workflow_status_rate_limited')).toBe(true);
     expect(await indexExists(client, 'uq_workflow_status_dedup_id')).toBe(true);
-    expect(await indexExists(client, 'idx_workflow_status_partition_dequeue_v2')).toBe(true);
-    // v2 must carry the workflow_uuid tiebreaker, which is what keeps the batched head probe index-provided.
-    expect(await indexDefinition(client, 'idx_workflow_status_partition_dequeue_v2')).toContain(
-      'priority, created_at, workflow_uuid',
+    expect(await indexExists(client, 'idx_workflow_status_partition_dequeue_v3')).toBe(true);
+    // v3 must carry the workflow_uuid tiebreaker, which is what keeps the batched head probe index-provided.
+    expect(await indexDefinition(client, 'idx_workflow_status_partition_dequeue_v3')).toContain(
+      'priority, created_at, workflow_uuid, application_name',
+    );
+    expect(await indexDefinition(client, 'idx_workflow_status_in_flight_v2')).toContain(
+      'priority, created_at, application_name',
+    );
+    expect(await indexExists(client, 'idx_operation_outputs_completed_at_function_name_v2')).toBe(true);
+    expect(await indexDefinition(client, 'idx_operation_outputs_completed_at_function_name_v2')).toContain(
+      'completed_at_epoch_ms, function_name, application_name',
     );
 
     expect(await indexExists(client, 'workflow_status_status_index')).toBe(false);
     expect(await indexExists(client, 'workflow_status_executor_id_index')).toBe(false);
     expect(await indexExists(client, 'idx_workflow_status_queue_status_started')).toBe(false);
-    // Superseded by v2, so the original name must be gone.
+    // Superseded indexes must be gone.
     expect(await indexExists(client, 'idx_workflow_status_partition_dequeue')).toBe(false);
+    expect(await indexExists(client, 'idx_workflow_status_partition_dequeue_v2')).toBe(false);
+    expect(await indexExists(client, 'idx_workflow_status_in_flight')).toBe(false);
+    expect(await indexExists(client, 'idx_operation_outputs_completed_at_function_name')).toBe(false);
 
     // The duplicate notifications index is dropped; the one it duplicated stays.
     expect(await indexExists(client, 'idx_notifications')).toBe(false);
