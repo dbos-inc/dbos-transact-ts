@@ -102,14 +102,14 @@ describe('sysdb migration runner', () => {
     expect(await indexExists(client, 'idx_workflow_status_partition_dequeue_v3')).toBe(true);
     // v3 must carry the workflow_uuid tiebreaker, which is what keeps the batched head probe index-provided.
     expect(await indexDefinition(client, 'idx_workflow_status_partition_dequeue_v3')).toContain(
-      'priority, created_at, workflow_uuid, application_name',
+      'priority, created_at, workflow_uuid) INCLUDE (application_name)',
     );
     expect(await indexDefinition(client, 'idx_workflow_status_in_flight_v2')).toContain(
-      'priority, created_at, application_name',
+      'priority, created_at) INCLUDE (application_name)',
     );
     expect(await indexExists(client, 'idx_operation_outputs_completed_at_function_name_v2')).toBe(true);
     expect(await indexDefinition(client, 'idx_operation_outputs_completed_at_function_name_v2')).toContain(
-      'completed_at_epoch_ms, function_name, application_name',
+      'completed_at_epoch_ms, function_name) INCLUDE (application_name)',
     );
 
     expect(await indexExists(client, 'workflow_status_status_index')).toBe(false);
