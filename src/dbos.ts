@@ -527,7 +527,7 @@ export class DBOS {
         globalParams.executorID = DBOS.#dbosConfig.executorID;
       }
     }
-    if (options?.conductorKey) {
+    if (options?.conductorKey && !globalParams.dbosCloud) {
       // Always use a generated executor ID in Conductor.
       globalParams.executorID = randomUUID();
     }
