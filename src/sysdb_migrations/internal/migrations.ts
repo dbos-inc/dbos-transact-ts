@@ -1087,5 +1087,51 @@ $$ LANGUAGE plpgsql;`,
       online: true,
       pg: [`DROP INDEX ${isCockroach ? '' : 'CONCURRENTLY'} IF EXISTS "${schemaName}"."idx_notifications"`],
     },
+    // application_name is INCLUDEd, not a key column: app-scoped counts run index-only without inviting a BitmapOr on it.
+    {
+      name: '115_workflow_status_in_flight_index_v2',
+      online: true,
+      pg: [
+        `CREATE INDEX ${isCockroach ? '' : 'CONCURRENTLY'} IF NOT EXISTS "idx_workflow_status_in_flight_v2" ON "${schemaName}"."workflow_status" ("queue_name", "status", "priority", "created_at") INCLUDE ("application_name") WHERE "status" IN ('ENQUEUED', 'PENDING')`,
+      ],
+    },
+    // Superseded by idx_workflow_status_in_flight_v2.
+    {
+      name: '116_drop_workflow_status_in_flight_index',
+      online: true,
+      pg: [`DROP INDEX ${isCockroach ? '' : 'CONCURRENTLY'} IF EXISTS "${schemaName}"."idx_workflow_status_in_flight"`],
+    },
+    // INCLUDEs application_name, as idx_workflow_status_in_flight_v2 does.
+    {
+      name: '117_workflow_status_partition_dequeue_index_v3',
+      online: true,
+      pg: [
+        `CREATE INDEX ${isCockroach ? '' : 'CONCURRENTLY'} IF NOT EXISTS "idx_workflow_status_partition_dequeue_v3" ON "${schemaName}"."workflow_status" ("queue_name", "status", "queue_partition_key", "priority", "created_at", "workflow_uuid") INCLUDE ("application_name") WHERE "status" IN ('ENQUEUED', 'PENDING') AND "queue_partition_key" IS NOT NULL`,
+      ],
+    },
+    // Superseded by idx_workflow_status_partition_dequeue_v3.
+    {
+      name: '118_drop_workflow_status_partition_dequeue_index_v2',
+      online: true,
+      pg: [
+        `DROP INDEX ${isCockroach ? '' : 'CONCURRENTLY'} IF EXISTS "${schemaName}"."idx_workflow_status_partition_dequeue_v2"`,
+      ],
+    },
+    // INCLUDEs application_name, as idx_workflow_status_in_flight_v2 does.
+    {
+      name: '119_operation_outputs_completed_at_function_name_index_v2',
+      online: true,
+      pg: [
+        `CREATE INDEX ${isCockroach ? '' : 'CONCURRENTLY'} IF NOT EXISTS "idx_operation_outputs_completed_at_function_name_v2" ON "${schemaName}"."operation_outputs" ("completed_at_epoch_ms", "function_name") INCLUDE ("application_name")`,
+      ],
+    },
+    // Superseded by idx_operation_outputs_completed_at_function_name_v2.
+    {
+      name: '120_drop_operation_outputs_completed_at_function_name_index',
+      online: true,
+      pg: [
+        `DROP INDEX ${isCockroach ? '' : 'CONCURRENTLY'} IF EXISTS "${schemaName}"."idx_operation_outputs_completed_at_function_name"`,
+      ],
+    },
   ];
 }

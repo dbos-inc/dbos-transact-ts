@@ -23,6 +23,8 @@ export * as Error from './error';
 
 export { DBOSWorkflowConflictError } from './error';
 
+export { PortableWorkflowError } from '../schemas/system_db_schema';
+
 export {
   InputSchema,
   WorkflowConfig,

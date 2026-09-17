@@ -3595,7 +3595,7 @@ export class SystemDatabase {
 
   @dbRetry()
   async getQueuePartitions(queueName: string): Promise<string[]> {
-    // Recursive-CTE loose index scan: SELECT DISTINCT would scan every ENQUEUED row, whereas each iteration here is one seek on idx_workflow_status_partition_dequeue_v2, so cost scales with the number of partitions rather than the backlog depth.
+    // Recursive-CTE loose index scan: SELECT DISTINCT would scan every ENQUEUED row, whereas each iteration here is one seek on idx_workflow_status_partition_dequeue_v3, so cost scales with the number of partitions rather than the backlog depth.
     const params: unknown[] = [queueName, StatusString.ENQUEUED];
     // Only partitions this application can actually dequeue from.
     const scope = this.#appNameFilter('application_name', this.appName, params);
@@ -3669,7 +3669,7 @@ export class SystemDatabase {
 
       /**
        * Workflows already running, which peer workers count against too. Kept as its own query per
-       * scope: the partition-scoped predicate rides idx_workflow_status_partition_dequeue_v2, which
+       * scope: the partition-scoped predicate rides idx_workflow_status_partition_dequeue_v3, which
        * a queue-wide scan loses.
        */
       const pendingCount = async (partitionScoped: boolean): Promise<number> => {
