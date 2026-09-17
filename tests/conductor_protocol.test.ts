@@ -2,6 +2,7 @@ import { inspect } from 'node:util';
 import { AddressInfo } from 'node:net';
 import { WebSocket, WebSocketServer } from 'ws';
 import { DBOS } from '../src';
+import type { DBOSLaunchOptions } from '../src/dbos';
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import * as protocol from '../src/conductor/protocol';
 import { generateDBOSTestConfig, retryUntilSuccess, setUpDBOSTestSysDb } from './helpers';
@@ -130,13 +131,46 @@ describe('conductor-protocol-string-representations', () => {
   });
 });
 
+/** Launches DBOS connected to a real websocket server standing in for Conductor's side of the connection. */
+async function launchWithConductorStandIn(options: DBOSLaunchOptions = {}) {
+  const received: string[] = [];
+  const server = new WebSocketServer({ host: '127.0.0.1', port: 0 });
+  await new Promise<void>((resolve) => server.once('listening', resolve));
+  const connected = new Promise<WebSocket>((resolve) => server.once('connection', resolve));
+
+  const { port } = server.address() as AddressInfo;
+  await DBOS.launch({ conductorKey: 'test-key', conductorURL: `ws://127.0.0.1:${port}`, ...options });
+
+  const conductorSocket = await connected;
+  conductorSocket.on('message', (data: Buffer) => received.push(data.toString('utf-8')));
+
+  /** The responses this stand-in has received for one request ID. */
+  const answersTo = (requestID: string) =>
+    received.map((m) => JSON.parse(m) as protocol.BaseResponse).filter((m) => m.request_id === requestID);
+
+  const shutdown = async () => {
+    // shutdown() returns once it has asked the socket to close, but ws finishes the handshake
+    // afterwards, and its close handler logs. Wait for it, or that log lands after teardown.
+    const socket = DBOSExecutor.globalInstance?.conductor?.websocket;
+    const closed =
+      socket === undefined || socket.readyState === WebSocket.CLOSED
+        ? Promise.resolve()
+        : new Promise<void>((resolve) => socket.once('close', () => resolve()));
+    await DBOS.shutdown();
+    await closed;
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  };
+
+  return { conductorSocket, received, answersTo, shutdown };
+}
+
 // Command dispatch and request parsing are properties of the live connection rather than of a
 // wire object, so unlike the suite above this one stands up a real websocket for Conductor's side of it.
 describe('conductor-live-connection', () => {
   let config: DBOSConfig;
-  let server: WebSocketServer;
   let conductorSocket: WebSocket;
-  let received: string[];
+  let answersTo: (requestID: string) => protocol.BaseResponse[];
+  let shutdown: () => Promise<void>;
 
   const retentionWorkflow = DBOS.registerWorkflow(
     (x: number) => {
@@ -152,34 +186,12 @@ describe('conductor-live-connection', () => {
 
   beforeEach(async () => {
     await setUpDBOSTestSysDb(config);
-    received = [];
-    server = new WebSocketServer({ host: '127.0.0.1', port: 0 });
-    await new Promise<void>((resolve) => server.once('listening', resolve));
-    const connected = new Promise<WebSocket>((resolve) => server.once('connection', resolve));
-
-    const { port } = server.address() as AddressInfo;
-    await DBOS.launch({ conductorKey: 'test-key', conductorURL: `ws://127.0.0.1:${port}` });
-
-    conductorSocket = await connected;
-    conductorSocket.on('message', (data: Buffer) => received.push(data.toString('utf-8')));
+    ({ conductorSocket, answersTo, shutdown } = await launchWithConductorStandIn());
   });
 
   afterEach(async () => {
-    // shutdown() returns once it has asked the socket to close, but ws finishes the handshake
-    // afterwards, and its close handler logs. Wait for it, or that log lands after teardown.
-    const socket = DBOSExecutor.globalInstance?.conductor?.websocket;
-    const closed =
-      socket === undefined || socket.readyState === WebSocket.CLOSED
-        ? Promise.resolve()
-        : new Promise<void>((resolve) => socket.once('close', () => resolve()));
-    await DBOS.shutdown();
-    await closed;
-    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await shutdown();
   });
-
-  /** The responses this stand-in has received for one request ID. */
-  const answersTo = (requestID: string) =>
-    received.map((m) => JSON.parse(m) as protocol.BaseResponse).filter((m) => m.request_id === requestID);
 
   test('answers a retention request at once and still collects', async () => {
     await expect(retentionWorkflow(1)).resolves.toBe(1);
@@ -302,4 +314,201 @@ describe('conductor-live-connection', () => {
       }
     });
   });
+});
+
+// Metadata-only mode is enforced by the executor, so it must hold even when Conductor asks for data.
+describe('conductor-metadata-only-mode', () => {
+  let config: DBOSConfig;
+  let shutdown: (() => Promise<void>) | undefined;
+
+  const metadataOnlyStep = DBOS.registerStep(
+    (x: string) => {
+      return Promise.resolve(`${x}-output`);
+    },
+    { name: 'metadataOnlyStep' },
+  );
+
+  const metadataOnlyWorkflow = DBOS.registerWorkflow(
+    async (x: string) => {
+      await DBOS.setEvent('event', x);
+      await DBOS.writeStream('stream', x);
+      return await metadataOnlyStep(x);
+    },
+    { name: 'metadataOnlyWorkflow' },
+  );
+
+  const metadataOnlyFailingWorkflow = DBOS.registerWorkflow(
+    (x: string) => {
+      return Promise.reject(new Error(x));
+    },
+    { name: 'metadataOnlyFailingWorkflow' },
+  );
+
+  const metadataOnlyScheduledWorkflow = DBOS.registerWorkflow(
+    (_scheduledAt: Date, _context: unknown) => {
+      return Promise.resolve();
+    },
+    { name: 'metadataOnlyScheduledWorkflow' },
+  );
+
+  beforeAll(() => {
+    config = generateDBOSTestConfig();
+    DBOS.setConfig(config);
+  });
+
+  beforeEach(async () => {
+    await setUpDBOSTestSysDb(config);
+  });
+
+  afterEach(async () => {
+    await shutdown?.();
+    shutdown = undefined;
+  });
+
+  test.each([true, false])(
+    'sends workflow data only outside metadata-only mode (metadata-only: %s)',
+    async (metadataOnly) => {
+      const standIn = await launchWithConductorStandIn({ conductorMetadataOnlyMode: metadataOnly });
+      shutdown = standIn.shutdown;
+      const sendsData = !metadataOnly;
+
+      /** Sends a command as Conductor would and returns the executor's one response to it. */
+      const roundTrip = async <Resp extends protocol.BaseResponse>(
+        request: protocol.BaseMessage & Record<string, unknown>,
+      ) => {
+        standIn.conductorSocket.send(JSON.stringify(request));
+        await retryUntilSuccess(() => {
+          expect(standIn.answersTo(request.request_id)).toHaveLength(1);
+        });
+        return standIn.answersTo(request.request_id)[0] as Resp;
+      };
+
+      const handle = await DBOS.startWorkflow(metadataOnlyWorkflow)('secret');
+      await expect(handle.getResult()).resolves.toBe('secret-output');
+      // Delayed so it is still on the queue when Conductor lists queued workflows.
+      const queue = await DBOS.registerQueue('metadata-only-queue');
+      const delayedHandle = await DBOS.startWorkflow(metadataOnlyWorkflow, {
+        queueName: queue.name,
+        enqueueOptions: { delaySeconds: 3600 },
+      })('secret');
+      const failingHandle = await DBOS.startWorkflow(metadataOnlyFailingWorkflow)('secret');
+      await expect(failingHandle.getResult()).rejects.toThrow('secret');
+      await DBOS.send(handle.workflowID, 'secret', 'topic');
+      await DBOS.createSchedule({
+        scheduleName: 'metadata-only-schedule',
+        workflowFn: metadataOnlyScheduledWorkflow,
+        schedule: '0 0 1 1 *',
+        context: 'secret',
+      });
+
+      // Conductor explicitly asks for data; metadata-only mode must override it.
+      const listed = await roundTrip<protocol.ListWorkflowsResponse>({
+        type: protocol.MessageType.LIST_WORKFLOWS,
+        request_id: 'list-workflows',
+        body: {
+          workflow_uuids: [handle.workflowID, failingHandle.workflowID],
+          load_input: true,
+          load_output: true,
+          sort_desc: false,
+        },
+      } satisfies protocol.ListWorkflowsRequest);
+      expect(listed.error_message).toBeUndefined();
+      const byID = new Map(listed.output.map((wf) => [wf.WorkflowUUID, wf]));
+      expect(byID.get(handle.workflowID)?.Status).toBe('SUCCESS');
+      expect(byID.get(failingHandle.workflowID)?.Status).toBe('ERROR');
+      expect([...byID.values()].map((wf) => wf.Input !== undefined)).toEqual([sendsData, sendsData]);
+      expect(byID.get(handle.workflowID)?.Output !== undefined).toBe(sendsData);
+      expect(byID.get(failingHandle.workflowID)?.Error !== undefined).toBe(sendsData);
+
+      const queued = await roundTrip<protocol.ListQueuedWorkflowsResponse>({
+        type: protocol.MessageType.LIST_QUEUED_WORKFLOWS,
+        request_id: 'list-queued-workflows',
+        body: { load_input: true, load_output: true, sort_desc: false },
+      } satisfies protocol.ListQueuedWorkflowsRequest);
+      expect(queued.output.map((wf) => wf.WorkflowUUID)).toEqual([delayedHandle.workflowID]);
+      expect(queued.output[0].Input !== undefined).toBe(sendsData);
+
+      for (const [workflowID, field] of [
+        [handle.workflowID, 'Output'],
+        [failingHandle.workflowID, 'Error'],
+      ] as const) {
+        const got = await roundTrip<protocol.GetWorkflowResponse>({
+          type: protocol.MessageType.GET_WORKFLOW,
+          request_id: `get-workflow-${workflowID}`,
+          workflow_id: workflowID,
+          load_input: true,
+          load_output: true,
+        } satisfies protocol.GetWorkflowRequest);
+        expect(got.output?.WorkflowUUID).toBe(workflowID);
+        expect(got.output?.Input !== undefined).toBe(sendsData);
+        expect(got.output?.[field] !== undefined).toBe(sendsData);
+      }
+
+      const steps = await roundTrip<protocol.ListStepsResponse>({
+        type: protocol.MessageType.LIST_STEPS,
+        request_id: 'list-steps',
+        workflow_id: handle.workflowID,
+        load_output: true,
+      } satisfies protocol.ListStepsRequest);
+      expect(steps.output?.map((s) => s.function_name)).toContain('metadataOnlyStep');
+      expect(steps.output?.some((s) => s.output !== undefined)).toBe(sendsData);
+
+      const schedules = await roundTrip<protocol.ListSchedulesResponse>({
+        type: protocol.MessageType.LIST_SCHEDULES,
+        request_id: 'list-schedules',
+        body: { load_context: true },
+      } satisfies protocol.ListSchedulesRequest);
+      expect(schedules.output.map((s) => s.schedule_name)).toEqual(['metadata-only-schedule']);
+      expect(schedules.output[0].context !== undefined).toBe(sendsData);
+      const schedule = await roundTrip<protocol.GetScheduleResponse>({
+        type: protocol.MessageType.GET_SCHEDULE,
+        request_id: 'get-schedule',
+        schedule_name: 'metadata-only-schedule',
+        load_context: true,
+      } satisfies protocol.GetScheduleRequest);
+      expect(schedule.output?.schedule_name).toBe('metadata-only-schedule');
+      expect(schedule.output?.context !== undefined).toBe(sendsData);
+
+      // Commands that only move data are refused outright.
+      const dataRequests = [
+        {
+          type: protocol.MessageType.GET_WORKFLOW_EVENTS,
+          request_id: 'events',
+          workflow_id: handle.workflowID,
+        } satisfies protocol.GetWorkflowEventsRequest,
+        {
+          type: protocol.MessageType.GET_WORKFLOW_NOTIFICATIONS,
+          request_id: 'notifications',
+          workflow_id: handle.workflowID,
+        } satisfies protocol.GetWorkflowNotificationsRequest,
+        {
+          type: protocol.MessageType.GET_WORKFLOW_STREAMS,
+          request_id: 'streams',
+          workflow_id: handle.workflowID,
+        } satisfies protocol.GetWorkflowStreamsRequest,
+        {
+          type: protocol.MessageType.EXPORT_WORKFLOW,
+          request_id: 'export',
+          workflow_id: handle.workflowID,
+          export_children: false,
+        } satisfies protocol.ExportWorkflowRequest,
+        {
+          type: protocol.MessageType.IMPORT_WORKFLOW,
+          request_id: 'import',
+          serialized_workflow: 'not-a-workflow',
+        } satisfies protocol.ImportWorkflowRequest,
+      ];
+      for (const request of dataRequests) {
+        const answer = await roundTrip(request);
+        expect(answer.error_message === `${request.type} is not allowed in conductor metadata-only mode`).toBe(
+          metadataOnly,
+        );
+      }
+      const events = standIn.answersTo('events')[0] as protocol.GetWorkflowEventsResponse;
+      expect(events.events).toEqual(metadataOnly ? undefined : [{ key: 'event', value: "'secret'" }]);
+
+      // Nothing the executor sent carries the workflow data, whatever Conductor asked for.
+      expect(standIn.received.some((m) => m.includes('secret'))).toBe(sendsData);
+    },
+  );
 });

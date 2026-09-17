@@ -122,6 +122,8 @@ export interface DBOSLaunchOptions {
   conductorURL?: string;
   conductorKey?: string;
   conductorExecutorMetadata?: Record<string, unknown>;
+  // Never send workflow data (inputs, outputs, errors, events, messages, streams, schedule context) to Conductor
+  conductorMetadataOnlyMode?: boolean;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -558,13 +560,21 @@ export class DBOS {
 
     await DBOSExecutor.globalInstance.initEventReceivers(this.#dbosConfig?.listenQueues || null);
 
+    const conductorMetadataOnlyMode = options?.conductorMetadataOnlyMode === true;
     if (globalParams.dbosCloud) {
       const cloudAppName = process.env.DBOS__CONDUCTOR_APP_NAME;
       const cloudConductorKey = process.env.DBOS__CONDUCTOR_KEY;
       const cloudConductorURL = process.env.DBOS__CONDUCTOR_URL;
       if (cloudAppName && cloudConductorKey && cloudConductorURL) {
         DBOS.logger.debug('Starting Conductor connection (DBOS Cloud)');
-        executor.conductor = new Conductor(executor, cloudAppName, cloudConductorKey, cloudConductorURL);
+        executor.conductor = new Conductor(
+          executor,
+          cloudAppName,
+          cloudConductorKey,
+          cloudConductorURL,
+          undefined,
+          conductorMetadataOnlyMode,
+        );
         executor.conductor.dispatchLoop();
       }
     } else if (options?.conductorKey) {
@@ -589,6 +599,7 @@ export class DBOS {
         options.conductorKey,
         options.conductorURL,
         executorMetadata,
+        conductorMetadataOnlyMode,
       );
       executor.conductor.dispatchLoop();
     }

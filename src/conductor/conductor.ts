@@ -15,6 +15,15 @@ import { triggerSchedule, backfillSchedule } from '../scheduler/scheduler';
 const gzip = promisify(zlib.gzip);
 const gunzip = promisify(zlib.gunzip);
 
+// Commands that exist only to move workflow data, refused in metadata-only mode.
+const DATA_MESSAGE_TYPES: ReadonlySet<protocol.MessageType> = new Set([
+  protocol.MessageType.GET_WORKFLOW_EVENTS,
+  protocol.MessageType.GET_WORKFLOW_NOTIFICATIONS,
+  protocol.MessageType.GET_WORKFLOW_STREAMS,
+  protocol.MessageType.EXPORT_WORKFLOW,
+  protocol.MessageType.IMPORT_WORKFLOW,
+]);
+
 interface IntervalTimeout {
   interval: NodeJS.Timeout | undefined;
   timeout: NodeJS.Timeout | undefined;
@@ -38,6 +47,7 @@ export class Conductor {
     readonly conductorKey: string,
     readonly conductorURL: string,
     readonly executorMetadata?: Record<string, unknown>,
+    readonly metadataOnlyMode: boolean = false,
   ) {
     assert(appName, 'Application name must be set in configuration in order to use DBOS Conductor');
     const cleanConductorURL = conductorURL.replace(/\/+$/, '');
@@ -131,6 +141,15 @@ export class Conductor {
         const msgType = baseMsg.type;
         let errorMsg: string | undefined = undefined;
         clearTimeout(currPing.timeout);
+        if (this.metadataOnlyMode && DATA_MESSAGE_TYPES.has(msgType)) {
+          const refusedResp = new protocol.BaseResponse(
+            msgType,
+            baseMsg.request_id,
+            `${msgType} is not allowed in conductor metadata-only mode`,
+          );
+          currWebsocket.send(JSON.stringify(refusedResp));
+          return;
+        }
         switch (msgType) {
           case protocol.MessageType.EXECUTOR_INFO:
             const infoResp = new protocol.ExecutorInfoResponse(
@@ -266,8 +285,8 @@ export class Conductor {
               offset: body.offset,
               sortDesc: body.sort_desc,
               workflow_id_prefix: body.workflow_id_prefix,
-              loadInput: body.load_input ?? false, // Default to false if not provided
-              loadOutput: body.load_output ?? false, // Default to false if not provided
+              loadInput: (body.load_input ?? false) && !this.metadataOnlyMode, // Default to false if not provided
+              loadOutput: (body.load_output ?? false) && !this.metadataOnlyMode, // Default to false if not provided
               executorId: body.executor_id,
               queuesOnly: body.queues_only,
               wasForkedFrom: body.was_forked_from,
@@ -309,8 +328,8 @@ export class Conductor {
               offset: bodyQueued.offset,
               sortDesc: bodyQueued.sort_desc,
               workflow_id_prefix: bodyQueued.workflow_id_prefix,
-              loadInput: bodyQueued.load_input ?? false, // Default to false if not provided
-              loadOutput: bodyQueued.load_output ?? false, // Default to false if not provided
+              loadInput: (bodyQueued.load_input ?? false) && !this.metadataOnlyMode, // Default to false if not provided
+              loadOutput: (bodyQueued.load_output ?? false) && !this.metadataOnlyMode, // Default to false if not provided
               executorId: bodyQueued.executor_id,
               wasForkedFrom: bodyQueued.was_forked_from,
               hasParent: bodyQueued.has_parent,
@@ -339,8 +358,8 @@ export class Conductor {
             try {
               const workflows = await this.dbosExec.listWorkflows({
                 workflowIDs: [getWFMsg.workflow_id],
-                loadInput: getWFMsg.load_input ?? true,
-                loadOutput: getWFMsg.load_output ?? true,
+                loadInput: (getWFMsg.load_input ?? true) && !this.metadataOnlyMode,
+                loadOutput: (getWFMsg.load_output ?? true) && !this.metadataOnlyMode,
               });
               if (workflows.length > 0) {
                 wfOutput = new protocol.WorkflowsOutput(workflows[0]);
@@ -378,7 +397,7 @@ export class Conductor {
             try {
               const stepsInfo = await this.dbosExec.listWorkflowSteps(
                 listStepsMessage.workflow_id,
-                listStepsMessage.load_output ?? true,
+                (listStepsMessage.load_output ?? true) && !this.metadataOnlyMode,
                 { limit: listStepsMessage.limit, offset: listStepsMessage.offset },
               );
               workflowSteps = stepsInfo?.map((i) => new protocol.WorkflowSteps(i));
@@ -516,7 +535,7 @@ export class Conductor {
             break;
           case protocol.MessageType.LIST_SCHEDULES:
             const listSchedMsg = baseMsg as protocol.ListSchedulesRequest;
-            const loadContextList = listSchedMsg.body.load_context ?? true;
+            const loadContextList = (listSchedMsg.body.load_context ?? true) && !this.metadataOnlyMode;
             let schedOutput: protocol.ScheduleOutput[] = [];
             try {
               const scheds = await this.dbosExec.systemDatabase.listSchedules({
@@ -552,7 +571,7 @@ export class Conductor {
             break;
           case protocol.MessageType.GET_SCHEDULE:
             const getSchedMsg = baseMsg as protocol.GetScheduleRequest;
-            const loadContextGet = getSchedMsg.load_context ?? true;
+            const loadContextGet = (getSchedMsg.load_context ?? true) && !this.metadataOnlyMode;
             let getSchedOutput: protocol.ScheduleOutput | undefined = undefined;
             try {
               const sched = await this.dbosExec.systemDatabase.getSchedule(getSchedMsg.schedule_name);
