@@ -15,6 +15,15 @@ import { triggerSchedule, backfillSchedule } from '../scheduler/scheduler';
 const gzip = promisify(zlib.gzip);
 const gunzip = promisify(zlib.gunzip);
 
+// Commands that exist only to move workflow data, refused in metadata-only mode.
+const DATA_MESSAGE_TYPES: ReadonlySet<protocol.MessageType> = new Set([
+  protocol.MessageType.GET_WORKFLOW_EVENTS,
+  protocol.MessageType.GET_WORKFLOW_NOTIFICATIONS,
+  protocol.MessageType.GET_WORKFLOW_STREAMS,
+  protocol.MessageType.EXPORT_WORKFLOW,
+  protocol.MessageType.IMPORT_WORKFLOW,
+]);
+
 interface IntervalTimeout {
   interval: NodeJS.Timeout | undefined;
   timeout: NodeJS.Timeout | undefined;
@@ -38,10 +47,22 @@ export class Conductor {
     readonly conductorKey: string,
     readonly conductorURL: string,
     readonly executorMetadata?: Record<string, unknown>,
+    readonly metadataOnlyMode: boolean = false,
   ) {
     assert(appName, 'Application name must be set in configuration in order to use DBOS Conductor');
     const cleanConductorURL = conductorURL.replace(/\/+$/, '');
     this.url = `${cleanConductorURL}/websocket/${appName}/${conductorKey}`;
+  }
+
+  /** Logs a command's exception in full and returns the error message Conductor may see. */
+  reportException(context: string, e: unknown): string {
+    const errorMsg = `${context}: ${(e as Error).message}`;
+    this.dbosExec.logger.error(errorMsg);
+    if (this.metadataOnlyMode) {
+      const exceptionName = e instanceof Error ? e.constructor.name : typeof e;
+      return `${context}: ${exceptionName} (details withheld in metadata-only mode)`;
+    }
+    return errorMsg;
   }
 
   resetWebsocket(currWebsocket?: WebSocket, currPing?: IntervalTimeout) {
@@ -131,6 +152,15 @@ export class Conductor {
         const msgType = baseMsg.type;
         let errorMsg: string | undefined = undefined;
         clearTimeout(currPing.timeout);
+        if (this.metadataOnlyMode && DATA_MESSAGE_TYPES.has(msgType)) {
+          const refusedResp = new protocol.BaseResponse(
+            msgType,
+            baseMsg.request_id,
+            `${msgType} is not allowed in conductor metadata-only mode`,
+          );
+          currWebsocket.send(JSON.stringify(refusedResp));
+          return;
+        }
         switch (msgType) {
           case protocol.MessageType.EXECUTOR_INFO:
             const infoResp = new protocol.ExecutorInfoResponse(
@@ -152,8 +182,7 @@ export class Conductor {
             try {
               await this.dbosExec.recoverPendingWorkflows(recoveryMsg.executor_ids);
             } catch (e) {
-              errorMsg = `Exception encountered when recovering workflows: ${(e as Error).message}`;
-              this.dbosExec.logger.error(errorMsg);
+              errorMsg = this.reportException('Exception encountered when recovering workflows', e);
               success = false;
             }
             const recoveryResp = new protocol.RecoveryResponse(baseMsg.request_id, success, errorMsg);
@@ -166,8 +195,10 @@ export class Conductor {
             try {
               await this.dbosExec.systemDatabase.cancelWorkflows(cancelIds, cancelMsg.cancel_children);
             } catch (e) {
-              errorMsg = `Exception encountered when cancelling workflow(s) ${String(cancelIds)}: ${(e as Error).message}`;
-              this.dbosExec.logger.error(errorMsg);
+              errorMsg = this.reportException(
+                `Exception encountered when cancelling workflow(s) ${String(cancelIds)}`,
+                e,
+              );
               cancelSuccess = false;
             }
             const cancelResp = new protocol.CancelResponse(baseMsg.request_id, cancelSuccess, errorMsg);
@@ -180,8 +211,10 @@ export class Conductor {
             try {
               await this.dbosExec.systemDatabase.deleteWorkflows(deleteIds, deleteMsg.delete_children ?? false);
             } catch (e) {
-              errorMsg = `Exception encountered when deleting workflow(s) ${String(deleteIds)}: ${(e as Error).message}`;
-              this.dbosExec.logger.error(errorMsg);
+              errorMsg = this.reportException(
+                `Exception encountered when deleting workflow(s) ${String(deleteIds)}`,
+                e,
+              );
               deleteSuccess = false;
             }
             const deleteResp = new protocol.DeleteResponse(baseMsg.request_id, deleteSuccess, errorMsg);
@@ -194,8 +227,10 @@ export class Conductor {
             try {
               await this.dbosExec.systemDatabase.resumeWorkflows(resumeIds, resumeMsg.queue_name);
             } catch (e) {
-              errorMsg = `Exception encountered when resuming workflow(s) ${String(resumeIds)}: ${(e as Error).message}`;
-              this.dbosExec.logger.error(errorMsg);
+              errorMsg = this.reportException(
+                `Exception encountered when resuming workflow(s) ${String(resumeIds)}`,
+                e,
+              );
               resumeSuccess = false;
             }
             const resumeResp = new protocol.ResumeResponse(baseMsg.request_id, resumeSuccess, errorMsg);
@@ -212,8 +247,10 @@ export class Conductor {
                 queuePartitionKey: forkMsg.body.queue_partition_key,
               });
             } catch (e) {
-              errorMsg = `Exception encountered when forking workflow ${forkMsg.body.workflow_id} to new workflow ${newWorkflowID} on step ${forkMsg.body.start_step}, app version ${forkMsg.body.application_version}: ${(e as Error).message}`;
-              this.dbosExec.logger.error(errorMsg);
+              errorMsg = this.reportException(
+                `Exception encountered when forking workflow ${forkMsg.body.workflow_id} to new workflow ${newWorkflowID} on step ${forkMsg.body.start_step}, app version ${forkMsg.body.application_version}`,
+                e,
+              );
               newWorkflowID = undefined;
             }
             const forkResp = new protocol.ForkWorkflowResponse(baseMsg.request_id, newWorkflowID, errorMsg);
@@ -234,8 +271,7 @@ export class Conductor {
                 fromStepName: forkFromFailureBody.from_step_name,
               });
             } catch (e) {
-              errorMsg = `Exception encountered when bulk forking workflows: ${(e as Error).message}`;
-              this.dbosExec.logger.error(errorMsg);
+              errorMsg = this.reportException('Exception encountered when bulk forking workflows', e);
             }
             const forkFromFailureResp = new protocol.ForkFromFailureResponse(
               baseMsg.request_id,
@@ -266,8 +302,8 @@ export class Conductor {
               offset: body.offset,
               sortDesc: body.sort_desc,
               workflow_id_prefix: body.workflow_id_prefix,
-              loadInput: body.load_input ?? false, // Default to false if not provided
-              loadOutput: body.load_output ?? false, // Default to false if not provided
+              loadInput: (body.load_input ?? false) && !this.metadataOnlyMode, // Default to false if not provided
+              loadOutput: (body.load_output ?? false) && !this.metadataOnlyMode, // Default to false if not provided
               executorId: body.executor_id,
               queuesOnly: body.queues_only,
               wasForkedFrom: body.was_forked_from,
@@ -281,8 +317,7 @@ export class Conductor {
               const workflows = await this.dbosExec.listWorkflows(listWFReq);
               workflowsOutput = workflows.map((wf) => new protocol.WorkflowsOutput(wf));
             } catch (e) {
-              errorMsg = `Exception encountered when listing workflows: ${(e as Error).message}`;
-              this.dbosExec.logger.error(errorMsg);
+              errorMsg = this.reportException('Exception encountered when listing workflows', e);
             }
             const wfsResp = new protocol.ListWorkflowsResponse(listWFMsg.request_id, workflowsOutput, errorMsg);
             currWebsocket.send(JSON.stringify(wfsResp));
@@ -309,8 +344,8 @@ export class Conductor {
               offset: bodyQueued.offset,
               sortDesc: bodyQueued.sort_desc,
               workflow_id_prefix: bodyQueued.workflow_id_prefix,
-              loadInput: bodyQueued.load_input ?? false, // Default to false if not provided
-              loadOutput: bodyQueued.load_output ?? false, // Default to false if not provided
+              loadInput: (bodyQueued.load_input ?? false) && !this.metadataOnlyMode, // Default to false if not provided
+              loadOutput: (bodyQueued.load_output ?? false) && !this.metadataOnlyMode, // Default to false if not provided
               executorId: bodyQueued.executor_id,
               wasForkedFrom: bodyQueued.was_forked_from,
               hasParent: bodyQueued.has_parent,
@@ -323,8 +358,7 @@ export class Conductor {
               const workflows = await this.dbosExec.listQueuedWorkflows(listQueuedWFReq);
               queuedWFOutput = workflows.map((wf) => new protocol.WorkflowsOutput(wf));
             } catch (e) {
-              errorMsg = `Exception encountered when listing queued workflows: ${(e as Error).message}`;
-              this.dbosExec.logger.error(errorMsg);
+              errorMsg = this.reportException('Exception encountered when listing queued workflows', e);
             }
             const queuedWfsResp = new protocol.ListQueuedWorkflowsResponse(
               listQueuedWFMsg.request_id,
@@ -339,15 +373,14 @@ export class Conductor {
             try {
               const workflows = await this.dbosExec.listWorkflows({
                 workflowIDs: [getWFMsg.workflow_id],
-                loadInput: getWFMsg.load_input ?? true,
-                loadOutput: getWFMsg.load_output ?? true,
+                loadInput: (getWFMsg.load_input ?? true) && !this.metadataOnlyMode,
+                loadOutput: (getWFMsg.load_output ?? true) && !this.metadataOnlyMode,
               });
               if (workflows.length > 0) {
                 wfOutput = new protocol.WorkflowsOutput(workflows[0]);
               }
             } catch (e) {
-              errorMsg = `Exception encountered when getting workflow ${getWFMsg.workflow_id}: ${(e as Error).message}`;
-              this.dbosExec.logger.error(errorMsg);
+              errorMsg = this.reportException(`Exception encountered when getting workflow ${getWFMsg.workflow_id}`, e);
             }
             const getWFResp = new protocol.GetWorkflowResponse(getWFMsg.request_id, wfOutput, errorMsg);
             currWebsocket.send(JSON.stringify(getWFResp));
@@ -362,8 +395,7 @@ export class Conductor {
               );
               hasPendingWFs = pendingWFs.length > 0;
             } catch (e) {
-              errorMsg = `Exception encountered when checking for pending workflows: ${(e as Error).message}`;
-              this.dbosExec.logger.error(errorMsg);
+              errorMsg = this.reportException('Exception encountered when checking for pending workflows', e);
             }
             const existPendingResp = new protocol.ExistPendingWorkflowsResponse(
               baseMsg.request_id,
@@ -378,13 +410,15 @@ export class Conductor {
             try {
               const stepsInfo = await this.dbosExec.listWorkflowSteps(
                 listStepsMessage.workflow_id,
-                listStepsMessage.load_output ?? true,
+                (listStepsMessage.load_output ?? true) && !this.metadataOnlyMode,
                 { limit: listStepsMessage.limit, offset: listStepsMessage.offset },
               );
               workflowSteps = stepsInfo?.map((i) => new protocol.WorkflowSteps(i));
             } catch (e) {
-              errorMsg = `Exception encountered when listing steps ${listStepsMessage.workflow_id}: ${(e as Error).message}`;
-              this.dbosExec.logger.error(errorMsg);
+              errorMsg = this.reportException(
+                `Exception encountered when listing steps ${listStepsMessage.workflow_id}`,
+                e,
+              );
             }
             const listStepsResponse = new protocol.ListStepsResponse(
               listStepsMessage.request_id,
@@ -444,8 +478,7 @@ export class Conductor {
                 );
                 metricsData = sysMetrics.map((m) => new protocol.MetricDataOutput(m.metricType, m.metricName, m.value));
               } catch (e) {
-                errorMsg = `Exception encountered when getting metrics: ${(e as Error).message}`;
-                this.dbosExec.logger.error(errorMsg);
+                errorMsg = this.reportException('Exception encountered when getting metrics', e);
               }
             } else {
               errorMsg = `Unexpected metric class: ${getMetricsMessage.metric_class}`;
@@ -472,8 +505,10 @@ export class Conductor {
                 serializedWorkflow = compressed.toString('base64');
               }
             } catch (e) {
-              errorMsg = `Exception encountered when exporting workflow ${exportMsg.workflow_id}: ${(e as Error).message}`;
-              this.dbosExec.logger.error(errorMsg);
+              errorMsg = this.reportException(
+                `Exception encountered when exporting workflow ${exportMsg.workflow_id}`,
+                e,
+              );
             }
             const exportResp = new protocol.ExportWorkflowResponse(baseMsg.request_id, serializedWorkflow, errorMsg);
             currWebsocket.send(JSON.stringify(exportResp));
@@ -487,8 +522,7 @@ export class Conductor {
               const workflows = JSON.parse(decompressed.toString()) as ExportedWorkflow[];
               await this.dbosExec.systemDatabase.importWorkflow(workflows);
             } catch (e) {
-              errorMsg = `Exception encountered when importing workflow: ${(e as Error).message}`;
-              this.dbosExec.logger.error(errorMsg);
+              errorMsg = this.reportException('Exception encountered when importing workflow', e);
               importSuccess = false;
             }
             const importResp = new protocol.ImportWorkflowResponse(baseMsg.request_id, importSuccess, errorMsg);
@@ -507,8 +541,7 @@ export class Conductor {
                 );
               }
             } catch (e) {
-              errorMsg = `Exception in alert handler: ${(e as Error).message}`;
-              this.dbosExec.logger.error(errorMsg);
+              errorMsg = this.reportException('Exception in alert handler', e);
               alertSuccess = false;
             }
             const alertResp = new protocol.AlertResponse(baseMsg.request_id, alertSuccess, errorMsg);
@@ -516,7 +549,7 @@ export class Conductor {
             break;
           case protocol.MessageType.LIST_SCHEDULES:
             const listSchedMsg = baseMsg as protocol.ListSchedulesRequest;
-            const loadContextList = listSchedMsg.body.load_context ?? true;
+            const loadContextList = (listSchedMsg.body.load_context ?? true) && !this.metadataOnlyMode;
             let schedOutput: protocol.ScheduleOutput[] = [];
             try {
               const scheds = await this.dbosExec.systemDatabase.listSchedules({
@@ -544,15 +577,14 @@ export class Conductor {
                 })),
               );
             } catch (e) {
-              errorMsg = `Exception encountered when listing schedules: ${(e as Error).message}`;
-              this.dbosExec.logger.error(errorMsg);
+              errorMsg = this.reportException('Exception encountered when listing schedules', e);
             }
             const listSchedResp = new protocol.ListSchedulesResponse(listSchedMsg.request_id, schedOutput, errorMsg);
             currWebsocket.send(JSON.stringify(listSchedResp));
             break;
           case protocol.MessageType.GET_SCHEDULE:
             const getSchedMsg = baseMsg as protocol.GetScheduleRequest;
-            const loadContextGet = getSchedMsg.load_context ?? true;
+            const loadContextGet = (getSchedMsg.load_context ?? true) && !this.metadataOnlyMode;
             let getSchedOutput: protocol.ScheduleOutput | undefined = undefined;
             try {
               const sched = await this.dbosExec.systemDatabase.getSchedule(getSchedMsg.schedule_name);
@@ -575,8 +607,10 @@ export class Conductor {
                 };
               }
             } catch (e) {
-              errorMsg = `Exception encountered when getting schedule ${getSchedMsg.schedule_name}: ${(e as Error).message}`;
-              this.dbosExec.logger.error(errorMsg);
+              errorMsg = this.reportException(
+                `Exception encountered when getting schedule ${getSchedMsg.schedule_name}`,
+                e,
+              );
             }
             const getSchedResp = new protocol.GetScheduleResponse(getSchedMsg.request_id, getSchedOutput, errorMsg);
             currWebsocket.send(JSON.stringify(getSchedResp));
@@ -587,8 +621,10 @@ export class Conductor {
             try {
               await this.dbosExec.systemDatabase.setScheduleStatus(pauseSchedMsg.schedule_name, 'PAUSED');
             } catch (e) {
-              errorMsg = `Exception encountered when pausing schedule '${pauseSchedMsg.schedule_name}': ${(e as Error).message}`;
-              this.dbosExec.logger.error(errorMsg);
+              errorMsg = this.reportException(
+                `Exception encountered when pausing schedule '${pauseSchedMsg.schedule_name}'`,
+                e,
+              );
               pauseSuccess = false;
             }
             const pauseSchedResp = new protocol.PauseScheduleResponse(baseMsg.request_id, pauseSuccess, errorMsg);
@@ -600,8 +636,10 @@ export class Conductor {
             try {
               await this.dbosExec.systemDatabase.setScheduleStatus(resumeSchedMsg.schedule_name, 'ACTIVE');
             } catch (e) {
-              errorMsg = `Exception encountered when resuming schedule '${resumeSchedMsg.schedule_name}': ${(e as Error).message}`;
-              this.dbosExec.logger.error(errorMsg);
+              errorMsg = this.reportException(
+                `Exception encountered when resuming schedule '${resumeSchedMsg.schedule_name}'`,
+                e,
+              );
               resumeSchedSuccess = false;
             }
             const resumeSchedResp = new protocol.ResumeScheduleResponse(
@@ -623,8 +661,10 @@ export class Conductor {
                 new Date(backfillSchedMsg.end),
               );
             } catch (e) {
-              errorMsg = `Exception encountered when backfilling schedule '${backfillSchedMsg.schedule_name}': ${(e as Error).message}`;
-              this.dbosExec.logger.error(errorMsg);
+              errorMsg = this.reportException(
+                `Exception encountered when backfilling schedule '${backfillSchedMsg.schedule_name}'`,
+                e,
+              );
             }
             const backfillSchedResp = new protocol.BackfillScheduleResponse(
               baseMsg.request_id,
@@ -643,8 +683,10 @@ export class Conductor {
                 triggerSchedMsg.schedule_name,
               );
             } catch (e) {
-              errorMsg = `Exception encountered when triggering schedule '${triggerSchedMsg.schedule_name}': ${(e as Error).message}`;
-              this.dbosExec.logger.error(errorMsg);
+              errorMsg = this.reportException(
+                `Exception encountered when triggering schedule '${triggerSchedMsg.schedule_name}'`,
+                e,
+              );
             }
             const triggerSchedResp = new protocol.TriggerScheduleResponse(
               baseMsg.request_id,
@@ -664,8 +706,7 @@ export class Conductor {
                 created_at: v.createdAt,
               }));
             } catch (e) {
-              errorMsg = `Exception encountered when listing application versions: ${(e as Error).message}`;
-              this.dbosExec.logger.error(errorMsg);
+              errorMsg = this.reportException('Exception encountered when listing application versions', e);
             }
             const listVersionsResp = new protocol.ListApplicationVersionsResponse(
               baseMsg.request_id,
@@ -683,8 +724,10 @@ export class Conductor {
                 Date.now(),
               );
             } catch (e) {
-              errorMsg = `Exception encountered when setting latest application version '${setVersionMsg.version_name}': ${(e as Error).message}`;
-              this.dbosExec.logger.error(errorMsg);
+              errorMsg = this.reportException(
+                `Exception encountered when setting latest application version '${setVersionMsg.version_name}'`,
+                e,
+              );
               setVersionSuccess = false;
             }
             const setVersionResp = new protocol.SetLatestApplicationVersionResponse(
@@ -704,8 +747,10 @@ export class Conductor {
                 value: protocol.inspectForConductor(value),
               }));
             } catch (e) {
-              errorMsg = `Exception encountered when getting events for workflow ${eventsMsg.workflow_id}: ${(e as Error).message}`;
-              this.dbosExec.logger.error(errorMsg);
+              errorMsg = this.reportException(
+                `Exception encountered when getting events for workflow ${eventsMsg.workflow_id}`,
+                e,
+              );
             }
             const eventsResp = new protocol.GetWorkflowEventsResponse(baseMsg.request_id, eventOutputs, errorMsg);
             currWebsocket.send(JSON.stringify(eventsResp));
@@ -722,8 +767,10 @@ export class Conductor {
                 consumed: n.consumed,
               }));
             } catch (e) {
-              errorMsg = `Exception encountered when getting notifications for workflow ${notifsMsg.workflow_id}: ${(e as Error).message}`;
-              this.dbosExec.logger.error(errorMsg);
+              errorMsg = this.reportException(
+                `Exception encountered when getting notifications for workflow ${notifsMsg.workflow_id}`,
+                e,
+              );
             }
             const notifsResp = new protocol.GetWorkflowNotificationsResponse(
               baseMsg.request_id,
@@ -742,8 +789,10 @@ export class Conductor {
                 values: values.map((v) => protocol.inspectForConductor(v)),
               }));
             } catch (e) {
-              errorMsg = `Exception encountered when getting streams for workflow ${streamsMsg.workflow_id}: ${(e as Error).message}`;
-              this.dbosExec.logger.error(errorMsg);
+              errorMsg = this.reportException(
+                `Exception encountered when getting streams for workflow ${streamsMsg.workflow_id}`,
+                e,
+              );
             }
             const streamsResp = new protocol.GetWorkflowStreamsResponse(baseMsg.request_id, streamOutputs, errorMsg);
             currWebsocket.send(JSON.stringify(streamsResp));
@@ -803,8 +852,7 @@ export class Conductor {
                 max_total_latency_ms: r.maxTotalLatencyMs,
               }));
             } catch (e) {
-              errorMsg = `Exception encountered when getting workflow aggregates: ${(e as Error).message}`;
-              this.dbosExec.logger.error(errorMsg);
+              errorMsg = this.reportException('Exception encountered when getting workflow aggregates', e);
             }
             const aggResp = new protocol.GetWorkflowAggregatesResponse(baseMsg.request_id, aggOutput, errorMsg);
             currWebsocket.send(JSON.stringify(aggResp));
@@ -839,8 +887,7 @@ export class Conductor {
                 max_duration_ms: r.maxDurationMs,
               }));
             } catch (e) {
-              errorMsg = `Exception encountered when getting step aggregates: ${(e as Error).message}`;
-              this.dbosExec.logger.error(errorMsg);
+              errorMsg = this.reportException('Exception encountered when getting step aggregates', e);
             }
             const stepAggResp = new protocol.GetStepAggregatesResponse(baseMsg.request_id, stepAggOutput, errorMsg);
             currWebsocket.send(JSON.stringify(stepAggResp));
@@ -866,8 +913,7 @@ export class Conductor {
                 partition_rate_limit_period_sec: q.partitionRateLimitPeriodSec,
               }));
             } catch (e) {
-              errorMsg = `Exception encountered when listing queues: ${(e as Error).message}`;
-              this.dbosExec.logger.error(errorMsg);
+              errorMsg = this.reportException('Exception encountered when listing queues', e);
             }
             const listQueuesResp = new protocol.ListQueuesResponse(baseMsg.request_id, queueOutputs, errorMsg);
             currWebsocket.send(JSON.stringify(listQueuesResp));
@@ -895,8 +941,7 @@ export class Conductor {
                 };
               }
             } catch (e) {
-              errorMsg = `Exception encountered when getting queue ${getQueueMsg.name}: ${(e as Error).message}`;
-              this.dbosExec.logger.error(errorMsg);
+              errorMsg = this.reportException(`Exception encountered when getting queue ${getQueueMsg.name}`, e);
             }
             const getQueueResp = new protocol.GetQueueResponse(baseMsg.request_id, getQueueOutput, errorMsg);
             currWebsocket.send(JSON.stringify(getQueueResp));
