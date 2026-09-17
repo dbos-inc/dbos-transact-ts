@@ -4188,8 +4188,18 @@ export class SystemDatabase {
 
     const whereClause = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
     const orderClause = `ORDER BY created_at ${input.sortDesc ? 'DESC' : 'ASC'}`;
-    const limitClause = input.limit ? `LIMIT ${input.limit}` : '';
-    const offsetClause = input.offset ? `OFFSET ${input.offset}` : '';
+    let limitClause = '';
+    if (input.limit) {
+      limitClause = `LIMIT $${paramCounter}`;
+      params.push(input.limit);
+      paramCounter++;
+    }
+    let offsetClause = '';
+    if (input.offset) {
+      offsetClause = `OFFSET $${paramCounter}`;
+      params.push(input.offset);
+      paramCounter++;
+    }
 
     const projection = [...selectColumns.map((c) => `workflow_status.${c}`), ...payloadColumns].join(', ');
     const query = `
@@ -4234,9 +4244,12 @@ export class SystemDatabase {
       }
     }
 
+    const params: unknown[] = [];
     if (input.timeBucketSizeMs !== undefined) {
       // Bucket on created_at — the indexed wall-clock timestamp on workflow_status.
-      const bucket = input.timeBucketSizeMs;
+      // One placeholder shared by SELECT and GROUP BY, so Postgres sees the two expressions as identical.
+      params.push(input.timeBucketSizeMs);
+      const bucket = `$${params.length}::bigint`;
       const bucketExpr = `(CAST(FLOOR(created_at / ${bucket}) AS BIGINT) * ${bucket})`;
       groupNames.push('time_bucket');
       groupColumns.push(bucketExpr);
@@ -4270,8 +4283,7 @@ export class SystemDatabase {
     }
 
     const whereClauses: string[] = [];
-    const params: unknown[] = [];
-    let paramIdx = 1;
+    let paramIdx = params.length + 1;
 
     const addFilter = (column: string, values: string[] | undefined) => {
       if (!values || values.length === 0) return;
@@ -4411,10 +4423,12 @@ export class SystemDatabase {
       }
     }
 
+    const params: unknown[] = [];
     if (input.timeBucketSizeMs !== undefined) {
       // Bucket on completed_at_epoch_ms — it's the indexed timestamp on
       // this table.
-      const bucket = input.timeBucketSizeMs;
+      params.push(input.timeBucketSizeMs);
+      const bucket = `$${params.length}::bigint`;
       const bucketExpr = `(CAST(FLOOR(completed_at_epoch_ms / ${bucket}) AS BIGINT) * ${bucket})`;
       groupNames.push('time_bucket');
       groupColumns.push(bucketExpr);
@@ -4446,8 +4460,7 @@ export class SystemDatabase {
     }
 
     const whereClauses: string[] = [];
-    const params: unknown[] = [];
-    let paramIdx = 1;
+    let paramIdx = params.length + 1;
 
     if (input.status && input.status.length > 0) {
       const placeholders = input.status.map((_, i) => `$${paramIdx + i}`).join(', ');
