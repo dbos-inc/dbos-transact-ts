@@ -5677,13 +5677,8 @@ export class SystemDatabase {
           application_name
         ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29)
         ON CONFLICT (workflow_uuid)
-          DO UPDATE SET
-            updated_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint,
-            executor_id = CASE
-              WHEN EXCLUDED.status != '${StatusString.ENQUEUED}' AND EXCLUDED.status != '${StatusString.DELAYED}'
-              THEN EXCLUDED.executor_id
-              ELSE workflow_status.executor_id
-            END
+          -- A no-op update, so an existing row comes back unchanged for the caller to inspect.
+          DO UPDATE SET owner_xid = workflow_status.owner_xid
           RETURNING status, name, class_name, config_name, queue_name, workflow_deadline_epoch_ms, executor_id, owner_xid, serialization`,
         [
           initStatus.workflowUUID,
@@ -5716,7 +5711,6 @@ export class SystemDatabase {
           initStatus.scheduleName ?? null,
           initStatus.debounceDeadlineEpochMS ?? null,
           initStatus.isDebounced ?? false,
-          // Absent from the conflict update: a re-enqueue must not re-own a claimed row.
           initStatus.applicationName ?? null,
         ],
       );
