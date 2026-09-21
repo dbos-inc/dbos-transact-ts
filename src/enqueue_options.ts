@@ -31,7 +31,7 @@ export interface EnqueueWorkflowOptions {
   workflowConfigName?: string;
   /** An identifier for the workflow, for idempotency. A new UUID if unset. */
   workflowID?: string;
-  /** How to handle a `workflowID` already in use by another workflow, whatever its status. Defaults to `'return-existing'`. */
+  /** How to handle a `workflowID` already in use, whatever its status. Defaults to `'return-existing'`; match a rejection with `isWorkflowIDInUseError`. */
   workflowIDReusePolicy?: WorkflowIDReusePolicy;
   /**
    * The application version this workflow requires. If unset, only an executor

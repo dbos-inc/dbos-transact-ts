@@ -231,7 +231,7 @@ export class DBOSQueryTimeoutError extends DBOSError {
 }
 
 export const WorkflowIDInUse = 36;
-/** Exception raised when a workflow started with `workflowIDReusePolicy: 'reject'` finds its ID already in use. */
+/** Raised when a `workflowIDReusePolicy: 'reject'` start finds its ID in use; match it with `isWorkflowIDInUseError`, not `instanceof`. */
 export class DBOSWorkflowIDInUseError extends DBOSError {
   constructor(
     readonly workflowID: string,
@@ -258,6 +258,14 @@ export function isStreamTimeoutError(e: unknown): boolean {
     return true;
   }
   return e instanceof PortableWorkflowError && e.name === DBOSStreamTimeoutError.name;
+}
+
+/** True if `e` is a workflow-ID-in-use rejection, including its replayed forms, where `instanceof` does not hold. */
+export function isWorkflowIDInUseError(e: unknown): boolean {
+  if (e instanceof Error && getDBOSErrorCode(e) === WorkflowIDInUse) {
+    return true;
+  }
+  return e instanceof PortableWorkflowError && e.name === DBOSWorkflowIDInUseError.name;
 }
 
 export function getDBOSErrorCode(e: Error): number | undefined {

@@ -163,7 +163,7 @@ export interface StartWorkflowParams {
   //     Requires `queueName` and `enqueueOptions.deduplicationID`. Arguments passed by the
   //     colliding caller are discarded and the handle resolves with the original workflow's result.
   duplicationPolicy?: DuplicationPolicy;
-  // How to handle an ID already in use by another workflow, whatever its status. Defaults to 'return-existing'.
+  // How to handle an ID already in use, whatever its status. Defaults to 'return-existing'; match a rejection with `isWorkflowIDInUseError`.
   workflowIDReusePolicy?: WorkflowIDReusePolicy;
   // Custom key-value attributes to attach to the workflow at creation. Recorded in the
   // workflow status and searchable via the `attributes` filter of `DBOS.listWorkflows`.

@@ -37,7 +37,7 @@ export function validateWorkflowAttributes(attributes: unknown): void {
   }
 }
 
-/** On a workflow ID already in use: 'return-existing' (default) attaches to that workflow; 'reject' throws `DBOSWorkflowIDInUseError`. */
+/** On a workflow ID already in use: 'return-existing' (default) attaches to it; 'reject' throws an error `isWorkflowIDInUseError` matches. */
 export type WorkflowIDReusePolicy = 'return-existing' | 'reject';
 
 export interface WorkflowParams {
