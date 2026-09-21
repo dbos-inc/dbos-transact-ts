@@ -605,7 +605,6 @@ interface InsertWorkflowResult {
   executor_id: string | null;
   owner_xid: string | null;
   serialization: string | null;
-  parent_workflow_id: string | null;
 }
 
 function mapVersionInfo(row: application_versions): VersionInfo {
@@ -1259,6 +1258,53 @@ export class SystemDatabase {
     }
   }
 
+  /** Insert a child workflow's row and record it as the parent's step in one transaction, so a crash leaves both or neither. */
+  @dbRetry()
+  async initChildWorkflowStatus(
+    initStatus: WorkflowStatusInternal,
+    ownerXid: string,
+    parentWorkflowID: string,
+    parentFunctionID: number,
+    startTimeEpochMs: number,
+    endTimeEpochMs: number,
+    reusePolicy: WorkflowIDReusePolicy = 'return-existing',
+  ): Promise<{
+    status: string;
+    shouldExecuteOnThisExecutor: boolean;
+    deadlineEpochMS?: number;
+    serialization: SysDBSerializationFormat | null;
+  }> {
+    const client = await this.#connect();
+    let shouldCommit = false;
+    try {
+      await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
+      const result = await this.#initWorkflowStatusInternal(client, initStatus, ownerXid, reusePolicy);
+      await this.recordOperationResultInternal(
+        client,
+        parentWorkflowID,
+        parentFunctionID,
+        initStatus.workflowName,
+        true,
+        startTimeEpochMs,
+        endTimeEpochMs,
+        { childWorkflowID: initStatus.workflowUUID },
+      );
+      shouldCommit = true;
+      return result;
+    } finally {
+      try {
+        if (shouldCommit) {
+          await client.query('COMMIT');
+          await debugTriggerPoint(DEBUG_TRIGGER_INITWF_COMMIT);
+        } else {
+          await client.query('ROLLBACK');
+        }
+      } finally {
+        client.release();
+      }
+    }
+  }
+
   async #initWorkflowStatusInternal(
     client: ClientBase,
     initStatus: WorkflowStatusInternal,
@@ -1271,14 +1317,8 @@ export class SystemDatabase {
     serialization: SysDBSerializationFormat | null;
   }> {
     const resRow = await this.insertWorkflowStatus(client, initStatus, ownerXid);
-    if (reusePolicy === 'reject') {
-      const inserted = ownerXid !== null && resRow.owner_xid === ownerXid;
-      // A parent's own child is attached, not rejected: after a crash the parent re-starts it before recording it.
-      const ownChild =
-        initStatus.parentWorkflowID !== undefined && resRow.parent_workflow_id === initStatus.parentWorkflowID;
-      if (!inserted && !ownChild) {
-        throw new DBOSWorkflowIDInUseError(initStatus.workflowUUID, resRow.status, resRow.name);
-      }
+    if (reusePolicy === 'reject' && (ownerXid === null || resRow.owner_xid !== ownerXid)) {
+      throw new DBOSWorkflowIDInUseError(initStatus.workflowUUID, resRow.status, resRow.name);
     }
     if (resRow.name !== initStatus.workflowName) {
       const msg = `Workflow already exists with a different function name: ${resRow.name}, but the provided function name is: ${initStatus.workflowName}`;
@@ -5644,7 +5684,7 @@ export class SystemDatabase {
               THEN EXCLUDED.executor_id
               ELSE workflow_status.executor_id
             END
-          RETURNING status, name, class_name, config_name, queue_name, workflow_deadline_epoch_ms, executor_id, owner_xid, serialization, parent_workflow_id`,
+          RETURNING status, name, class_name, config_name, queue_name, workflow_deadline_epoch_ms, executor_id, owner_xid, serialization`,
         [
           initStatus.workflowUUID,
           initStatus.status,

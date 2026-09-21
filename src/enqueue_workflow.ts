@@ -99,7 +99,19 @@ export async function enqueueWorkflowWithOptions<T = unknown>(
 
   const childStartTime = Date.now();
   try {
-    await sysdb.initWorkflowStatus(internalStatus, randomUUID(), undefined, options.workflowIDReusePolicy);
+    if (callerID !== undefined && callerFunctionID !== undefined) {
+      await sysdb.initChildWorkflowStatus(
+        internalStatus,
+        randomUUID(),
+        callerID,
+        callerFunctionID,
+        childStartTime,
+        Date.now(),
+        options.workflowIDReusePolicy,
+      );
+    } else {
+      await sysdb.initWorkflowStatus(internalStatus, randomUUID(), undefined, options.workflowIDReusePolicy);
+    }
   } catch (e) {
     if (
       (e instanceof DBOSQueueDuplicatedError || e instanceof DBOSWorkflowIDInUseError) &&
@@ -118,18 +130,6 @@ export async function enqueueWorkflowWithOptions<T = unknown>(
       );
     }
     throw e;
-  }
-
-  if (callerID !== undefined && callerFunctionID !== undefined) {
-    await sysdb.recordOperationResult(
-      callerID,
-      callerFunctionID,
-      internalStatus.workflowName,
-      true,
-      childStartTime,
-      Date.now(),
-      { childWorkflowID: internalStatus.workflowUUID },
-    );
   }
 
   return new RetrievedHandle<T>(internalStatus.workflowUUID);

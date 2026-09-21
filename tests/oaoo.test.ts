@@ -1,15 +1,9 @@
 import { Client } from 'pg';
 import { DBOS, DBOSClient, Debouncer, StatusString } from '../src';
 import { DBOSConfig } from '../src/dbos-executor';
-import { DBOSQueueDuplicatedError, DBOSWorkflowIDInUseError } from '../src/error';
+import { DBOSQueueDuplicatedError, DBOSWorkflowIDInUseError, isWorkflowIDInUseError } from '../src/error';
 import { clearDebugTriggers, DEBUG_TRIGGER_INITWF_COMMIT, setDebugTrigger } from '../src/debugpoint';
-import {
-  dropDatabase,
-  generateDBOSTestConfig,
-  reexecuteWorkflowById,
-  retryUntilSuccess,
-  setUpDBOSTestSysDb,
-} from './helpers';
+import { dropDatabase, generateDBOSTestConfig, reexecuteWorkflowById, setUpDBOSTestSysDb } from './helpers';
 import { randomUUID } from 'node:crypto';
 
 describe('oaoo-tests', () => {
@@ -441,6 +435,19 @@ describe('oaoo-tests', () => {
           return `rejected:${(e as Error).name}`;
         }
       }
+
+      @DBOS.workflow()
+      static async startSameChildTwice(childID: string): Promise<string> {
+        const start = () =>
+          DBOS.startWorkflow(ReuseTest, { workflowID: childID, workflowIDReusePolicy: 'reject' }).echo('from-parent');
+        await (await start()).getResult();
+        try {
+          await start();
+          return 'second-attached';
+        } catch (e) {
+          return isWorkflowIDInUseError(e) ? 'second-rejected' : `unexpected:${(e as Error).name}`;
+        }
+      }
     }
 
     beforeEach(async () => {
@@ -634,30 +641,15 @@ describe('oaoo-tests', () => {
       await expect(forked.getResult()).resolves.toBe('rejected:DBOSWorkflowIDInUseError');
     });
 
-    test('reject-attaches-parent-own-child-after-crash', async () => {
-      const childID = `reuse-own-child-${randomUUID()}`;
-      const parentID = `reuse-own-parent-${randomUUID()}`;
-      const parent = await DBOS.startWorkflow(ReuseTest, { workflowID: parentID }).startChild(childID);
-      await expect(parent.getResult()).resolves.toBe('from-parent');
+    test('reject-same-parent-reuse', async () => {
+      const childID = `reuse-same-parent-${randomUUID()}`;
+      const parentID = `reuse-same-parent-p-${randomUUID()}`;
+      const parent = await DBOS.startWorkflow(ReuseTest, { workflowID: parentID }).startSameChildTwice(childID);
+      await expect(parent.getResult()).resolves.toBe('second-rejected');
 
-      // Drop the parent's record of starting the child, as if it crashed right after the child committed.
-      const pg = new Client({ connectionString: config.systemDatabaseUrl! });
-      await pg.connect();
-      try {
-        await pg.query(`DELETE FROM dbos.operation_outputs WHERE workflow_uuid = $1 AND child_workflow_id = $2`, [
-          parentID,
-          childID,
-        ]);
-      } finally {
-        await pg.end();
-      }
-
+      // Replay serves the recorded rejection, which the helper still matches.
       const replayed = await reexecuteWorkflowById(parentID);
-      await expect(replayed.getResult()).resolves.toBe('from-parent');
-      await retryUntilSuccess(async () => {
-        const steps = await DBOS.listWorkflowSteps(parentID);
-        expect(steps?.[0].childWorkflowID).toBe(childID);
-      });
+      await expect(replayed.getResult()).resolves.toBe('second-rejected');
     });
 
     test('debouncer-rejects-reject-policy', async () => {

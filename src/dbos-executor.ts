@@ -625,12 +625,25 @@ export class DBOSExecutor {
       serializationType = ires.serialization === DBOSPortableJSON.name() ? 'portable' : undefined;
     } else {
       try {
-        ires = await this.systemDatabase.initWorkflowStatus(
-          internalStatus,
-          randomUUID(),
-          undefined,
-          params.workflowIDReusePolicy,
-        );
+        if (callerID !== undefined && callerFunctionID !== undefined) {
+          const now = Date.now();
+          ires = await this.systemDatabase.initChildWorkflowStatus(
+            internalStatus,
+            randomUUID(),
+            callerID,
+            callerFunctionID,
+            now,
+            now,
+            params.workflowIDReusePolicy,
+          );
+        } else {
+          ires = await this.systemDatabase.initWorkflowStatus(
+            internalStatus,
+            randomUUID(),
+            undefined,
+            params.workflowIDReusePolicy,
+          );
+        }
         serializationType = ires.serialization === DBOSPortableJSON.name() ? 'portable' : undefined;
       } catch (e) {
         // For 'return-existing' enqueues we don't pre-record the dedup error: the wrapper will
@@ -655,20 +668,6 @@ export class DBOSExecutor {
         this.tracer.endSpan(span);
         throw e;
       }
-    }
-
-    if (callerFunctionID !== undefined && callerID !== undefined) {
-      await this.systemDatabase.recordOperationResult(
-        callerID,
-        callerFunctionID,
-        internalStatus.workflowName,
-        true,
-        Date.now(),
-        Date.now(),
-        {
-          childWorkflowID: workflowID,
-        },
-      );
     }
 
     $deadlineEpochMS = ires.deadlineEpochMS;
