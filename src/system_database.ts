@@ -35,6 +35,7 @@ import {
 } from './utils';
 import { GlobalLogger } from './telemetry/logs';
 import { QueueRateLimit, WorkflowQueue } from './wfqueue';
+import { AsyncResource } from 'async_hooks';
 import { createHash, randomUUID } from 'crypto';
 import { getClientConfig } from './utils';
 import { ensurePGDatabase, maskDatabaseUrl } from './database_utils';
@@ -968,6 +969,8 @@ export class SystemDatabase {
   readonly #cancelWatchers: Map<string, Set<AbortController>> = new Map();
   #cancelPollerLoop: Promise<void> | undefined = undefined;
   #cancelPollerWake: (() => void) | null = null;
+  // Runs the lazily started cancel poller outside the async context of the step that happens to start it
+  readonly #cancelPollerScope = new AsyncResource('DBOSCancelPoller');
 
   // Per-partition-key created_at cursors: keep per-key queue order monotonic across batches
   readonly #batchCreatedAtCursors: Map<string, number> = new Map();
@@ -2772,7 +2775,7 @@ export class SystemDatabase {
         this.#cancelWatchers.set(workflowID, watchers);
       }
       watchers.add(controller);
-      this.#cancelPollerLoop ??= this.#runCancelPoller();
+      this.#cancelPollerLoop ??= this.#cancelPollerScope.runInAsyncScope(() => this.#runCancelPoller());
     };
     const stop = () => {
       const watchers = this.#cancelWatchers.get(workflowID);
