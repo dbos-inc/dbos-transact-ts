@@ -277,7 +277,7 @@ describe('rewind', () => {
   // Notifications
   //////////////////////////////////////////
 
-  test('deletes-the-notifications-the-discarded-run-consumed', async () => {
+  test('deletes-the-notifications-consumed-or-received-past-the-cut', async () => {
     const workflowID = randomUUID();
     const handle = await DBOS.startWorkflow(receiver, { workflowID })();
     await DBOS.send(workflowID, 'a', 'cmd');
@@ -289,15 +289,18 @@ describe('rewind', () => {
     const firstRecv = await stepIDOf(workflowID, 'DBOS.recv');
     const secondRecv = await stepIDOf(workflowID, 'DBOS.recv', 1);
     expect(firstRecv).not.toBe(secondRecv);
+    // A message that arrives once the workflow is done sits unconsumed.
+    await DBOS.send(workflowID, 'stray', 'cmd');
     expect(await mailbox(workflowID)).toEqual([
       ['a', true, firstRecv],
       ['b', true, secondRecv],
+      ['stray', false, null],
     ]);
 
     await pausedQueue('rewind_delete_gate', async () => {
       await sysdb().rewindWorkflow(workflowID, secondRecv, { queueName: 'rewind_delete_gate' });
-      // Only the message the discarded step took is gone. The first recv's message
-      // stays consumed: its step survived the cut.
+      // The message the discarded step took is gone, and so is the one still waiting.
+      // The first recv's message stays consumed: its step survived the cut.
       expect(await mailbox(workflowID)).toEqual([['a', true, firstRecv]]);
       // A message that arrives after the cut is what the replayed recv gets.
       await DBOS.send(workflowID, 'c', 'cmd');

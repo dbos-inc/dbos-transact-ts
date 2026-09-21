@@ -2150,8 +2150,7 @@ export class SystemDatabase {
    * below it, using workflow_events_history as an undo log; a key that only the
    * discarded run ever published is unpublished outright.
    *
-   * Messages the discarded run consumed are deleted: they were delivered once, so a
-   * replayed recv waits for new ones rather than receiving them again.
+   * Messages the discarded run consumed or received after the rewind point are deleted.
    *
    * Stream entries written by the discarded run remain in place, with the exception of
    * the close sentinel, which has to go so new entries can be appended.
@@ -2235,9 +2234,9 @@ export class SystemDatabase {
         ]);
       }
 
-      // Delete the messages the discarded steps consumed.
+      // Delete messages consumed or received after the rewind point
       await client.query(
-        `DELETE FROM "${schema}".notifications WHERE destination_uuid = $1 AND consumed_by_function_id >= $2`,
+        `DELETE FROM "${schema}".notifications WHERE destination_uuid = $1 AND (consumed_by_function_id >= $2 OR consumed = false)`,
         [workflowID, startStep],
       );
 
