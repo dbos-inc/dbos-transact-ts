@@ -60,6 +60,16 @@ export interface SystemDatabaseStoredResult {
   serialization?: string | null; // For WF result, and for steps that persist a format (recv/getEvent)
 }
 
+/* A running step's view of its workflow's cancellation */
+export interface CancellationWatch {
+  /** Fires on the workflow's cancellation; the first read starts watching for it. */
+  readonly signal: AbortSignal;
+  /** Whether `signal` has fired, without starting to watch. */
+  readonly cancelled: boolean;
+  /** Stop watching; later reads of `signal` do not start watching again. */
+  release(): void;
+}
+
 /* Exported workflow format for import/export */
 export interface ExportedWorkflow {
   workflow_status: workflow_status;
@@ -924,6 +934,7 @@ export class SystemDatabase {
   dbPollingIntervalResultMs: number = 1000;
   dbPollingIntervalEventMs: number = 10000;
   dbPollingIntervalStreamMs: number = 1000;
+  dbPollingIntervalCancelMs: number = 1000;
   shouldUseDBNotifications: boolean = true;
   readonly notificationsMap: NotificationMap<void> = new NotificationMap();
   readonly workflowEventsMap: NotificationMap<void> = new NotificationMap();
@@ -953,6 +964,10 @@ export class SystemDatabase {
     string,
     { promise: Promise<unknown>; queueName?: string; queuePartitionKey?: string }
   > = new Map(); // Map from workflowID to workflow promise, queue name and partition key
+
+  readonly #cancelWatchers: Map<string, Set<AbortController>> = new Map();
+  #cancelPollerLoop: Promise<void> | undefined = undefined;
+  #cancelPollerWake: (() => void) | null = null;
 
   // Per-partition-key created_at cursors: keep per-key queue order monotonic across batches
   readonly #batchCreatedAtCursors: Map<string, number> = new Map();
@@ -1182,6 +1197,10 @@ export class SystemDatabase {
     if (this.#notifierLoop) {
       await this.#notifierLoop;
       this.#notifierLoop = undefined;
+    }
+    this.#cancelPollerWake?.();
+    if (this.#cancelPollerLoop) {
+      await this.#cancelPollerLoop;
     }
     if (this.notificationsClient) {
       this.#retireNotificationsClient(this.notificationsClient);
@@ -2739,6 +2758,74 @@ export class SystemDatabase {
   /** Cancellation check for polling waits: goes through the limiter so readers cannot starve the pool. */
   async checkIfCanceledLimited(workflowID: string): Promise<void> {
     await this.#pollWithLimiter(() => this.#checkIfCanceled(this.pool, workflowID));
+  }
+
+  watchForCancellation(workflowID: string): CancellationWatch {
+    const controller = new AbortController();
+    let state: 'idle' | 'watching' | 'released' = 'idle';
+    const start = () => {
+      state = 'watching';
+      if (this.#destroyed) return;
+      let watchers = this.#cancelWatchers.get(workflowID);
+      if (watchers === undefined) {
+        watchers = new Set();
+        this.#cancelWatchers.set(workflowID, watchers);
+      }
+      watchers.add(controller);
+      this.#cancelPollerLoop ??= this.#runCancelPoller();
+    };
+    const stop = () => {
+      const watchers = this.#cancelWatchers.get(workflowID);
+      if (watchers?.delete(controller) && watchers.size === 0) {
+        this.#cancelWatchers.delete(workflowID);
+        if (this.#cancelWatchers.size === 0) this.#cancelPollerWake?.();
+      }
+    };
+    return {
+      get signal() {
+        if (state === 'idle') start();
+        return controller.signal;
+      },
+      get cancelled() {
+        return controller.signal.aborted;
+      },
+      release: () => {
+        if (state === 'watching') stop();
+        state = 'released';
+      },
+    };
+  }
+
+  async #runCancelPoller(): Promise<void> {
+    while (this.#cancelWatchers.size > 0 && !this.#destroyed) {
+      const { promise, cancel } = cancellableSleep(this.dbPollingIntervalCancelMs);
+      this.#cancelPollerWake = cancel;
+      await promise;
+      this.#cancelPollerWake = null;
+      if (this.#cancelWatchers.size === 0 || this.#destroyed) break;
+      try {
+        await this.#abortCancelledWatchers();
+      } catch (e) {
+        this.logger.debug(`Workflow cancellation poll failed: ${String(e)}`);
+      }
+    }
+    this.#cancelPollerLoop = undefined;
+  }
+
+  async #abortCancelledWatchers(): Promise<void> {
+    const { rows } = await this.#pollWithLimiter(() =>
+      this.pool.query<{ workflow_uuid: string }>(
+        `SELECT workflow_uuid FROM "${this.schemaName}".workflow_status WHERE workflow_uuid = ANY($1) AND status = $2`,
+        [Array.from(this.#cancelWatchers.keys()), StatusString.CANCELLED],
+      ),
+    );
+    for (const { workflow_uuid: workflowID } of rows) {
+      const watchers = this.#cancelWatchers.get(workflowID);
+      if (watchers === undefined) continue;
+      this.#cancelWatchers.delete(workflowID);
+      const reason = new DBOSWorkflowCancelledError(workflowID);
+      for (const controller of watchers) controller.abort(reason);
+    }
   }
 
   @dbRetry()

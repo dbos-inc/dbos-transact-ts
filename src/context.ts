@@ -13,6 +13,12 @@ export interface StepStatus {
    * so the step can cancel its underlying operation. A fresh signal is issued for each retry attempt.
    */
   timeoutSignal?: AbortSignal;
+  /**
+   * Fires when the step's workflow is cancelled, so the step can cancel its underlying operation.
+   * Cancellation is detected by polling, so the signal fires within about a second of the cancel.
+   * The same signal is shared by all attempts of the step.
+   */
+  readonly cancelSignal: AbortSignal;
 }
 
 export interface DBOSContextOptions {
@@ -141,20 +147,27 @@ export async function runWithDataSourceContext<R>(callnum: number, callback: () 
 export async function runInStepContext<R>(
   pctx: DBOSLocalCtx,
   stepID: number,
-  maxAttempts: number | undefined,
-  currentAttempt: number | undefined,
-  timeoutSignal: AbortSignal | undefined,
+  attempt: {
+    maxAttempts?: number;
+    currentAttempt?: number;
+    timeoutSignal?: AbortSignal;
+    getCancelSignal: () => AbortSignal;
+  },
   callback: () => Promise<R>,
 ) {
   // Check we are in a workflow context and not in a step / transaction already
   if (!pctx) throw new DBOSInvalidWorkflowTransitionError();
   if (!isInWorkflowCtx(pctx)) throw new DBOSInvalidWorkflowTransitionError();
 
+  const { maxAttempts, currentAttempt, timeoutSignal, getCancelSignal } = attempt;
   const stepStatus: StepStatus = {
     stepID: stepID,
     currentAttempt: currentAttempt,
     maxAttempts: currentAttempt ? maxAttempts : undefined,
     timeoutSignal: timeoutSignal,
+    get cancelSignal() {
+      return getCancelSignal();
+    },
   };
 
   return await runWithParentContext(

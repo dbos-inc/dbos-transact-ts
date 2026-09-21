@@ -12,6 +12,7 @@ import {
 import { Client, Pool, PoolClient } from 'pg';
 import { WorkflowHandle, WorkflowStatus } from '../src/workflow';
 import { randomUUID } from 'node:crypto';
+import { setTimeout as abortableSleep } from 'node:timers/promises';
 import { globalParams, sleepms } from '../src/utils';
 import { retentionLockKey, SystemDatabase } from '../src/system_database';
 import { GlobalLogger } from '../src/telemetry/logs';
@@ -22,7 +23,7 @@ import {
   listQueuedWorkflows,
   listWorkflows,
 } from '../src/workflow_management';
-import { DBOSAwaitedWorkflowCancelledError, DBOSWorkflowCancelledError } from '../src/error';
+import { DBOSAwaitedWorkflowCancelledError, DBOSStepTimeoutError, DBOSWorkflowCancelledError } from '../src/error';
 import assert from 'node:assert';
 import { DBOSJSON } from '../src/serialization';
 
@@ -3676,6 +3677,226 @@ describe('wf-cancel-tests', () => {
     }
 
     await expect(parentHandle.getResult()).rejects.toThrow(DBOSWorkflowCancelledError);
+  });
+
+  class StepCancelSignalTest {
+    static plainRuns = 0;
+    static attempts = 0;
+    static signals: AbortSignal[] = [];
+    static blocked = new Event();
+    static stopped = new Event();
+    static finish = false;
+
+    @DBOS.step()
+    static async plainStep(): Promise<string> {
+      StepCancelSignalTest.plainRuns++;
+      return Promise.resolve('plain');
+    }
+
+    // After attempt 2 the backoff would be 10s, so a prompt cancellation shows no further retry was scheduled
+    @DBOS.step({ retriesAllowed: true, maxAttempts: 3, intervalSeconds: 0.1, backoffRate: 100 })
+    static async cooperativeStep(): Promise<string> {
+      const attempt = ++StepCancelSignalTest.attempts;
+      const signal = DBOS.stepStatus!.cancelSignal;
+      StepCancelSignalTest.signals.push(signal);
+      if (attempt === 1) throw new Error('transient failure');
+      if (StepCancelSignalTest.finish) return `done-${attempt}`;
+      StepCancelSignalTest.blocked.set();
+      try {
+        await abortableSleep(10_000, undefined, { signal });
+      } finally {
+        StepCancelSignalTest.stopped.set();
+      }
+      return `slept-${attempt}`;
+    }
+
+    @DBOS.workflow()
+    static async signalWorkflow(): Promise<string> {
+      const plain = await StepCancelSignalTest.plainStep();
+      const result = await StepCancelSignalTest.cooperativeStep();
+      return `${plain}-${result}`;
+    }
+  }
+
+  test('test-step-cancel-signal', async () => {
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    sysdb.dbPollingIntervalCancelMs = 100;
+    StepCancelSignalTest.plainRuns = 0;
+    StepCancelSignalTest.attempts = 0;
+    StepCancelSignalTest.signals = [];
+    StepCancelSignalTest.blocked = new Event();
+    StepCancelSignalTest.stopped = new Event();
+    StepCancelSignalTest.finish = false;
+    const wfid = randomUUID();
+
+    // Attempt 1 fails and is retried; attempt 2 blocks until the signal fires
+    const handle = await DBOS.startWorkflow(StepCancelSignalTest, { workflowID: wfid }).signalWorkflow();
+    await StepCancelSignalTest.blocked.wait();
+    const [first, second] = StepCancelSignalTest.signals;
+    expect(second).toBe(first);
+    expect(first.aborted).toBe(false);
+    expect((await DBOS.getWorkflowStatus(wfid))!.status).toBe(StatusString.PENDING);
+
+    // An in-process cancel fires the signal; the aborted step is neither retried nor recorded
+    let cancelledAt = Date.now();
+    await DBOS.cancelWorkflow(wfid);
+    await expect(handle.getResult()).rejects.toThrow(DBOSWorkflowCancelledError);
+    expect(Date.now() - cancelledAt).toBeLessThan(5000);
+    expect(first.aborted).toBe(true);
+    expect(first.reason).toBeInstanceOf(DBOSWorkflowCancelledError);
+    expect((first.reason as DBOSWorkflowCancelledError).workflowID).toBe(wfid);
+    expect(StepCancelSignalTest.attempts).toBe(2);
+    expect((await DBOS.getWorkflowStatus(wfid))!.status).toBe(StatusString.CANCELLED);
+    let steps = await DBOS.listWorkflowSteps(wfid);
+    expect(steps!.map((s) => s.name)).toEqual(['plainStep']);
+
+    // On resume the step runs again with a fresh signal, which a cancel from a client also fires
+    while (sysdb.checkForRunningWorkflow(wfid)) {
+      await sleepms(20);
+    }
+    StepCancelSignalTest.blocked = new Event();
+    StepCancelSignalTest.stopped = new Event();
+    const resumed = await DBOS.resumeWorkflow<string>(wfid);
+    await StepCancelSignalTest.blocked.wait();
+    const third = StepCancelSignalTest.signals[2];
+    expect(third).not.toBe(first);
+    expect(third.aborted).toBe(false);
+    const client = await DBOSClient.create({ systemDatabaseUrl: config.systemDatabaseUrl! });
+    try {
+      cancelledAt = Date.now();
+      await client.cancelWorkflow(wfid);
+      // The handle reports the cancelled status at once, so wait for the step itself to stop
+      await StepCancelSignalTest.stopped.wait();
+      expect(Date.now() - cancelledAt).toBeLessThan(5000);
+      await expect(resumed.getResult()).rejects.toThrow(DBOSAwaitedWorkflowCancelledError);
+    } finally {
+      await client.destroy();
+    }
+    expect(third.reason).toBeInstanceOf(DBOSWorkflowCancelledError);
+    expect(StepCancelSignalTest.attempts).toBe(3);
+    expect(StepCancelSignalTest.plainRuns).toBe(1);
+    steps = await DBOS.listWorkflowSteps(wfid);
+    expect(steps!.map((s) => s.name)).toEqual(['plainStep']);
+
+    // A final resume lets the step complete: its result is recorded and its signal never fires
+    while (sysdb.checkForRunningWorkflow(wfid)) {
+      await sleepms(20);
+    }
+    StepCancelSignalTest.finish = true;
+    const completed = await DBOS.resumeWorkflow<string>(wfid);
+    await expect(completed.getResult()).resolves.toBe('plain-done-4');
+    expect(StepCancelSignalTest.signals[3].aborted).toBe(false);
+    expect(StepCancelSignalTest.plainRuns).toBe(1);
+    expect((await DBOS.getWorkflowStatus(wfid))!.status).toBe(StatusString.SUCCESS);
+    steps = await DBOS.listWorkflowSteps(wfid);
+    expect(steps!.map((s) => [s.name, s.output])).toEqual([
+      ['plainStep', 'plain'],
+      ['cooperativeStep', 'done-4'],
+    ]);
+  });
+
+  class StepCancelAndTimeoutTest {
+    static attempts = 0;
+    static timeoutSignals: AbortSignal[] = [];
+    static cancelSignals: AbortSignal[] = [];
+    static observed: unknown[] = []; // The abort reason each attempt stopped on
+    static thirdAttemptStarted = new Event();
+    static abandonedAttemptEnded = new Event();
+
+    // Fires with the reason of whichever of `signals` fires first
+    static anySignal(signals: AbortSignal[]): AbortSignal {
+      const controller = new AbortController();
+      for (const signal of signals) {
+        if (signal.aborted) controller.abort(signal.reason);
+        else signal.addEventListener('abort', () => controller.abort(signal.reason), { once: true });
+      }
+      return controller.signal;
+    }
+
+    @DBOS.step({ retriesAllowed: true, maxAttempts: 3, intervalSeconds: 0, timeoutMS: 1000 })
+    static async timedStep(): Promise<string> {
+      const attempt = ++StepCancelAndTimeoutTest.attempts;
+      const { timeoutSignal, cancelSignal } = DBOS.stepStatus!;
+      StepCancelAndTimeoutTest.timeoutSignals.push(timeoutSignal!);
+      StepCancelAndTimeoutTest.cancelSignals.push(cancelSignal);
+      if (attempt > 3) return `done-${attempt}`;
+      // Attempt 2 heeds only cancellation, so it keeps running after its timeout abandons it
+      const signal = attempt === 2 ? cancelSignal : StepCancelAndTimeoutTest.anySignal([timeoutSignal!, cancelSignal]);
+      if (attempt === 3) StepCancelAndTimeoutTest.thirdAttemptStarted.set();
+      try {
+        await abortableSleep(10_000, undefined, { signal });
+      } catch (e) {
+        StepCancelAndTimeoutTest.observed[attempt - 1] = signal.reason;
+        throw e;
+      } finally {
+        if (attempt === 2) StepCancelAndTimeoutTest.abandonedAttemptEnded.set();
+      }
+      return `slept-${attempt}`;
+    }
+
+    @DBOS.workflow()
+    static async timedWorkflow(): Promise<string> {
+      return await StepCancelAndTimeoutTest.timedStep();
+    }
+  }
+
+  test('test-step-cancel-signal-with-timeout', async () => {
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    sysdb.dbPollingIntervalCancelMs = 100;
+    StepCancelAndTimeoutTest.attempts = 0;
+    StepCancelAndTimeoutTest.timeoutSignals = [];
+    StepCancelAndTimeoutTest.cancelSignals = [];
+    StepCancelAndTimeoutTest.observed = [];
+    StepCancelAndTimeoutTest.thirdAttemptStarted = new Event();
+    StepCancelAndTimeoutTest.abandonedAttemptEnded = new Event();
+    const wfid = randomUUID();
+
+    // Attempts 1 and 2 time out; attempt 3 blocks until its timeout or the workflow's cancellation
+    const handle = await DBOS.startWorkflow(StepCancelAndTimeoutTest, { workflowID: wfid }).timedWorkflow();
+    await StepCancelAndTimeoutTest.thirdAttemptStarted.wait();
+    const { timeoutSignals, cancelSignals, observed } = StepCancelAndTimeoutTest;
+    const cancelSignal = cancelSignals[0];
+    expect(observed[0]).toBeInstanceOf(DBOSStepTimeoutError);
+    expect(timeoutSignals[0].reason).toBe(observed[0]);
+    expect(timeoutSignals[1].reason).toBeInstanceOf(DBOSStepTimeoutError);
+    expect(observed[1]).toBeUndefined();
+    expect(timeoutSignals[2].aborted).toBe(false);
+
+    // Each attempt has its own timeout signal but all share one cancel signal, which timeouts never fire
+    expect(new Set(timeoutSignals).size).toBe(3);
+    expect(cancelSignals.every((s) => s === cancelSignal)).toBe(true);
+    expect(cancelSignal.aborted).toBe(false);
+    expect((await DBOS.getWorkflowStatus(wfid))!.status).toBe(StatusString.PENDING);
+
+    // Cancelling stops the running attempt before its timeout, and the abandoned attempt too
+    await DBOS.cancelWorkflow(wfid);
+    await expect(handle.getResult()).rejects.toThrow(DBOSWorkflowCancelledError);
+    await StepCancelAndTimeoutTest.abandonedAttemptEnded.wait();
+    expect(cancelSignal.reason).toBeInstanceOf(DBOSWorkflowCancelledError);
+    expect(observed[1]).toBe(cancelSignal.reason);
+    expect(observed[2]).toBe(cancelSignal.reason);
+    expect(StepCancelAndTimeoutTest.attempts).toBe(3);
+
+    // Neither the timeouts nor the cancelled attempt were recorded as the step's outcome
+    expect((await DBOS.getWorkflowStatus(wfid))!.status).toBe(StatusString.CANCELLED);
+    expect(await DBOS.listWorkflowSteps(wfid)).toEqual([]);
+
+    // The cancelled attempt's timer was cleared, so its timeout signal never fires
+    await sleepms(1200);
+    expect(timeoutSignals[2].aborted).toBe(false);
+
+    // On resume the step gets fresh signals and completes
+    while (sysdb.checkForRunningWorkflow(wfid)) {
+      await sleepms(20);
+    }
+    const resumed = await DBOS.resumeWorkflow<string>(wfid);
+    await expect(resumed.getResult()).resolves.toBe('done-4');
+    expect(cancelSignals[3]).not.toBe(cancelSignal);
+    expect(cancelSignals[3].aborted).toBe(false);
+    expect(timeoutSignals[3].aborted).toBe(false);
+    expect((await DBOS.getWorkflowStatus(wfid))!.status).toBe(StatusString.SUCCESS);
+    const steps = await DBOS.listWorkflowSteps(wfid);
+    expect(steps!.map((s) => [s.name, s.output])).toEqual([['timedStep', 'done-4']]);
   });
 
   class BulkResumeTest {
