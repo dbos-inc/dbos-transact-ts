@@ -3,6 +3,7 @@
  * function. The target may live in another process or language, so nothing checks the local registry.
  */
 
+import { randomUUID } from 'node:crypto';
 import { DBOSExecutor } from './dbos-executor';
 import {
   getCurrentContextStore,
@@ -15,7 +16,7 @@ import { buildEnqueueStatus, type EnqueueWorkflowOptions } from './enqueue_optio
 import { RetrievedHandle } from './workflow';
 import type { WorkflowHandle } from './workflow';
 import type { WorkflowStatusInternal } from './system_database';
-import { DBOSInvalidWorkflowTransitionError, DBOSQueueDuplicatedError } from './error';
+import { DBOSInvalidWorkflowTransitionError, DBOSQueueDuplicatedError, DBOSWorkflowIDInUseError } from './error';
 import { deserializeResError, serializeResError } from './serialization';
 import { globalParams } from './utils';
 
@@ -98,9 +99,13 @@ export async function enqueueWorkflowWithOptions<T = unknown>(
 
   const childStartTime = Date.now();
   try {
-    await sysdb.initWorkflowStatus(internalStatus, null);
+    await sysdb.initWorkflowStatus(internalStatus, randomUUID(), undefined, options.workflowIDReusePolicy);
   } catch (e) {
-    if (e instanceof DBOSQueueDuplicatedError && callerID !== undefined && callerFunctionID !== undefined) {
+    if (
+      (e instanceof DBOSQueueDuplicatedError || e instanceof DBOSWorkflowIDInUseError) &&
+      callerID !== undefined &&
+      callerFunctionID !== undefined
+    ) {
       const sererr = await serializeResError(e, exec.serializer, undefined);
       await sysdb.recordOperationResult(
         callerID,

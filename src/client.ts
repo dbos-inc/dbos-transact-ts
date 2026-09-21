@@ -57,6 +57,7 @@ import {
   DBOSQueueDuplicatedError,
 } from './error';
 import { ClientBase, Pool } from 'pg';
+import { randomUUID } from 'node:crypto';
 import {
   type WorkflowSchedule,
   toWorkflowSchedule,
@@ -241,7 +242,12 @@ export class DBOSClient {
     if (options.duplicationPolicy === 'return-existing') {
       finalID = await this.#initSingletonWorkflow(internalStatus, options);
     } else {
-      await this.systemDatabase.initWorkflowStatus(internalStatus, null);
+      await this.systemDatabase.initWorkflowStatus(
+        internalStatus,
+        randomUUID(),
+        undefined,
+        options.workflowIDReusePolicy,
+      );
       finalID = internalStatus.workflowUUID;
     }
 
@@ -309,7 +315,12 @@ export class DBOSClient {
     }
     while (true) {
       try {
-        await this.systemDatabase.initWorkflowStatus(internalStatus, null);
+        await this.systemDatabase.initWorkflowStatus(
+          internalStatus,
+          randomUUID(),
+          undefined,
+          options.workflowIDReusePolicy,
+        );
         return internalStatus.workflowUUID;
       } catch (e) {
         if (!(e instanceof DBOSQueueDuplicatedError)) throw e;
@@ -341,7 +352,12 @@ export class DBOSClient {
     if (options.duplicationPolicy === 'return-existing') {
       finalID = await this.#initSingletonWorkflow(internalStatus, options);
     } else {
-      await this.systemDatabase.initWorkflowStatus(internalStatus, null);
+      await this.systemDatabase.initWorkflowStatus(
+        internalStatus,
+        randomUUID(),
+        undefined,
+        options.workflowIDReusePolicy,
+      );
       finalID = internalStatus.workflowUUID;
     }
 
@@ -402,7 +418,7 @@ export class DBOSClient {
       // A unique violation aborts the caller's transaction, so recovering the existing ID would need a new one.
       throw new DBOSError("`duplicationPolicy: 'return-existing'` is not supported in a caller-owned transaction");
     }
-    await this.systemDatabase.initWorkflowStatus(internalStatus, null, client);
+    await this.systemDatabase.initWorkflowStatus(internalStatus, randomUUID(), client, options.workflowIDReusePolicy);
     return internalStatus.workflowUUID;
   }
 

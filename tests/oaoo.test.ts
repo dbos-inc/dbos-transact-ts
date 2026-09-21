@@ -1,6 +1,15 @@
-import { DBOS } from '../src';
+import { Client } from 'pg';
+import { DBOS, DBOSClient, Debouncer, StatusString } from '../src';
 import { DBOSConfig } from '../src/dbos-executor';
-import { dropDatabase, generateDBOSTestConfig, reexecuteWorkflowById, setUpDBOSTestSysDb } from './helpers';
+import { DBOSQueueDuplicatedError, DBOSWorkflowIDInUseError } from '../src/error';
+import { clearDebugTriggers, DEBUG_TRIGGER_INITWF_COMMIT, setDebugTrigger } from '../src/debugpoint';
+import {
+  dropDatabase,
+  generateDBOSTestConfig,
+  reexecuteWorkflowById,
+  retryUntilSuccess,
+  setUpDBOSTestSysDb,
+} from './helpers';
 import { randomUUID } from 'node:crypto';
 
 describe('oaoo-tests', () => {
@@ -390,5 +399,273 @@ describe('oaoo-tests', () => {
     await expect(EventStatusOAOO.getEventRetrieveWorkflow(setUUID)).resolves.toBe('value1-ERROR-ERROR');
 
     expect(EventStatusOAOO.wfCnt).toBe(6); // Should re-execute the workflow because we forced it
+  });
+
+  describe('workflow-id-reuse-policy', () => {
+    const QUEUE = 'reuse_policy_queue';
+
+    class ReuseTest {
+      static resolveGate: () => void = () => {};
+      static gate: Promise<void> = Promise.resolve();
+      static resetGate() {
+        ReuseTest.gate = new Promise<void>((resolve) => {
+          ReuseTest.resolveGate = resolve;
+        });
+      }
+
+      @DBOS.workflow()
+      static echo(input: string): Promise<string> {
+        return input === 'fail' ? Promise.reject(new Error('echo failed')) : Promise.resolve(input);
+      }
+
+      @DBOS.workflow()
+      static otherWorkflow(input: string): Promise<string> {
+        return Promise.resolve(input);
+      }
+
+      @DBOS.workflow()
+      static async gated(input: string): Promise<string> {
+        await ReuseTest.gate;
+        return input;
+      }
+
+      @DBOS.workflow()
+      static async startChild(childID: string): Promise<string> {
+        try {
+          const handle = await DBOS.startWorkflow(ReuseTest, {
+            workflowID: childID,
+            workflowIDReusePolicy: 'reject',
+          }).echo('from-parent');
+          return await handle.getResult();
+        } catch (e) {
+          return `rejected:${(e as Error).name}`;
+        }
+      }
+    }
+
+    beforeEach(async () => {
+      ReuseTest.resetGate();
+      await DBOS.registerQueue(QUEUE, { onConflict: 'always_update' });
+    });
+
+    afterEach(() => {
+      clearDebugTriggers();
+      ReuseTest.resolveGate();
+    });
+
+    const setups: [string, (id: string) => Promise<void>][] = [
+      [
+        StatusString.SUCCESS,
+        async (id) => {
+          await (await DBOS.startWorkflow(ReuseTest, { workflowID: id }).echo('original')).getResult();
+        },
+      ],
+      [
+        StatusString.ERROR,
+        async (id) => {
+          const handle = await DBOS.startWorkflow(ReuseTest, { workflowID: id }).echo('fail');
+          await expect(handle.getResult()).rejects.toThrow('echo failed');
+        },
+      ],
+      [
+        StatusString.PENDING,
+        async (id) => {
+          await DBOS.startWorkflow(ReuseTest, { workflowID: id }).gated('original');
+        },
+      ],
+      [
+        StatusString.CANCELLED,
+        async (id) => {
+          await DBOS.startWorkflow(ReuseTest, { workflowID: id }).gated('original');
+          await DBOS.cancelWorkflow(id);
+        },
+      ],
+      [
+        StatusString.ENQUEUED,
+        async (id) => {
+          await DBOS.startWorkflow(ReuseTest, {
+            workflowID: id,
+            queueName: QUEUE,
+            enqueueOptions: { applicationVersion: 'no-executor-runs-this' },
+          }).echo('original');
+        },
+      ],
+      [
+        StatusString.DELAYED,
+        async (id) => {
+          await DBOS.startWorkflow(ReuseTest, {
+            workflowID: id,
+            queueName: QUEUE,
+            enqueueOptions: { delaySeconds: 3600 },
+          }).echo('original');
+        },
+      ],
+    ];
+
+    test.each(setups)('reject-existing-%s', async (status, setup) => {
+      const id = `reuse-${status}-${randomUUID()}`;
+      await setup(id);
+      const before = await DBOS.getWorkflowStatus(id);
+      expect(before?.status).toBe(status);
+
+      const attempt = DBOS.startWorkflow(ReuseTest, { workflowID: id, workflowIDReusePolicy: 'reject' }).echo('new');
+      await expect(attempt).rejects.toThrow(DBOSWorkflowIDInUseError);
+      await expect(attempt).rejects.toMatchObject({ workflowID: id, status });
+
+      const after = await DBOS.getWorkflowStatus(id);
+      expect(after?.updatedAt).toBe(before?.updatedAt);
+    });
+
+    test('reject-fresh-id-runs-and-default-attaches', async () => {
+      const id = `reuse-fresh-${randomUUID()}`;
+      const handle = await DBOS.startWorkflow(ReuseTest, { workflowID: id, workflowIDReusePolicy: 'reject' }).echo(
+        'first',
+      );
+      await expect(handle.getResult()).resolves.toBe('first');
+
+      const again = await DBOS.startWorkflow(ReuseTest, { workflowID: id }).echo('second');
+      await expect(again.getResult()).resolves.toBe('first');
+    });
+
+    test('reject-name-mismatch-throws-in-use', async () => {
+      const id = `reuse-mismatch-${randomUUID()}`;
+      await (await DBOS.startWorkflow(ReuseTest, { workflowID: id }).echo('original')).getResult();
+
+      await expect(
+        DBOS.startWorkflow(ReuseTest, { workflowID: id, workflowIDReusePolicy: 'reject' }).otherWorkflow('new'),
+      ).rejects.toMatchObject({ name: 'DBOSWorkflowIDInUseError', workflowName: 'echo' });
+    });
+
+    test('reject-survives-retried-init-commit', async () => {
+      // The first commit lands but reports a connection error, so the retry sees its own row.
+      let failures = 1;
+      setDebugTrigger(DEBUG_TRIGGER_INITWF_COMMIT, {
+        asyncCallback: () => {
+          if (failures-- > 0) throw new Error('ECONNRESET');
+          return Promise.resolve();
+        },
+      });
+      const id = `reuse-retry-${randomUUID()}`;
+      const handle = await DBOS.startWorkflow(ReuseTest, { workflowID: id, workflowIDReusePolicy: 'reject' }).echo(
+        'retried',
+      );
+      await expect(handle.getResult()).resolves.toBe('retried');
+      expect(failures).toBeLessThan(0);
+    });
+
+    test('reject-dedup-interplay', async () => {
+      const id = `reuse-dedup-${randomUUID()}`;
+      const dedupID = `dedup-${randomUUID()}`;
+      const enqueue = (workflowID: string) =>
+        DBOS.startWorkflow(ReuseTest, {
+          workflowID,
+          queueName: QUEUE,
+          enqueueOptions: { deduplicationID: dedupID, delaySeconds: 3600 },
+          workflowIDReusePolicy: 'reject',
+        }).echo('x');
+      await enqueue(id);
+
+      await expect(enqueue(id)).rejects.toThrow(DBOSWorkflowIDInUseError);
+      await expect(enqueue(`reuse-dedup-other-${randomUUID()}`)).rejects.toThrow(DBOSQueueDuplicatedError);
+    });
+
+    test('reject-enqueue-with-options', async () => {
+      const id = `reuse-ewo-${randomUUID()}`;
+      await (await DBOS.startWorkflow(ReuseTest, { workflowID: id }).echo('original')).getResult();
+
+      await expect(
+        DBOS.enqueueWorkflowWithOptions(
+          {
+            queueName: QUEUE,
+            workflowName: 'echo',
+            workflowClassName: 'ReuseTest',
+            workflowID: id,
+            workflowIDReusePolicy: 'reject',
+          },
+          'new',
+        ),
+      ).rejects.toThrow(DBOSWorkflowIDInUseError);
+    });
+
+    test('reject-client-enqueue', async () => {
+      const id = `reuse-client-${randomUUID()}`;
+      await (await DBOS.startWorkflow(ReuseTest, { workflowID: id }).echo('original')).getResult();
+
+      const client = await DBOSClient.create({ systemDatabaseUrl: config.systemDatabaseUrl! });
+      const txClient = new Client({ connectionString: config.systemDatabaseUrl! });
+      try {
+        const options = {
+          queueName: QUEUE,
+          workflowName: 'echo',
+          workflowClassName: 'ReuseTest',
+          workflowIDReusePolicy: 'reject' as const,
+        };
+        await expect(client.enqueue({ ...options, workflowID: id }, 'new')).rejects.toThrow(DBOSWorkflowIDInUseError);
+
+        const fresh = await client.enqueue({ ...options, workflowID: `reuse-client-fresh-${randomUUID()}` }, 'fresh');
+        await expect(fresh.getResult()).resolves.toBe('fresh');
+
+        await txClient.connect();
+        await txClient.query('BEGIN');
+        await expect(client.enqueueInTransaction(txClient, { ...options, workflowID: id }, 'new')).rejects.toThrow(
+          DBOSWorkflowIDInUseError,
+        );
+        await txClient.query('ROLLBACK');
+      } finally {
+        await txClient.end();
+        await client.destroy();
+      }
+    });
+
+    test('reject-child-is-recorded-for-replay', async () => {
+      const childID = `reuse-child-${randomUUID()}`;
+      await (await DBOS.startWorkflow(ReuseTest, { workflowID: childID }).echo('original')).getResult();
+
+      const parentID = `reuse-parent-${randomUUID()}`;
+      const parent = await DBOS.startWorkflow(ReuseTest, { workflowID: parentID }).startChild(childID);
+      await expect(parent.getResult()).resolves.toBe('rejected:DBOSWorkflowIDInUseError');
+
+      const steps = await DBOS.listWorkflowSteps(parentID);
+      expect(steps?.[0].error?.name).toBe('DBOSWorkflowIDInUseError');
+
+      // With the child gone, a fresh start would succeed, so the fork's rejection must come from the checkpoint.
+      await DBOS.deleteWorkflow(childID);
+      const forked = await DBOS.forkWorkflow<string>(parentID, 1);
+      await expect(forked.getResult()).resolves.toBe('rejected:DBOSWorkflowIDInUseError');
+    });
+
+    test('reject-attaches-parent-own-child-after-crash', async () => {
+      const childID = `reuse-own-child-${randomUUID()}`;
+      const parentID = `reuse-own-parent-${randomUUID()}`;
+      const parent = await DBOS.startWorkflow(ReuseTest, { workflowID: parentID }).startChild(childID);
+      await expect(parent.getResult()).resolves.toBe('from-parent');
+
+      // Drop the parent's record of starting the child, as if it crashed right after the child committed.
+      const pg = new Client({ connectionString: config.systemDatabaseUrl! });
+      await pg.connect();
+      try {
+        await pg.query(`DELETE FROM dbos.operation_outputs WHERE workflow_uuid = $1 AND child_workflow_id = $2`, [
+          parentID,
+          childID,
+        ]);
+      } finally {
+        await pg.end();
+      }
+
+      const replayed = await reexecuteWorkflowById(parentID);
+      await expect(replayed.getResult()).resolves.toBe('from-parent');
+      await retryUntilSuccess(async () => {
+        const steps = await DBOS.listWorkflowSteps(parentID);
+        expect(steps?.[0].childWorkflowID).toBe(childID);
+      });
+    });
+
+    test('debouncer-rejects-reject-policy', async () => {
+      const debouncer = new Debouncer({
+        workflow: ReuseTest.echo,
+        startWorkflowParams: { workflowIDReusePolicy: 'reject' },
+      });
+      await expect(debouncer.debounce('key', 1000, 'x')).rejects.toThrow("workflowIDReusePolicy 'reject'");
+    });
   });
 });

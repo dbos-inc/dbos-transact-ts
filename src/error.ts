@@ -230,6 +230,23 @@ export class DBOSQueryTimeoutError extends DBOSError {
   }
 }
 
+export const WorkflowIDInUse = 36;
+/** Exception raised when a workflow started with `workflowIDReusePolicy: 'reject'` finds its ID already in use. */
+export class DBOSWorkflowIDInUseError extends DBOSError {
+  constructor(
+    readonly workflowID: string,
+    readonly status: string,
+    readonly workflowName: string,
+  ) {
+    super(
+      `Workflow ID ${workflowID} is already in use by workflow ${workflowName} with status ${status}.`,
+      WorkflowIDInUse,
+    );
+    // Error serialization records err.name, which is otherwise 'Error'; a replayed rejection is matched on it.
+    this.name = 'DBOSWorkflowIDInUseError';
+  }
+}
+
 /**
  * True if `e` is a stream-read timeout, including the portable-serialization
  * replay form, which carries only the original type name.

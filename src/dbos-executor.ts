@@ -9,6 +9,7 @@ import {
   DBOSUnexpectedStepError,
   DBOSAwaitedWorkflowCancelledError,
   DBOSQueueDuplicatedError,
+  DBOSWorkflowIDInUseError,
   DBOSStepTimeoutError,
   DBOSInvalidWorkflowInputError,
 } from './error';
@@ -624,16 +625,21 @@ export class DBOSExecutor {
       serializationType = ires.serialization === DBOSPortableJSON.name() ? 'portable' : undefined;
     } else {
       try {
-        ires = await this.systemDatabase.initWorkflowStatus(internalStatus, randomUUID());
+        ires = await this.systemDatabase.initWorkflowStatus(
+          internalStatus,
+          randomUUID(),
+          undefined,
+          params.workflowIDReusePolicy,
+        );
         serializationType = ires.serialization === DBOSPortableJSON.name() ? 'portable' : undefined;
       } catch (e) {
         // For 'return-existing' enqueues we don't pre-record the dedup error: the wrapper will
         // catch it, attach to the existing workflow, and record the child mapping itself.
         if (
-          e instanceof DBOSQueueDuplicatedError &&
-          callerID &&
-          callerFunctionID &&
-          params.duplicationPolicy !== 'return-existing'
+          ((e instanceof DBOSQueueDuplicatedError && params.duplicationPolicy !== 'return-existing') ||
+            e instanceof DBOSWorkflowIDInUseError) &&
+          callerID !== undefined &&
+          callerFunctionID !== undefined
         ) {
           const sererr = await serializeResError(e, this.serializer, undefined); // This is a step result
           await this.systemDatabase.recordOperationResult(

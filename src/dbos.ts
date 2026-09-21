@@ -24,6 +24,7 @@ import {
   WorkflowConfig,
   WorkflowHandle,
   WorkflowParams,
+  WorkflowIDReusePolicy,
   WorkflowSerializationFormat,
   WorkflowStatus,
   validateWorkflowAttributes,
@@ -162,6 +163,8 @@ export interface StartWorkflowParams {
   //     Requires `queueName` and `enqueueOptions.deduplicationID`. Arguments passed by the
   //     colliding caller are discarded and the handle resolves with the original workflow's result.
   duplicationPolicy?: DuplicationPolicy;
+  // How to handle an ID already in use by another workflow, whatever its status. Defaults to 'return-existing'.
+  workflowIDReusePolicy?: WorkflowIDReusePolicy;
   // Custom key-value attributes to attach to the workflow at creation. Recorded in the
   // workflow status and searchable via the `attributes` filter of `DBOS.listWorkflows`.
   // Not inherited by child workflows.
@@ -1785,6 +1788,7 @@ export class DBOS {
           params.timeoutMS === null || ppctx?.workflowTimeoutMS === null ? undefined : ppctx?.deadlineEpochMS,
         enqueueOptions: params.enqueueOptions,
         duplicationPolicy: params.duplicationPolicy,
+        workflowIDReusePolicy: params.workflowIDReusePolicy,
         workflowAttributes: params.workflowAttributes,
         authenticatedUser: params.authenticatedUser,
         authenticatedRoles: params.authenticatedRoles,
@@ -1799,6 +1803,7 @@ export class DBOS {
         configuredInstance: instance,
         timeoutMS,
         duplicationPolicy: params.duplicationPolicy,
+        workflowIDReusePolicy: params.workflowIDReusePolicy,
         workflowAttributes: params.workflowAttributes,
         authenticatedUser: params.authenticatedUser,
         authenticatedRoles: params.authenticatedRoles,

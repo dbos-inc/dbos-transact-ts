@@ -4,6 +4,7 @@ import {
   DBOSWorkflowConflictError,
   DBOSNonExistentWorkflowError,
   DBOSConflictingWorkflowError,
+  DBOSWorkflowIDInUseError,
   DBOSUnexpectedStepError,
   DBOSWorkflowCancelledError,
   DBOSQueueDuplicatedError,
@@ -11,7 +12,7 @@ import {
   DBOSError,
   DBOSQueryTimeoutError,
 } from './error';
-import { GetPendingWorkflowsOutput, GetWorkflowsInput, StatusString } from './workflow';
+import { GetPendingWorkflowsOutput, GetWorkflowsInput, StatusString, WorkflowIDReusePolicy } from './workflow';
 import {
   notifications,
   operation_outputs,
@@ -604,6 +605,7 @@ interface InsertWorkflowResult {
   executor_id: string | null;
   owner_xid: string | null;
   serialization: string | null;
+  parent_workflow_id: string | null;
 }
 
 function mapVersionInfo(row: application_versions): VersionInfo {
@@ -1211,6 +1213,7 @@ export class SystemDatabase {
     initStatus: WorkflowStatusInternal,
     ownerXid: string | null,
     client?: ClientBase,
+    reusePolicy: WorkflowIDReusePolicy = 'return-existing',
   ): Promise<{
     status: string;
     shouldExecuteOnThisExecutor: boolean;
@@ -1218,15 +1221,16 @@ export class SystemDatabase {
     serialization: SysDBSerializationFormat | null;
   }> {
     if (client !== undefined) {
-      return await this.#initWorkflowStatusInternal(client, initStatus, ownerXid);
+      return await this.#initWorkflowStatusInternal(client, initStatus, ownerXid, reusePolicy);
     }
-    return await this.initWorkflowStatusStandalone(initStatus, ownerXid);
+    return await this.initWorkflowStatusStandalone(initStatus, ownerXid, reusePolicy);
   }
 
   @dbRetry()
   private async initWorkflowStatusStandalone(
     initStatus: WorkflowStatusInternal,
     ownerXid: string | null,
+    reusePolicy: WorkflowIDReusePolicy,
   ): Promise<{
     status: string;
     shouldExecuteOnThisExecutor: boolean;
@@ -1237,7 +1241,7 @@ export class SystemDatabase {
     let shouldCommit = false;
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
-      const result = await this.#initWorkflowStatusInternal(client, initStatus, ownerXid);
+      const result = await this.#initWorkflowStatusInternal(client, initStatus, ownerXid, reusePolicy);
       // If there is an existing DB record and we aren't here to recover it, leave it be.
       shouldCommit = result.shouldExecuteOnThisExecutor;
       return result;
@@ -1259,6 +1263,7 @@ export class SystemDatabase {
     client: ClientBase,
     initStatus: WorkflowStatusInternal,
     ownerXid: string | null,
+    reusePolicy: WorkflowIDReusePolicy,
   ): Promise<{
     status: string;
     shouldExecuteOnThisExecutor: boolean;
@@ -1266,6 +1271,15 @@ export class SystemDatabase {
     serialization: SysDBSerializationFormat | null;
   }> {
     const resRow = await this.insertWorkflowStatus(client, initStatus, ownerXid);
+    if (reusePolicy === 'reject') {
+      const inserted = ownerXid !== null && resRow.owner_xid === ownerXid;
+      // A parent's own child is attached, not rejected: after a crash the parent re-starts it before recording it.
+      const ownChild =
+        initStatus.parentWorkflowID !== undefined && resRow.parent_workflow_id === initStatus.parentWorkflowID;
+      if (!inserted && !ownChild) {
+        throw new DBOSWorkflowIDInUseError(initStatus.workflowUUID, resRow.status, resRow.name);
+      }
+    }
     if (resRow.name !== initStatus.workflowName) {
       const msg = `Workflow already exists with a different function name: ${resRow.name}, but the provided function name is: ${initStatus.workflowName}`;
       throw new DBOSConflictingWorkflowError(initStatus.workflowUUID, msg);
@@ -5630,7 +5644,7 @@ export class SystemDatabase {
               THEN EXCLUDED.executor_id
               ELSE workflow_status.executor_id
             END
-          RETURNING status, name, class_name, config_name, queue_name, workflow_deadline_epoch_ms, executor_id, owner_xid, serialization`,
+          RETURNING status, name, class_name, config_name, queue_name, workflow_deadline_epoch_ms, executor_id, owner_xid, serialization, parent_workflow_id`,
         [
           initStatus.workflowUUID,
           initStatus.status,

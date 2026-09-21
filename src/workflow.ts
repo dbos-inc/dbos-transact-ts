@@ -37,6 +37,9 @@ export function validateWorkflowAttributes(attributes: unknown): void {
   }
 }
 
+/** On a workflow ID already in use: 'return-existing' (default) attaches to that workflow; 'reject' throws `DBOSWorkflowIDInUseError`. */
+export type WorkflowIDReusePolicy = 'return-existing' | 'reject';
+
 export interface WorkflowParams {
   workflowUUID?: string;
   configuredInstance?: ConfiguredInstance | null;
@@ -49,6 +52,7 @@ export interface WorkflowParams {
   // executor skips its dedup-error pre-recording at the parent's funcID — the wrapper records the
   // child mapping itself after attaching to the existing workflow.
   duplicationPolicy?: DuplicationPolicy;
+  workflowIDReusePolicy?: WorkflowIDReusePolicy;
   // Custom key-value attributes to attach to the workflow at creation. Not inherited by child workflows.
   workflowAttributes?: Record<string, unknown>;
   // Authentication to record on the workflow, overriding the ambient context.
