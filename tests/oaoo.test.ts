@@ -1,5 +1,5 @@
 import { Client } from 'pg';
-import { DBOS, DBOSClient, Debouncer, StatusString } from '../src';
+import { DBOS, DBOSClient, Debouncer, DebouncerClient, StatusString } from '../src';
 import { DBOSConfig } from '../src/dbos-executor';
 import { DBOSQueueDuplicatedError, DBOSWorkflowIDInUseError, isWorkflowIDInUseError } from '../src/error';
 import { clearDebugTriggers, DEBUG_TRIGGER_INITWF_COMMIT, setDebugTrigger } from '../src/debugpoint';
@@ -397,6 +397,8 @@ describe('oaoo-tests', () => {
 
   describe('workflow-id-reuse-policy', () => {
     const QUEUE = 'reuse_policy_queue';
+    type StartVia = 'start' | 'enqueue';
+    const vias: StartVia[] = ['start', 'enqueue'];
 
     class ReuseTest {
       static resolveGate: () => void = () => {};
@@ -423,13 +425,25 @@ describe('oaoo-tests', () => {
         return input;
       }
 
+      static startEcho(childID: string, via: StartVia, input: string) {
+        return via === 'start'
+          ? DBOS.startWorkflow(ReuseTest, { workflowID: childID, workflowIDReusePolicy: 'reject' }).echo(input)
+          : DBOS.enqueueWorkflowWithOptions<string>(
+              {
+                queueName: QUEUE,
+                workflowName: 'echo',
+                workflowClassName: 'ReuseTest',
+                workflowID: childID,
+                workflowIDReusePolicy: 'reject',
+              },
+              input,
+            );
+      }
+
       @DBOS.workflow()
-      static async startChild(childID: string): Promise<string> {
+      static async startChild(childID: string, via: StartVia): Promise<string> {
         try {
-          const handle = await DBOS.startWorkflow(ReuseTest, {
-            workflowID: childID,
-            workflowIDReusePolicy: 'reject',
-          }).echo('from-parent');
+          const handle = await ReuseTest.startEcho(childID, via, 'from-parent');
           return await handle.getResult();
         } catch (e) {
           return `rejected:${(e as Error).name}`;
@@ -437,12 +451,10 @@ describe('oaoo-tests', () => {
       }
 
       @DBOS.workflow()
-      static async startSameChildTwice(childID: string): Promise<string> {
-        const start = () =>
-          DBOS.startWorkflow(ReuseTest, { workflowID: childID, workflowIDReusePolicy: 'reject' }).echo('from-parent');
-        await (await start()).getResult();
+      static async startSameChildTwice(childID: string, via: StartVia): Promise<string> {
+        await (await ReuseTest.startEcho(childID, via, 'from-parent')).getResult();
         try {
-          await start();
+          await ReuseTest.startEcho(childID, via, 'from-parent');
           return 'second-attached';
         } catch (e) {
           return isWorkflowIDInUseError(e) ? 'second-rejected' : `unexpected:${(e as Error).name}`;
@@ -460,15 +472,17 @@ describe('oaoo-tests', () => {
       ReuseTest.resolveGate();
     });
 
-    const setups: [string, (id: string) => Promise<void>][] = [
+    const setups: [string, string, (id: string) => Promise<void>][] = [
       [
         StatusString.SUCCESS,
+        'echo',
         async (id) => {
           await (await DBOS.startWorkflow(ReuseTest, { workflowID: id }).echo('original')).getResult();
         },
       ],
       [
         StatusString.ERROR,
+        'echo',
         async (id) => {
           const handle = await DBOS.startWorkflow(ReuseTest, { workflowID: id }).echo('fail');
           await expect(handle.getResult()).rejects.toThrow('echo failed');
@@ -476,12 +490,14 @@ describe('oaoo-tests', () => {
       ],
       [
         StatusString.PENDING,
+        'gated',
         async (id) => {
           await DBOS.startWorkflow(ReuseTest, { workflowID: id }).gated('original');
         },
       ],
       [
         StatusString.CANCELLED,
+        'gated',
         async (id) => {
           await DBOS.startWorkflow(ReuseTest, { workflowID: id }).gated('original');
           await DBOS.cancelWorkflow(id);
@@ -489,6 +505,7 @@ describe('oaoo-tests', () => {
       ],
       [
         StatusString.ENQUEUED,
+        'echo',
         async (id) => {
           await DBOS.startWorkflow(ReuseTest, {
             workflowID: id,
@@ -499,6 +516,7 @@ describe('oaoo-tests', () => {
       ],
       [
         StatusString.DELAYED,
+        'echo',
         async (id) => {
           await DBOS.startWorkflow(ReuseTest, {
             workflowID: id,
@@ -509,7 +527,7 @@ describe('oaoo-tests', () => {
       ],
     ];
 
-    test.each(setups)('reject-existing-%s', async (status, setup) => {
+    test.each(setups)('reject-existing-%s', async (status, workflowName, setup) => {
       const id = `reuse-${status}-${randomUUID()}`;
       await setup(id);
       const before = await DBOS.getWorkflowStatus(id);
@@ -517,10 +535,10 @@ describe('oaoo-tests', () => {
 
       const attempt = DBOS.startWorkflow(ReuseTest, { workflowID: id, workflowIDReusePolicy: 'reject' }).echo('new');
       await expect(attempt).rejects.toThrow(DBOSWorkflowIDInUseError);
-      await expect(attempt).rejects.toMatchObject({ workflowID: id, status });
+      await expect(attempt).rejects.toMatchObject({ workflowID: id, status, workflowName });
 
-      const after = await DBOS.getWorkflowStatus(id);
-      expect(after?.updatedAt).toBe(before?.updatedAt);
+      // The rejected start leaves every field of the existing workflow as it was, including its inputs.
+      expect(await DBOS.getWorkflowStatus(id)).toEqual(before);
     });
 
     test('reject-fresh-id-runs-and-default-attaches', async () => {
@@ -592,6 +610,18 @@ describe('oaoo-tests', () => {
           'new',
         ),
       ).rejects.toThrow(DBOSWorkflowIDInUseError);
+
+      const fresh = await DBOS.enqueueWorkflowWithOptions<string>(
+        {
+          queueName: QUEUE,
+          workflowName: 'echo',
+          workflowClassName: 'ReuseTest',
+          workflowID: `reuse-ewo-fresh-${randomUUID()}`,
+          workflowIDReusePolicy: 'reject',
+        },
+        'fresh',
+      );
+      await expect(fresh.getResult()).resolves.toBe('fresh');
     });
 
     test('reject-client-enqueue', async () => {
@@ -607,10 +637,26 @@ describe('oaoo-tests', () => {
           workflowClassName: 'ReuseTest',
           workflowIDReusePolicy: 'reject' as const,
         };
-        await expect(client.enqueue({ ...options, workflowID: id }, 'new')).rejects.toThrow(DBOSWorkflowIDInUseError);
+        const singleton = () => ({
+          deduplicationID: `dedup-${randomUUID()}`,
+          duplicationPolicy: 'return-existing' as const,
+        });
+        const freshID = () => `reuse-client-fresh-${randomUUID()}`;
 
-        const fresh = await client.enqueue({ ...options, workflowID: `reuse-client-fresh-${randomUUID()}` }, 'fresh');
+        await expect(client.enqueue({ ...options, workflowID: id }, 'new')).rejects.toThrow(DBOSWorkflowIDInUseError);
+        await expect(client.enqueuePortable({ ...options, workflowID: id }, ['new'])).rejects.toThrow(
+          DBOSWorkflowIDInUseError,
+        );
+        await expect(client.enqueue({ ...options, ...singleton(), workflowID: id }, 'new')).rejects.toThrow(
+          DBOSWorkflowIDInUseError,
+        );
+
+        const fresh = await client.enqueue({ ...options, workflowID: freshID() }, 'fresh');
         await expect(fresh.getResult()).resolves.toBe('fresh');
+        const portable = await client.enqueuePortable<string>({ ...options, workflowID: freshID() }, ['portable']);
+        await expect(portable.getResult()).resolves.toBe('portable');
+        const deduped = await client.enqueue({ ...options, ...singleton(), workflowID: freshID() }, 'singleton');
+        await expect(deduped.getResult()).resolves.toBe('singleton');
 
         await txClient.connect();
         await txClient.query('BEGIN');
@@ -618,6 +664,11 @@ describe('oaoo-tests', () => {
           DBOSWorkflowIDInUseError,
         );
         await txClient.query('ROLLBACK');
+
+        await txClient.query('BEGIN');
+        const inTx = await client.enqueueInTransaction(txClient, { ...options, workflowID: freshID() }, 'in-tx');
+        await txClient.query('COMMIT');
+        await expect(inTx.getResult()).resolves.toBe('in-tx');
       } finally {
         await txClient.end();
         await client.destroy();
@@ -625,31 +676,40 @@ describe('oaoo-tests', () => {
     });
 
     test('reject-child-is-recorded-for-replay', async () => {
-      const childID = `reuse-child-${randomUUID()}`;
-      await (await DBOS.startWorkflow(ReuseTest, { workflowID: childID }).echo('original')).getResult();
+      for (const via of vias) {
+        const childID = `reuse-child-${via}-${randomUUID()}`;
+        await (await DBOS.startWorkflow(ReuseTest, { workflowID: childID }).echo('original')).getResult();
 
-      const parentID = `reuse-parent-${randomUUID()}`;
-      const parent = await DBOS.startWorkflow(ReuseTest, { workflowID: parentID }).startChild(childID);
-      await expect(parent.getResult()).resolves.toBe('rejected:DBOSWorkflowIDInUseError');
+        const parentID = `reuse-parent-${via}-${randomUUID()}`;
+        const parent = await DBOS.startWorkflow(ReuseTest, { workflowID: parentID }).startChild(childID, via);
+        await expect(parent.getResult()).resolves.toBe('rejected:DBOSWorkflowIDInUseError');
 
-      const steps = await DBOS.listWorkflowSteps(parentID);
-      expect(steps?.[0].error?.name).toBe('DBOSWorkflowIDInUseError');
+        const steps = await DBOS.listWorkflowSteps(parentID);
+        expect(steps?.[0].error?.name).toBe('DBOSWorkflowIDInUseError');
 
-      // With the child gone, a fresh start would succeed, so the fork's rejection must come from the checkpoint.
-      await DBOS.deleteWorkflow(childID);
-      const forked = await DBOS.forkWorkflow<string>(parentID, 1);
-      await expect(forked.getResult()).resolves.toBe('rejected:DBOSWorkflowIDInUseError');
+        // With the child gone, a fresh start would succeed, so the fork's rejection must come from the checkpoint.
+        await DBOS.deleteWorkflow(childID);
+        expect(await DBOS.getWorkflowStatus(childID)).toBeNull();
+        const forked = await DBOS.forkWorkflow<string>(parentID, 1);
+        await expect(forked.getResult()).resolves.toBe('rejected:DBOSWorkflowIDInUseError');
+      }
     });
 
     test('reject-same-parent-reuse', async () => {
-      const childID = `reuse-same-parent-${randomUUID()}`;
-      const parentID = `reuse-same-parent-p-${randomUUID()}`;
-      const parent = await DBOS.startWorkflow(ReuseTest, { workflowID: parentID }).startSameChildTwice(childID);
-      await expect(parent.getResult()).resolves.toBe('second-rejected');
+      for (const via of vias) {
+        const childID = `reuse-same-parent-${via}-${randomUUID()}`;
+        const parentID = `reuse-same-parent-p-${via}-${randomUUID()}`;
+        const parent = await DBOS.startWorkflow(ReuseTest, { workflowID: parentID }).startSameChildTwice(childID, via);
+        await expect(parent.getResult()).resolves.toBe('second-rejected');
 
-      // Replay serves the recorded rejection, which the helper still matches.
-      const replayed = await reexecuteWorkflowById(parentID);
-      await expect(replayed.getResult()).resolves.toBe('second-rejected');
+        const steps = await DBOS.listWorkflowSteps(parentID);
+        expect(steps?.[0].childWorkflowID).toBe(childID);
+        expect(steps?.[2].error?.name).toBe('DBOSWorkflowIDInUseError');
+
+        // Replay serves the recorded rejection, which the helper still matches.
+        const replayed = await reexecuteWorkflowById(parentID);
+        await expect(replayed.getResult()).resolves.toBe('second-rejected');
+      }
     });
 
     test('debouncer-rejects-reject-policy', async () => {
@@ -658,6 +718,18 @@ describe('oaoo-tests', () => {
         startWorkflowParams: { workflowIDReusePolicy: 'reject' },
       });
       await expect(debouncer.debounce('key', 1000, 'x')).rejects.toThrow("workflowIDReusePolicy 'reject'");
+
+      const client = await DBOSClient.create({ systemDatabaseUrl: config.systemDatabaseUrl! });
+      try {
+        const debouncerClient = new DebouncerClient(client, {
+          workflowName: 'echo',
+          workflowClassName: 'ReuseTest',
+          startWorkflowParams: { workflowIDReusePolicy: 'reject' },
+        });
+        await expect(debouncerClient.debounce('key', 1000, 'x')).rejects.toThrow("workflowIDReusePolicy 'reject'");
+      } finally {
+        await client.destroy();
+      }
     });
   });
 });
