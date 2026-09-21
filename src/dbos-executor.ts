@@ -586,8 +586,7 @@ export class DBOSExecutor {
     let $deadlineEpochMS: number | undefined = undefined;
     let shouldExecute: boolean | undefined = undefined;
 
-    // Synchronously set the workflow's status to PENDING and record workflow inputs.
-    // We have to do it for all types of workflows because operation_outputs table has a foreign key constraint on workflow status table.
+    // Record the workflow's status and inputs before it runs, unless a replayed child start already recorded its outcome.
     if (callerFunctionID !== undefined && callerID !== undefined) {
       const result = await this.systemDatabase.getOperationResultAndThrowIfCancelled(callerID, callerFunctionID);
       if (result) {

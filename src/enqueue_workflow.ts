@@ -22,7 +22,7 @@ import { globalParams } from './utils';
 
 /**
  * Resolve options against the ambient context, except `appVersion`, which would strand a row aimed at another
- * executor. In a workflow the derived ID makes a crash-replay collide instead of enqueueing a second workflow.
+ * executor. In a workflow the ID derives from the caller's step, like a started child's.
  */
 function resolveOptions(
   options: EnqueueWorkflowOptions,
