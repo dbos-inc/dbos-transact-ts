@@ -45,6 +45,7 @@ import {
   getAllRegisteredClassNames,
   getClassRegistrationByName,
   getRegisteredFunctionFullName,
+  transactionalDataSources,
 } from './decorators';
 import { JsonWorkflowArgs } from '../schemas/system_db_schema';
 import {
@@ -79,6 +80,7 @@ import {
   listQueuedWorkflows,
   listWorkflows,
   listWorkflowSteps,
+  rewindWorkflow,
   toWorkflowStatus,
 } from './workflow_management';
 import { maskDatabaseUrl } from './database_utils';
@@ -1126,6 +1128,23 @@ export class DBOSExecutor {
   ): Promise<string> {
     const newWorkflowID = options.newWorkflowID ?? getNextWFID(undefined);
     return forkWorkflow(this.systemDatabase, workflowID, startStep, { ...options, newWorkflowID });
+  }
+
+  /**
+   * Rewind a workflow: drop its history from `startStep` onwards and re-enqueue it
+   * under the same ID. Every data source registered in this process is rewound with
+   * it, so no checkpoint survives to be replayed as a result.
+   */
+  rewindWorkflow(
+    workflowID: string,
+    startStep: number,
+    options: {
+      applicationVersion?: string;
+      queueName?: string;
+      queuePartitionKey?: string;
+    } = {},
+  ): Promise<void> {
+    return rewindWorkflow(this.systemDatabase, [...transactionalDataSources.values()], workflowID, startStep, options);
   }
 
   /**

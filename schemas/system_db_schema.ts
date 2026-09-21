@@ -45,6 +45,7 @@ export interface notifications {
   topic: string;
   message: string;
   consumed: boolean;
+  consumed_by_function_id: number | null;
   serialization: SysDBSerializationFormat | null;
 }
 

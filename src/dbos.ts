@@ -1123,6 +1123,43 @@ export class DBOS {
   }
 
   /**
+   * Rewind a workflow given its ID: drop its recorded history from `startStep` onwards
+   * and re-enqueue it under the same ID, so a replay re-executes everything from there.
+   *
+   * Where {@link DBOS.forkWorkflow} copies the steps before the cut into a *new*
+   * workflow, a rewind replays in place. Keeping the ID is the point: peers go on
+   * sending to, receiving from, and reading events and streams off the same workflow,
+   * and children keep resolving to the same deterministic IDs.
+   *
+   * Only a workflow in a terminal state can be rewound; cancel a running one first.
+   * Every data source registered in this process is rewound with it.
+   *
+   * @param workflowID - ID of the workflow to rewind
+   * @param options.startStep - Step to rewind to; history from this step on is dropped (default 0, the whole history)
+   * @param options.applicationVersion - Version to restamp the workflow with before it replays
+   * @param options.queueName - Queue to re-enqueue on, instead of the internal queue
+   * @param options.queuePartitionKey - Partition key to re-enqueue under
+   * @returns A handle to the rewound workflow, under its original ID
+   */
+  static async rewindWorkflow<T>(
+    workflowID: string,
+    options?: {
+      startStep?: number;
+      applicationVersion?: string;
+      queueName?: string;
+      queuePartitionKey?: string;
+    },
+  ): Promise<WorkflowHandle<Awaited<T>>> {
+    ensureDBOSIsLaunched('rewindWorkflow');
+    const startStep = options?.startStep ?? 0;
+    await runInternalStep(async () => {
+      return await DBOS.#executor.rewindWorkflow(workflowID, startStep, options ?? {});
+    }, 'DBOS.rewindWorkflow');
+
+    return this.retrieveWorkflow(workflowID);
+  }
+
+  /**
    * Sleep for the specified amount of time.
    * If called from within a workflow, the sleep is "durable",
    *   meaning that the workflow will sleep until the wakeup time

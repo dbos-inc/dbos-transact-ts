@@ -119,6 +119,14 @@ class KyselyTransactionHandler implements DataSourceTransactionHandler {
     return this.#kyselyDBField;
   }
 
+  async deleteCheckpoints(workflowID: string, startStep: number): Promise<void> {
+    await this.#kyselyDB
+      .deleteFrom('dbos.transaction_completion')
+      .where('workflow_id', '=', workflowID)
+      .where('function_num', '>=', startStep)
+      .execute();
+  }
+
   async #checkExecution(
     workflowID: string,
     stepID: number,
