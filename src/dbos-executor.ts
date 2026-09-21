@@ -958,11 +958,11 @@ export class DBOSExecutor {
 
     const maxAttempts = stepConfig.maxAttempts ?? 3;
     const timeoutMS = stepConfig.timeoutMS;
-    const cancelWatch = this.systemDatabase.watchForCancellation(wfid);
+    let cancelWatch = this.systemDatabase.watchForCancellation(wfid);
 
-    // An attempt that fails after the cancel signal fired ends the workflow instead of recording a step error.
-    const rethrowIfCancelled = () => {
-      if (cancelWatch.cancelled) endSpanAndRethrow(new DBOSWorkflowCancelledError(wfid));
+    // An attempt that fails after the cancel signal fired ends the workflow, unless a resume has since reversed the cancel.
+    const rethrowIfCancelled = async () => {
+      if (cancelWatch.cancelled) await this.systemDatabase.checkIfCanceled(wfid).catch(endSpanAndRethrow);
     };
 
     // Run a single attempt of the step function.
@@ -1024,10 +1024,15 @@ export class DBOSExecutor {
         while (result === dbosNull && attemptNum++ < (maxAttempts ?? 3)) {
           // Outside the try so workflow cancellation propagates immediately instead of consuming the remaining attempts
           await this.systemDatabase.checkIfCanceled(wfid).catch(endSpanAndRethrow);
+          // The workflow is not cancelled, so a fired signal reports a reversed cancel: give this attempt a fresh one
+          if (cancelWatch.cancelled) {
+            cancelWatch.release();
+            cancelWatch = this.systemDatabase.watchForCancellation(wfid);
+          }
           try {
             result = await invokeStepAttempt(attemptNum);
           } catch (error) {
-            rethrowIfCancelled();
+            await rethrowIfCancelled();
             const e = error as Error;
             if (stepConfig.shouldRetry) {
               try {
@@ -1077,7 +1082,7 @@ export class DBOSExecutor {
         try {
           result = await invokeStepAttempt(undefined);
         } catch (error) {
-          rethrowIfCancelled();
+          await rethrowIfCancelled();
           err = error as Error;
         }
       }

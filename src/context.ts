@@ -16,7 +16,7 @@ export interface StepStatus {
   /**
    * Fires when the step's workflow is cancelled, so the step can cancel its underlying operation.
    * Cancellation is detected by polling, so the signal fires within about a second of the cancel.
-   * The same signal is shared by all attempts of the step.
+   * All attempts of the step share one signal; if it fires and the workflow is then resumed, later attempts get a fresh one.
    */
   readonly cancelSignal: AbortSignal;
 }

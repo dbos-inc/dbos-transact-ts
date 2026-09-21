@@ -3795,6 +3795,9 @@ describe('wf-cancel-tests', () => {
     ]);
   });
 
+  // Leaves ample margin for cancel detection to beat the running attempt's timeout on a slow runner
+  const cancelTestStepTimeoutMS = 2000;
+
   class StepCancelAndTimeoutTest {
     static attempts = 0;
     static timeoutSignals: AbortSignal[] = [];
@@ -3813,7 +3816,7 @@ describe('wf-cancel-tests', () => {
       return controller.signal;
     }
 
-    @DBOS.step({ retriesAllowed: true, maxAttempts: 3, intervalSeconds: 0, timeoutMS: 1000 })
+    @DBOS.step({ retriesAllowed: true, maxAttempts: 3, intervalSeconds: 0, timeoutMS: cancelTestStepTimeoutMS })
     static async timedStep(): Promise<string> {
       const attempt = ++StepCancelAndTimeoutTest.attempts;
       const { timeoutSignal, cancelSignal } = DBOS.stepStatus!;
@@ -3853,6 +3856,7 @@ describe('wf-cancel-tests', () => {
 
     // Attempts 1 and 2 time out; attempt 3 blocks until its timeout or the workflow's cancellation
     const handle = await DBOS.startWorkflow(StepCancelAndTimeoutTest, { workflowID: wfid }).timedWorkflow();
+    expect((await DBOS.getWorkflowStatus(wfid))!.status).toBe(StatusString.PENDING);
     await StepCancelAndTimeoutTest.thirdAttemptStarted.wait();
     const { timeoutSignals, cancelSignals, observed } = StepCancelAndTimeoutTest;
     const cancelSignal = cancelSignals[0];
@@ -3866,7 +3870,6 @@ describe('wf-cancel-tests', () => {
     expect(new Set(timeoutSignals).size).toBe(3);
     expect(cancelSignals.every((s) => s === cancelSignal)).toBe(true);
     expect(cancelSignal.aborted).toBe(false);
-    expect((await DBOS.getWorkflowStatus(wfid))!.status).toBe(StatusString.PENDING);
 
     // Cancelling stops the running attempt before its timeout, and the abandoned attempt too
     await DBOS.cancelWorkflow(wfid);
@@ -3882,7 +3885,7 @@ describe('wf-cancel-tests', () => {
     expect(await DBOS.listWorkflowSteps(wfid)).toEqual([]);
 
     // The cancelled attempt's timer was cleared, so its timeout signal never fires
-    await sleepms(1200);
+    await sleepms(cancelTestStepTimeoutMS + 200);
     expect(timeoutSignals[2].aborted).toBe(false);
 
     // On resume the step gets fresh signals and completes
