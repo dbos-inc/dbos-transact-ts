@@ -4,6 +4,7 @@ import {
   DBOSWorkflowConflictError,
   DBOSNonExistentWorkflowError,
   DBOSConflictingWorkflowError,
+  DBOSWorkflowIDInUseError,
   DBOSUnexpectedStepError,
   DBOSWorkflowCancelledError,
   DBOSQueueDuplicatedError,
@@ -11,7 +12,7 @@ import {
   DBOSError,
   DBOSQueryTimeoutError,
 } from './error';
-import { GetPendingWorkflowsOutput, GetWorkflowsInput, StatusString } from './workflow';
+import { GetPendingWorkflowsOutput, GetWorkflowsInput, StatusString, WorkflowIDReusePolicy } from './workflow';
 import {
   notifications,
   operation_outputs,
@@ -1211,6 +1212,7 @@ export class SystemDatabase {
     initStatus: WorkflowStatusInternal,
     ownerXid: string | null,
     client?: ClientBase,
+    reusePolicy: WorkflowIDReusePolicy = 'return-existing',
   ): Promise<{
     status: string;
     shouldExecuteOnThisExecutor: boolean;
@@ -1218,15 +1220,16 @@ export class SystemDatabase {
     serialization: SysDBSerializationFormat | null;
   }> {
     if (client !== undefined) {
-      return await this.#initWorkflowStatusInternal(client, initStatus, ownerXid);
+      return await this.#initWorkflowStatusInternal(client, initStatus, ownerXid, reusePolicy);
     }
-    return await this.initWorkflowStatusStandalone(initStatus, ownerXid);
+    return await this.initWorkflowStatusStandalone(initStatus, ownerXid, reusePolicy);
   }
 
   @dbRetry()
   private async initWorkflowStatusStandalone(
     initStatus: WorkflowStatusInternal,
     ownerXid: string | null,
+    reusePolicy: WorkflowIDReusePolicy,
   ): Promise<{
     status: string;
     shouldExecuteOnThisExecutor: boolean;
@@ -1237,9 +1240,56 @@ export class SystemDatabase {
     let shouldCommit = false;
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
-      const result = await this.#initWorkflowStatusInternal(client, initStatus, ownerXid);
+      const result = await this.#initWorkflowStatusInternal(client, initStatus, ownerXid, reusePolicy);
       // If there is an existing DB record and we aren't here to recover it, leave it be.
       shouldCommit = result.shouldExecuteOnThisExecutor;
+      return result;
+    } finally {
+      try {
+        if (shouldCommit) {
+          await client.query('COMMIT');
+          await debugTriggerPoint(DEBUG_TRIGGER_INITWF_COMMIT);
+        } else {
+          await client.query('ROLLBACK');
+        }
+      } finally {
+        client.release();
+      }
+    }
+  }
+
+  /** Insert a child workflow's row and record it as the parent's step in one transaction, so a crash leaves both or neither. */
+  @dbRetry()
+  async initChildWorkflowStatus(
+    initStatus: WorkflowStatusInternal,
+    ownerXid: string,
+    parentWorkflowID: string,
+    parentFunctionID: number,
+    startTimeEpochMs: number,
+    endTimeEpochMs: number,
+    reusePolicy: WorkflowIDReusePolicy = 'return-existing',
+  ): Promise<{
+    status: string;
+    shouldExecuteOnThisExecutor: boolean;
+    deadlineEpochMS?: number;
+    serialization: SysDBSerializationFormat | null;
+  }> {
+    const client = await this.#connect();
+    let shouldCommit = false;
+    try {
+      await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
+      const result = await this.#initWorkflowStatusInternal(client, initStatus, ownerXid, reusePolicy);
+      await this.recordOperationResultInternal(
+        client,
+        parentWorkflowID,
+        parentFunctionID,
+        initStatus.workflowName,
+        true,
+        startTimeEpochMs,
+        endTimeEpochMs,
+        { childWorkflowID: initStatus.workflowUUID },
+      );
+      shouldCommit = true;
       return result;
     } finally {
       try {
@@ -1259,6 +1309,7 @@ export class SystemDatabase {
     client: ClientBase,
     initStatus: WorkflowStatusInternal,
     ownerXid: string | null,
+    reusePolicy: WorkflowIDReusePolicy,
   ): Promise<{
     status: string;
     shouldExecuteOnThisExecutor: boolean;
@@ -1266,6 +1317,9 @@ export class SystemDatabase {
     serialization: SysDBSerializationFormat | null;
   }> {
     const resRow = await this.insertWorkflowStatus(client, initStatus, ownerXid);
+    if (reusePolicy === 'reject' && (ownerXid === null || resRow.owner_xid !== ownerXid)) {
+      throw new DBOSWorkflowIDInUseError(initStatus.workflowUUID, resRow.status, resRow.name);
+    }
     if (resRow.name !== initStatus.workflowName) {
       const msg = `Workflow already exists with a different function name: ${resRow.name}, but the provided function name is: ${initStatus.workflowName}`;
       throw new DBOSConflictingWorkflowError(initStatus.workflowUUID, msg);
@@ -5623,13 +5677,8 @@ export class SystemDatabase {
           application_name
         ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29)
         ON CONFLICT (workflow_uuid)
-          DO UPDATE SET
-            updated_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint,
-            executor_id = CASE
-              WHEN EXCLUDED.status != '${StatusString.ENQUEUED}' AND EXCLUDED.status != '${StatusString.DELAYED}'
-              THEN EXCLUDED.executor_id
-              ELSE workflow_status.executor_id
-            END
+          -- A no-op update, so an existing row comes back unchanged for the caller to inspect.
+          DO UPDATE SET owner_xid = workflow_status.owner_xid
           RETURNING status, name, class_name, config_name, queue_name, workflow_deadline_epoch_ms, executor_id, owner_xid, serialization`,
         [
           initStatus.workflowUUID,
@@ -5662,7 +5711,6 @@ export class SystemDatabase {
           initStatus.scheduleName ?? null,
           initStatus.debounceDeadlineEpochMS ?? null,
           initStatus.isDebounced ?? false,
-          // Absent from the conflict update: a re-enqueue must not re-own a claimed row.
           initStatus.applicationName ?? null,
         ],
       );

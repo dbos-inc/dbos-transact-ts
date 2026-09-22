@@ -5,7 +5,12 @@
 
 import { randomUUID } from 'node:crypto';
 import type { WorkflowStatusInternal } from './system_database';
-import { StatusString, validateWorkflowAttributes, type WorkflowSerializationFormat } from './workflow';
+import {
+  StatusString,
+  validateWorkflowAttributes,
+  type WorkflowIDReusePolicy,
+  type WorkflowSerializationFormat,
+} from './workflow';
 import { type DBOSSerializer, serializeArgs } from './serialization';
 import { DBOSError, DBOSInvalidQueuePriorityError } from './error';
 import { DBOS_QUEUE_MIN_PRIORITY, DBOS_QUEUE_MAX_PRIORITY } from './dbos-executor';
@@ -26,6 +31,8 @@ export interface EnqueueWorkflowOptions {
   workflowConfigName?: string;
   /** An identifier for the workflow, for idempotency. A new UUID if unset. */
   workflowID?: string;
+  /** How to handle a `workflowID` already in use, whatever its status. Defaults to `'return-existing'`; match a rejection with `isWorkflowIDInUseError`. */
+  workflowIDReusePolicy?: WorkflowIDReusePolicy;
   /**
    * The application version this workflow requires. If unset, only an executor
    * running the latest registered application version dequeues it.

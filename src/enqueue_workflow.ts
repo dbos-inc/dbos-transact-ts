@@ -3,6 +3,7 @@
  * function. The target may live in another process or language, so nothing checks the local registry.
  */
 
+import { randomUUID } from 'node:crypto';
 import { DBOSExecutor } from './dbos-executor';
 import {
   getCurrentContextStore,
@@ -15,13 +16,13 @@ import { buildEnqueueStatus, type EnqueueWorkflowOptions } from './enqueue_optio
 import { RetrievedHandle } from './workflow';
 import type { WorkflowHandle } from './workflow';
 import type { WorkflowStatusInternal } from './system_database';
-import { DBOSInvalidWorkflowTransitionError, DBOSQueueDuplicatedError } from './error';
+import { DBOSInvalidWorkflowTransitionError, DBOSQueueDuplicatedError, DBOSWorkflowIDInUseError } from './error';
 import { deserializeResError, serializeResError } from './serialization';
 import { globalParams } from './utils';
 
 /**
  * Resolve options against the ambient context, except `appVersion`, which would strand a row aimed at another
- * executor. In a workflow the derived ID makes a crash-replay collide instead of enqueueing a second workflow.
+ * executor. In a workflow the ID derives from the caller's step, like a started child's.
  */
 function resolveOptions(
   options: EnqueueWorkflowOptions,
@@ -98,9 +99,25 @@ export async function enqueueWorkflowWithOptions<T = unknown>(
 
   const childStartTime = Date.now();
   try {
-    await sysdb.initWorkflowStatus(internalStatus, null);
+    if (callerID !== undefined && callerFunctionID !== undefined) {
+      await sysdb.initChildWorkflowStatus(
+        internalStatus,
+        randomUUID(),
+        callerID,
+        callerFunctionID,
+        childStartTime,
+        Date.now(),
+        options.workflowIDReusePolicy,
+      );
+    } else {
+      await sysdb.initWorkflowStatus(internalStatus, randomUUID(), undefined, options.workflowIDReusePolicy);
+    }
   } catch (e) {
-    if (e instanceof DBOSQueueDuplicatedError && callerID !== undefined && callerFunctionID !== undefined) {
+    if (
+      (e instanceof DBOSQueueDuplicatedError || e instanceof DBOSWorkflowIDInUseError) &&
+      callerID !== undefined &&
+      callerFunctionID !== undefined
+    ) {
       const sererr = await serializeResError(e, exec.serializer, undefined);
       await sysdb.recordOperationResult(
         callerID,
@@ -113,18 +130,6 @@ export async function enqueueWorkflowWithOptions<T = unknown>(
       );
     }
     throw e;
-  }
-
-  if (callerID !== undefined && callerFunctionID !== undefined) {
-    await sysdb.recordOperationResult(
-      callerID,
-      callerFunctionID,
-      internalStatus.workflowName,
-      true,
-      childStartTime,
-      Date.now(),
-      { childWorkflowID: internalStatus.workflowUUID },
-    );
   }
 
   return new RetrievedHandle<T>(internalStatus.workflowUUID);

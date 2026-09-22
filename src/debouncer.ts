@@ -92,6 +92,11 @@ function rejectConflictingOptions(params: StartWorkflowParams | undefined, rejec
       "Cannot debounce a workflow with duplicationPolicy 'return-existing': a debounce owns the deduplication behavior.",
     );
   }
+  if (params?.workflowIDReusePolicy === 'reject') {
+    throw new DBOSError(
+      "Cannot debounce a workflow with workflowIDReusePolicy 'reject': a debounce owns how its workflow is started.",
+    );
+  }
 }
 
 // The action a debounce caller should take after a bounce attempt.
