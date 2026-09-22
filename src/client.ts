@@ -620,12 +620,9 @@ export class DBOSClient {
    * re-enqueue it under the same ID, so a replay re-executes everything from there.
    * Only a workflow in a terminal state can be rewound; cancel a running one first.
    *
-   * Limitation: this drops the system database's history only. A data source that
-   * keeps checkpoints of its own leaves them in place, and the replay reads them back
-   * as results instead of re-running the transactions that wrote them. Rewind a
-   * workflow with transactions from inside the application instead, with
-   * `DBOS.rewindWorkflow`, which rewinds every data source registered in the process
-   * along with it.
+   * Note this drops the system database's history only: datasource checkpoints
+   * are only rewindable from within the application with `DBOS.rewindWorkflow`,
+   * which rewinds every data source registered in the process along with it.
    *
    * @returns a WorkflowHandle for the rewound workflow, under its original ID.
    */
