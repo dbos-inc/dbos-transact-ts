@@ -330,6 +330,15 @@ describe('recovery-tests', () => {
     BlockedRecovery.blocker.clear();
     const handle = await DBOS.startWorkflow(BlockedRecovery).blockedWorkflow('bob');
 
+    // The queue claims a workflow before dispatching it, so count dispatches that have finished checking whether it is running.
+    let dispatched = 0;
+    const executor = DBOSExecutor.globalInstance!;
+    const dispatch = executor.dispatchDequeuedWorkflows.bind(executor);
+    const dispatchSpy = jest.spyOn(executor, 'dispatchDequeuedWorkflows').mockImplementation(async (workflowIDs) => {
+      await dispatch(workflowIDs);
+      if (workflowIDs.includes(handle.workflowID)) dispatched += 1;
+    });
+
     // Release the workflow even on failure, or teardown hangs waiting on it.
     try {
       await retryUntilSuccess(() => expect(BlockedRecovery.startCount).toBe(1));
@@ -350,11 +359,14 @@ describe('recovery-tests', () => {
           expect(status?.recoveryAttempts).toBe(expectedAttempts);
           expect(status?.status).toBe(StatusString.PENDING);
         });
+        // If the workflow completes while this sweep's dispatch is still in flight, that dispatch starts it a second time.
+        await retryUntilSuccess(() => expect(dispatched).toBe(expectedAttempts - 1));
         // The workflow is already running in this process, so it is not started a second time.
         expect(BlockedRecovery.startCount).toBe(1);
       }
     } finally {
       BlockedRecovery.blocker.set();
+      dispatchSpy.mockRestore();
     }
 
     await expect(handle.getResult()).resolves.toBe('bob');
