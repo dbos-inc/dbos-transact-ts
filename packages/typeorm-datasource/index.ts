@@ -124,6 +124,14 @@ class TypeOrmTransactionHandler implements DataSourceTransactionHandler {
     await ds?.destroy();
   }
 
+  async deleteCheckpoints(workflowID: string, startStep: number): Promise<void> {
+    await this.dataSource.query(
+      `DELETE FROM "${this.schemaName}".transaction_completion
+       WHERE workflow_id=$1 AND function_num>=$2;`,
+      [workflowID, startStep],
+    );
+  }
+
   async #checkExecution(
     workflowID: string,
     stepID: number,

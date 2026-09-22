@@ -46,6 +46,7 @@ import {
   listQueuedWorkflows,
   listWorkflows,
   listWorkflowSteps,
+  rewindWorkflow,
   toWorkflowStatus,
 } from './workflow_management';
 import { DBOSExecutor } from './dbos-executor';
@@ -612,6 +613,30 @@ export class DBOSClient {
     },
   ): Promise<string> {
     return forkWorkflow(this.systemDatabase, workflowID, startStep, options);
+  }
+
+  /**
+   * Rewind a workflow: drop its recorded history from `startStep` onwards and
+   * re-enqueue it under the same ID, so a replay re-executes everything from there.
+   * Only a workflow in a terminal state can be rewound; cancel a running one first.
+   *
+   * Note this drops the system database's history only: datasource checkpoints
+   * are only rewindable from within the application with `DBOS.rewindWorkflow`,
+   * which rewinds every data source registered in the process along with it.
+   *
+   * @returns a WorkflowHandle for the rewound workflow, under its original ID.
+   */
+  async rewindWorkflow<T = unknown>(
+    workflowID: string,
+    options?: {
+      startStep?: number;
+      applicationVersion?: string;
+      queueName?: string;
+      queuePartitionKey?: string;
+    },
+  ): Promise<WorkflowHandle<Awaited<T>>> {
+    await rewindWorkflow(this.systemDatabase, [], workflowID, options?.startStep ?? 0, options ?? {});
+    return this.retrieveWorkflow<T>(workflowID);
   }
 
   getWorkflow(workflowID: string): Promise<WorkflowStatus | undefined> {

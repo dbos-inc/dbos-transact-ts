@@ -107,6 +107,12 @@ class DrizzleTransactionHandler implements DataSourceTransactionHandler {
     return this.#connection.db;
   }
 
+  async deleteCheckpoints(workflowID: string, startStep: number): Promise<void> {
+    await this.#drizzle.execute(sql`
+        DELETE FROM ${sql.identifier(this.schemaName)}.transaction_completion
+        WHERE workflow_id = ${workflowID} AND function_num >= ${startStep}`);
+  }
+
   async #checkExecution(
     workflowID: string,
     stepID: number,

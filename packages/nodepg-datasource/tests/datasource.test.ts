@@ -57,6 +57,37 @@ describe('NodePostgresDataSource', () => {
     expect(SuperJSON.parse(rows[0].output!)).toMatchObject({ user, greet_count: 1 });
   });
 
+  test('rewind drops the checkpoints past the cut', async () => {
+    const user = 'rewindTest';
+    await userDB.query('DELETE FROM greetings WHERE name = $1', [user]);
+    const workflowID = randomUUID();
+
+    await expect(DBOS.withNextWorkflowID(workflowID, () => regTwoInsertWorkflow(user))).resolves.toEqual([1, 2]);
+    const before = await completions(workflowID);
+    expect(before.map((r) => r.function_num)).toEqual([0, 1]);
+
+    // Cut at the second transaction. Its checkpoint has to go with the step: left
+    // behind, the replay would read greet_count 2 back out of it instead of running
+    // the INSERT again, and the table would stay at 2.
+    const handle = await DBOS.rewindWorkflow<number[]>(workflowID, { startStep: 1 });
+    // The first transaction replays from the checkpoint that survived the cut, so it
+    // still reports 1; the second really runs again, taking the table from 2 to 3.
+    await expect(handle.getResult()).resolves.toEqual([1, 3]);
+
+    const after = await completions(workflowID);
+    expect(after.map((r) => r.function_num)).toEqual([0, 1]);
+    expect(SuperJSON.parse(after[0].output!)).toMatchObject({ user, greet_count: 1 });
+    expect(SuperJSON.parse(after[1].output!)).toMatchObject({ user, greet_count: 3 });
+  });
+
+  async function completions(workflowID: string) {
+    const { rows } = await userDB.query<transaction_completion>(
+      'SELECT * FROM dbos.transaction_completion WHERE workflow_id = $1 ORDER BY function_num',
+      [workflowID],
+    );
+    return rows;
+  }
+
   test('rerun insert dataSource.register function', async () => {
     const user = 'rerunTest1';
 
@@ -459,6 +490,13 @@ async function raceWorkflow() {
 const regRaceWorkflow = DBOS.registerWorkflow(raceWorkflow);
 
 const regInsertFunction = dataSource.registerTransaction(insertFunction);
+
+async function twoInsertWorkflow(user: string) {
+  const first = await regInsertFunction(user);
+  const second = await regInsertFunction(user);
+  return [first.greet_count, second.greet_count];
+}
+const regTwoInsertWorkflow = DBOS.registerWorkflow(twoInsertWorkflow);
 const regErrorFunction = dataSource.registerTransaction(errorFunction);
 const regReadFunction = dataSource.registerTransaction(readFunction, { readOnly: true });
 
