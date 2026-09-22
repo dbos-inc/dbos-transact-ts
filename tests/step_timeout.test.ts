@@ -100,6 +100,17 @@ class StepTimeoutTestClass {
     return await StepTimeoutTestClass.slowStep();
   }
 
+  // The step timeout far exceeds the timeout sweep's latency, so the workflow is cancelled before the first retry.
+  @DBOS.step({ retriesAllowed: true, maxAttempts: 3, intervalSeconds: 0, timeoutMS: 1000 })
+  static async sweepOutlastingStep() {
+    return await StepTimeoutTestClass.slowStepGuts();
+  }
+
+  @DBOS.workflow()
+  static async sweepOutlastingStepWorkflow() {
+    return await StepTimeoutTestClass.sweepOutlastingStep();
+  }
+
   @DBOS.workflow()
   static async catchTimeoutWorkflow() {
     try {
@@ -331,7 +342,10 @@ describe('step-timeout-tests', () => {
     const workflowID = randomUUID();
     StepTimeoutTestClass.hangAttempts = 3;
 
-    const handle = await DBOS.startWorkflow(StepTimeoutTestClass, { workflowID, timeoutMS: 100 }).slowStepWorkflow();
+    const handle = await DBOS.startWorkflow(StepTimeoutTestClass, {
+      workflowID,
+      timeoutMS: 100,
+    }).sweepOutlastingStepWorkflow();
     await expect(handle.getResult()).rejects.toThrow(new DBOSWorkflowCancelledError(workflowID));
     const status = await DBOS.getWorkflowStatus(workflowID);
     expect(status?.status).toBe(StatusString.CANCELLED);

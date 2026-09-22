@@ -528,7 +528,7 @@ describe('dbos-tests', () => {
       const handle = await DBOS.startWorkflow(DBOSTimeoutTestClass, {
         workflowID,
         timeoutMS: 100,
-      }).timeoutParentStartDetachedChild(100);
+      }).timeoutParentStartDetachedChild(500);
       await expect(handle.getResult()).rejects.toThrow(new DBOSWorkflowCancelledError(workflowID));
       await expect(handle.getStatus()).resolves.toMatchObject({
         status: StatusString.CANCELLED,
@@ -546,7 +546,7 @@ describe('dbos-tests', () => {
       const handle = await DBOS.startWorkflow(DBOSTimeoutTestClass, {
         workflowID,
         timeoutMS: 100,
-      }).timeoutParentStartDetachedChildWithSyntax(100);
+      }).timeoutParentStartDetachedChildWithSyntax(500);
       await expect(handle.getResult()).rejects.toThrow(new DBOSWorkflowCancelledError(workflowID));
       await expect(handle.getStatus()).resolves.toMatchObject({
         status: StatusString.CANCELLED,

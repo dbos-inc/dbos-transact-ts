@@ -1756,7 +1756,7 @@ describe('queue-time-outs', () => {
       workflowID,
       queueName: timeoutQueue.name,
       timeoutMS: 100,
-    }).timeoutParentStartDetachedChild(100);
+    }).timeoutParentStartDetachedChild(500);
     await expect(handle.getResult()).rejects.toThrow(new DBOSAwaitedWorkflowCancelledError(workflowID));
     await expect(handle.getStatus()).resolves.toMatchObject({
       status: StatusString.CANCELLED,
@@ -1776,7 +1776,7 @@ describe('queue-time-outs', () => {
       workflowID,
       queueName: timeoutQueue.name,
       timeoutMS: 100,
-    }).timeoutParentStartDetachedChildWithSyntax(100);
+    }).timeoutParentStartDetachedChildWithSyntax(500);
     await expect(handle.getResult()).rejects.toThrow(new DBOSAwaitedWorkflowCancelledError(workflowID));
     await expect(handle.getStatus()).resolves.toMatchObject({
       status: StatusString.CANCELLED,
