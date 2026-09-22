@@ -32,6 +32,13 @@ export interface DataSourceTransactionHandler {
   destroy(): Promise<void>;
 
   /**
+   * Delete this data source's checkpoints for `workflowID` from `startStep` onwards.
+   *
+   * Used by rewind, which drops the workflow's history from that step, including datasources checkpoints.
+   */
+  deleteCheckpoints?(workflowID: string, startStep: number): Promise<void>;
+
+  /**
    * Invoke a transaction function
    */
   invokeTransactionFunction<This, Args extends unknown[], Return>(

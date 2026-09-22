@@ -236,6 +236,26 @@ export class Conductor {
             const resumeResp = new protocol.ResumeResponse(baseMsg.request_id, resumeSuccess, errorMsg);
             currWebsocket.send(JSON.stringify(resumeResp));
             break;
+          case protocol.MessageType.REWIND_WORKFLOW:
+            const rewindMsg = baseMsg as protocol.RewindWorkflowRequest;
+            const rewindBody = rewindMsg.body;
+            let rewindSuccess = true;
+            try {
+              await this.dbosExec.rewindWorkflow(rewindBody.workflow_id, rewindBody.start_step ?? 0, {
+                applicationVersion: rewindBody.application_version,
+                queueName: rewindBody.queue_name,
+                queuePartitionKey: rewindBody.queue_partition_key,
+              });
+            } catch (e) {
+              errorMsg = this.reportException(
+                `Exception encountered when rewinding workflow ${rewindBody.workflow_id} to step ${rewindBody.start_step ?? 0}`,
+                e,
+              );
+              rewindSuccess = false;
+            }
+            const rewindResp = new protocol.RewindWorkflowResponse(baseMsg.request_id, rewindSuccess, errorMsg);
+            currWebsocket.send(JSON.stringify(rewindResp));
+            break;
           case protocol.MessageType.FORK_WORKFLOW:
             const forkMsg = baseMsg as protocol.ForkWorkflowRequest;
             let newWorkflowID = forkMsg.body.new_workflow_id;

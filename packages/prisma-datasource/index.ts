@@ -112,6 +112,15 @@ class PrismaTransactionHandler implements DataSourceTransactionHandler {
     return Promise.resolve();
   }
 
+  async deleteCheckpoints(workflowID: string, startStep: number): Promise<void> {
+    await this.#prismaDB.$executeRawUnsafe(
+      `DELETE FROM "${this.schemaName}".transaction_completion
+      WHERE workflow_id = $1 AND function_num >= $2`,
+      workflowID,
+      startStep,
+    );
+  }
+
   async #checkExecution(
     client: PrismaLike,
     workflowID: string,

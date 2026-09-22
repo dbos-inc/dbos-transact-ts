@@ -95,6 +95,14 @@ class KnexTransactionHandler implements DataSourceTransactionHandler {
     return this.#knexDBField;
   }
 
+  async deleteCheckpoints(workflowID: string, startStep: number): Promise<void> {
+    await this.#knexDB<transaction_completion>('transaction_completion')
+      .withSchema('dbos')
+      .where('workflow_id', workflowID)
+      .where('function_num', '>=', startStep)
+      .delete();
+  }
+
   async #checkExecution(
     workflowID: string,
     stepID: number,
