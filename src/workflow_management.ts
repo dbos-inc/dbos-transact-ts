@@ -1,5 +1,8 @@
 import type { SystemDatabase, WorkflowStatusInternal } from './system_database';
 import type { StepInfo, WorkflowStatus, GetWorkflowsInput, ListWorkflowStepsOptions } from './workflow';
+import { StatusString } from './workflow';
+import type { DataSourceTransactionHandler } from './datasource';
+import { DBOSError, DBOSNonExistentWorkflowError } from './error';
 import { DBOSSerializer, safeParse, safeParseError, safeParsePositionalArgs } from './serialization';
 import { randomUUID } from 'node:crypto';
 import type { GlobalLogger } from './telemetry/logs';
@@ -65,6 +68,63 @@ export async function forkWorkflow(
   const newWorkflowID = options.newWorkflowID ?? randomUUID();
   await sysdb.forkWorkflow(workflowID, startStep, { ...options, newWorkflowID });
   return newWorkflowID;
+}
+
+/**
+ * Refuse to touch a data source's checkpoints for a workflow that is missing or still
+ * running. The system database rewind repeats this check under its own transaction;
+ * this one only keeps a running workflow's checkpoints intact.
+ */
+async function checkRewindable(sysdb: SystemDatabase, workflowID: string): Promise<void> {
+  const status = await sysdb.getWorkflowStatus(workflowID);
+  if (status === null) {
+    throw new DBOSNonExistentWorkflowError(`Workflow ${workflowID} does not exist`);
+  }
+  if (
+    status.status === StatusString.PENDING ||
+    status.status === StatusString.ENQUEUED ||
+    status.status === StatusString.DELAYED
+  ) {
+    throw new DBOSError(
+      `Cannot rewind ${workflowID} (${status.status}): only a workflow in a terminal state can be rewound, so cancel it first`,
+    );
+  }
+}
+
+/**
+ * Drop the data sources' checkpoints from `startStep` on, then rewind the workflow in
+ * the system database.
+ *
+ * Best effort: if a step fails the workflow is left as it was and the rewind can be
+ * retried, which is safe because the deletes are idempotent and the system database is
+ * only touched last. A data source that keeps no checkpoints of its own does not
+ * implement `deleteCheckpoints` and is skipped.
+ */
+export async function rewindWorkflow(
+  sysdb: SystemDatabase,
+  dataSources: readonly DataSourceTransactionHandler[],
+  workflowID: string,
+  startStep: number,
+  options: {
+    applicationVersion?: string;
+    queueName?: string;
+    queuePartitionKey?: string;
+  } = {},
+): Promise<void> {
+  if (startStep < 0) {
+    throw new DBOSError(`startStep must be >= 0, got ${startStep}`);
+  }
+  const withCheckpoints = dataSources.filter((ds) => ds.deleteCheckpoints !== undefined);
+  // Deleting a running workflow's checkpoints would pull them out from under the
+  // execution that still owns them, so establish the workflow is rewindable before
+  // touching anything the system database rewind will not re-check for us.
+  if (withCheckpoints.length > 0) {
+    await checkRewindable(sysdb, workflowID);
+  }
+  for (const ds of withCheckpoints) {
+    await ds.deleteCheckpoints!(workflowID, startStep);
+  }
+  await sysdb.rewindWorkflow(workflowID, startStep, options);
 }
 
 export async function toWorkflowStatus(

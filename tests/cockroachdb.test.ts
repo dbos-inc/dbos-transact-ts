@@ -44,6 +44,20 @@ class CRDBTestClass {
     return 'done';
   }
 
+  static publisherRuns = 0;
+
+  @DBOS.workflow()
+  static async rewindPublisher() {
+    CRDBTestClass.publisherRuns += 1;
+    await DBOS.setEvent('below', 'kept');
+    await DBOS.setEvent('both', 'old');
+    if (CRDBTestClass.publisherRuns === 1) {
+      await DBOS.setEvent('both', 'new');
+      await DBOS.setEvent('above', 'doomed');
+    }
+    return CRDBTestClass.publisherRuns;
+  }
+
   @DBOS.workflow()
   static async blockedWorkflow() {
     while (true) {
@@ -122,6 +136,29 @@ describeIf('cockroachdb', () => {
     await forkedHandle.getResult();
     await expect(DBOS.getEvent(forkedHandle.workflowID, 'key1')).resolves.toBe('value1');
     await expect(DBOS.getEvent(forkedHandle.workflowID, 'key2')).resolves.toBe('value2');
+  });
+
+  // Rewind's behaviour is covered in rewind.test.ts; this only runs its query shapes
+  // on CockroachDB: a correlated EXISTS against the events history in a DELETE and a
+  // SELECT, row_number() over that history partitioned by key, and INSERT ... FROM
+  // SELECT off the subquery that filters on it. One key set on both sides of the cut
+  // and one set only past it reach all three.
+  test('rewind', async () => {
+    CRDBTestClass.publisherRuns = 0;
+    const handle = await DBOS.startWorkflow(CRDBTestClass).rewindPublisher();
+    expect(await handle.getResult()).toBe(1);
+    const workflowID = handle.workflowID;
+    await expect(DBOS.getEvent(workflowID, 'both', 0)).resolves.toBe('new');
+    await expect(DBOS.getEvent(workflowID, 'above', 0)).resolves.toBe('doomed');
+
+    // Cut between the two setEvents on "both".
+    const rewound = await DBOS.rewindWorkflow<number>(workflowID, { startStep: 2 });
+    expect(await rewound.getResult()).toBe(2);
+    await expect(DBOS.getEvent(workflowID, 'below', 0)).resolves.toBe('kept');
+    // Reverted to the value published below the cut.
+    await expect(DBOS.getEvent(workflowID, 'both', 0)).resolves.toBe('old');
+    // Published only past the cut, so unpublished and never set again.
+    await expect(DBOS.getEvent(workflowID, 'above', 0)).resolves.toBeNull();
   });
 
   test('list-workflows', async () => {

@@ -36,6 +36,7 @@ import {
 } from './utils';
 import { GlobalLogger } from './telemetry/logs';
 import { QueueRateLimit, WorkflowQueue } from './wfqueue';
+import { AsyncResource } from 'async_hooks';
 import { createHash, randomUUID } from 'crypto';
 import { getClientConfig } from './utils';
 import { ensurePGDatabase, maskDatabaseUrl } from './database_utils';
@@ -59,6 +60,16 @@ export interface SystemDatabaseStoredResult {
   childWorkflowID?: string | null;
   functionName?: string;
   serialization?: string | null; // For WF result, and for steps that persist a format (recv/getEvent)
+}
+
+/* A running step's view of its workflow's cancellation */
+export interface CancellationWatch {
+  /** Fires on the workflow's cancellation; the first read starts watching for it. */
+  readonly signal: AbortSignal;
+  /** Whether `signal` has fired, without starting to watch. */
+  readonly cancelled: boolean;
+  /** Stop watching; later reads of `signal` do not start watching again. */
+  release(): void;
 }
 
 /* Exported workflow format for import/export */
@@ -924,6 +935,7 @@ export class SystemDatabase {
   dbPollingIntervalResultMs: number = 1000;
   dbPollingIntervalEventMs: number = 10000;
   dbPollingIntervalStreamMs: number = 1000;
+  dbPollingIntervalCancelMs: number = 1000;
   shouldUseDBNotifications: boolean = true;
   readonly notificationsMap: NotificationMap<void> = new NotificationMap();
   readonly workflowEventsMap: NotificationMap<void> = new NotificationMap();
@@ -953,6 +965,12 @@ export class SystemDatabase {
     string,
     { promise: Promise<unknown>; queueName?: string; queuePartitionKey?: string }
   > = new Map(); // Map from workflowID to workflow promise, queue name and partition key
+
+  readonly #cancelWatchers: Map<string, Set<AbortController>> = new Map();
+  #cancelPollerLoop: Promise<void> | undefined = undefined;
+  #cancelPollerWake: (() => void) | null = null;
+  // Runs the lazily started cancel poller outside the async context of the step that happens to start it
+  readonly #cancelPollerScope = new AsyncResource('DBOSCancelPoller');
 
   // Per-partition-key created_at cursors: keep per-key queue order monotonic across batches
   readonly #batchCreatedAtCursors: Map<string, number> = new Map();
@@ -1182,6 +1200,10 @@ export class SystemDatabase {
     if (this.#notifierLoop) {
       await this.#notifierLoop;
       this.#notifierLoop = undefined;
+    }
+    this.#cancelPollerWake?.();
+    if (this.#cancelPollerLoop) {
+      await this.#cancelPollerLoop;
     }
     if (this.notificationsClient) {
       this.#retireNotificationsClient(this.notificationsClient);
@@ -2129,6 +2151,145 @@ export class SystemDatabase {
     }
   }
 
+  /**
+   * Drop a workflow's history from `startStep` onwards and re-enqueue it under the same
+   * workflow ID, so a replay re-executes everything from that step.
+   *
+   * Unlike forkWorkflow this writes no new workflow: peers keep addressing the same ID,
+   * and the workflow's mailbox, events, and streams are not copied anywhere. Unlike
+   * resumeWorkflows it applies only to workflows in a terminal state.
+   *
+   * Events published at or past the cut are rolled back to the last value published
+   * below it, using workflow_events_history as an undo log; a key that only the
+   * discarded run ever published is unpublished outright.
+   *
+   * Messages the discarded run consumed or received after the rewind point are deleted.
+   *
+   * Stream entries written by the discarded run remain in place, with the exception of
+   * the close sentinel, which has to go so new entries can be appended.
+   */
+  @dbRetry()
+  async rewindWorkflow(
+    workflowID: string,
+    startStep: number,
+    options: {
+      applicationVersion?: string;
+      queueName?: string;
+      queuePartitionKey?: string;
+    } = {},
+  ): Promise<void> {
+    // Function IDs start at 0 in this SDK, so 0 is the whole history, not an error.
+    if (startStep < 0) {
+      throw new DBOSError(`startStep must be >= 0, got ${startStep}`);
+    }
+
+    const schema = this.schemaName;
+    const client = await this.#connect();
+    try {
+      await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
+
+      const { rows: statusRows } = await client.query<{ status: string }>(
+        `SELECT status FROM "${schema}".workflow_status WHERE workflow_uuid = $1`,
+        [workflowID],
+      );
+      if (statusRows.length === 0) {
+        throw new DBOSNonExistentWorkflowError(`Workflow ${workflowID} does not exist`);
+      }
+      const status = statusRows[0].status;
+      if (status === StatusString.PENDING || status === StatusString.ENQUEUED || status === StatusString.DELAYED) {
+        throw new DBOSError(
+          `Cannot rewind ${workflowID} (${status}): only a workflow in a terminal state can be rewound, so cancel it first`,
+        );
+      }
+
+      // Roll workflow_events back to the last value published before the cut, using
+      // workflow_events_history as an undo log, then rewind that history too.
+      // `publishedPastCut` is the correlated EXISTS both halves key off.
+      const publishedPastCut = `EXISTS (
+        SELECT 1 FROM "${schema}".workflow_events_history discarded
+        WHERE discarded.workflow_uuid = $1 AND discarded.key = %KEY% AND discarded.function_id >= $2
+      )`;
+
+      // First unpublish everything the discarded run touched.
+      await client.query(
+        `DELETE FROM "${schema}".workflow_events
+         WHERE workflow_uuid = $1 AND ${publishedPastCut.replace('%KEY%', '"' + schema + '".workflow_events.key')}`,
+        [workflowID, startStep],
+      );
+
+      // Then restore those keys, if any, to the value published below the cut.
+      await client.query(
+        `INSERT INTO "${schema}".workflow_events (workflow_uuid, key, value, serialization)
+         SELECT surviving.workflow_uuid, surviving.key, surviving.value, surviving.serialization
+         FROM (
+           SELECT weh.workflow_uuid, weh.key, weh.value, weh.serialization,
+                  ROW_NUMBER() OVER (PARTITION BY weh.key ORDER BY weh.function_id DESC) AS rn
+           FROM "${schema}".workflow_events_history weh
+           WHERE weh.workflow_uuid = $1 AND weh.function_id < $2
+             AND ${publishedPastCut.replace('%KEY%', 'weh.key')}
+         ) surviving
+         WHERE surviving.rn = 1`,
+        [workflowID, startStep],
+      );
+
+      // Clear the streams' close sentinels so the replay can append again.
+      await client.query(
+        `DELETE FROM "${schema}".streams
+         WHERE workflow_uuid = $1 AND function_id >= $2 AND value = $3 AND serialization = $4`,
+        [workflowID, startStep, DBOS_STREAM_CLOSED_SENTINEL_SERIALIZED, DBOSPortableJSON.name()],
+      );
+
+      // Discard the steps and the events history past the cut.
+      for (const table of ['operation_outputs', 'workflow_events_history']) {
+        await client.query(`DELETE FROM "${schema}".${table} WHERE workflow_uuid = $1 AND function_id >= $2`, [
+          workflowID,
+          startStep,
+        ]);
+      }
+
+      // Delete messages consumed or received after the rewind point
+      await client.query(
+        `DELETE FROM "${schema}".notifications WHERE destination_uuid = $1 AND (consumed_by_function_id >= $2 OR consumed = false)`,
+        [workflowID, startStep],
+      );
+
+      await client.query(`DELETE FROM "${schema}".workflow_output WHERE workflow_uuid = $1`, [workflowID]);
+
+      // Re-enqueue the workflow. Re-asserting the status we read keeps a workflow that
+      // moved on underneath us from being resurrected.
+      const setVersion = options.applicationVersion !== undefined ? ', application_version = $6' : '';
+      const params: unknown[] = [
+        StatusString.ENQUEUED,
+        options.queueName ?? INTERNAL_QUEUE_NAME,
+        options.queuePartitionKey ?? null,
+        workflowID,
+        status,
+      ];
+      if (options.applicationVersion !== undefined) {
+        params.push(options.applicationVersion);
+      }
+      const { rowCount } = await client.query(
+        `UPDATE "${schema}".workflow_status
+         SET status = $1, queue_name = $2, queue_partition_key = $3, recovery_attempts = 0,
+             workflow_deadline_epoch_ms = NULL, deduplication_id = NULL, started_at_epoch_ms = NULL,
+             completed_at = NULL, output = NULL, error = NULL,
+             updated_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint${setVersion}
+         WHERE workflow_uuid = $4 AND status = $5`,
+        params,
+      );
+      if (rowCount !== 1) {
+        throw new DBOSError(`Workflow ${workflowID} changed status while being rewound; retry the rewind`);
+      }
+
+      await client.query('COMMIT');
+    } catch (e) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw e;
+    } finally {
+      client.release();
+    }
+  }
+
   async forkWorkflow(
     workflowID: string,
     startStep: number,
@@ -2786,6 +2947,74 @@ export class SystemDatabase {
     await this.#pollWithLimiter(() => this.#checkIfCanceled(this.pool, workflowID));
   }
 
+  watchForCancellation(workflowID: string): CancellationWatch {
+    const controller = new AbortController();
+    let state: 'idle' | 'watching' | 'released' = 'idle';
+    const start = () => {
+      state = 'watching';
+      if (this.#destroyed) return;
+      let watchers = this.#cancelWatchers.get(workflowID);
+      if (watchers === undefined) {
+        watchers = new Set();
+        this.#cancelWatchers.set(workflowID, watchers);
+      }
+      watchers.add(controller);
+      this.#cancelPollerLoop ??= this.#cancelPollerScope.runInAsyncScope(() => this.#runCancelPoller());
+    };
+    const stop = () => {
+      const watchers = this.#cancelWatchers.get(workflowID);
+      if (watchers?.delete(controller) && watchers.size === 0) {
+        this.#cancelWatchers.delete(workflowID);
+        if (this.#cancelWatchers.size === 0) this.#cancelPollerWake?.();
+      }
+    };
+    return {
+      get signal() {
+        if (state === 'idle') start();
+        return controller.signal;
+      },
+      get cancelled() {
+        return controller.signal.aborted;
+      },
+      release: () => {
+        if (state === 'watching') stop();
+        state = 'released';
+      },
+    };
+  }
+
+  async #runCancelPoller(): Promise<void> {
+    while (this.#cancelWatchers.size > 0 && !this.#destroyed) {
+      const { promise, cancel } = cancellableSleep(this.dbPollingIntervalCancelMs);
+      this.#cancelPollerWake = cancel;
+      await promise;
+      this.#cancelPollerWake = null;
+      if (this.#cancelWatchers.size === 0 || this.#destroyed) break;
+      try {
+        await this.#abortCancelledWatchers();
+      } catch (e) {
+        this.logger.debug(`Workflow cancellation poll failed: ${String(e)}`);
+      }
+    }
+    this.#cancelPollerLoop = undefined;
+  }
+
+  async #abortCancelledWatchers(): Promise<void> {
+    const { rows } = await this.#pollWithLimiter(() =>
+      this.pool.query<{ workflow_uuid: string }>(
+        `SELECT workflow_uuid FROM "${this.schemaName}".workflow_status WHERE workflow_uuid = ANY($1) AND status = $2`,
+        [Array.from(this.#cancelWatchers.keys()), StatusString.CANCELLED],
+      ),
+    );
+    for (const { workflow_uuid: workflowID } of rows) {
+      const watchers = this.#cancelWatchers.get(workflowID);
+      if (watchers === undefined) continue;
+      this.#cancelWatchers.delete(workflowID);
+      const reason = new DBOSWorkflowCancelledError(workflowID);
+      for (const controller of watchers) controller.abort(reason);
+    }
+  }
+
   @dbRetry()
   // A missing row normally means the workflow has not been inserted yet, so
   // polling for it is correct. Callers that know the row must already exist
@@ -3100,7 +3329,7 @@ export class SystemDatabase {
       const finalRecvRows = (
         await client.query<notifications>(
           `UPDATE "${this.schemaName}".notifications
-        SET consumed = true
+        SET consumed = true, consumed_by_function_id = $3
         WHERE destination_uuid = $1
           AND topic = $2
           AND consumed = false
@@ -3114,7 +3343,7 @@ export class SystemDatabase {
             LIMIT 1
           )
         RETURNING notifications.message, notifications.serialization;`,
-          [workflowID, topic],
+          [workflowID, topic, functionID],
         )
       ).rows;
       if (finalRecvRows.length > 0) {

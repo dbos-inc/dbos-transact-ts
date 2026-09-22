@@ -45,6 +45,7 @@ import {
   getAllRegisteredClassNames,
   getClassRegistrationByName,
   getRegisteredFunctionFullName,
+  transactionalDataSources,
 } from './decorators';
 import { JsonWorkflowArgs } from '../schemas/system_db_schema';
 import {
@@ -79,6 +80,7 @@ import {
   listQueuedWorkflows,
   listWorkflows,
   listWorkflowSteps,
+  rewindWorkflow,
   toWorkflowStatus,
   workflowTimeoutLoop,
 } from './workflow_management';
@@ -938,6 +940,12 @@ export class DBOSExecutor {
 
     const maxAttempts = stepConfig.maxAttempts ?? 3;
     const timeoutMS = stepConfig.timeoutMS;
+    let cancelWatch = this.systemDatabase.watchForCancellation(wfid);
+
+    // An attempt that fails after the cancel signal fired ends the workflow, unless a resume has since reversed the cancel.
+    const rethrowIfCancelled = async () => {
+      if (cancelWatch.cancelled) await this.systemDatabase.checkIfCanceled(wfid).catch(endSpanAndRethrow);
+    };
 
     // Run a single attempt of the step function.
     // If `timeoutMS` is set, race the attempt against a timer, firing the attempt's AbortSignal
@@ -949,7 +957,13 @@ export class DBOSExecutor {
       const timeoutAbort = timeoutMS === undefined ? undefined : new AbortController();
       let cresult: R | undefined;
       const attemptPromise = runWithTrace(span, async () => {
-        await runInStepContext(lctx, funcID, maxAttempts, attemptNum, timeoutAbort?.signal, async () => {
+        const attempt = {
+          maxAttempts,
+          currentAttempt: attemptNum,
+          timeoutSignal: timeoutAbort?.signal,
+          getCancelSignal: () => cancelWatch.signal,
+        };
+        await runInStepContext(lctx, funcID, attempt, async () => {
           const sf = stepFn as unknown as (...args: T) => Promise<R>;
           cresult = await sf.call(clsInst, ...args);
         });
@@ -980,71 +994,82 @@ export class DBOSExecutor {
     let result: R | DBOSNull = dbosNull;
     let err: Error | DBOSNull = dbosNull;
     const errors: Error[] = [];
-    if (stepConfig.retriesAllowed) {
-      let attemptNum = 0;
-      let intervalSeconds: number = stepConfig.intervalSeconds ?? 1;
-      if (intervalSeconds > maxRetryIntervalSec) {
-        this.logger.warn(
-          `Step config interval exceeds maximum allowed interval, capped to ${maxRetryIntervalSec} seconds!`,
-        );
-      }
-      while (result === dbosNull && attemptNum++ < (maxAttempts ?? 3)) {
-        // Outside the try so workflow cancellation propagates immediately instead of consuming the remaining attempts
-        await this.systemDatabase.checkIfCanceled(wfid).catch(endSpanAndRethrow);
-        try {
-          result = await invokeStepAttempt(attemptNum);
-        } catch (error) {
-          const e = error as Error;
-          if (stepConfig.shouldRetry) {
-            try {
-              const shouldRetry = await stepConfig.shouldRetry(e);
-              if (!shouldRetry) {
-                err = e;
-                this.logger.warn(`Non-retryable error in step. Attempt ${attemptNum} of ${maxAttempts}. ${e.stack}`);
+    try {
+      if (stepConfig.retriesAllowed) {
+        let attemptNum = 0;
+        let intervalSeconds: number = stepConfig.intervalSeconds ?? 1;
+        if (intervalSeconds > maxRetryIntervalSec) {
+          this.logger.warn(
+            `Step config interval exceeds maximum allowed interval, capped to ${maxRetryIntervalSec} seconds!`,
+          );
+        }
+        while (result === dbosNull && attemptNum++ < (maxAttempts ?? 3)) {
+          // Outside the try so workflow cancellation propagates immediately instead of consuming the remaining attempts
+          await this.systemDatabase.checkIfCanceled(wfid).catch(endSpanAndRethrow);
+          // The workflow is not cancelled, so a fired signal reports a reversed cancel: give this attempt a fresh one
+          if (cancelWatch.cancelled) {
+            cancelWatch.release();
+            cancelWatch = this.systemDatabase.watchForCancellation(wfid);
+          }
+          try {
+            result = await invokeStepAttempt(attemptNum);
+          } catch (error) {
+            await rethrowIfCancelled();
+            const e = error as Error;
+            if (stepConfig.shouldRetry) {
+              try {
+                const shouldRetry = await stepConfig.shouldRetry(e);
+                if (!shouldRetry) {
+                  err = e;
+                  this.logger.warn(`Non-retryable error in step. Attempt ${attemptNum} of ${maxAttempts}. ${e.stack}`);
+                  span.addEvent(
+                    `Step attempt ${attemptNum + 1} failed`,
+                    { retryIntervalSeconds: intervalSeconds, error: e.message, shouldRetry: false },
+                    performance.now(),
+                  );
+                  break;
+                }
+              } catch (retryError) {
+                err = retryError as Error;
+                this.logger.warn(
+                  `Step retry predicate failed. Attempt ${attemptNum} of ${maxAttempts}. ${(err as Error).stack}`,
+                );
                 span.addEvent(
-                  `Step attempt ${attemptNum + 1} failed`,
-                  { retryIntervalSeconds: intervalSeconds, error: e.message, shouldRetry: false },
+                  `Step retry predicate failed after attempt ${attemptNum + 1}`,
+                  { error: e.message, shouldRetryError: (err as Error).message },
                   performance.now(),
                 );
                 break;
               }
-            } catch (retryError) {
-              err = retryError as Error;
-              this.logger.warn(
-                `Step retry predicate failed. Attempt ${attemptNum} of ${maxAttempts}. ${(err as Error).stack}`,
-              );
-              span.addEvent(
-                `Step retry predicate failed after attempt ${attemptNum + 1}`,
-                { error: e.message, shouldRetryError: (err as Error).message },
-                performance.now(),
-              );
-              break;
+            }
+            errors.push(e);
+            this.logger.warn(
+              `Error in step being automatically retried. Attempt ${attemptNum} of ${maxAttempts}. ${e.stack}`,
+            );
+            span.addEvent(
+              `Step attempt ${attemptNum + 1} failed`,
+              { retryIntervalSeconds: intervalSeconds, error: (error as Error).message },
+              performance.now(),
+            );
+            if (attemptNum < maxAttempts) {
+              // Sleep for an interval, then increase the interval by backoffRate.
+              // Cap at the maximum allowed retry interval.
+              await sleepms(intervalSeconds * 1000);
+              intervalSeconds *= stepConfig.backoffRate ?? 2;
+              intervalSeconds = intervalSeconds < maxRetryIntervalSec ? intervalSeconds : maxRetryIntervalSec;
             }
           }
-          errors.push(e);
-          this.logger.warn(
-            `Error in step being automatically retried. Attempt ${attemptNum} of ${maxAttempts}. ${e.stack}`,
-          );
-          span.addEvent(
-            `Step attempt ${attemptNum + 1} failed`,
-            { retryIntervalSeconds: intervalSeconds, error: (error as Error).message },
-            performance.now(),
-          );
-          if (attemptNum < maxAttempts) {
-            // Sleep for an interval, then increase the interval by backoffRate.
-            // Cap at the maximum allowed retry interval.
-            await sleepms(intervalSeconds * 1000);
-            intervalSeconds *= stepConfig.backoffRate ?? 2;
-            intervalSeconds = intervalSeconds < maxRetryIntervalSec ? intervalSeconds : maxRetryIntervalSec;
-          }
+        }
+      } else {
+        try {
+          result = await invokeStepAttempt(undefined);
+        } catch (error) {
+          await rethrowIfCancelled();
+          err = error as Error;
         }
       }
-    } else {
-      try {
-        result = await invokeStepAttempt(undefined);
-      } catch (error) {
-        err = error as Error;
-      }
+    } finally {
+      cancelWatch.release();
     }
 
     // `result` can only be dbosNull when the step timed out
@@ -1102,6 +1127,23 @@ export class DBOSExecutor {
   ): Promise<string> {
     const newWorkflowID = options.newWorkflowID ?? getNextWFID(undefined);
     return forkWorkflow(this.systemDatabase, workflowID, startStep, { ...options, newWorkflowID });
+  }
+
+  /**
+   * Rewind a workflow: drop its history from `startStep` onwards and re-enqueue it
+   * under the same ID. Every data source registered in this process is rewound with
+   * it, so no checkpoint survives to be replayed as a result.
+   */
+  rewindWorkflow(
+    workflowID: string,
+    startStep: number,
+    options: {
+      applicationVersion?: string;
+      queueName?: string;
+      queuePartitionKey?: string;
+    } = {},
+  ): Promise<void> {
+    return rewindWorkflow(this.systemDatabase, [...transactionalDataSources.values()], workflowID, startStep, options);
   }
 
   /**

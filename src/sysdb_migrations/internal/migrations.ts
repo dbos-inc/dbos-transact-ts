@@ -1133,7 +1133,8 @@ $$ LANGUAGE plpgsql;`,
         `DROP INDEX ${isCockroach ? '' : 'CONCURRENTLY'} IF EXISTS "${schemaName}"."idx_operation_outputs_completed_at_function_name"`,
       ],
     },
-    // Records which recv consumed a notification.
+    // Records which recv consumed a notification, so a rewind can delete the
+    // messages the discarded run took delivery of.
     {
       name: '121_notifications_consumed_by_function_id',
       pg: [`ALTER TABLE "${schemaName}"."notifications" ADD COLUMN IF NOT EXISTS "consumed_by_function_id" INTEGER`],

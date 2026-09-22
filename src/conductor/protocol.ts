@@ -58,6 +58,7 @@ export enum MessageType {
   FORK_FROM_FAILURE = 'fork_from_failure',
   LIST_QUEUES = 'list_queues',
   GET_QUEUE = 'get_queue',
+  REWIND_WORKFLOW = 'rewind_workflow',
 }
 
 export interface BaseMessage {
@@ -399,6 +400,27 @@ export class ForkWorkflowResponse extends BaseResponse {
   constructor(request_id: string, new_workflow_id?: string, error_message?: string) {
     super(MessageType.FORK_WORKFLOW, request_id, error_message);
     this.new_workflow_id = new_workflow_id;
+  }
+}
+
+export interface RewindWorkflowBody {
+  workflow_id: string;
+  start_step?: number;
+  application_version?: string;
+  queue_name?: string;
+  queue_partition_key?: string;
+}
+
+export interface RewindWorkflowRequest extends BaseMessage {
+  type: MessageType.REWIND_WORKFLOW;
+  body: RewindWorkflowBody;
+}
+
+export class RewindWorkflowResponse extends BaseResponse {
+  success: boolean;
+  constructor(request_id: string, success: boolean, error_message?: string) {
+    super(MessageType.REWIND_WORKFLOW, request_id, error_message);
+    this.success = success;
   }
 }
 
