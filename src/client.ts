@@ -39,7 +39,6 @@ import {
   ReadStreamOffsetOptions,
 } from './dbos';
 import { readStreamCore, readStreamOffsetCore } from './streams';
-import type { DataSourceTransactionHandler } from './datasource';
 import { DBOSJSON, DBOSSerializer, deserializeValue, serializeValue } from './serialization';
 import {
   forkWorkflow,
@@ -621,7 +620,12 @@ export class DBOSClient {
    * re-enqueue it under the same ID, so a replay re-executes everything from there.
    * Only a workflow in a terminal state can be rewound; cancel a running one first.
    *
-   * Datasources heckpoints are dropped only for the data sources passed in `dataSources`.
+   * Limitation: this drops the system database's history only. A data source that
+   * keeps checkpoints of its own leaves them in place, and the replay reads them back
+   * as results instead of re-running the transactions that wrote them. Rewind a
+   * workflow with transactions from inside the application instead, with
+   * `DBOS.rewindWorkflow`, which rewinds every data source registered in the process
+   * along with it.
    *
    * @returns a WorkflowHandle for the rewound workflow, under its original ID.
    */
@@ -632,16 +636,9 @@ export class DBOSClient {
       applicationVersion?: string;
       queueName?: string;
       queuePartitionKey?: string;
-      dataSources?: readonly DataSourceTransactionHandler[];
     },
   ): Promise<WorkflowHandle<Awaited<T>>> {
-    await rewindWorkflow(
-      this.systemDatabase,
-      options?.dataSources ?? [],
-      workflowID,
-      options?.startStep ?? 0,
-      options ?? {},
-    );
+    await rewindWorkflow(this.systemDatabase, [], workflowID, options?.startStep ?? 0, options ?? {});
     return this.retrieveWorkflow<T>(workflowID);
   }
 

@@ -1,15 +1,27 @@
 import { DBOS, DBOSClient, StatusString } from '../src';
-import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
+import { DBOSExecutor } from '../src/dbos-executor';
 import { generateDBOSTestConfig, setUpDBOSTestSysDb, Event } from './helpers';
-import { Client } from 'pg';
+import { Client, Pool, PoolClient } from 'pg';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
 import { DBOSError, DBOSNonExistentWorkflowError } from '../src/error';
 import { INTERNAL_QUEUE_NAME, globalParams, sleepms } from '../src/utils';
 import { deserializeValue } from '../src/serialization';
+import {
+  createTransactionCompletionSchemaPG,
+  createTransactionCompletionTablePG,
+  registerDataSource,
+  registerTransaction,
+  replayRecordedStep,
+  type DataSourceTransactionHandler,
+} from '../src/datasource';
+import { SuperJSON } from 'superjson';
 
 // Everything DBOS runs has to be registered before launch, so the workflows under
 // test live at module scope and the per-test state they read lives in `runs` and the
 // counters below, reset in beforeEach.
+
+const config = generateDBOSTestConfig();
 
 const runs: Record<string, number> = {};
 
@@ -129,13 +141,135 @@ const dbStateWorkflow = DBOS.registerWorkflow(
   { name: 'dbstate_workflow' },
 );
 
+/** The transaction client and the schema to reach it through, for a transaction body. */
+const dsContext = new AsyncLocalStorage<{ client: PoolClient; schema: string }>();
+
+/**
+ * The smallest data source that keeps checkpoints of its own: a
+ * `<schema>.transaction_completion` row per step, replayed in place of the body. Those
+ * rows have to go with the steps a rewind drops, or the replay reads one back as the
+ * transaction's result without running it. Each instance owns a schema, so two of them
+ * in one database stand in for two independent stores.
+ */
+class CheckpointDataSource implements DataSourceTransactionHandler {
+  #poolField: Pool | undefined;
+
+  constructor(
+    readonly name: string,
+    readonly schema: string,
+  ) {}
+
+  async initialize(): Promise<void> {
+    this.#poolField = new Pool({ connectionString: config.systemDatabaseUrl });
+    await this.pool.query(createTransactionCompletionSchemaPG(this.schema));
+    await this.pool.query(createTransactionCompletionTablePG(this.schema));
+    await this.pool.query(`CREATE TABLE IF NOT EXISTS "${this.schema}".rows (v TEXT)`);
+  }
+
+  async destroy(): Promise<void> {
+    const pool = this.#poolField;
+    this.#poolField = undefined;
+    await pool?.end();
+  }
+
+  get pool(): Pool {
+    if (!this.#poolField) {
+      throw new Error(`${this.name} is not initialized`);
+    }
+    return this.#poolField;
+  }
+
+  async deleteCheckpoints(workflowID: string, startStep: number): Promise<void> {
+    await this.pool.query(
+      `DELETE FROM "${this.schema}".transaction_completion WHERE workflow_id = $1 AND function_num >= $2`,
+      [workflowID, startStep],
+    );
+  }
+
+  /** The step IDs this data source holds a checkpoint for. */
+  async checkpoints(workflowID: string): Promise<number[]> {
+    const { rows } = await this.pool.query<{ function_num: number }>(
+      `SELECT function_num FROM "${this.schema}".transaction_completion WHERE workflow_id = $1 ORDER BY function_num`,
+      [workflowID],
+    );
+    return rows.map((r) => r.function_num);
+  }
+
+  /** What the transactions actually wrote, which a replayed checkpoint does not. */
+  async rows(): Promise<string[]> {
+    const { rows } = await this.pool.query<{ v: string }>(`SELECT v FROM "${this.schema}".rows ORDER BY v`);
+    return rows.map((r) => r.v);
+  }
+
+  async invokeTransactionFunction<This, Args extends unknown[], Return>(
+    _config: unknown,
+    target: This,
+    func: (this: This, ...args: Args) => Promise<Return>,
+    ...args: Args
+  ): Promise<Return> {
+    const workflowID = DBOS.workflowID!;
+    const stepID = DBOS.stepID!;
+
+    const { rows } = await this.pool.query<{ output: string | null; error: string | null }>(
+      `SELECT output, error FROM "${this.schema}".transaction_completion WHERE workflow_id = $1 AND function_num = $2`,
+      [workflowID, stepID],
+    );
+    if (rows.length > 0) {
+      return replayRecordedStep<Return>(rows[0]);
+    }
+
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const result = await dsContext.run({ client, schema: this.schema }, () => func.call(target, ...args));
+      await client.query(
+        `INSERT INTO "${this.schema}".transaction_completion (workflow_id, function_num, output) VALUES ($1, $2, $3)`,
+        [workflowID, stepID, SuperJSON.stringify(result)],
+      );
+      await client.query('COMMIT');
+      return result;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+}
+
+const firstDS = new CheckpointDataSource('rewind_ds_first', 'rewind_ds1');
+const secondDS = new CheckpointDataSource('rewind_ds_second', 'rewind_ds2');
+registerDataSource(firstDS);
+registerDataSource(secondDS);
+
+async function insertRow(v: string): Promise<string> {
+  const ctx = dsContext.getStore()!;
+  await ctx.client.query(`INSERT INTO "${ctx.schema}".rows (v) VALUES ($1)`, [v]);
+  return v;
+}
+
+const insertFirst = registerTransaction(firstDS.name, insertRow, { name: 'insertFirst' });
+const insertSecond = registerTransaction(secondDS.name, insertRow, { name: 'insertSecond' });
+
+// Interleaved, so each data source holds every other step: a cut has to land inside
+// both of them rather than truncating one.
+const dsWorkflow = DBOS.registerWorkflow(
+  async () => {
+    const run = runCount('ds');
+    await insertFirst('a');
+    await insertSecond('b');
+    await insertFirst('c');
+    await insertSecond('d');
+    return run;
+  },
+  { name: 'ds_workflow' },
+);
+
 describe('rewind', () => {
-  let config: DBOSConfig;
   let systemDBClient: Client;
   let schema: string;
 
   beforeAll(() => {
-    config = generateDBOSTestConfig();
     DBOS.setConfig(config);
   });
 
@@ -523,6 +657,33 @@ describe('rewind', () => {
   });
 
   //////////////////////////////////////////
+  // Data sources
+  //////////////////////////////////////////
+
+  test('drops-every-registered-data-sources-checkpoints-past-the-cut', async () => {
+    const workflowID = randomUUID();
+    await DBOS.withNextWorkflowID(workflowID, async () => {
+      await expect(dsWorkflow()).resolves.toBe(1);
+    });
+    expect(await firstDS.checkpoints(workflowID)).toEqual([0, 2]);
+    expect(await secondDS.checkpoints(workflowID)).toEqual([1, 3]);
+
+    // Cut at the third step: each data source keeps one checkpoint and loses one.
+    await pausedQueue('rewind_datasource_gate', async () => {
+      await DBOS.rewindWorkflow<number>(workflowID, { startStep: 2, queueName: 'rewind_datasource_gate' });
+      expect(await firstDS.checkpoints(workflowID)).toEqual([0]);
+      expect(await secondDS.checkpoints(workflowID)).toEqual([1]);
+    });
+
+    await expect(DBOS.retrieveWorkflow<number>(workflowID).getResult()).resolves.toBe(2);
+    expect(await firstDS.checkpoints(workflowID)).toEqual([0, 2]);
+    expect(await secondDS.checkpoints(workflowID)).toEqual([1, 3]);
+    // The first transaction on each data source replayed, the second ran again.
+    expect(await firstDS.rows()).toEqual(['a', 'c', 'c']);
+    expect(await secondDS.rows()).toEqual(['b', 'd', 'd']);
+  });
+
+  //////////////////////////////////////////
   // Client
   //////////////////////////////////////////
 
@@ -540,5 +701,35 @@ describe('rewind', () => {
     } finally {
       await client.destroy();
     }
+  });
+
+  /**
+   * The documented limitation: a client rewinds the system database and nothing else.
+   * It reaches the data sources through no registry — the application process owns
+   * those — so their checkpoints stay behind and are replayed as results. Rewinding a
+   * workflow with transactions is a job for `DBOS.rewindWorkflow`, from inside the
+   * application.
+   */
+  test('client-rewind-leaves-the-data-sources-checkpoints-behind', async () => {
+    const workflowID = randomUUID();
+    await DBOS.withNextWorkflowID(workflowID, async () => {
+      await expect(dsWorkflow()).resolves.toBe(1);
+    });
+
+    const client = await DBOSClient.create({ systemDatabaseUrl: config.systemDatabaseUrl! });
+    try {
+      const handle = await client.rewindWorkflow<number>(workflowID, { startStep: 2 });
+      // The workflow body itself ran again, so the run counter moves.
+      await expect(handle.getResult()).resolves.toBe(2);
+    } finally {
+      await client.destroy();
+    }
+
+    // Nothing was dropped, so the two steps past the cut re-entered their transactions,
+    // found the checkpoints still there and replayed them: no INSERT ran a second time.
+    expect(await firstDS.checkpoints(workflowID)).toEqual([0, 2]);
+    expect(await secondDS.checkpoints(workflowID)).toEqual([1, 3]);
+    expect(await firstDS.rows()).toEqual(['a', 'c']);
+    expect(await secondDS.rows()).toEqual(['b', 'd']);
   });
 });
