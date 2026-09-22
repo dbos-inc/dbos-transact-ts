@@ -2240,10 +2240,7 @@ export class SystemDatabase {
         [workflowID, startStep],
       );
 
-      // Only a run that reached an outcome wrote a payload row to drop.
-      if (status === StatusString.SUCCESS || status === StatusString.ERROR) {
-        await client.query(`DELETE FROM "${schema}".workflow_output WHERE workflow_uuid = $1`, [workflowID]);
-      }
+      await client.query(`DELETE FROM "${schema}".workflow_output WHERE workflow_uuid = $1`, [workflowID]);
 
       // Re-enqueue the workflow. Re-asserting the status we read keeps a workflow that
       // moved on underneath us from being resurrected.
