@@ -2240,6 +2240,11 @@ export class SystemDatabase {
         [workflowID, startStep],
       );
 
+      // Only a run that reached an outcome wrote a payload row to drop.
+      if (status === StatusString.SUCCESS || status === StatusString.ERROR) {
+        await client.query(`DELETE FROM "${schema}".workflow_output WHERE workflow_uuid = $1`, [workflowID]);
+      }
+
       // Re-enqueue the workflow. Re-asserting the status we read keeps a workflow that
       // moved on underneath us from being resurrected.
       const setVersion = options.applicationVersion !== undefined ? ', application_version = $6' : '';
@@ -2257,7 +2262,8 @@ export class SystemDatabase {
         `UPDATE "${schema}".workflow_status
          SET status = $1, queue_name = $2, queue_partition_key = $3, recovery_attempts = 0,
              workflow_deadline_epoch_ms = NULL, deduplication_id = NULL, started_at_epoch_ms = NULL,
-             completed_at = NULL, updated_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint${setVersion}
+             completed_at = NULL, output = NULL, error = NULL,
+             updated_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint${setVersion}
          WHERE workflow_uuid = $4 AND status = $5`,
         params,
       );

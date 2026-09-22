@@ -328,9 +328,19 @@ describe('rewind', () => {
       completed_at: string | null;
       workflow_deadline_epoch_ms: string | null;
       deduplication_id: string | null;
+      output: string | null;
+      error: string | null;
       name: string;
       created_at: string;
     }>(`SELECT * FROM "${schema}".workflow_status WHERE workflow_uuid = $1`, [workflowID]);
+    return rows[0];
+  }
+
+  async function outputRow(workflowID: string) {
+    const { rows } = await systemDBClient.query<{ output: string | null; error: string | null }>(
+      `SELECT output, error FROM "${schema}".workflow_output WHERE workflow_uuid = $1`,
+      [workflowID],
+    );
     return rows[0];
   }
 
@@ -563,6 +573,9 @@ describe('rewind', () => {
       expect(await stepIDs(workflowID)).toEqual([]);
       expect(await eventHistoryIDs(workflowID)).toEqual([]);
       expect(await mailbox(workflowID)).toEqual([]);
+      expect(await outputRow(workflowID)).toBeUndefined();
+      expect(after.output).toBeNull();
+      expect(after.error).toBeNull();
       await DBOS.send(workflowID, 'go', 'cmd');
     });
 
