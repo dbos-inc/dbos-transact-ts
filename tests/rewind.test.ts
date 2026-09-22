@@ -265,6 +265,23 @@ const dsWorkflow = DBOS.registerWorkflow(
   { name: 'ds_workflow' },
 );
 
+const rewindChild = DBOS.registerWorkflow(
+  (value: number) => {
+    runCount('child');
+    return Promise.resolve(value * 2);
+  },
+  { name: 'rewind_child' },
+);
+
+const rewindParent = DBOS.registerWorkflow(
+  async (name: string) => {
+    const run = runCount(name);
+    const handle = await DBOS.startWorkflow(rewindChild)(21);
+    return (await handle.getResult()) + run;
+  },
+  { name: 'rewind_parent' },
+);
+
 describe('rewind', () => {
   let systemDBClient: Client;
   let schema: string;
@@ -656,6 +673,28 @@ describe('rewind', () => {
     expect(runs['validation']).toBe(1);
   });
 
+  /**
+   * The validation has to happen before the data sources are touched: `DBOS.rewindWorkflow`
+   * drops their checkpoints first and only then calls into the system database, so a
+   * `startStep` the system database would reject must never get that far.
+   */
+  test('rejects-a-negative-start-step-before-dropping-checkpoints', async () => {
+    const workflowID = randomUUID();
+    await DBOS.withNextWorkflowID(workflowID, async () => {
+      await expect(dsWorkflow()).resolves.toBe(1);
+    });
+    expect(await firstDS.checkpoints(workflowID)).toEqual([0, 2]);
+    expect(await secondDS.checkpoints(workflowID)).toEqual([1, 3]);
+
+    await expect(DBOS.rewindWorkflow(workflowID, { startStep: -1 })).rejects.toThrow(/must be >= 0/);
+
+    // Every checkpoint is still there, so the steps keep their crash-window protection.
+    expect(await firstDS.checkpoints(workflowID)).toEqual([0, 2]);
+    expect(await secondDS.checkpoints(workflowID)).toEqual([1, 3]);
+    expect((await statusRow(workflowID)).status).toBe(StatusString.SUCCESS);
+    expect(runs['ds']).toBe(1);
+  });
+
   //////////////////////////////////////////
   // Data sources
   //////////////////////////////////////////
@@ -681,6 +720,32 @@ describe('rewind', () => {
     // The first transaction on each data source replayed, the second ran again.
     expect(await firstDS.rows()).toEqual(['a', 'c', 'c']);
     expect(await secondDS.rows()).toEqual(['b', 'd', 'd']);
+  });
+
+  //////////////////////////////////////////
+  // Child workflows
+  //////////////////////////////////////////
+
+  /**
+   * A child's ID derives from the parent's step (`${callerID}-${callerFunctionID}`), so a
+   * rewound parent re-derives the same ID and adopts the child it already has rather than
+   * starting a second one.
+   */
+  test('rewound-parent-adopts-its-existing-child', async () => {
+    const workflowID = randomUUID();
+    await DBOS.withNextWorkflowID(workflowID, async () => {
+      await expect(rewindParent('adopt')).resolves.toBe(43);
+    });
+    expect(runs['child']).toBe(1);
+    const childID = `${workflowID}-0`;
+    await expect(DBOS.retrieveWorkflow<number>(childID).getResult()).resolves.toBe(42);
+
+    await expect(DBOS.rewindWorkflow<number>(workflowID).then((h) => h.getResult())).resolves.toBe(44);
+
+    // The child is the same workflow, still SUCCESS, and it did not run a second time.
+    expect(runs['child']).toBe(1);
+    await expect(DBOS.retrieveWorkflow<number>(childID).getResult()).resolves.toBe(42);
+    expect((await statusRow(childID)).status).toBe(StatusString.SUCCESS);
   });
 
   //////////////////////////////////////////

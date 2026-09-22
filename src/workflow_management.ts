@@ -110,6 +110,9 @@ export async function rewindWorkflow(
     queuePartitionKey?: string;
   } = {},
 ): Promise<void> {
+  if (startStep < 0) {
+    throw new DBOSError(`startStep must be >= 0, got ${startStep}`);
+  }
   const withCheckpoints = dataSources.filter((ds) => ds.deleteCheckpoints !== undefined);
   // Deleting a running workflow's checkpoints would pull them out from under the
   // execution that still owns them, so establish the workflow is rewindable before
