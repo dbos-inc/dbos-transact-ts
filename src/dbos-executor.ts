@@ -9,6 +9,7 @@ import {
   DBOSUnexpectedStepError,
   DBOSAwaitedWorkflowCancelledError,
   DBOSQueueDuplicatedError,
+  DBOSWorkflowIDInUseError,
   DBOSStepTimeoutError,
   DBOSInvalidWorkflowInputError,
 } from './error';
@@ -585,8 +586,7 @@ export class DBOSExecutor {
     let $deadlineEpochMS: number | undefined = undefined;
     let shouldExecute: boolean | undefined = undefined;
 
-    // Synchronously set the workflow's status to PENDING and record workflow inputs.
-    // We have to do it for all types of workflows because operation_outputs table has a foreign key constraint on workflow status table.
+    // Record the workflow's status and inputs before it runs, unless a replayed child start already recorded its outcome.
     if (callerFunctionID !== undefined && callerID !== undefined) {
       const result = await this.systemDatabase.getOperationResultAndThrowIfCancelled(callerID, callerFunctionID);
       if (result) {
@@ -624,16 +624,34 @@ export class DBOSExecutor {
       serializationType = ires.serialization === DBOSPortableJSON.name() ? 'portable' : undefined;
     } else {
       try {
-        ires = await this.systemDatabase.initWorkflowStatus(internalStatus, randomUUID());
+        if (callerID !== undefined && callerFunctionID !== undefined) {
+          const now = Date.now();
+          ires = await this.systemDatabase.initChildWorkflowStatus(
+            internalStatus,
+            randomUUID(),
+            callerID,
+            callerFunctionID,
+            now,
+            now,
+            params.workflowIDReusePolicy,
+          );
+        } else {
+          ires = await this.systemDatabase.initWorkflowStatus(
+            internalStatus,
+            randomUUID(),
+            undefined,
+            params.workflowIDReusePolicy,
+          );
+        }
         serializationType = ires.serialization === DBOSPortableJSON.name() ? 'portable' : undefined;
       } catch (e) {
         // For 'return-existing' enqueues we don't pre-record the dedup error: the wrapper will
         // catch it, attach to the existing workflow, and record the child mapping itself.
         if (
-          e instanceof DBOSQueueDuplicatedError &&
-          callerID &&
-          callerFunctionID &&
-          params.duplicationPolicy !== 'return-existing'
+          ((e instanceof DBOSQueueDuplicatedError && params.duplicationPolicy !== 'return-existing') ||
+            e instanceof DBOSWorkflowIDInUseError) &&
+          callerID !== undefined &&
+          callerFunctionID !== undefined
         ) {
           const sererr = await serializeResError(e, this.serializer, undefined); // This is a step result
           await this.systemDatabase.recordOperationResult(
@@ -649,20 +667,6 @@ export class DBOSExecutor {
         this.tracer.endSpan(span);
         throw e;
       }
-    }
-
-    if (callerFunctionID !== undefined && callerID !== undefined) {
-      await this.systemDatabase.recordOperationResult(
-        callerID,
-        callerFunctionID,
-        internalStatus.workflowName,
-        true,
-        Date.now(),
-        Date.now(),
-        {
-          childWorkflowID: workflowID,
-        },
-      );
     }
 
     $deadlineEpochMS = ires.deadlineEpochMS;

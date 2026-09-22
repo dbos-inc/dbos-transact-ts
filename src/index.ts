@@ -34,6 +34,7 @@ export {
   GetWorkflowsInput,
   ListWorkflowStepsOptions,
   WorkflowStatus,
+  WorkflowIDReusePolicy,
 } from './workflow';
 
 export { Debouncer, DebouncerClient } from './debouncer';
