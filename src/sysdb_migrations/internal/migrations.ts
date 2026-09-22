@@ -1133,5 +1133,18 @@ $$ LANGUAGE plpgsql;`,
         `DROP INDEX ${isCockroach ? '' : 'CONCURRENTLY'} IF EXISTS "${schemaName}"."idx_operation_outputs_completed_at_function_name"`,
       ],
     },
+    // Records which recv consumed a notification.
+    {
+      name: '121_notifications_consumed_by_function_id',
+      pg: [`ALTER TABLE "${schemaName}"."notifications" ADD COLUMN IF NOT EXISTS "consumed_by_function_id" INTEGER`],
+    },
+    // Holds only active workflows with a deadline, so the timeout sweep reads just the expired ones.
+    {
+      name: '122_workflow_status_deadline_index',
+      online: true,
+      pg: [
+        `CREATE INDEX ${isCockroach ? '' : 'CONCURRENTLY'} IF NOT EXISTS "idx_workflow_status_deadline" ON "${schemaName}"."workflow_status" ("workflow_deadline_epoch_ms") WHERE "status" IN ('ENQUEUED', 'PENDING', 'DELAYED') AND "workflow_deadline_epoch_ms" IS NOT NULL`,
+      ],
+    },
   ];
 }

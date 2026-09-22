@@ -1,14 +1,14 @@
 import { WorkflowHandle, DBOS, DBOSSerializer } from '../src/';
-import { generateDBOSTestConfig, setUpDBOSTestSysDb, Event } from './helpers';
+import { generateDBOSTestConfig, setUpDBOSTestSysDb, Event, retryUntilSuccess } from './helpers';
 import { randomUUID } from 'node:crypto';
 import { StatusString } from '../src/workflow';
-import { DBOSConfig } from '../src/dbos-executor';
+import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import { Client, Pool, PoolClient } from 'pg';
 import { DBOSWorkflowCancelledError, DBOSAwaitedWorkflowCancelledError, DBOSInitializationError } from '../src/error';
 import assert from 'node:assert';
 import { DBOSClient } from '../dist/src';
 import { deriveDatabaseUrl, dropPGDatabase, ensurePGDatabase, getDatabaseNameFromUrl } from '../src/database_utils';
-import { sleepConfig } from '../src/utils';
+import { sleepConfig, sleepms } from '../src/utils';
 
 const silentDropLogger = { warn: () => {} };
 
@@ -556,6 +556,87 @@ describe('dbos-tests', () => {
       await expect(childHandle.getStatus()).resolves.toMatchObject({
         status: StatusString.SUCCESS,
       });
+    });
+
+    test('timeout-sweep-cancels-unowned-workflows', async () => {
+      // The sweep cancels every expired active workflow of this application, whether or not a
+      // local run holds it, and leaves other applications' workflows alone.
+      const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+      const appName = sysdb.appName;
+      assert(appName);
+      const [ownID, unclaimedID, otherAppID, unexpiredID, enqueuedID, delayedID] = Array.from({ length: 6 }, () =>
+        randomUUID(),
+      );
+      const ids = [ownID, unclaimedID, otherAppID, unexpiredID, enqueuedID, delayedID];
+      for (const id of ids) {
+        await DBOS.startWorkflow(DBOSTestClass, { workflowID: id })
+          .noopWorkflow()
+          .then((h) => h.getResult());
+      }
+
+      // A sweep that throws must not end the loop: the rows below still get cancelled.
+      const sweep = jest.spyOn(sysdb, 'cancelTimedOutWorkflows').mockRejectedValueOnce(new Error('injected failure'));
+      try {
+        // Rewrite the finished rows into active workflows of a dead executor. The enqueued and
+        // delayed rows sit on a queue no worker polls, so only the sweep can touch them.
+        const past = Date.now() - 1000;
+        const hourAhead = past + 3_600_000;
+        const rows: [string, string, string | null, number, string | null, number | null][] = [
+          [ownID, StatusString.PENDING, appName, past, null, null],
+          [unclaimedID, StatusString.PENDING, null, past, null, null],
+          [otherAppID, StatusString.PENDING, `${appName}-other`, past, null, null],
+          [unexpiredID, StatusString.PENDING, appName, hourAhead, null, null],
+          [enqueuedID, StatusString.ENQUEUED, appName, past, 'unpolled-queue', null],
+          [delayedID, StatusString.DELAYED, appName, past, 'unpolled-queue', hourAhead],
+        ];
+        for (const [id, status, owner, deadline, queue, delay] of rows) {
+          await sysdb.pool.query(
+            `UPDATE "${sysdb.schemaName}".workflow_status
+             SET status = $2, executor_id = 'dead-executor', application_name = $3,
+                 workflow_deadline_epoch_ms = $4, queue_name = $5, delay_until_epoch_ms = $6
+             WHERE workflow_uuid = $1`,
+            [id, status, owner, deadline, queue, delay],
+          );
+        }
+
+        const read = async () => {
+          const { rows } = await sysdb.pool.query<{ workflow_uuid: string; status: string; queue_name: string | null }>(
+            `SELECT workflow_uuid, status, queue_name FROM "${sysdb.schemaName}".workflow_status
+             WHERE workflow_uuid = ANY($1)`,
+            [ids],
+          );
+          return new Map(rows.map((r) => [r.workflow_uuid, r]));
+        };
+        await retryUntilSuccess(async () => {
+          const current = await read();
+          for (const id of [ownID, unclaimedID, enqueuedID, delayedID]) {
+            expect(current.get(id)?.status).toBe(StatusString.CANCELLED);
+          }
+        });
+        await expect(sweep.mock.results[0].value).rejects.toThrow('injected failure');
+        const current = await read();
+        expect(current.get(otherAppID)?.status).toBe(StatusString.PENDING);
+        expect(current.get(unexpiredID)?.status).toBe(StatusString.PENDING);
+        // Cancelling takes a workflow off its queue.
+        expect(current.get(enqueuedID)?.queue_name).toBeNull();
+        expect(current.get(delayedID)?.queue_name).toBeNull();
+      } finally {
+        sweep.mockRestore();
+      }
+    });
+
+    test('timeout-sweep-stops-on-shutdown', async () => {
+      const sweep = jest.spyOn(DBOSExecutor.globalInstance!.systemDatabase, 'cancelTimedOutWorkflows');
+      try {
+        await retryUntilSuccess(() => expect(sweep).toHaveBeenCalled());
+        await DBOS.shutdown();
+        const calls = sweep.mock.calls.length;
+        await sleepms(500);
+        expect(sweep.mock.calls.length).toBe(calls);
+      } finally {
+        sweep.mockRestore();
+        await DBOS.launch();
+      }
     });
 
     test('test_wait_first', async () => {

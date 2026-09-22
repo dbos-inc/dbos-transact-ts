@@ -601,7 +601,6 @@ interface InsertWorkflowResult {
   class_name: string;
   config_name: string;
   queue_name: string | null;
-  workflow_deadline_epoch_ms: number | null;
   executor_id: string | null;
   owner_xid: string | null;
   serialization: string | null;
@@ -1216,7 +1215,6 @@ export class SystemDatabase {
   ): Promise<{
     status: string;
     shouldExecuteOnThisExecutor: boolean;
-    deadlineEpochMS?: number;
     serialization: SysDBSerializationFormat | null;
   }> {
     if (client !== undefined) {
@@ -1233,7 +1231,6 @@ export class SystemDatabase {
   ): Promise<{
     status: string;
     shouldExecuteOnThisExecutor: boolean;
-    deadlineEpochMS?: number;
     serialization: SysDBSerializationFormat | null;
   }> {
     const client = await this.#connect();
@@ -1271,7 +1268,6 @@ export class SystemDatabase {
   ): Promise<{
     status: string;
     shouldExecuteOnThisExecutor: boolean;
-    deadlineEpochMS?: number;
     serialization: SysDBSerializationFormat | null;
   }> {
     const client = await this.#connect();
@@ -1313,7 +1309,6 @@ export class SystemDatabase {
   ): Promise<{
     status: string;
     shouldExecuteOnThisExecutor: boolean;
-    deadlineEpochMS?: number;
     serialization: SysDBSerializationFormat | null;
   }> {
     const resRow = await this.insertWorkflowStatus(client, initStatus, ownerXid);
@@ -1336,13 +1331,9 @@ export class SystemDatabase {
       );
     }
 
-    const status = resRow.status;
-    const deadlineEpochMS = resRow.workflow_deadline_epoch_ms ?? undefined;
-
     // The upsert above already set executor assignment for a row we own.
     return {
-      status,
-      deadlineEpochMS,
+      status: resRow.status,
       shouldExecuteOnThisExecutor: ownerXid === resRow.owner_xid,
       serialization: resRow.serialization,
     };
@@ -3632,6 +3623,32 @@ export class SystemDatabase {
     );
   }
 
+  /** Cancel up to `limit` of this application's active workflows whose deadline has passed, returning their IDs. */
+  async cancelTimedOutWorkflows(limit: number): Promise<string[]> {
+    const params: unknown[] = [StatusString.CANCELLED, Date.now(), limit];
+    const scope = this.#appNameFilter('application_name', this.appName, params);
+    // Literal statuses let the planner match idx_workflow_status_deadline under any plan mode.
+    // SKIP LOCKED leaves a row a dequeue or a peer's sweep holds for the next sweep.
+    const { rows } = await this.pool.query<{ workflow_uuid: string }>(
+      `UPDATE "${this.schemaName}".workflow_status
+       SET status = $1, queue_name = NULL, deduplication_id = NULL, started_at_epoch_ms = NULL,
+           updated_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint,
+           completed_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint
+       WHERE workflow_uuid IN (
+         SELECT workflow_uuid FROM "${this.schemaName}".workflow_status
+         WHERE status IN ('${StatusString.ENQUEUED}', '${StatusString.PENDING}', '${StatusString.DELAYED}')
+           AND workflow_deadline_epoch_ms IS NOT NULL
+           AND workflow_deadline_epoch_ms <= $2
+           AND ${scope}
+         ORDER BY workflow_deadline_epoch_ms
+         LIMIT $3
+         FOR UPDATE SKIP LOCKED)
+       RETURNING workflow_uuid`,
+      params,
+    );
+    return rows.map((r) => r.workflow_uuid);
+  }
+
   @dbRetry()
   async getDeduplicatedWorkflow(queueName: string, deduplicationID: string): Promise<string | null> {
     const { rows } = await this.pool.query<workflow_status>(
@@ -5679,7 +5696,7 @@ export class SystemDatabase {
         ON CONFLICT (workflow_uuid)
           -- A no-op update, so an existing row comes back unchanged for the caller to inspect.
           DO UPDATE SET owner_xid = workflow_status.owner_xid
-          RETURNING status, name, class_name, config_name, queue_name, workflow_deadline_epoch_ms, executor_id, owner_xid, serialization`,
+          RETURNING status, name, class_name, config_name, queue_name, executor_id, owner_xid, serialization`,
         [
           initStatus.workflowUUID,
           initStatus.status,
