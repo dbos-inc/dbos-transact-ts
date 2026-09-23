@@ -13,7 +13,7 @@ import {
   setWfAndChildrenToPending,
 } from './helpers';
 import { randomUUID } from 'node:crypto';
-import { Client } from 'pg';
+import { Client, PoolClient } from 'pg';
 import { DBOSStepNondeterminismError, DBOSWorkflowCancelledError } from '../src/error';
 
 class Handoff {
@@ -70,6 +70,11 @@ class Handoff {
     Handoff.started.set();
     await Handoff.release.wait();
     return 'done';
+  }
+
+  @DBOS.workflow()
+  static async checkpointWorkflow(): Promise<string> {
+    return await Handoff.afterStep();
   }
 
   @DBOS.workflow()
@@ -650,6 +655,59 @@ describe('run-workflow-once-tests', () => {
     await expect(
       sysdb.recordOperationResult(workflowID, 10, 'a.step', true, now, now + 3_600_000, { output: '1' }),
     ).rejects.toThrow(DBOSStepNondeterminismError);
+  });
+
+  test('owner-check-blocks-a-hand-off-until-commit', async () => {
+    // A hand-off waits for an open ownership check's transaction, so it cannot land before the write.
+    Handoff.reset();
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    const workflowID = randomUUID();
+    const checkHeld = new Event();
+    const releaseCheck = new Event();
+    const pool = sysdb.pool;
+    const realConnect = pool.connect.bind(pool) as (cb?: unknown) => Promise<PoolClient>;
+    // Hold the step's checkpoint transaction open right after its ownership check returns.
+    const spy = jest.spyOn(pool, 'connect').mockImplementation(((cb?: unknown) => {
+      if (cb !== undefined) return realConnect(cb); // pool.query checks out through the callback form
+      return realConnect().then((client) => {
+        const realQuery = client.query.bind(client) as (text: unknown, values?: unknown[]) => Promise<unknown>;
+        const realRelease = client.release.bind(client);
+        client.query = (async (text: unknown, values?: unknown[]) => {
+          const result = await realQuery(text, values);
+          if (typeof text === 'string' && text.startsWith('SELECT execution_xid') && values?.[0] === workflowID) {
+            checkHeld.set();
+            await releaseCheck.wait();
+          }
+          return result;
+        }) as never;
+        client.release = ((err?: Error | boolean) => {
+          client.query = realQuery as never;
+          client.release = realRelease;
+          realRelease(err);
+        }) as never;
+        return client;
+      });
+    }) as never);
+    try {
+      const handle = await DBOS.startWorkflow(Handoff, { workflowID }).checkpointWorkflow();
+      await checkHeld.wait();
+      let handedOff = false;
+      const cancel = DBOS.cancelWorkflow(workflowID).then(() => {
+        handedOff = true;
+      });
+      await sleepms(500);
+      // Negative check: the hand-off must still be waiting on the open check.
+      expect(handedOff).toBe(false);
+      releaseCheck.set();
+      await cancel;
+      expect(await sysdb.getWorkflowOwner(workflowID)).toBeNull();
+      // The step landed before the hand-off; the outcome write after it was refused.
+      await expect(handle.getResult()).rejects.toThrow(DBOSWorkflowCancelledError);
+      expect(await DBOS.listWorkflowSteps(workflowID)).toHaveLength(1);
+    } finally {
+      releaseCheck.set();
+      spy.mockRestore();
+    }
   });
 
   test('running-entries-release-their-own-bucket', () => {
