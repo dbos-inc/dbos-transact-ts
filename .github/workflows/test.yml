@@ -139,3 +139,10 @@ jobs:
         run: |
           npm ci
           npm run check:package
+
+  # Publish a preview after each merge to main, once its tests pass.
+  publish:
+    needs: [build, package-test, package-check]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/publish_npm.yml
+    secrets: inherit

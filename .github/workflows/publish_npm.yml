@@ -2,48 +2,10 @@ name: Publish current branch to npm
 
 on:
   workflow_dispatch:
-  # Publish a preview after each merge to main, once its tests pass.
-  workflow_run:
-    workflows: ['Test DBOS']
-    types: [completed]
-    branches: [main]
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: false
+  workflow_call:
 
 jobs:
-  gate:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    outputs:
-      publish: ${{ steps.check.outputs.publish }}
-    steps:
-      - id: check
-        env:
-          EVENT: ${{ github.event_name }}
-          CONCLUSION: ${{ github.event.workflow_run.conclusion }}
-          RUN_EVENT: ${{ github.event.workflow_run.event }}
-          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          if [ "$EVENT" = "workflow_dispatch" ]; then
-            echo "publish=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          # Skip if main has moved on, so an older run never moves the preview tag backwards.
-          MAIN_SHA=$(gh api "repos/${{ github.repository }}/commits/main" --jq .sha)
-          if [ "$CONCLUSION" = "success" ] && [ "$RUN_EVENT" = "push" ] && [ "$HEAD_SHA" = "$MAIN_SHA" ]; then
-            echo "publish=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "Skipping: conclusion=$CONCLUSION event=$RUN_EVENT head=$HEAD_SHA main=$MAIN_SHA"
-            echo "publish=false" >> "$GITHUB_OUTPUT"
-          fi
-
   publish:
-    needs: gate
-    if: needs.gate.outputs.publish == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -70,7 +32,6 @@ jobs:
         uses: actions/checkout@v4.1.1
         with:
           fetch-depth: 0 # fetch-depth 0 needed for NBGV
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
       - name: Use Node.js 20
         uses: actions/setup-node@v4.0.2
         with:
