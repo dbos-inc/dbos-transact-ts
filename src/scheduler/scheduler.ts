@@ -85,6 +85,9 @@ function scheduleSignature(sched: WorkflowScheduleInternal): string {
 const STARTUP_FAST_POLL_DURATION_MS = 60_000;
 const STARTUP_FAST_POLL_INTERVAL_MS = 1_000;
 
+// Timers can't sleep past ~24.8 days, so wait for distant runs in bounded chunks.
+const MAX_SCHEDULE_SLEEP_MS = 60 * 60 * 1000;
+
 export class DynamicSchedulerLoop implements DBOSLifecycleCallback {
   readonly #mainController = new AbortController();
   #pollingPromise: Promise<void> | undefined;
@@ -225,7 +228,15 @@ export class DynamicSchedulerLoop implements DBOSLifecycleCallback {
     queueName?: string,
     applicationName?: string,
   ): Promise<void> {
-    const timeMatcher = new TimeMatcher(cronExpression, cronTimezone);
+    let timeMatcher: TimeMatcher;
+    try {
+      timeMatcher = new TimeMatcher(cronExpression, cronTimezone);
+    } catch (e) {
+      DBOS.logger.warn(
+        `Dynamic scheduler: not running invalid schedule "${scheduleName}" ("${cronExpression}"): ${(e as Error).message}`,
+      );
+      return;
+    }
 
     const sched: WorkflowScheduleInternal = {
       scheduleId: '',
@@ -255,11 +266,15 @@ export class DynamicSchedulerLoop implements DBOSLifecycleCallback {
       }
 
       if (sleepTime > 0) {
-        await interruptibleSleep(sleepTime, signal);
+        await interruptibleSleep(Math.min(sleepTime, MAX_SCHEDULE_SLEEP_MS), signal);
       }
 
       if (signal.aborted) {
         break;
+      }
+
+      if (Date.now() < nextExec) {
+        continue;
       }
 
       // If TimeMatcher did not find the next occurrence of the schedule yet,
