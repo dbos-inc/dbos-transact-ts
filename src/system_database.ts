@@ -6273,7 +6273,7 @@ export class SystemDatabase {
   /** Throw DBOSWorkflowConflictError unless executionXid still owns the workflow; the row lock holds until commit, so no hand-off lands in between. */
   async #checkOwner(client: ClientBase, workflowID: string, executionXid: string): Promise<void> {
     const { rows } = await client.query<{ execution_xid: string | null }>(
-      `SELECT execution_xid FROM "${this.schemaName}".workflow_status WHERE workflow_uuid = $1 FOR KEY SHARE`,
+      `SELECT execution_xid FROM "${this.schemaName}".workflow_status WHERE workflow_uuid = $1 FOR NO KEY UPDATE`,
       [workflowID],
     );
     if (rows[0]?.execution_xid !== executionXid) {
