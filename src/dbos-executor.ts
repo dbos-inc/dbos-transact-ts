@@ -822,7 +822,7 @@ export class DBOSExecutor {
         } catch (err) {
           if (err instanceof DBOSWorkflowConflictError) {
             // This execution lost ownership of the workflow.
-            pendingAdopt = `Aborting duplicate execution of workflow ${workflowID}.`;
+            pendingAdopt = `Workflow ${workflowID} is no longer owned by this execution. Waiting for the owner's recorded outcome`;
           } else if (err instanceof DBOSWorkflowCancelledError) {
             if (err.workflowID === workflowID) {
               // The run observed its own cancellation. Park the execution.

@@ -730,6 +730,7 @@ const RETRY_SQLSTATE_PREFIXES = new Set([
 
 const RETRY_SQLSTATE_CODES = new Set([
   '40003', // statement_completion_unknown
+  '25P03', // idle_in_transaction_session_timeout: the server ended the session and rolled the transaction back
 ]);
 
 /**

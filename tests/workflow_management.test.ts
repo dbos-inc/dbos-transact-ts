@@ -445,11 +445,9 @@ describe('workflow-management-tests', () => {
   });
 
   test('test-active-id-released-before-outcome-write', async () => {
-    // The executor's running-workflow entry must be released BEFORE the
-    // terminal outcome write becomes durable. Otherwise: run 1's stale write
-    // is in flight, the workflow is cancelled and resumed, this same executor
-    // dequeues the resumed workflow, but the dispatch finds the stale entry,
-    // skips execution, and the workflow is stranded.
+    // A resume that lands while run 1's stale outcome write is still in flight:
+    // this same executor dequeues the resumed workflow and must run it to
+    // completion alongside the stale run, which parks once its write is refused.
     TestEndpoints.staleWriteRuns = 0;
     TestEndpoints.staleWriteEntered.clear();
     TestEndpoints.staleWriteReleaseRun1.clear();
@@ -478,8 +476,7 @@ describe('workflow-management-tests', () => {
 
       await DBOS.cancelWorkflow(wfid);
 
-      // Run 1 returns; its stale outcome write parks. The running-workflow
-      // entry must already be released at this point.
+      // Run 1 returns; its stale outcome write is held in flight here.
       TestEndpoints.staleWriteReleaseRun1.set();
       await parked.wait();
       await expect(DBOS.getWorkflowStatus(wfid)).resolves.toMatchObject({ status: StatusString.CANCELLED });
@@ -496,7 +493,7 @@ describe('workflow-management-tests', () => {
         }),
       ]);
       clearTimeout(timer);
-      expect(blocked).toBe(false); // resumed dispatch was blocked by a stale running-workflow entry
+      expect(blocked).toBe(false); // resumed dispatch waited on the stale run
 
       await expect(resumedHandle.getResult()).resolves.toBe('completed');
       expect(TestEndpoints.staleWriteRuns).toBe(2);
