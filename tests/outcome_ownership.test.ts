@@ -169,20 +169,13 @@ async function readOutcome(
   return rows[0];
 }
 
-// Hand the workflow to another execution that has already checkpointed the
-// blocked step, so the step's own write is refused for lost ownership. Stands
-// in for the concurrent execution that would have done both in production.
-async function plantConflictingCheckpoint(client: Client, workflowID: string, stepID: number | undefined) {
-  expect(stepID).toBeDefined();
+// Hand the workflow to another execution, so the blocked step's own write is
+// refused for lost ownership. Stands in for the concurrent execution that
+// would have claimed the workflow in production.
+async function stealOwnership(client: Client, workflowID: string) {
   await client.query(`UPDATE dbos.workflow_status SET execution_xid = 'another-execution' WHERE workflow_uuid = $1`, [
     workflowID,
   ]);
-  await client.query(
-    `INSERT INTO dbos.operation_outputs
-       (workflow_uuid, function_id, function_name, started_at_epoch_ms, completed_at_epoch_ms)
-     VALUES ($1, $2, 'blockedStep', 1, 1)`,
-    [workflowID, stepID],
-  );
 }
 
 // A run may record its outcome only while its workflow_status row is still
@@ -264,8 +257,8 @@ describe('workflow-outcome-ownership', () => {
       (error: Error) => ({ error }),
     );
 
-    // The run releases its running-workflow entry immediately before it tries
-    // to record its outcome. Waiting for that makes the check below assert
+    // The run releases its running-workflow entry when it parks, after its
+    // outcome write is refused. Waiting for that makes the check below assert
     // that the run parked, rather than merely that it had not gotten around to
     // the write yet.
     await retryUntilSuccess(() => {
@@ -364,7 +357,7 @@ describe('workflow-outcome-ownership', () => {
     // before parking, so a resume re-dispatched to this executor is not
     // blocked by the parked run, and then adopt the recorded outcome.
     const { handle, ctrl } = await startBlockedRun('blockedStepWorkflow');
-    await plantConflictingCheckpoint(systemDBClient, handle.workflowID, ctrl.stepID);
+    await stealOwnership(systemDBClient, handle.workflowID);
     // ENQUEUED with no queue name: nothing dequeues it, so the run stays
     // parked until this test records the outcome itself.
     await rewriteRow(handle.workflowID, StatusString.ENQUEUED);
@@ -450,7 +443,7 @@ describe('workflow-outcome-ownership', () => {
     // not as DBOSAwaitedWorkflowCancelledError, which is what an awaiter of
     // some other workflow would see.
     const { handle, ctrl } = await startBlockedRun('blockedStepWorkflow');
-    await plantConflictingCheckpoint(systemDBClient, handle.workflowID, ctrl.stepID);
+    await stealOwnership(systemDBClient, handle.workflowID);
     await rewriteRow(handle.workflowID, StatusString.CANCELLED);
     ctrl.release.set();
 
@@ -466,7 +459,7 @@ describe('workflow-outcome-ownership', () => {
     // Same perspective for a dead-lettered row: the duplicate execution must
     // report the dead-letter error rather than a completion.
     const { handle, ctrl } = await startBlockedRun('blockedStepWorkflow');
-    await plantConflictingCheckpoint(systemDBClient, handle.workflowID, ctrl.stepID);
+    await stealOwnership(systemDBClient, handle.workflowID);
     await rewriteRow(handle.workflowID, StatusString.MAX_RECOVERY_ATTEMPTS_EXCEEDED);
     ctrl.release.set();
 
@@ -569,7 +562,7 @@ describe('workflow-outcome-ownership-spans', () => {
     // error is what must set it: an adopted failure here previously left the
     // span status unset.
     const { handle, ctrl } = await startBlockedRun('blockedStepWorkflow');
-    await plantConflictingCheckpoint(systemDBClient, handle.workflowID, ctrl.stepID);
+    await stealOwnership(systemDBClient, handle.workflowID);
     const recorded = await encodeError('recorded failure');
     await rewriteRowWith(systemDBClient, handle.workflowID, StatusString.ERROR, {
       error: recorded.serializedValue,

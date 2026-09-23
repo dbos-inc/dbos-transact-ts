@@ -444,7 +444,7 @@ describe('workflow-management-tests', () => {
     expect(TestEndpoints.stepsCompleted).toBe(1); // cancelStep was already recorded, not re-run
   });
 
-  test('test-active-id-released-before-outcome-write', async () => {
+  test('test-resumed-dispatch-runs-alongside-a-stale-run', async () => {
     // A resume that lands while run 1's stale outcome write is still in flight:
     // this same executor dequeues the resumed workflow and must run it to
     // completion alongside the stale run, which parks once its write is refused.
@@ -493,7 +493,7 @@ describe('workflow-management-tests', () => {
         }),
       ]);
       clearTimeout(timer);
-      expect(blocked).toBe(false); // resumed dispatch waited on the stale run
+      expect(blocked).toBe(false); // the stale run did not block the resumed dispatch
 
       await expect(resumedHandle.getResult()).resolves.toBe('completed');
       expect(TestEndpoints.staleWriteRuns).toBe(2);

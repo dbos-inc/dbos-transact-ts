@@ -297,7 +297,7 @@ describe('recovery-tests', () => {
     BlockedRecovery.blocker.clear();
     const handle = await DBOS.startWorkflow(BlockedRecovery).blockedWorkflow('bob');
 
-    // The queue claims a workflow before dispatching it, so count dispatches that have finished checking whether it is running.
+    // The queue claims a workflow before dispatching it, so count dispatches as each one completes.
     let dispatched = 0;
     const executor = DBOSExecutor.globalInstance!;
     const dispatch = executor.dispatchDequeuedWorkflows.bind(executor);

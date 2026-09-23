@@ -489,6 +489,7 @@ describe('decoratorless-api-tests', () => {
 
 const WINNER_TX_OUTPUT = 'winner-tx-output';
 const ADOPTED_WF_OUTPUT = 'adopted-workflow-output';
+const WINNER_EXECUTION = 'another-execution';
 
 // A duplicate execution's step checkpoint must look older than ours, or the
 // system database's same-millisecond comparison would not see a conflict.
@@ -585,8 +586,8 @@ const probeState = { bodyRuns: 0, workflowBodyFinished: 0, claimSysdb: false, wi
 
 /**
  * Mid-transaction, a duplicate execution commits the app-database completion row.
- * When `claimSysdb` is set it also takes the system-database step checkpoint and
- * finishes the workflow, which is what forces this run to park instead of continuing.
+ * When `claimSysdb` is set it also takes the workflow as another execution, checkpoints
+ * this step, and finishes the workflow, which is what forces this run to park.
  */
 async function raceTransaction(): Promise<string> {
   probeState.bodyRuns += 1;
@@ -600,19 +601,28 @@ async function raceTransaction(): Promise<string> {
       `INSERT INTO dbos.transaction_completion (workflow_id, function_num, output) VALUES ($1, $2, $3)`,
       [workflowID, stepID, SuperJSON.stringify(WINNER_TX_OUTPUT)],
     );
+
+    if (probeState.claimSysdb) {
+      const winnerMs = winnerEpochMs();
+      await winner.query(
+        `INSERT INTO dbos.operation_outputs
+           (workflow_uuid, function_id, function_name, output, started_at_epoch_ms, completed_at_epoch_ms)
+         VALUES ($1, $2, 'raceTransaction', $3, $4, $4)`,
+        [workflowID, stepID, DBOSJSON.stringify(WINNER_TX_OUTPUT), winnerMs],
+      );
+      await winner.query(`UPDATE dbos.workflow_status SET execution_xid = $2 WHERE workflow_uuid = $1`, [
+        workflowID,
+        WINNER_EXECUTION,
+      ]);
+      const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+      probeState.winnerRecordedOutput = await sysdb.recordWorkflowOutput(
+        workflowID,
+        { output: DBOSJSON.stringify(ADOPTED_WF_OUTPUT) } as WorkflowStatusInternal,
+        WINNER_EXECUTION,
+      );
+    }
   } finally {
     await winner.end();
-  }
-
-  if (probeState.claimSysdb) {
-    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
-    const winnerMs = winnerEpochMs();
-    await sysdb.recordOperationResult(workflowID, stepID, 'raceTransaction', false, winnerMs, winnerMs, {
-      output: DBOSJSON.stringify(WINNER_TX_OUTPUT),
-    });
-    probeState.winnerRecordedOutput = await sysdb.recordWorkflowOutput(workflowID, {
-      output: DBOSJSON.stringify(ADOPTED_WF_OUTPUT),
-    } as WorkflowStatusInternal);
   }
 
   return 'loser-tx-output';
@@ -671,7 +681,7 @@ describe('datasource-duplicate-execution', () => {
 
     const result = await DBOS.withNextWorkflowID(wfid, () => raceWorkflow());
 
-    // The step conflict aborted this run mid-workflow, so its body never finished and
+    // The refused checkpoint parked this run mid-workflow, so its body never finished and
     // the recorded outcome was adopted in place of the `local:` value it would have made.
     expect(probeState.winnerRecordedOutput).toBe(true);
     expect(probeState.workflowBodyFinished).toBe(0);

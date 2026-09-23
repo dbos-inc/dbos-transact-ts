@@ -14,7 +14,7 @@ import {
 } from './helpers';
 import { randomUUID } from 'node:crypto';
 import { Client } from 'pg';
-import { DBOSWorkflowCancelledError } from '../src/error';
+import { DBOSStepNondeterminismError, DBOSWorkflowCancelledError } from '../src/error';
 
 class Handoff {
   static release = new Event();
@@ -22,6 +22,8 @@ class Handoff {
   static blockedCalls = 0;
   static afterCalls = 0;
   static recvCalls = 0;
+  static childCalls = 0;
+  static blockedStepID: number | undefined;
 
   static reset() {
     Handoff.release = new Event();
@@ -29,11 +31,14 @@ class Handoff {
     Handoff.blockedCalls = 0;
     Handoff.afterCalls = 0;
     Handoff.recvCalls = 0;
+    Handoff.childCalls = 0;
+    Handoff.blockedStepID = undefined;
   }
 
   @DBOS.step()
   static async blockedStep(): Promise<string> {
     Handoff.blockedCalls++;
+    Handoff.blockedStepID = DBOS.stepID;
     await Handoff.release.wait();
     return 'blocked';
   }
@@ -65,6 +70,60 @@ class Handoff {
     Handoff.started.set();
     await Handoff.release.wait();
     return 'done';
+  }
+
+  @DBOS.workflow()
+  static async sleepingWorkflow(): Promise<string> {
+    Handoff.started.set();
+    await Handoff.release.wait();
+    await DBOS.sleep(20_000);
+    return 'slept';
+  }
+
+  @DBOS.workflow()
+  static async childWorkflow(): Promise<string> {
+    Handoff.childCalls++;
+    return 'child';
+  }
+
+  @DBOS.workflow()
+  static async parentWorkflow(childID: string): Promise<string> {
+    Handoff.started.set();
+    await Handoff.release.wait();
+    return await DBOS.withNextWorkflowID(childID, () => Handoff.childWorkflow());
+  }
+}
+
+/** Hand the workflow to another execution without changing its status, as a resume's claim does. */
+async function stealOwnership(systemDatabaseUrl: string | undefined, workflowID: string) {
+  const client = new Client({ connectionString: systemDatabaseUrl });
+  await client.connect();
+  try {
+    await client.query(`UPDATE dbos.workflow_status SET execution_xid = 'another-execution' WHERE workflow_uuid = $1`, [
+      workflowID,
+    ]);
+  } finally {
+    await client.end();
+  }
+}
+
+/** Plant a checkpoint for the step this execution is about to record, with a different completion time. */
+async function plantForeignCheckpoint(
+  systemDatabaseUrl: string | undefined,
+  workflowID: string,
+  stepID: number,
+  name: string,
+) {
+  const client = new Client({ connectionString: systemDatabaseUrl });
+  await client.connect();
+  try {
+    await client.query(
+      `INSERT INTO dbos.operation_outputs (workflow_uuid, function_id, function_name, started_at_epoch_ms, completed_at_epoch_ms)
+       VALUES ($1, $2, $3, 1, 1)`,
+      [workflowID, stepID, name],
+    );
+  } finally {
+    await client.end();
   }
 }
 
@@ -514,5 +573,116 @@ describe('run-workflow-once-tests', () => {
       Handoff.release.set();
       spy.mockRestore();
     }
+  });
+  test('lost-ownership-parks-at-a-sleep', async () => {
+    // A stale execution reaching DBOS.sleep parks there instead of sleeping the full duration.
+    Handoff.reset();
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    const workflowID = randomUUID();
+    const handle = await DBOS.startWorkflow(Handoff, { workflowID }).sleepingWorkflow();
+    try {
+      await Handoff.started.wait();
+      await stealOwnership(config.systemDatabaseUrl, workflowID);
+      Handoff.release.set();
+      // Released before parking, well inside the 20s it would otherwise sleep.
+      await retryUntilSuccess(() => expect(sysdb.checkForRunningWorkflow(workflowID)).toBe(false));
+      expect(await DBOS.listWorkflowSteps(workflowID)).toHaveLength(0);
+    } finally {
+      Handoff.release.set();
+      // Nobody else will write an outcome: cancel so the parked execution returns.
+      await DBOS.cancelWorkflow(workflowID);
+    }
+    await expect(handle.getResult()).rejects.toThrow(DBOSWorkflowCancelledError);
+  });
+
+  test('stale-parent-cannot-start-an-inline-child', async () => {
+    // A parent that lost ownership can neither insert nor run a directly invoked child.
+    Handoff.reset();
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    const workflowID = randomUUID();
+    const childID = randomUUID();
+    const handle = await DBOS.startWorkflow(Handoff, { workflowID }).parentWorkflow(childID);
+    try {
+      await Handoff.started.wait();
+      await stealOwnership(config.systemDatabaseUrl, workflowID);
+      Handoff.release.set();
+      await retryUntilSuccess(() => expect(sysdb.checkForRunningWorkflow(workflowID)).toBe(false));
+      // Refused at the child's insert: no child row, no child run, no parent step.
+      expect(Handoff.childCalls).toBe(0);
+      expect(await DBOS.getWorkflowStatus(childID)).toBeNull();
+      expect(await DBOS.listWorkflowSteps(workflowID)).toHaveLength(0);
+    } finally {
+      Handoff.release.set();
+      await DBOS.cancelWorkflow(workflowID);
+    }
+    await expect(handle.getResult()).rejects.toThrow(DBOSWorkflowCancelledError);
+  });
+
+  test('step-recorded-twice-by-the-owner-is-nondeterminism', async () => {
+    // A checkpoint that finds its step already recorded with another completion time,
+    // while this execution still owns the workflow, is the workflow's own nondeterminism.
+    Handoff.reset();
+    const workflowID = randomUUID();
+    const handle = await DBOS.startWorkflow(Handoff, { workflowID }).cancelledWorkflow();
+    try {
+      await retryUntilSuccess(() => expect(Handoff.blockedCalls).toBe(1));
+      await plantForeignCheckpoint(config.systemDatabaseUrl, workflowID, Handoff.blockedStepID!, 'blockedStep');
+      Handoff.release.set();
+      await expect(handle.getResult()).rejects.toThrow(DBOSStepNondeterminismError);
+      // Still the owner, so the error is the workflow's recorded outcome.
+      expect((await DBOS.getWorkflowStatus(workflowID))?.status).toBe(StatusString.ERROR);
+    } finally {
+      Handoff.release.set();
+    }
+  });
+
+  test('step-recorded-over-a-child-row-is-nondeterminism', async () => {
+    // A child-start row and a step row at the same function ID can only come from the same
+    // execution recording different things, so the second write is nondeterminism.
+    Handoff.reset();
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    const handle = await DBOS.startWorkflow(Handoff).childWorkflow();
+    await expect(handle.getResult()).resolves.toBe('child');
+    const workflowID = handle.workflowID;
+    const now = Date.now();
+    await sysdb.recordOperationResult(workflowID, 10, 'child.wf', true, now, now, { childWorkflowID: randomUUID() });
+    // A far-future completion time, so it cannot equal the child row's.
+    await expect(
+      sysdb.recordOperationResult(workflowID, 10, 'a.step', true, now, now + 3_600_000, { output: '1' }),
+    ).rejects.toThrow(DBOSStepNondeterminismError);
+  });
+
+  test('running-entries-release-their-own-bucket', () => {
+    // A resumed workflow's executions can sit in different queues; each release removes only its own.
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    const workflowID = randomUUID();
+    const first = sysdb.registerRunningWorkflow(workflowID, 'bucket-a');
+    const second = sysdb.registerRunningWorkflow(workflowID, 'bucket-b');
+    // The older entry first: removing the most recent entry instead would drop bucket-b.
+    first.release();
+    first.release(); // idempotent
+    expect(sysdb.countRunningWorkflowsForQueue('bucket-a')).toBe(0);
+    expect(sysdb.countRunningWorkflowsForQueue('bucket-b')).toBe(1);
+    expect(sysdb.checkForRunningWorkflow(workflowID)).toBe(true);
+    second.release();
+    expect(sysdb.checkForRunningWorkflow(workflowID)).toBe(false);
+  });
+
+  test('dispatch-without-a-token-is-refused', async () => {
+    // A dequeued dispatch must carry the claim's token; without one nothing runs or registers.
+    Handoff.reset();
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    const workflowID = randomUUID();
+    const handle = await DBOS.startWorkflow(Handoff, { workflowID }).outcomeWorkflow();
+    try {
+      await Handoff.started.wait();
+      const status = (await sysdb.getWorkflowStatus(workflowID))!;
+      await expect(
+        DBOSExecutor.globalInstance!.executeDequeuedWorkflow(status, undefined as unknown as string),
+      ).rejects.toThrow('missing its execution token');
+    } finally {
+      Handoff.release.set();
+    }
+    await expect(handle.getResult()).resolves.toBe('done');
   });
 });

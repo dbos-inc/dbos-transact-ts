@@ -177,7 +177,7 @@ export class DBOSClient {
    * @param logger - An optional custom logger to which the client directs all its logging, replacing the built-in console logger.
    * @param applicationName - The application this client acts on behalf of. Always set this when several applications share this system database, so workflows, schedules, and queues created by this client are owned by that application.
    * @param observabilityQueryTimeoutMs - An optional statement timeout, in milliseconds, for read-only observability queries against the system database. Defaults to 30000. Set to 0 or less to disable the cap.
-   * @param systemDatabaseIdleTransactionTimeoutMs - An optional PostgreSQL `idle_in_transaction_session_timeout`, in milliseconds, for system database connections the client creates. Defaults to 60000. Set to 0 or less to leave the server's setting in place. Not applied to a custom `systemDatabasePool`.
+   * @param systemDatabaseIdleTransactionTimeoutMs - An optional PostgreSQL `idle_in_transaction_session_timeout`, in milliseconds, for connections of the system database pool the client creates. Defaults to 60000. Set to 0 or less to leave the server's setting in place. Not applied to a custom `systemDatabasePool`.
    * @returns A Promise that resolves with the DBOSClient instance.
    */
   static async create({

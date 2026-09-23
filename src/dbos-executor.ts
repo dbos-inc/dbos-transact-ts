@@ -185,10 +185,11 @@ export interface DBOSConfig {
    */
   observabilityQueryTimeoutMs?: number;
   /**
-   * PostgreSQL `idle_in_transaction_session_timeout`, in milliseconds, for system database connections
-   * DBOS creates: the server ends a session left idle inside an open transaction this long, releasing
-   * its locks. Defaults to 60000. Set to 0 or less to leave the server's setting in place. Not applied
-   * to a custom `systemDatabasePool` or when the connection string's `options` already sets it.
+   * PostgreSQL `idle_in_transaction_session_timeout`, in milliseconds, for connections of the system
+   * database pool DBOS creates: the server ends a session left idle inside an open transaction this
+   * long, releasing its locks. Defaults to 60000. Set to 0 or less to leave the server's setting in
+   * place. Not applied to a custom `systemDatabasePool` or when the connection string's `options`
+   * already sets it.
    */
   systemDatabaseIdleTransactionTimeoutMs?: number;
   /**

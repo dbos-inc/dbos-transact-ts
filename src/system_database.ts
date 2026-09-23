@@ -730,12 +730,12 @@ const RETRY_SQLSTATE_PREFIXES = new Set([
 
 const RETRY_SQLSTATE_CODES = new Set([
   '40003', // statement_completion_unknown
-  '25P03', // idle_in_transaction_session_timeout: the server ended the session and rolled the transaction back
+  '25P03', // idle_in_transaction_session_timeout, when the kill lands on an in-flight query; an idle kill surfaces as a message match below
 ]);
 
 /**
- * Kept out of the sets above: those feed `dbRetry`, which retries forever, and the step-recording
- * path maps 40001 to a workflow conflict. Only bulk maintenance work retries on these.
+ * Kept out of the sets above, which feed `dbRetry` and so retry forever. Only bulk maintenance
+ * work retries on these; every other path runs READ COMMITTED and never sees them.
  */
 const SERIALIZATION_SQLSTATE_CODES = new Set([
   '40001', // serialization_failure (MVCC conflict)
@@ -807,7 +807,7 @@ function* unwrapErrors(e: unknown): Generator<unknown, void, void> {
 }
 
 // "What could possibly go wrong?"
-function retriablePostgresException(err: unknown): boolean {
+export function retriablePostgresException(err: unknown): boolean {
   // Dig into AggregateErrors of various types
   for (const e of unwrapErrors(err)) {
     const anyErr = e as AnyErr;
@@ -2696,9 +2696,9 @@ export class SystemDatabase {
       for (const wfID of workflowIDs) {
         // Export workflow_status
         const statusResult = await client.query<workflow_status>(
-          // owner_xid is intentionally omitted: it is a transient transaction-ownership
-          // token, not logical workflow state, and a source database's xid is
-          // meaningless in the target.
+          // owner_xid and execution_xid are intentionally omitted: they are transient
+          // ownership tokens, not logical workflow state, and a source database's
+          // tokens are meaningless in the target.
           `SELECT
             ws.workflow_uuid, ws.status, ws.name, ws.authenticated_user, ws.assumed_role,
             ws.authenticated_roles,

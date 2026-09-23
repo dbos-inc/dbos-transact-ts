@@ -1,13 +1,14 @@
-import { Client, Pool, PoolClient } from 'pg';
+import { Client, DatabaseError, Pool, PoolClient } from 'pg';
+import { randomUUID } from 'node:crypto';
 import { DBOS, DBOSClient, DBOSConfig } from '../src';
 import { translateDbosConfig } from '../src/config';
 import { DBOSExecutor } from '../src/dbos-executor';
-import { DBOSQueryTimeoutError } from '../src/error';
+import { DBOSQueryTimeoutError, DBOSWorkflowCancelledError } from '../src/error';
 import { DBOSJSON, DBOSSerializer } from '../src/serialization';
-import { SystemDatabase } from '../src/system_database';
+import { retriablePostgresException, SystemDatabase } from '../src/system_database';
 import { GlobalLogger } from '../src/telemetry/logs';
 import { getClientConfig, sleepms } from '../src/utils';
-import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
+import { Event, generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
 
 describe('observability-query-timeout', () => {
   let config: DBOSConfig;
@@ -336,6 +337,18 @@ describe('observability-query-timeout', () => {
   });
 });
 
+class Stranded {
+  static release = new Event();
+  static started = new Event();
+
+  @DBOS.workflow()
+  static async blockedWorkflow(): Promise<string> {
+    Stranded.started.set();
+    await Stranded.release.wait();
+    return 'done';
+  }
+}
+
 describe('system-database-idle-transaction-timeout', () => {
   let config: DBOSConfig;
   let systemDatabaseUrl: string;
@@ -479,6 +492,17 @@ describe('system-database-idle-transaction-timeout', () => {
     }
   });
 
+  test('an idle-in-transaction kill is classified as retriable', () => {
+    // The kill can land as the response to an in-flight query, which carries the SQLSTATE.
+    const err = new DatabaseError('terminating connection due to idle-in-transaction timeout', 0, 'error');
+    err.code = '25P03';
+    expect(retriablePostgresException(err)).toBe(true);
+    // The usual shape: the session is already gone when the next query is sent.
+    expect(
+      retriablePostgresException(new Error('Client has encountered a connection error and is not queryable')),
+    ).toBe(true);
+  });
+
   test('a non-finite or out-of-range timeout is rejected', () => {
     for (const bad of [NaN, Infinity, 2_147_483_648]) {
       expect(() => translateDbosConfig({ ...config, systemDatabaseIdleTransactionTimeoutMs: bad })).toThrow(
@@ -496,6 +520,46 @@ describe('system-database-idle-transaction-timeout', () => {
       expect(sysdb.idleTransactionTimeoutMs).toBe(5000);
       expect(await sessionTimeoutMs(sysdb)).toBe('5000');
     } finally {
+      await DBOS.shutdown();
+    }
+  });
+
+  test('a stranded lock does not block cancel', async () => {
+    // A session frozen inside a transaction that holds a workflow's status row is
+    // ended by the server, so cancelling that workflow returns instead of hanging.
+    DBOS.setConfig({ ...config, systemDatabaseIdleTransactionTimeoutMs: 1000 });
+    await DBOS.launch();
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    const workflowID = randomUUID();
+    const handle = await DBOS.startWorkflow(Stranded, { workflowID }).blockedWorkflow();
+    try {
+      await Stranded.started.wait();
+      // The frozen client: from the pool, so it carries the timeout; it locks the row and never speaks again.
+      const holder = await sysdb.pool.connect();
+      holder.on('error', () => {});
+      try {
+        await holder.query('BEGIN');
+        await holder.query(`SELECT workflow_uuid FROM dbos.workflow_status WHERE workflow_uuid = $1 FOR UPDATE`, [
+          workflowID,
+        ]);
+        const begin = Date.now();
+        await DBOS.cancelWorkflow(workflowID);
+        const elapsed = Date.now() - begin;
+        // Waited on the stranded lock, and was released by the timeout, not by the holder.
+        expect(elapsed).toBeGreaterThan(500);
+        expect(elapsed).toBeLessThan(15000);
+        expect((await DBOS.getWorkflowStatus(workflowID))?.status).toBe('CANCELLED');
+        // The holder's session is gone; its next statement fails as a lost connection.
+        await expect(holder.query('SELECT 1')).rejects.toThrow();
+      } finally {
+        holder.release(true);
+      }
+      Stranded.release.set();
+      await expect(handle.getResult()).rejects.toThrow(DBOSWorkflowCancelledError);
+      // The pool replaced the killed connection.
+      expect((await sysdb.pool.query('SELECT 1 AS one')).rows[0]).toEqual({ one: 1 });
+    } finally {
+      Stranded.release.set();
       await DBOS.shutdown();
     }
   });
