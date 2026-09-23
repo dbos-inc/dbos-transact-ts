@@ -28,6 +28,7 @@ export interface workflow_status {
   forked_from?: string;
   was_forked_from?: boolean;
   owner_xid?: string;
+  execution_xid?: string | null; // Token of the execution that currently owns the workflow.
   parent_workflow_id?: string;
   serialization: SysDBSerializationFormat | null;
   delay_until_epoch_ms?: number | null;

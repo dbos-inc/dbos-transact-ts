@@ -11,6 +11,7 @@ import {
   DBOSInitializationError,
   DBOSError,
   DBOSQueryTimeoutError,
+  DBOSStepNondeterminismError,
 } from './error';
 import { GetPendingWorkflowsOutput, GetWorkflowsInput, StatusString, WorkflowIDReusePolicy } from './workflow';
 import {
@@ -35,6 +36,7 @@ import {
   sleepms,
 } from './utils';
 import { GlobalLogger } from './telemetry/logs';
+import { currentExecutionXid } from './context';
 import { QueueRateLimit, WorkflowQueue } from './wfqueue';
 import { AsyncResource } from 'async_hooks';
 import { createHash, randomUUID } from 'crypto';
@@ -130,6 +132,27 @@ export function validateObservabilityQueryTimeoutMs(value: number | undefined): 
     throw new Error(
       `observabilityQueryTimeoutMs must be a finite number no greater than ${MAX_STATEMENT_TIMEOUT_MS}, got ${value}`,
     );
+  }
+}
+
+// Bounds how long a frozen or unreachable client can hold system database locks.
+export const DEFAULT_IDLE_TRANSACTION_TIMEOUT_MS = 60_000;
+
+/** The timeout is rendered into a `SET idle_in_transaction_session_timeout`, which takes only an in-range integer. */
+export function validateIdleTransactionTimeoutMs(value: number | undefined): void {
+  if (value !== undefined && (!Number.isFinite(value) || value > MAX_STATEMENT_TIMEOUT_MS)) {
+    throw new Error(
+      `systemDatabaseIdleTransactionTimeoutMs must be a finite number no greater than ${MAX_STATEMENT_TIMEOUT_MS}, got ${value}`,
+    );
+  }
+}
+
+/** Whether the connection string already sets idle_in_transaction_session_timeout through libpq options. */
+function setsIdleTransactionTimeout(databaseUrl: string): boolean {
+  try {
+    return new URL(databaseUrl).searchParams.get('options')?.includes('idle_in_transaction_session_timeout') ?? false;
+  } catch {
+    return false;
   }
 }
 
@@ -606,6 +629,14 @@ class NotificationMap<T> {
   }
 }
 
+/** One execution registered as running in this process. */
+export interface RunningWorkflowEntry {
+  promise: Promise<unknown>;
+  queueName?: string;
+  queuePartitionKey?: string;
+  release: () => void;
+}
+
 interface InsertWorkflowResult {
   status: string;
   name: string;
@@ -946,6 +977,8 @@ export class SystemDatabase {
   readonly notificationCoalesceMs: number = DEFAULT_NOTIFICATION_COALESCE_MS;
   // Statement timeout for observability reads, in ms; undefined disables the cap.
   readonly observabilityQueryTimeoutMs: number | undefined;
+  // idle_in_transaction_session_timeout set on each connection of a pool we own, in ms; undefined leaves the server's.
+  readonly idleTransactionTimeoutMs: number | undefined;
   // Coalesced NOTIFY payloads keyed by channel, flushed by the notifier loop; soft-private so tests can drive a flush.
   private pendingNotifications: Map<string, Set<string>> = new Map();
   #notifierActive: boolean = false;
@@ -961,10 +994,8 @@ export class SystemDatabase {
    */
   readonly pollLimiter: Semaphore;
 
-  readonly runningWorkflowMap: Map<
-    string,
-    { promise: Promise<unknown>; queueName?: string; queuePartitionKey?: string }
-  > = new Map(); // Map from workflowID to workflow promise, queue name and partition key
+  /** Executions running in this process, by workflow ID; a re-dispatch runs alongside its stale execution, which parks at its next write. */
+  readonly runningWorkflowMap: Map<string, RunningWorkflowEntry[]> = new Map();
 
   readonly #cancelWatchers: Map<string, Set<AbortController>> = new Map();
   #cancelPollerLoop: Promise<void> | undefined = undefined;
@@ -998,11 +1029,18 @@ export class SystemDatabase {
     // The application this handle acts for; undefined writes unclaimed rows.
     readonly appName?: string,
     observabilityQueryTimeoutMs: number = DEFAULT_OBSERVABILITY_QUERY_TIMEOUT_MS,
+    idleTransactionTimeoutMs: number = DEFAULT_IDLE_TRANSACTION_TIMEOUT_MS,
   ) {
     this.schemaName = schemaName;
     this.shouldUseDBNotifications = useListenNotify;
     this.notificationCoalesceMs = notificationCoalesceMs;
     validateObservabilityQueryTimeoutMs(observabilityQueryTimeoutMs);
+    validateIdleTransactionTimeoutMs(idleTransactionTimeoutMs);
+    // Floor at 1ms: PostgreSQL reads 0 as "no timeout".
+    this.idleTransactionTimeoutMs =
+      idleTransactionTimeoutMs > 0 && !systemDatabasePool && !setsIdleTransactionTimeout(systemDatabaseUrl)
+        ? Math.max(1, Math.round(idleTransactionTimeoutMs))
+        : undefined;
     // Floor at 1ms: PostgreSQL reads 0 as "no timeout", the loosest cap rather than the tightest.
     this.observabilityQueryTimeoutMs =
       observabilityQueryTimeoutMs > 0 ? Math.max(1, Math.round(observabilityQueryTimeoutMs)) : undefined;
@@ -1032,6 +1070,17 @@ export class SystemDatabase {
       this.pool.on('error', (err: Error) => {
         this.logger.warn(`Unexpected error in pool: ${err}`);
       });
+      const timeoutMs = this.idleTransactionTimeoutMs;
+      if (timeoutMs !== undefined) {
+        // Queued ahead of the borrower's first query; outside any transaction, so it persists for the session.
+        this.pool.on('connect', (client: PoolClient) => {
+          client.query(`SET idle_in_transaction_session_timeout = ${timeoutMs}`).catch((err: Error) => {
+            this.logger.warn(
+              `Could not set idle_in_transaction_session_timeout on a system database connection: ${err}`,
+            );
+          });
+        });
+      }
     }
   }
 
@@ -1368,6 +1417,7 @@ export class SystemDatabase {
     await this.pool.query(
       `UPDATE "${this.schemaName}".workflow_status
        SET status = $1,
+           execution_xid = NULL,
            deduplication_id = NULL,
            started_at_epoch_ms = NULL,
            queue_name = NULL,
@@ -1575,48 +1625,68 @@ export class SystemDatabase {
   }
 
   @dbRetry()
-  async recordWorkflowOutput(workflowID: string, status: WorkflowStatusInternal): Promise<boolean> {
+  async recordWorkflowOutput(
+    workflowID: string,
+    status: WorkflowStatusInternal,
+    executionXid?: string,
+  ): Promise<boolean> {
     const client = await this.#connect();
     try {
-      return await this.#recordWorkflowOutcome(client, workflowID, StatusString.SUCCESS, { output: status.output });
+      return await this.#recordWorkflowOutcome(
+        client,
+        workflowID,
+        StatusString.SUCCESS,
+        { output: status.output },
+        executionXid,
+      );
     } finally {
       client.release();
     }
   }
 
   @dbRetry()
-  async recordWorkflowError(workflowID: string, status: WorkflowStatusInternal): Promise<boolean> {
+  async recordWorkflowError(
+    workflowID: string,
+    status: WorkflowStatusInternal,
+    executionXid?: string,
+  ): Promise<boolean> {
     const client = await this.#connect();
     try {
-      return await this.#recordWorkflowOutcome(client, workflowID, StatusString.ERROR, { error: status.error });
+      return await this.#recordWorkflowOutcome(
+        client,
+        workflowID,
+        StatusString.ERROR,
+        { error: status.error },
+        executionXid,
+      );
     } finally {
       client.release();
     }
   }
 
   // Record a workflow's terminal outcome (SUCCESS or ERROR), reporting whether
-  // the write landed. The write applies only to a PENDING row: a run owns its
-  // workflow's outcome exactly as long as the row says that run is what the
-  // workflow is doing. (Note: this does not prevent a write when another
-  // concurrent execution is already running and the status is PENDING. However,
-  // both executions should be deterministic and idempotent.)
+  // the write landed. The write applies only to a PENDING row still owned by
+  // executionXid, which defaults to the calling execution's token; a caller
+  // outside the workflow's context passes it explicitly or goes unchecked.
   //
   // Returning false means the row was CANCELLED, dead-lettered, already
-  // terminal, handed to another execution (ENQUEUED/DELAYED, e.g. by a
-  // concurrent resume), or deleted; the caller resolves which by awaiting the
-  // recorded outcome.
+  // terminal, handed to another execution (e.g. by a concurrent resume or
+  // recovery), or deleted; the caller resolves which by awaiting the recorded
+  // outcome.
   async #recordWorkflowOutcome(
     client: PoolClient,
     workflowID: string,
     status: (typeof StatusString)[keyof typeof StatusString],
     outcome: { output?: string | null; error?: string | null },
+    executionXid: string | undefined,
   ): Promise<boolean> {
+    executionXid ??= currentExecutionXid(workflowID);
     let committed = false;
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
       const rowCount = await this.updateWorkflowStatus(client, workflowID, status, {
         update: { resetDeduplicationID: true, setCompletedAt: true },
-        where: { status: StatusString.PENDING },
+        where: { status: StatusString.PENDING, executionXid },
         throwOnFailure: false,
       });
       if (rowCount === 0) {
@@ -1672,6 +1742,7 @@ export class SystemDatabase {
       `UPDATE "${this.schemaName}".workflow_status
        SET started_at_epoch_ms = NULL,
            status = $1,
+           execution_xid = NULL,
            updated_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint,
            queue_name = COALESCE(queue_name, $2)
        WHERE status = $3
@@ -1700,7 +1771,9 @@ export class SystemDatabase {
       const client = await this.#connect();
       try {
         // Check if the operation has been done before for OAOO (only do this inside a workflow).
-        const json = await this.#runAndRecordResult(client, DBOS_FUNCNAME_GETSTATUS, callerID, callerFN, funcGetStatus);
+        const json = await this.#inTransaction(client, () =>
+          this.#runAndRecordResult(client, DBOS_FUNCNAME_GETSTATUS, callerID, callerFN, funcGetStatus),
+        );
         return parseStatus(json);
       } finally {
         client.release();
@@ -1746,6 +1819,7 @@ export class SystemDatabase {
       updateName?: string;
       queueName?: string;
       resetStartedAtEpochMs?: boolean;
+      executionXid?: string | null;
     },
   ): Promise<void> {
     const client = await this.#connect();
@@ -1756,6 +1830,7 @@ export class SystemDatabase {
           resetNameTo: internalOptions?.updateName,
           queueName: internalOptions?.queueName,
           resetStartedAtEpochMs: internalOptions?.resetStartedAtEpochMs,
+          executionXid: internalOptions?.executionXid,
         },
       });
     } finally {
@@ -1809,15 +1884,17 @@ export class SystemDatabase {
   ): Promise<void> {
     const client = await this.#connect();
     try {
-      await this.recordOperationResultInternal(
-        client,
-        workflowID,
-        functionID,
-        functionName,
-        checkConflict,
-        startTimeEpochMs,
-        endTimeEpochMs,
-        options,
+      await this.#inTransaction(client, () =>
+        this.recordOperationResultInternal(
+          client,
+          workflowID,
+          functionID,
+          functionName,
+          checkConflict,
+          startTimeEpochMs,
+          endTimeEpochMs,
+          options,
+        ),
       );
     } finally {
       client.release();
@@ -1936,7 +2013,7 @@ export class SystemDatabase {
   async #cancelWorkflows(workflowIDs: string[]): Promise<void> {
     await this.pool.query(
       `UPDATE "${this.schemaName}".workflow_status
-       SET status = $1, queue_name = NULL, deduplication_id = NULL, started_at_epoch_ms = NULL,
+       SET status = $1, execution_xid = NULL, queue_name = NULL, deduplication_id = NULL, started_at_epoch_ms = NULL,
            updated_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint,
            completed_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint
        WHERE workflow_uuid = ANY($2)
@@ -1953,7 +2030,7 @@ export class SystemDatabase {
   async resumeWorkflows(workflowIDs: string[], queueName?: string): Promise<void> {
     await this.pool.query(
       `UPDATE "${this.schemaName}".workflow_status
-       SET status = $1, queue_name = $2, recovery_attempts = 0,
+       SET status = $1, execution_xid = NULL, queue_name = $2, recovery_attempts = 0,
            workflow_deadline_epoch_ms = NULL, deduplication_id = NULL,
            started_at_epoch_ms = NULL,
            updated_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint,
@@ -2270,7 +2347,7 @@ export class SystemDatabase {
       }
       const { rowCount } = await client.query(
         `UPDATE "${schema}".workflow_status
-         SET status = $1, queue_name = $2, queue_partition_key = $3, recovery_attempts = 0,
+         SET status = $1, execution_xid = NULL, queue_name = $2, queue_partition_key = $3, recovery_attempts = 0,
              workflow_deadline_epoch_ms = NULL, deduplication_id = NULL, started_at_epoch_ms = NULL,
              completed_at = NULL, output = NULL, error = NULL,
              updated_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint${setVersion}
@@ -2840,42 +2917,50 @@ export class SystemDatabase {
   }
 
   // ==================== Awaiting Workflows ====================
-  registerRunningWorkflow(
-    workflowID: string,
-    workflowPromise: Promise<unknown>,
-    onSettled: () => void,
-    queueName?: string,
-    queuePartitionKey?: string,
-  ) {
+  /** Register one execution; the returned release is idempotent, so it can run both before a park and once the run settles. */
+  registerRunningWorkflow(workflowID: string, queueName?: string, queuePartitionKey?: string): RunningWorkflowEntry {
+    const entry: RunningWorkflowEntry = {
+      promise: Promise.resolve(),
+      queueName,
+      queuePartitionKey,
+      release: () => {
+        const entries = this.runningWorkflowMap.get(workflowID);
+        const index = entries?.indexOf(entry) ?? -1;
+        if (index < 0) return;
+        entries!.splice(index, 1);
+        if (entries!.length === 0) this.runningWorkflowMap.delete(workflowID);
+      },
+    };
+    const entries = this.runningWorkflowMap.get(workflowID);
+    if (entries) entries.push(entry);
+    else this.runningWorkflowMap.set(workflowID, [entry]);
+    return entry;
+  }
+
+  /** Track an execution's promise for shutdown, releasing its entry when it settles. */
+  trackRunningWorkflow(workflowID: string, entry: RunningWorkflowEntry, workflowPromise: Promise<unknown>) {
     // Need to await for the workflow and capture errors.
-    const awaitWorkflowPromise = workflowPromise
+    entry.promise = workflowPromise
       .catch((error) => {
         const outcome = this.#destroyed ? 'was abandoned by shutdown' : 'failed';
         this.logger.debug(`Workflow ${workflowID} ${outcome}: ${error}`);
       })
       .finally(() => {
-        onSettled();
+        entry.release();
       });
-    this.runningWorkflowMap.set(workflowID, {
-      promise: awaitWorkflowPromise,
-      queueName,
-      queuePartitionKey,
-    });
   }
 
   checkForRunningWorkflow(workflowID: string): boolean {
     return this.runningWorkflowMap.has(workflowID);
   }
 
-  clearRunningWorkflow(workflowID: string): void {
-    this.runningWorkflowMap.delete(workflowID);
-  }
-
   /** Workflows this worker is running for a queue, across every partition of it. */
   countRunningWorkflowsForQueue(queueName: string): number {
     let count = 0;
-    for (const entry of this.runningWorkflowMap.values()) {
-      if (entry.queueName === queueName) count++;
+    for (const entries of this.runningWorkflowMap.values()) {
+      for (const entry of entries) {
+        if (entry.queueName === queueName) count++;
+      }
     }
     return count;
   }
@@ -2883,8 +2968,10 @@ export class SystemDatabase {
   /** Workflows this worker is running for one partition of a queue. */
   countRunningWorkflowsForPartition(queueName: string, queuePartitionKey?: string): number {
     let count = 0;
-    for (const entry of this.runningWorkflowMap.values()) {
-      if (entry.queueName === queueName && entry.queuePartitionKey === queuePartitionKey) count++;
+    for (const entries of this.runningWorkflowMap.values()) {
+      for (const entry of entries) {
+        if (entry.queueName === queueName && entry.queuePartitionKey === queuePartitionKey) count++;
+      }
     }
     return count;
   }
@@ -2899,9 +2986,10 @@ export class SystemDatabase {
       // Each pass picks up workflows a draining workflow started, and awaits any given run only once.
       const awaited = new Set<Promise<unknown>>();
       for (;;) {
-        const pending = Array.from(this.runningWorkflowMap.values(), (entry) => entry.promise).filter(
-          (promise) => !awaited.has(promise),
-        );
+        const pending = Array.from(this.runningWorkflowMap.values())
+          .flat()
+          .map((entry) => entry.promise)
+          .filter((promise) => !awaited.has(promise));
         if (pending.length === 0) break;
         for (const promise of pending) awaited.add(promise);
         let timer: ReturnType<typeof setTimeout> | undefined;
@@ -3860,7 +3948,7 @@ export class SystemDatabase {
     // SKIP LOCKED leaves a row a dequeue or a peer's sweep holds for the next sweep.
     const { rows } = await this.pool.query<{ workflow_uuid: string }>(
       `UPDATE "${this.schemaName}".workflow_status
-       SET status = $1, queue_name = NULL, deduplication_id = NULL, started_at_epoch_ms = NULL,
+       SET status = $1, execution_xid = NULL, queue_name = NULL, deduplication_id = NULL, started_at_epoch_ms = NULL,
            updated_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint,
            completed_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint
        WHERE workflow_uuid IN (
@@ -3925,6 +4013,8 @@ export class SystemDatabase {
     queuePartitionKey?: string,
     localRunningCount: number = 0,
     partitionLocalRunningCount: number = 0,
+    // Written to every claimed row: the dispatches of this claim own their executions.
+    executionXid: string | null = null,
   ): Promise<string[]> {
     const claimedIDs: string[] = [];
     const partitionParams: string[] = queuePartitionKey !== undefined ? [queuePartitionKey] : [];
@@ -4081,6 +4171,7 @@ export class SystemDatabase {
           StatusString.ENQUEUED,
           // Claim an unclaimed row for this application; a nameless dequeuer leaves ownership untouched.
           this.appName ?? null,
+          executionXid,
         ];
         // Re-check ownership alongside status, as the partitioned claim guard does.
         const claimScope = this.#appNameFilter('application_name', this.appName, updateParams);
@@ -4088,6 +4179,7 @@ export class SystemDatabase {
         const flippedResult = await client.query<{ workflow_uuid: string }>(
           `UPDATE "${this.schemaName}".workflow_status
            SET status = $1,
+               execution_xid = $8,
                executor_id = $2,
                application_version = $3,
                started_at_epoch_ms = (EXTRACT(epoch FROM now()) * 1000)::bigint,
@@ -4131,6 +4223,8 @@ export class SystemDatabase {
     executorID: string,
     appVersion: string,
     maxTasks: number = Infinity,
+    // Written to every claimed row: the dispatches of this claim own their executions.
+    executionXid: string | null = null,
   ): Promise<string[]> {
     if (
       queue.partitionConcurrency !== 1 ||
@@ -4255,12 +4349,14 @@ export class SystemDatabase {
         appVersion,
         // Claim the row, as the unpartitioned dequeue does.
         this.appName ?? null,
+        executionXid,
       ];
       const flipScope = this.#appNameFilter('application_name', this.appName, flipParams);
       // Start the workflows by marking them PENDING; RETURNING reports exactly the rows this statement flipped.
       const flippedResult = await client.query<{ workflow_uuid: string }>(
         `UPDATE "${this.schemaName}".workflow_status
          SET status = $1,
+             execution_xid = $8,
              executor_id = $2,
              application_version = $6,
              started_at_epoch_ms = (EXTRACT(epoch FROM now()) * 1000)::bigint,
@@ -5920,8 +6016,9 @@ export class SystemDatabase {
           schedule_name,
           debounce_deadline_epoch_ms,
           is_debounced,
-          application_name
-        ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29)
+          application_name,
+          execution_xid
+        ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30)
         ON CONFLICT (workflow_uuid)
           -- A no-op update, so an existing row comes back unchanged for the caller to inspect.
           DO UPDATE SET owner_xid = workflow_status.owner_xid
@@ -5958,6 +6055,8 @@ export class SystemDatabase {
           initStatus.debounceDeadlineEpochMS ?? null,
           initStatus.isDebounced ?? false,
           initStatus.applicationName ?? null,
+          // A direct start runs at once, so its insert token also owns the execution.
+          initStatus.status === StatusString.PENDING ? ownerXid : null,
         ],
       );
       if (rows.length === 0) {
@@ -6011,10 +6110,12 @@ export class SystemDatabase {
         resetNameTo?: string;
         setCompletedAt?: boolean;
         clearCompletedAt?: boolean;
+        executionXid?: string | null;
       };
       where?: {
         status?: (typeof StatusString)[keyof typeof StatusString];
         notStatus?: (typeof StatusString)[keyof typeof StatusString];
+        executionXid?: string;
       };
       throwOnFailure?: boolean;
     } = {},
@@ -6024,7 +6125,7 @@ export class SystemDatabase {
     const nowMsExpr = `(EXTRACT(EPOCH FROM now()) * 1000)::bigint`;
     let setClause = `SET status=$2, updated_at=${nowMsExpr}`;
     let whereClause = `WHERE workflow_uuid=$1`;
-    const args: (string | number | undefined)[] = [workflowID, status];
+    const args: (string | number | null | undefined)[] = [workflowID, status];
 
     const update = options.update ?? {};
     if (update.resetRecoveryAttempts) {
@@ -6064,6 +6165,11 @@ export class SystemDatabase {
       setClause += `, completed_at = NULL`;
     }
 
+    if (update.executionXid !== undefined) {
+      const param = args.push(update.executionXid);
+      setClause += `, execution_xid=$${param}`;
+    }
+
     const where = options.where ?? {};
     if (where.status) {
       const param = args.push(where.status);
@@ -6072,6 +6178,10 @@ export class SystemDatabase {
     if (where.notStatus) {
       const param = args.push(where.notStatus);
       whereClause += ` AND status!=$${param}`;
+    }
+    if (where.executionXid !== undefined) {
+      const param = args.push(where.executionXid);
+      whereClause += ` AND execution_xid=$${param}`;
     }
 
     const result = await client.query<workflow_status>(
@@ -6101,6 +6211,10 @@ export class SystemDatabase {
       serialization?: string | null;
     } = {},
   ): Promise<void> {
+    const executionXid = currentExecutionXid(workflowID);
+    if (executionXid !== undefined) {
+      await this.#checkOwner(client, workflowID, executionXid);
+    }
     try {
       const out = await client.query<operation_outputs>(
         `INSERT INTO "${this.schemaName}".operation_outputs
@@ -6123,35 +6237,57 @@ export class SystemDatabase {
           this.appName ?? null,
         ],
       );
+      // A row already there with another completion time is this execution's own doing
+      // (a retry carries the same time), so it is nondeterminism, not a duplicate.
       if (
         checkConflict &&
         (out?.rowCount ?? 0) > 0 &&
         Number(out?.rows?.[0]?.completed_at_epoch_ms) !== endTimeEpochMs
       ) {
-        DBOSExecutor.globalInstance?.logger.warn(
-          `Step output for ${workflowID}(${functionID}):${functionName} already recorded`,
-        );
-        throw new DBOSWorkflowConflictError(workflowID);
-      }
-      if (Number(out?.rows?.[0]?.completed_at_epoch_ms) === endTimeEpochMs) {
-        // Winning the checkpoint proves this executor is advancing the workflow:
-        // claim the executor_id marker (skips the write when already ours).
-        await client.query(
-          `UPDATE "${this.schemaName}".workflow_status
-             SET executor_id = $1
-           WHERE workflow_uuid = $2 AND executor_id IS DISTINCT FROM $1`,
-          [globalParams.executorID, workflowID],
-        );
+        throw new DBOSStepNondeterminismError(workflowID, functionID);
       }
     } catch (error) {
-      const err: DatabaseError = error as DatabaseError;
-      if (err.code === '40001' || err.code === '23505') {
-        // Serialization and primary key conflict (Postgres).
-        throw new DBOSWorkflowConflictError(workflowID);
-      } else {
-        throw err;
+      if ((error as DatabaseError).code === '23505') {
+        throw new DBOSStepNondeterminismError(workflowID, functionID);
       }
+      throw error;
     }
+  }
+
+  /** Run `fn` in a READ COMMITTED transaction on `client`, so an ownership check holds its row lock until the write commits. */
+  async #inTransaction<T>(client: PoolClient, fn: () => Promise<T>): Promise<T> {
+    await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
+    let result: T;
+    try {
+      result = await fn();
+    } catch (e) {
+      // Swallowed: a rollback failure must not mask why we are rolling back.
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw e;
+    }
+    await client.query('COMMIT');
+    return result;
+  }
+
+  /** Throw DBOSWorkflowConflictError unless executionXid still owns the workflow; the row lock holds until commit, so no hand-off lands in between. */
+  async #checkOwner(client: ClientBase, workflowID: string, executionXid: string): Promise<void> {
+    const { rows } = await client.query<{ execution_xid: string | null }>(
+      `SELECT execution_xid FROM "${this.schemaName}".workflow_status WHERE workflow_uuid = $1 FOR KEY SHARE`,
+      [workflowID],
+    );
+    if (rows[0]?.execution_xid !== executionXid) {
+      throw new DBOSWorkflowConflictError(workflowID);
+    }
+  }
+
+  /** The workflow's current ownership token; null if unowned or missing. */
+  @dbRetry()
+  async getWorkflowOwner(workflowID: string): Promise<string | null> {
+    const { rows } = await this.pool.query<{ execution_xid: string | null }>(
+      `SELECT execution_xid FROM "${this.schemaName}".workflow_status WHERE workflow_uuid = $1`,
+      [workflowID],
+    );
+    return rows[0]?.execution_xid ?? null;
   }
 
   async #getOperationResultAndThrowIfCancelled(
@@ -6245,18 +6381,20 @@ export class SystemDatabase {
         }
         return JSON.parse(res.output!) as number;
       }
-      await this.recordOperationResultInternal(
-        client,
-        workflowID,
-        functionID,
-        DBOS_FUNCNAME_SLEEP,
-        false,
-        startTimeMs,
-        recordCompletionAtDeadline ? endTimeMs : startTimeMs,
-        {
-          output: DBOSPortableJSON.stringify(endTimeMs),
-          serialization: DBOSPortableJSON.name(),
-        },
+      await this.#inTransaction(client, () =>
+        this.recordOperationResultInternal(
+          client,
+          workflowID,
+          functionID,
+          DBOS_FUNCNAME_SLEEP,
+          false,
+          startTimeMs,
+          recordCompletionAtDeadline ? endTimeMs : startTimeMs,
+          {
+            output: DBOSPortableJSON.stringify(endTimeMs),
+            serialization: DBOSPortableJSON.name(),
+          },
+        ),
       );
       return endTimeMs;
     } finally {

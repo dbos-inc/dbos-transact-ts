@@ -21,7 +21,7 @@ export type { WorkflowQueue } from './wfqueue';
 
 export * as Error from './error';
 
-export { DBOSWorkflowConflictError } from './error';
+export { DBOSWorkflowConflictError, DBOSStepNondeterminismError } from './error';
 
 export { PortableWorkflowError } from '../schemas/system_db_schema';
 

@@ -1,4 +1,4 @@
-import { Client, PoolClient } from 'pg';
+import { Client, Pool, PoolClient } from 'pg';
 import { DBOS, DBOSClient, DBOSConfig } from '../src';
 import { translateDbosConfig } from '../src/config';
 import { DBOSExecutor } from '../src/dbos-executor';
@@ -6,7 +6,7 @@ import { DBOSQueryTimeoutError } from '../src/error';
 import { DBOSJSON, DBOSSerializer } from '../src/serialization';
 import { SystemDatabase } from '../src/system_database';
 import { GlobalLogger } from '../src/telemetry/logs';
-import { getClientConfig } from '../src/utils';
+import { getClientConfig, sleepms } from '../src/utils';
 import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
 
 describe('observability-query-timeout', () => {
@@ -330,6 +330,182 @@ describe('observability-query-timeout', () => {
       const sysdb = (client as unknown as { systemDatabase: SystemDatabase }).systemDatabase;
       expect(sysdb.observabilityQueryTimeoutMs).toBe(5000);
       await expect(client.listWorkflows({})).resolves.toBeDefined();
+    } finally {
+      await client.destroy();
+    }
+  });
+});
+
+describe('system-database-idle-transaction-timeout', () => {
+  let config: DBOSConfig;
+  let systemDatabaseUrl: string;
+
+  beforeAll(async () => {
+    config = generateDBOSTestConfig();
+    systemDatabaseUrl = translateDbosConfig(config).systemDatabaseUrl;
+    await setUpDBOSTestSysDb(config);
+  });
+
+  function makeSysDb(idleTransactionTimeoutMs?: number, url: string = systemDatabaseUrl, pool?: Pool): SystemDatabase {
+    return new SystemDatabase(
+      url,
+      new GlobalLogger(),
+      DBOSJSON,
+      2,
+      pool,
+      'dbos',
+      false,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      idleTransactionTimeoutMs,
+    );
+  }
+
+  /** The session's setting in milliseconds, read from a connection of the handle's own pool. */
+  async function sessionTimeoutMs(sysdb: SystemDatabase): Promise<string> {
+    const client = await sysdb.pool.connect();
+    try {
+      const { rows } = await client.query<{ setting: string }>(
+        `SELECT setting FROM pg_settings WHERE name = 'idle_in_transaction_session_timeout'`,
+      );
+      return rows[0].setting;
+    } finally {
+      client.release();
+    }
+  }
+
+  test('system database connections default to a 60 second idle transaction timeout', async () => {
+    const sysdb = makeSysDb();
+    try {
+      expect(sysdb.idleTransactionTimeoutMs).toBe(60000);
+      expect(await sessionTimeoutMs(sysdb)).toBe('60000');
+    } finally {
+      await sysdb.destroy();
+    }
+  });
+
+  test('a configured timeout is applied to every connection', async () => {
+    const sysdb = makeSysDb(12345);
+    const held: PoolClient[] = [];
+    try {
+      // Two connections at once, so the second is a fresh session too.
+      held.push(await sysdb.pool.connect(), await sysdb.pool.connect());
+      for (const client of held) {
+        const { rows } = await client.query<{ setting: string }>(
+          `SELECT setting FROM pg_settings WHERE name = 'idle_in_transaction_session_timeout'`,
+        );
+        expect(rows[0].setting).toBe('12345');
+      }
+    } finally {
+      for (const client of held) client.release();
+      await sysdb.destroy();
+    }
+  });
+
+  test('the timeout survives a rolled-back transaction', async () => {
+    const sysdb = makeSysDb(12345);
+    try {
+      const client = await sysdb.pool.connect();
+      try {
+        await client.query('BEGIN');
+        await client.query('ROLLBACK');
+      } finally {
+        client.release();
+      }
+      expect(await sessionTimeoutMs(sysdb)).toBe('12345');
+    } finally {
+      await sysdb.destroy();
+    }
+  });
+
+  test('a non-positive timeout leaves the server setting in place', async () => {
+    const baseline = makeSysDb(0);
+    try {
+      expect(baseline.idleTransactionTimeoutMs).toBeUndefined();
+      const serverDefault = await sessionTimeoutMs(baseline);
+      const negative = makeSysDb(-1);
+      try {
+        expect(negative.idleTransactionTimeoutMs).toBeUndefined();
+        expect(await sessionTimeoutMs(negative)).toBe(serverDefault);
+      } finally {
+        await negative.destroy();
+      }
+    } finally {
+      await baseline.destroy();
+    }
+  });
+
+  test('a timeout already set through the connection string options wins', async () => {
+    const url = new URL(systemDatabaseUrl);
+    url.searchParams.set('options', '-c idle_in_transaction_session_timeout=7000');
+    const sysdb = makeSysDb(12345, url.toString());
+    try {
+      expect(sysdb.idleTransactionTimeoutMs).toBeUndefined();
+      expect(await sessionTimeoutMs(sysdb)).toBe('7000');
+    } finally {
+      await sysdb.destroy();
+    }
+  });
+
+  test('a caller-supplied pool is left alone', async () => {
+    const pool = new Pool({ connectionString: systemDatabaseUrl, max: 1 });
+    const sysdb = makeSysDb(12345, systemDatabaseUrl, pool);
+    try {
+      expect(sysdb.idleTransactionTimeoutMs).toBeUndefined();
+      expect(await sessionTimeoutMs(sysdb)).not.toBe('12345');
+    } finally {
+      await sysdb.destroy();
+      await pool.end();
+    }
+  });
+
+  test('the server ends a transaction left idle past the timeout', async () => {
+    const sysdb = makeSysDb(200);
+    try {
+      const client = await sysdb.pool.connect();
+      // The server's termination arrives as an error event while no query is running.
+      client.on('error', () => {});
+      try {
+        await client.query('BEGIN');
+        await sleepms(1000);
+        await expect(client.query('SELECT 1')).rejects.toThrow();
+      } finally {
+        client.release(true);
+      }
+    } finally {
+      await sysdb.destroy();
+    }
+  });
+
+  test('a non-finite or out-of-range timeout is rejected', () => {
+    for (const bad of [NaN, Infinity, 2_147_483_648]) {
+      expect(() => translateDbosConfig({ ...config, systemDatabaseIdleTransactionTimeoutMs: bad })).toThrow(
+        'systemDatabaseIdleTransactionTimeoutMs',
+      );
+      expect(() => makeSysDb(bad)).toThrow('systemDatabaseIdleTransactionTimeoutMs');
+    }
+  });
+
+  test('a configured timeout reaches the system database', async () => {
+    DBOS.setConfig({ ...config, systemDatabaseIdleTransactionTimeoutMs: 5000 });
+    await DBOS.launch();
+    try {
+      const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+      expect(sysdb.idleTransactionTimeoutMs).toBe(5000);
+      expect(await sessionTimeoutMs(sysdb)).toBe('5000');
+    } finally {
+      await DBOS.shutdown();
+    }
+  });
+
+  test('a client timeout reaches the system database', async () => {
+    const client = await DBOSClient.create({ systemDatabaseUrl, systemDatabaseIdleTransactionTimeoutMs: 5000 });
+    try {
+      const sysdb = (client as unknown as { systemDatabase: SystemDatabase }).systemDatabase;
+      expect(sysdb.idleTransactionTimeoutMs).toBe(5000);
+      expect(await sessionTimeoutMs(sysdb)).toBe('5000');
     } finally {
       await client.destroy();
     }

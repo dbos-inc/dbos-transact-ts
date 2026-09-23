@@ -169,11 +169,14 @@ async function readOutcome(
   return rows[0];
 }
 
-// Plant the checkpoint the blocked step is about to write, with a different
-// completion time so the step's own write is refused as a conflict. Stands in
-// for the concurrent execution that would have written it in production.
+// Hand the workflow to another execution that has already checkpointed the
+// blocked step, so the step's own write is refused for lost ownership. Stands
+// in for the concurrent execution that would have done both in production.
 async function plantConflictingCheckpoint(client: Client, workflowID: string, stepID: number | undefined) {
   expect(stepID).toBeDefined();
+  await client.query(`UPDATE dbos.workflow_status SET execution_xid = 'another-execution' WHERE workflow_uuid = $1`, [
+    workflowID,
+  ]);
   await client.query(
     `INSERT INTO dbos.operation_outputs
        (workflow_uuid, function_id, function_name, started_at_epoch_ms, completed_at_epoch_ms)

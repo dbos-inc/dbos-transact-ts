@@ -5,7 +5,7 @@ import path from 'path';
 import assert from 'assert';
 import { maskDatabaseUrl } from './database_utils';
 import { DBOSJSON } from './serialization';
-import { validateObservabilityQueryTimeoutMs } from './system_database';
+import { validateIdleTransactionTimeoutMs, validateObservabilityQueryTimeoutMs } from './system_database';
 
 export const dbosConfigFilePath = 'dbos-config.yaml';
 
@@ -158,6 +158,7 @@ export function translateDbosConfig(options: Partial<DBOSConfig>): DBOSConfigInt
     throw new Error('notificationCoalesceMs must be a finite number at least 1 millisecond');
   }
   validateObservabilityQueryTimeoutMs(options.observabilityQueryTimeoutMs);
+  validateIdleTransactionTimeoutMs(options.systemDatabaseIdleTransactionTimeoutMs);
   const systemDatabaseUrl = getSystemDatabaseUrl({
     system_database_url: options.systemDatabaseUrl,
     name: options.name,
@@ -188,6 +189,7 @@ export function translateDbosConfig(options: Partial<DBOSConfig>): DBOSConfigInt
     useListenNotify: options.useListenNotify ?? true,
     notificationCoalesceMs: options.notificationCoalesceMs,
     observabilityQueryTimeoutMs: options.observabilityQueryTimeoutMs,
+    systemDatabaseIdleTransactionTimeoutMs: options.systemDatabaseIdleTransactionTimeoutMs,
     runMigrations: options.runMigrations ?? true,
   };
 }
