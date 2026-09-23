@@ -535,9 +535,10 @@ export class TimeMatcher {
 
   constructor(pattern: string, timezone?: string) {
     const fields = parseCrontab(pattern);
+    // An empty timezone means the process's local timezone
+    this.#timezone = timezone || undefined;
     // Fail fast on an invalid timezone
-    getFormatter(timezone);
-    this.#timezone = timezone;
+    getFormatter(this.#timezone);
     this.#seconds = [...fields[0]].sort((a, b) => a - b);
     this.#minutes = [...fields[1]].sort((a, b) => a - b);
     this.#hours = [...fields[2]].sort((a, b) => a - b);
