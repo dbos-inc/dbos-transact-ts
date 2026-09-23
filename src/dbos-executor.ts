@@ -82,6 +82,7 @@ import {
   listWorkflowSteps,
   rewindWorkflow,
   toWorkflowStatus,
+  workflowTimeoutLoop,
 } from './workflow_management';
 import { maskDatabaseUrl } from './database_utils';
 import { Pool } from 'pg';
@@ -281,6 +282,8 @@ export class DBOSExecutor {
   readonly serializer: DBOSSerializer;
 
   #wfqEnded?: Promise<void> = undefined;
+  #timeoutSweepAbort?: AbortController = undefined;
+  #timeoutSweepEnded?: Promise<void> = undefined;
 
   readonly executorID: string = globalParams.executorID;
 
@@ -375,8 +378,17 @@ export class DBOSExecutor {
     await this.systemDatabase.awaitRunningWorkflows(timeoutMS);
   }
 
+  /** Stop the workflow timeout sweep. Called after the shutdown drain, so timeouts still fire while workflows finish. */
+  async stopWorkflowTimeoutSweep() {
+    this.#timeoutSweepAbort?.abort();
+    await this.#timeoutSweepEnded;
+    this.#timeoutSweepAbort = undefined;
+    this.#timeoutSweepEnded = undefined;
+  }
+
   async destroy() {
     try {
+      await this.stopWorkflowTimeoutSweep();
       await this.systemDatabase.destroy();
       await this.logger.destroy();
     } catch (err) {
@@ -585,7 +597,6 @@ export class DBOSExecutor {
       applicationName: ownerAppName,
     };
 
-    let $deadlineEpochMS: number | undefined = undefined;
     let shouldExecute: boolean | undefined = undefined;
 
     // Record the workflow's status and inputs before it runs, unless a replayed child start already recorded its outcome.
@@ -619,7 +630,6 @@ export class DBOSExecutor {
       }
       ires = {
         status: claimed.status,
-        deadlineEpochMS: claimed.deadlineEpochMS,
         shouldExecuteOnThisExecutor: true,
         serialization: claimed.serialization,
       };
@@ -671,33 +681,7 @@ export class DBOSExecutor {
       }
     }
 
-    $deadlineEpochMS = ires.deadlineEpochMS;
     shouldExecute = ires.shouldExecuteOnThisExecutor;
-
-    async function callPromiseWithTimeout(
-      callPromise: Promise<R>,
-      deadlineEpochMS: number,
-      sysdb: SystemDatabase,
-    ): Promise<R> {
-      let timeoutID: ReturnType<typeof setTimeout> | undefined = undefined;
-      const timeoutResult = {};
-      const timeoutPromise = new Promise<R>((_, reject) => {
-        timeoutID = setTimeout(reject, deadlineEpochMS - Date.now(), timeoutResult);
-      });
-
-      try {
-        return await Promise.race([callPromise, timeoutPromise]);
-      } catch (err) {
-        if (err === timeoutResult) {
-          await sysdb.cancelWorkflows([workflowID]);
-          await callPromise.catch(() => {});
-          throw new DBOSWorkflowCancelledError(workflowID);
-        }
-        throw err;
-      } finally {
-        clearTimeout(timeoutID);
-      }
-    }
 
     // Release the running-workflow map entry before the terminal outcome
     // becomes durable: once it is visible, a resume can re-dispatch this
@@ -799,15 +783,7 @@ export class DBOSExecutor {
                 authenticatedUser,
                 authenticatedRoles,
               },
-              () => {
-                const callPromise = wf.call(params.configuredInstance, ...args);
-
-                if ($deadlineEpochMS === undefined) {
-                  return callPromise;
-                } else {
-                  return callPromiseWithTimeout(callPromise, $deadlineEpochMS, this.systemDatabase);
-                }
-              },
+              () => wf.call(params.configuredInstance, ...args),
             );
           });
 
@@ -1283,6 +1259,8 @@ export class DBOSExecutor {
 
   async initEventReceivers(listenQueues: string[] | null) {
     this.#wfqEnded = wfQueueRunner.dispatchLoop(this, listenQueues, this.config.maxConcurrentQueueDispatches);
+    this.#timeoutSweepAbort = new AbortController();
+    this.#timeoutSweepEnded = workflowTimeoutLoop(this.systemDatabase, this.logger, this.#timeoutSweepAbort.signal);
 
     for (const lcl of getLifecycleListeners()) {
       await lcl.initialize?.();

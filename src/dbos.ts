@@ -664,6 +664,7 @@ export class DBOS {
       if (executor) {
         await executor.deactivateEventReceivers();
         await executor.awaitRunningWorkflows(drainTimeoutMS);
+        await executor.stopWorkflowTimeoutSweep();
       }
 
       // Stop the conductor
