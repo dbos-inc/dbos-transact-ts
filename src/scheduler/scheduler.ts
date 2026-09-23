@@ -257,24 +257,17 @@ export class DynamicSchedulerLoop implements DBOSLifecycleCallback {
 
     while (!signal.aborted) {
       const nextExec = timeMatcher.nextWakeupTime(lastExec).getTime();
-      let sleepTime = nextExec - Date.now();
+      const untilNext = nextExec - Date.now();
 
       // Apply jitter to prevent thundering herd
-      if (sleepTime > 0) {
-        const maxJitter = Math.min(sleepTime / 10, 10000);
-        sleepTime += Math.random() * maxJitter;
-      }
+      const wakeTime = untilNext > 0 ? nextExec + Math.random() * Math.min(untilNext / 10, 10000) : nextExec;
 
-      if (sleepTime > 0) {
-        await interruptibleSleep(Math.min(sleepTime, MAX_SCHEDULE_SLEEP_MS), signal);
+      while (!signal.aborted && Date.now() < wakeTime) {
+        await interruptibleSleep(Math.min(wakeTime - Date.now(), MAX_SCHEDULE_SLEEP_MS), signal);
       }
 
       if (signal.aborted) {
         break;
-      }
-
-      if (Date.now() < nextExec) {
-        continue;
       }
 
       // If TimeMatcher did not find the next occurrence of the schedule yet,
