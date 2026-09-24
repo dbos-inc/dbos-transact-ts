@@ -2,7 +2,9 @@ name: Publish current branch to npm
 
 on:
   workflow_dispatch:
-  workflow_call:
+  push:
+    branches:
+      - main
 
 jobs:
   publish:
