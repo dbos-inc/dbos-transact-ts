@@ -303,8 +303,8 @@ describe('recovery-tests', () => {
     const dispatch = executor.dispatchDequeuedWorkflows.bind(executor);
     const dispatchSpy = jest
       .spyOn(executor, 'dispatchDequeuedWorkflows')
-      .mockImplementation(async (workflowIDs, executionXid) => {
-        await dispatch(workflowIDs, executionXid);
+      .mockImplementation(async (workflowIDs, ownerXid) => {
+        await dispatch(workflowIDs, ownerXid);
         if (workflowIDs.includes(handle.workflowID)) dispatched += 1;
       });
 

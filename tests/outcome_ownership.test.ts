@@ -173,7 +173,7 @@ async function readOutcome(
 // refused for lost ownership. Stands in for the concurrent execution that
 // would have claimed the workflow in production.
 async function stealOwnership(client: Client, workflowID: string) {
-  await client.query(`UPDATE dbos.workflow_status SET execution_xid = 'another-execution' WHERE workflow_uuid = $1`, [
+  await client.query(`UPDATE dbos.workflow_status SET owner_xid = 'another-execution' WHERE workflow_uuid = $1`, [
     workflowID,
   ]);
 }

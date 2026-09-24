@@ -261,7 +261,7 @@ export interface InternalWorkflowParams extends WorkflowParams {
   /** Set only by queue dispatch: the claimed row this run was started from. */
   readonly dequeuedStatus?: WorkflowStatusInternal;
   /** Set with dequeuedStatus: the token the claim wrote, never re-read from the row, where a later claim's token is not ours. */
-  readonly executionXid?: string;
+  readonly ownerXid?: string;
 }
 
 /** Options for assembling an ENQUEUED workflow row without persisting it. */
@@ -627,14 +627,14 @@ export class DBOSExecutor {
       }
     }
     let ires: Awaited<ReturnType<SystemDatabase['initWorkflowStatus']>>;
-    // A direct start's insert token doubles as its execution token; a dispatch brings its claim's.
-    let executionXid: string;
+    // A direct start's creator token also owns the execution; a dispatch brings its claim's.
+    let ownerXid: string;
     const claimed = params.dequeuedStatus;
     if (claimed) {
-      if (params.executionXid === undefined) {
-        throw new DBOSError(`Dispatch of workflow ${workflowID} is missing its execution token`);
+      if (params.ownerXid === undefined) {
+        throw new DBOSError(`Dispatch of workflow ${workflowID} is missing its ownership token`);
       }
-      executionXid = params.executionXid;
+      ownerXid = params.ownerXid;
       // The claim counted this dispatch; dead-letter the workflow if that exhausted its attempts.
       const claimedAttempts = claimed.recoveryAttempts ?? 0;
       if (
@@ -658,13 +658,13 @@ export class DBOSExecutor {
       };
       serializationType = ires.serialization === DBOSPortableJSON.name() ? 'portable' : undefined;
     } else {
-      executionXid = randomUUID();
+      ownerXid = randomUUID();
       try {
         if (callerID !== undefined && callerFunctionID !== undefined) {
           const now = Date.now();
           ires = await this.systemDatabase.initChildWorkflowStatus(
             internalStatus,
-            executionXid,
+            ownerXid,
             callerID,
             callerFunctionID,
             now,
@@ -674,7 +674,7 @@ export class DBOSExecutor {
         } else {
           ires = await this.systemDatabase.initWorkflowStatus(
             internalStatus,
-            executionXid,
+            ownerXid,
             undefined,
             params.workflowIDReusePolicy,
           );
@@ -718,7 +718,7 @@ export class DBOSExecutor {
       const sererr = await serializeResErrorWithSerializer(err, eserializer, ires.serialization ?? null);
       internalStatus.error = sererr.serializedValue;
       internalStatus.status = StatusString.ERROR;
-      const recorded = await exec.systemDatabase.recordWorkflowError(workflowID, internalStatus, executionXid);
+      const recorded = await exec.systemDatabase.recordWorkflowError(workflowID, internalStatus, ownerXid);
       if (recorded) {
         exec.logger.error(err);
       } else {
@@ -791,7 +791,7 @@ export class DBOSExecutor {
                 workflowTimeoutMS: undefined, // Becomes deadline
                 deadlineEpochMS,
                 workflowId: workflowID,
-                executionXid,
+                ownerXid,
                 logger: this.ctxLogger,
                 curWFFunctionId: undefined,
                 activeStreamReads: 0,
@@ -814,7 +814,7 @@ export class DBOSExecutor {
           result = funcResult.deserialized;
           internalStatus.output = funcResult.stringified;
           internalStatus.status = StatusString.SUCCESS;
-          const recorded = await this.systemDatabase.recordWorkflowOutput(workflowID, internalStatus, executionXid);
+          const recorded = await this.systemDatabase.recordWorkflowOutput(workflowID, internalStatus, ownerXid);
           if (recorded) {
             span.setStatus({ code: SpanStatusCode.OK });
             return result;
@@ -1298,7 +1298,7 @@ export class DBOSExecutor {
   }
 
   /** Fetch the claimed workflows' statuses in as few round trips as possible, then dispatch each. */
-  async dispatchDequeuedWorkflows(workflowIDs: string[], executionXid: string): Promise<void> {
+  async dispatchDequeuedWorkflows(workflowIDs: string[], ownerXid: string): Promise<void> {
     let statuses: Map<string, WorkflowStatusInternal>;
     try {
       statuses = await this.systemDatabase.getWorkflowStatuses(workflowIDs);
@@ -1313,7 +1313,7 @@ export class DBOSExecutor {
         if (!status) {
           throw new DBOSError(`workflow status not found`);
         }
-        await this.executeDequeuedWorkflow(status, executionXid);
+        await this.executeDequeuedWorkflow(status, ownerXid);
       } catch (e) {
         this.logger.warn(`Could not execute workflow with id ${workflowID}: ${(e as Error).message}`);
       }
@@ -1327,12 +1327,9 @@ export class DBOSExecutor {
    * (PENDING, executor, deadline, recovery_attempts) and this status was read back from
    * that row, so re-upserting it only rewrites the columns it just read.
    *
-   * `executionXid` is the token the claim wrote, never re-read from the row: a later claim's token there is not ours.
+   * `ownerXid` is the token the claim wrote, never re-read from the row: a later claim's token there is not ours.
    */
-  async executeDequeuedWorkflow(
-    wfStatus: WorkflowStatusInternal,
-    executionXid: string,
-  ): Promise<WorkflowHandle<unknown>> {
+  async executeDequeuedWorkflow(wfStatus: WorkflowStatusInternal, ownerXid: string): Promise<WorkflowHandle<unknown>> {
     const workflowID = wfStatus.workflowUUID;
     if (!wfStatus.input) {
       this.logger.error(`Failed to find inputs for workflowUUID: ${workflowID}`);
@@ -1349,7 +1346,7 @@ export class DBOSExecutor {
       await this.systemDatabase.recordWorkflowError(
         workflowID,
         { ...wfStatus, error: sererr.serializedValue },
-        executionXid,
+        ownerXid,
       );
       throw err;
     }
@@ -1383,7 +1380,7 @@ export class DBOSExecutor {
             executeWorkflow: true,
             deadlineEpochMS: wfStatus.deadlineEpochMS,
             dequeuedStatus: wfStatus,
-            executionXid,
+            ownerXid,
           },
           ...inputs,
         );

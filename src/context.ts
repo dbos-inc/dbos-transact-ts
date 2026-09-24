@@ -40,18 +40,18 @@ export interface DBOSLocalCtx extends DBOSContextOptions {
   curStepFunctionId?: number; // If currently in a step, its function ID
   stepStatus?: StepStatus; // If currently in a step, its public status object
   curTxFunctionId?: number; // If currently in a tx, its function ID
-  executionXid?: string; // Token this execution wrote to the row's execution_xid; checkpoints land only while it still matches
+  ownerXid?: string; // Token this execution wrote to the row's owner_xid; checkpoints land only while it still matches
 }
 
 /** The ownership token of the execution writing for `workflowID`, or undefined when there is nothing to check. */
-export function currentExecutionXid(workflowID: string): string | undefined {
+export function currentOwnerXid(workflowID: string): string | undefined {
   const ctx = getCurrentContextStore();
   if (ctx === undefined || ctx.workflowId !== workflowID) return undefined;
   // Every execution path sets a token before its workflow runs; a context without one is a bug.
-  if (ctx.executionXid === undefined) {
-    throw new DBOSError(`Workflow ${workflowID} is writing without an execution token`);
+  if (ctx.ownerXid === undefined) {
+    throw new DBOSError(`Workflow ${workflowID} is writing without an ownership token`);
   }
-  return ctx.executionXid;
+  return ctx.ownerXid;
 }
 
 export function isWithinWorkflowCtx(ctx: DBOSLocalCtx) {

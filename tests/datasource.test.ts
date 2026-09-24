@@ -599,7 +599,7 @@ async function raceTransaction(): Promise<string> {
     );
 
     if (probeState.claimSysdb) {
-      await winner.query(`UPDATE dbos.workflow_status SET execution_xid = $2 WHERE workflow_uuid = $1`, [
+      await winner.query(`UPDATE dbos.workflow_status SET owner_xid = $2 WHERE workflow_uuid = $1`, [
         workflowID,
         WINNER_EXECUTION,
       ]);

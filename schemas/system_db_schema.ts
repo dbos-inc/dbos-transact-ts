@@ -27,8 +27,8 @@ export interface workflow_status {
   queue_partition_key?: string; // Partition key for partitioned queues.
   forked_from?: string;
   was_forked_from?: boolean;
-  owner_xid?: string;
-  execution_xid?: string | null; // Token of the execution that currently owns the workflow.
+  owner_xid?: string | null; // Token of the execution that currently owns the workflow.
+  creator_xid?: string; // Token of the insert that created the row. Immutable.
   parent_workflow_id?: string;
   serialization: SysDBSerializationFormat | null;
   delay_until_epoch_ms?: number | null;

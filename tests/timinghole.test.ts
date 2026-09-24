@@ -104,7 +104,7 @@ async function stealOwnership(systemDatabaseUrl: string | undefined, workflowID:
   const client = new Client({ connectionString: systemDatabaseUrl });
   await client.connect();
   try {
-    await client.query(`UPDATE dbos.workflow_status SET execution_xid = 'another-execution' WHERE workflow_uuid = $1`, [
+    await client.query(`UPDATE dbos.workflow_status SET owner_xid = 'another-execution' WHERE workflow_uuid = $1`, [
       workflowID,
     ]);
   } finally {
@@ -472,6 +472,8 @@ describe('run-workflow-once-tests', () => {
 
       await expect(handle.getResult()).resolves.toBe('blockedafter');
       await expect(DBOS.retrieveWorkflow(workflowID).getResult()).resolves.toBe('blockedafter');
+      // Recording the outcome released ownership.
+      expect(await sysdb.getWorkflowOwner(workflowID)).toBeNull();
       // The stale execution's step result was refused, and it never ran on past it.
       expect(Handoff.blockedCalls).toBe(2);
       expect(Handoff.afterCalls).toBe(1);
@@ -559,10 +561,9 @@ describe('run-workflow-once-tests', () => {
       const client = new Client({ connectionString: config.systemDatabaseUrl });
       await client.connect();
       try {
-        await client.query(
-          `UPDATE dbos.workflow_status SET execution_xid = 'another-execution' WHERE workflow_uuid = $1`,
-          [workflowID],
-        );
+        await client.query(`UPDATE dbos.workflow_status SET owner_xid = 'another-execution' WHERE workflow_uuid = $1`, [
+          workflowID,
+        ]);
       } finally {
         await client.end();
       }
@@ -674,7 +675,7 @@ describe('run-workflow-once-tests', () => {
         const realRelease = client.release.bind(client);
         client.query = (async (text: unknown, values?: unknown[]) => {
           const result = await realQuery(text, values);
-          if (typeof text === 'string' && text.startsWith('SELECT execution_xid') && values?.[0] === workflowID) {
+          if (typeof text === 'string' && text.startsWith('SELECT owner_xid') && values?.[0] === workflowID) {
             checkHeld.set();
             await releaseCheck.wait();
           }
@@ -737,7 +738,7 @@ describe('run-workflow-once-tests', () => {
       const status = (await sysdb.getWorkflowStatus(workflowID))!;
       await expect(
         DBOSExecutor.globalInstance!.executeDequeuedWorkflow(status, undefined as unknown as string),
-      ).rejects.toThrow('missing its execution token');
+      ).rejects.toThrow('missing its ownership token');
     } finally {
       Handoff.release.set();
     }

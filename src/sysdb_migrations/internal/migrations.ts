@@ -1147,10 +1147,10 @@ $$ LANGUAGE plpgsql;`,
         `CREATE INDEX ${isCockroach ? '' : 'CONCURRENTLY'} IF NOT EXISTS "idx_workflow_status_deadline" ON "${schemaName}"."workflow_status" ("workflow_deadline_epoch_ms") WHERE "status" IN ('ENQUEUED', 'PENDING', 'DELAYED') AND "workflow_deadline_epoch_ms" IS NOT NULL`,
       ],
     },
-    // Token of the execution that currently owns the workflow; NULL when none does.
+    // Token of the insert that created the row; owner_xid holds the executing owner's.
     {
-      name: '123_workflow_status_execution_xid',
-      pg: [`ALTER TABLE "${schemaName}"."workflow_status" ADD COLUMN IF NOT EXISTS "execution_xid" TEXT DEFAULT NULL`],
+      name: '123_workflow_status_creator_xid',
+      pg: [`ALTER TABLE "${schemaName}"."workflow_status" ADD COLUMN IF NOT EXISTS "creator_xid" TEXT DEFAULT NULL`],
     },
   ];
 }

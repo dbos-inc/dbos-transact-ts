@@ -585,7 +585,7 @@ describe('debouncer-tests', () => {
     const sysDB = getSysDB();
     const originalInit = sysDB.initWorkflowStatus.bind(sysDB);
     let dedupInitCalls = 0;
-    const spy = jest.spyOn(sysDB, 'initWorkflowStatus').mockImplementation(async (initStatus, ownerXid) => {
+    const spy = jest.spyOn(sysDB, 'initWorkflowStatus').mockImplementation(async (initStatus, creatorXid) => {
       // The first enqueue throws the replay-form error; subsequent enqueues behave normally.
       if (initStatus.deduplicationID === dedupIDForKey('portable-key')) {
         dedupInitCalls++;
@@ -593,7 +593,7 @@ describe('debouncer-tests', () => {
           throw replayForm;
         }
       }
-      return originalInit(initStatus, ownerXid);
+      return originalInit(initStatus, creatorXid);
     });
 
     try {
@@ -745,7 +745,7 @@ describe('debouncer-tests', () => {
     const sysDB = getSysDB();
     const originalInit = sysDB.initWorkflowStatus.bind(sysDB);
     let initCalls = 0;
-    const spy = jest.spyOn(sysDB, 'initWorkflowStatus').mockImplementation(async (initStatus, ownerXid) => {
+    const spy = jest.spyOn(sysDB, 'initWorkflowStatus').mockImplementation(async (initStatus, creatorXid) => {
       // The first enqueue's insert loses the dedup race after the pinned ID was already consumed; later calls behave normally.
       if (initStatus.deduplicationID === dedupIDForKey('pin-race-key')) {
         initCalls++;
@@ -753,7 +753,7 @@ describe('debouncer-tests', () => {
           throw new DBOSQueueDuplicatedError('racer', 'queue', 'dedup');
         }
       }
-      return originalInit(initStatus, ownerXid);
+      return originalInit(initStatus, creatorXid);
     });
 
     try {

@@ -36,7 +36,7 @@ import {
   sleepms,
 } from './utils';
 import { GlobalLogger } from './telemetry/logs';
-import { currentExecutionXid } from './context';
+import { currentOwnerXid } from './context';
 import { QueueRateLimit, WorkflowQueue } from './wfqueue';
 import { AsyncResource } from 'async_hooks';
 import { createHash, randomUUID } from 'crypto';
@@ -644,7 +644,7 @@ interface InsertWorkflowResult {
   config_name: string;
   queue_name: string | null;
   executor_id: string | null;
-  owner_xid: string | null;
+  creator_xid: string | null;
   serialization: string | null;
 }
 
@@ -1281,7 +1281,7 @@ export class SystemDatabase {
   /** Runs on `client` if given, joining its transaction; otherwise in its own retried transaction. */
   async initWorkflowStatus(
     initStatus: WorkflowStatusInternal,
-    ownerXid: string | null,
+    creatorXid: string | null,
     client?: ClientBase,
     reusePolicy: WorkflowIDReusePolicy = 'return-existing',
   ): Promise<{
@@ -1290,15 +1290,15 @@ export class SystemDatabase {
     serialization: SysDBSerializationFormat | null;
   }> {
     if (client !== undefined) {
-      return await this.#initWorkflowStatusInternal(client, initStatus, ownerXid, reusePolicy);
+      return await this.#initWorkflowStatusInternal(client, initStatus, creatorXid, reusePolicy);
     }
-    return await this.initWorkflowStatusStandalone(initStatus, ownerXid, reusePolicy);
+    return await this.initWorkflowStatusStandalone(initStatus, creatorXid, reusePolicy);
   }
 
   @dbRetry()
   private async initWorkflowStatusStandalone(
     initStatus: WorkflowStatusInternal,
-    ownerXid: string | null,
+    creatorXid: string | null,
     reusePolicy: WorkflowIDReusePolicy,
   ): Promise<{
     status: string;
@@ -1309,7 +1309,7 @@ export class SystemDatabase {
     let shouldCommit = false;
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
-      const result = await this.#initWorkflowStatusInternal(client, initStatus, ownerXid, reusePolicy);
+      const result = await this.#initWorkflowStatusInternal(client, initStatus, creatorXid, reusePolicy);
       // If there is an existing DB record and we aren't here to recover it, leave it be.
       shouldCommit = result.shouldExecuteOnThisExecutor;
       return result;
@@ -1331,7 +1331,7 @@ export class SystemDatabase {
   @dbRetry()
   async initChildWorkflowStatus(
     initStatus: WorkflowStatusInternal,
-    ownerXid: string,
+    creatorXid: string,
     parentWorkflowID: string,
     parentFunctionID: number,
     startTimeEpochMs: number,
@@ -1346,7 +1346,7 @@ export class SystemDatabase {
     let shouldCommit = false;
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
-      const result = await this.#initWorkflowStatusInternal(client, initStatus, ownerXid, reusePolicy);
+      const result = await this.#initWorkflowStatusInternal(client, initStatus, creatorXid, reusePolicy);
       await this.recordOperationResultInternal(
         client,
         parentWorkflowID,
@@ -1376,15 +1376,15 @@ export class SystemDatabase {
   async #initWorkflowStatusInternal(
     client: ClientBase,
     initStatus: WorkflowStatusInternal,
-    ownerXid: string | null,
+    creatorXid: string | null,
     reusePolicy: WorkflowIDReusePolicy,
   ): Promise<{
     status: string;
     shouldExecuteOnThisExecutor: boolean;
     serialization: SysDBSerializationFormat | null;
   }> {
-    const resRow = await this.insertWorkflowStatus(client, initStatus, ownerXid);
-    if (reusePolicy === 'reject' && (ownerXid === null || resRow.owner_xid !== ownerXid)) {
+    const resRow = await this.insertWorkflowStatus(client, initStatus, creatorXid);
+    if (reusePolicy === 'reject' && (creatorXid === null || resRow.creator_xid !== creatorXid)) {
       throw new DBOSWorkflowIDInUseError(initStatus.workflowUUID, resRow.status, resRow.name);
     }
     if (resRow.name !== initStatus.workflowName) {
@@ -1406,7 +1406,7 @@ export class SystemDatabase {
     // The upsert above already set executor assignment for a row we own.
     return {
       status: resRow.status,
-      shouldExecuteOnThisExecutor: ownerXid === resRow.owner_xid,
+      shouldExecuteOnThisExecutor: creatorXid === resRow.creator_xid,
       serialization: resRow.serialization,
     };
   }
@@ -1418,7 +1418,7 @@ export class SystemDatabase {
     await this.pool.query(
       `UPDATE "${this.schemaName}".workflow_status
        SET status = $1,
-           execution_xid = NULL,
+           owner_xid = NULL,
            deduplication_id = NULL,
            started_at_epoch_ms = NULL,
            queue_name = NULL,
@@ -1535,7 +1535,7 @@ export class SystemDatabase {
       'queue_partition_key',
       'parent_workflow_id',
       'serialization',
-      'owner_xid',
+      'creator_xid',
       'delay_until_epoch_ms',
       'attributes',
       'schedule_name',
@@ -1626,11 +1626,7 @@ export class SystemDatabase {
   }
 
   @dbRetry()
-  async recordWorkflowOutput(
-    workflowID: string,
-    status: WorkflowStatusInternal,
-    executionXid?: string,
-  ): Promise<boolean> {
+  async recordWorkflowOutput(workflowID: string, status: WorkflowStatusInternal, ownerXid?: string): Promise<boolean> {
     const client = await this.#connect();
     try {
       return await this.#recordWorkflowOutcome(
@@ -1638,7 +1634,7 @@ export class SystemDatabase {
         workflowID,
         StatusString.SUCCESS,
         { output: status.output },
-        executionXid,
+        ownerXid,
       );
     } finally {
       client.release();
@@ -1646,11 +1642,7 @@ export class SystemDatabase {
   }
 
   @dbRetry()
-  async recordWorkflowError(
-    workflowID: string,
-    status: WorkflowStatusInternal,
-    executionXid?: string,
-  ): Promise<boolean> {
+  async recordWorkflowError(workflowID: string, status: WorkflowStatusInternal, ownerXid?: string): Promise<boolean> {
     const client = await this.#connect();
     try {
       return await this.#recordWorkflowOutcome(
@@ -1658,7 +1650,7 @@ export class SystemDatabase {
         workflowID,
         StatusString.ERROR,
         { error: status.error },
-        executionXid,
+        ownerXid,
       );
     } finally {
       client.release();
@@ -1667,7 +1659,7 @@ export class SystemDatabase {
 
   // Record a workflow's terminal outcome (SUCCESS or ERROR), reporting whether
   // the write landed. The write applies only to a PENDING row still owned by
-  // executionXid, which defaults to the calling execution's token; a caller
+  // ownerXid, which defaults to the calling execution's token; a caller
   // outside the workflow's context passes it explicitly or goes unchecked.
   //
   // Returning false means the row was CANCELLED, dead-lettered, already
@@ -1679,15 +1671,16 @@ export class SystemDatabase {
     workflowID: string,
     status: (typeof StatusString)[keyof typeof StatusString],
     outcome: { output?: string | null; error?: string | null },
-    executionXid: string | undefined,
+    ownerXid: string | undefined,
   ): Promise<boolean> {
-    executionXid ??= currentExecutionXid(workflowID);
+    ownerXid ??= currentOwnerXid(workflowID);
     let committed = false;
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
       const rowCount = await this.updateWorkflowStatus(client, workflowID, status, {
-        update: { resetDeduplicationID: true, setCompletedAt: true },
-        where: { status: StatusString.PENDING, executionXid },
+        // A finished workflow has no owner.
+        update: { resetDeduplicationID: true, setCompletedAt: true, ownerXid: null },
+        where: { status: StatusString.PENDING, ownerXid },
         throwOnFailure: false,
       });
       if (rowCount === 0) {
@@ -1743,7 +1736,7 @@ export class SystemDatabase {
       `UPDATE "${this.schemaName}".workflow_status
        SET started_at_epoch_ms = NULL,
            status = $1,
-           execution_xid = NULL,
+           owner_xid = NULL,
            updated_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint,
            queue_name = COALESCE(queue_name, $2)
        WHERE status = $3
@@ -1820,7 +1813,7 @@ export class SystemDatabase {
       updateName?: string;
       queueName?: string;
       resetStartedAtEpochMs?: boolean;
-      executionXid?: string | null;
+      ownerXid?: string | null;
     },
   ): Promise<void> {
     const client = await this.#connect();
@@ -1831,7 +1824,7 @@ export class SystemDatabase {
           resetNameTo: internalOptions?.updateName,
           queueName: internalOptions?.queueName,
           resetStartedAtEpochMs: internalOptions?.resetStartedAtEpochMs,
-          executionXid: internalOptions?.executionXid,
+          ownerXid: internalOptions?.ownerXid,
         },
       });
     } finally {
@@ -2015,7 +2008,7 @@ export class SystemDatabase {
   async #cancelWorkflows(workflowIDs: string[]): Promise<void> {
     await this.pool.query(
       `UPDATE "${this.schemaName}".workflow_status
-       SET status = $1, execution_xid = NULL, queue_name = NULL, deduplication_id = NULL, started_at_epoch_ms = NULL,
+       SET status = $1, owner_xid = NULL, queue_name = NULL, deduplication_id = NULL, started_at_epoch_ms = NULL,
            updated_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint,
            completed_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint
        WHERE workflow_uuid = ANY($2)
@@ -2032,7 +2025,7 @@ export class SystemDatabase {
   async resumeWorkflows(workflowIDs: string[], queueName?: string): Promise<void> {
     await this.pool.query(
       `UPDATE "${this.schemaName}".workflow_status
-       SET status = $1, execution_xid = NULL, queue_name = $2, recovery_attempts = 0,
+       SET status = $1, owner_xid = NULL, queue_name = $2, recovery_attempts = 0,
            workflow_deadline_epoch_ms = NULL, deduplication_id = NULL,
            started_at_epoch_ms = NULL,
            updated_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint,
@@ -2349,7 +2342,7 @@ export class SystemDatabase {
       }
       const { rowCount } = await client.query(
         `UPDATE "${schema}".workflow_status
-         SET status = $1, execution_xid = NULL, queue_name = $2, queue_partition_key = $3, recovery_attempts = 0,
+         SET status = $1, owner_xid = NULL, queue_name = $2, queue_partition_key = $3, recovery_attempts = 0,
              workflow_deadline_epoch_ms = NULL, deduplication_id = NULL, started_at_epoch_ms = NULL,
              completed_at = NULL, output = NULL, error = NULL,
              updated_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint${setVersion}
@@ -2697,8 +2690,8 @@ export class SystemDatabase {
       for (const wfID of workflowIDs) {
         // Export workflow_status
         const statusResult = await client.query<workflow_status>(
-          // owner_xid and execution_xid are intentionally omitted: they are transient
-          // ownership tokens, not logical workflow state, and a source database's
+          // creator_xid and owner_xid are intentionally omitted: they are transient
+          // tokens, not logical workflow state, and a source database's
           // tokens are meaningless in the target.
           `SELECT
             ws.workflow_uuid, ws.status, ws.name, ws.authenticated_user, ws.assumed_role,
@@ -3632,7 +3625,7 @@ export class SystemDatabase {
     serializedValue: string,
     serialization: string | null,
   ): Promise<void> {
-    const executionXid = currentExecutionXid(workflowID);
+    const ownerXid = currentOwnerXid(workflowID);
     const client: PoolClient = await this.#connect();
     try {
       while (true) {
@@ -3647,8 +3640,8 @@ export class SystemDatabase {
               [workflowID, key, serializedValue, functionID, serialization],
             );
             // After the insert, in the order the workflow-level writes lock, so they cannot deadlock.
-            if (executionXid !== undefined) {
-              await this.#checkOwner(client, workflowID, executionXid);
+            if (ownerXid !== undefined) {
+              await this.#checkOwner(client, workflowID, ownerXid);
             }
           });
         } catch (e) {
@@ -3956,7 +3949,7 @@ export class SystemDatabase {
     // SKIP LOCKED leaves a row a dequeue or a peer's sweep holds for the next sweep.
     const { rows } = await this.pool.query<{ workflow_uuid: string }>(
       `UPDATE "${this.schemaName}".workflow_status
-       SET status = $1, execution_xid = NULL, queue_name = NULL, deduplication_id = NULL, started_at_epoch_ms = NULL,
+       SET status = $1, owner_xid = NULL, queue_name = NULL, deduplication_id = NULL, started_at_epoch_ms = NULL,
            updated_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint,
            completed_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint
        WHERE workflow_uuid IN (
@@ -4022,7 +4015,7 @@ export class SystemDatabase {
     localRunningCount: number = 0,
     partitionLocalRunningCount: number = 0,
     // Written to every claimed row: the dispatches of this claim own their executions.
-    executionXid: string | null = null,
+    ownerXid: string | null = null,
   ): Promise<string[]> {
     const claimedIDs: string[] = [];
     const partitionParams: string[] = queuePartitionKey !== undefined ? [queuePartitionKey] : [];
@@ -4179,7 +4172,7 @@ export class SystemDatabase {
           StatusString.ENQUEUED,
           // Claim an unclaimed row for this application; a nameless dequeuer leaves ownership untouched.
           this.appName ?? null,
-          executionXid,
+          ownerXid,
         ];
         // Re-check ownership alongside status, as the partitioned claim guard does.
         const claimScope = this.#appNameFilter('application_name', this.appName, updateParams);
@@ -4187,7 +4180,7 @@ export class SystemDatabase {
         const flippedResult = await client.query<{ workflow_uuid: string }>(
           `UPDATE "${this.schemaName}".workflow_status
            SET status = $1,
-               execution_xid = $8,
+               owner_xid = $8,
                executor_id = $2,
                application_version = $3,
                started_at_epoch_ms = (EXTRACT(epoch FROM now()) * 1000)::bigint,
@@ -4232,7 +4225,7 @@ export class SystemDatabase {
     appVersion: string,
     maxTasks: number = Infinity,
     // Written to every claimed row: the dispatches of this claim own their executions.
-    executionXid: string | null = null,
+    ownerXid: string | null = null,
   ): Promise<string[]> {
     if (
       queue.partitionConcurrency !== 1 ||
@@ -4357,14 +4350,14 @@ export class SystemDatabase {
         appVersion,
         // Claim the row, as the unpartitioned dequeue does.
         this.appName ?? null,
-        executionXid,
+        ownerXid,
       ];
       const flipScope = this.#appNameFilter('application_name', this.appName, flipParams);
       // Start the workflows by marking them PENDING; RETURNING reports exactly the rows this statement flipped.
       const flippedResult = await client.query<{ workflow_uuid: string }>(
         `UPDATE "${this.schemaName}".workflow_status
          SET status = $1,
-             execution_xid = $8,
+             owner_xid = $8,
              executor_id = $2,
              application_version = $6,
              started_at_epoch_ms = (EXTRACT(epoch FROM now()) * 1000)::bigint,
@@ -5991,7 +5984,7 @@ export class SystemDatabase {
   private async insertWorkflowStatus(
     client: ClientBase,
     initStatus: WorkflowStatusInternal,
-    ownerXid: string | null,
+    creatorXid: string | null,
   ): Promise<InsertWorkflowResult> {
     try {
       const { rows } = await client.query<InsertWorkflowResult>(
@@ -6018,19 +6011,19 @@ export class SystemDatabase {
           forked_from,
           parent_workflow_id,
           serialization,
-          owner_xid,
+          creator_xid,
           delay_until_epoch_ms,
           attributes,
           schedule_name,
           debounce_deadline_epoch_ms,
           is_debounced,
           application_name,
-          execution_xid
+          owner_xid
         ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30)
         ON CONFLICT (workflow_uuid)
           -- A no-op update, so an existing row comes back unchanged for the caller to inspect.
-          DO UPDATE SET owner_xid = workflow_status.owner_xid
-          RETURNING status, name, class_name, config_name, queue_name, executor_id, owner_xid, serialization`,
+          DO UPDATE SET creator_xid = workflow_status.creator_xid
+          RETURNING status, name, class_name, config_name, queue_name, executor_id, creator_xid, serialization`,
         [
           initStatus.workflowUUID,
           initStatus.status,
@@ -6056,15 +6049,15 @@ export class SystemDatabase {
           initStatus.forkedFrom ?? null,
           initStatus.parentWorkflowID ?? null,
           initStatus.serialization,
-          ownerXid,
+          creatorXid,
           initStatus.delayUntilEpochMS ?? null,
           initStatus.attributes ? JSON.stringify(initStatus.attributes) : null,
           initStatus.scheduleName ?? null,
           initStatus.debounceDeadlineEpochMS ?? null,
           initStatus.isDebounced ?? false,
           initStatus.applicationName ?? null,
-          // A direct start runs at once, so its insert token also owns the execution.
-          initStatus.status === StatusString.PENDING ? ownerXid : null,
+          // A direct start runs at once, so its creator token also owns the execution.
+          initStatus.status === StatusString.PENDING ? creatorXid : null,
         ],
       );
       if (rows.length === 0) {
@@ -6118,12 +6111,12 @@ export class SystemDatabase {
         resetNameTo?: string;
         setCompletedAt?: boolean;
         clearCompletedAt?: boolean;
-        executionXid?: string | null;
+        ownerXid?: string | null;
       };
       where?: {
         status?: (typeof StatusString)[keyof typeof StatusString];
         notStatus?: (typeof StatusString)[keyof typeof StatusString];
-        executionXid?: string;
+        ownerXid?: string;
       };
       throwOnFailure?: boolean;
     } = {},
@@ -6173,9 +6166,9 @@ export class SystemDatabase {
       setClause += `, completed_at = NULL`;
     }
 
-    if (update.executionXid !== undefined) {
-      const param = args.push(update.executionXid);
-      setClause += `, execution_xid=$${param}`;
+    if (update.ownerXid !== undefined) {
+      const param = args.push(update.ownerXid);
+      setClause += `, owner_xid=$${param}`;
     }
 
     const where = options.where ?? {};
@@ -6187,9 +6180,9 @@ export class SystemDatabase {
       const param = args.push(where.notStatus);
       whereClause += ` AND status!=$${param}`;
     }
-    if (where.executionXid !== undefined) {
-      const param = args.push(where.executionXid);
-      whereClause += ` AND execution_xid=$${param}`;
+    if (where.ownerXid !== undefined) {
+      const param = args.push(where.ownerXid);
+      whereClause += ` AND owner_xid=$${param}`;
     }
 
     const result = await client.query<workflow_status>(
@@ -6219,9 +6212,9 @@ export class SystemDatabase {
       serialization?: string | null;
     } = {},
   ): Promise<void> {
-    const executionXid = currentExecutionXid(workflowID);
-    if (executionXid !== undefined) {
-      await this.#checkOwner(client, workflowID, executionXid);
+    const ownerXid = currentOwnerXid(workflowID);
+    if (ownerXid !== undefined) {
+      await this.#checkOwner(client, workflowID, ownerXid);
     }
     try {
       const out = await client.query<operation_outputs>(
@@ -6277,13 +6270,13 @@ export class SystemDatabase {
     return result;
   }
 
-  /** Throw DBOSWorkflowConflictError unless executionXid still owns the workflow; the row lock holds until commit, so no hand-off lands in between. */
-  async #checkOwner(client: ClientBase, workflowID: string, executionXid: string): Promise<void> {
-    const { rows } = await client.query<{ execution_xid: string | null }>(
-      `SELECT execution_xid FROM "${this.schemaName}".workflow_status WHERE workflow_uuid = $1 FOR NO KEY UPDATE`,
+  /** Throw DBOSWorkflowConflictError unless ownerXid still owns the workflow; the row lock holds until commit, so no hand-off lands in between. */
+  async #checkOwner(client: ClientBase, workflowID: string, ownerXid: string): Promise<void> {
+    const { rows } = await client.query<{ owner_xid: string | null }>(
+      `SELECT owner_xid FROM "${this.schemaName}".workflow_status WHERE workflow_uuid = $1 FOR NO KEY UPDATE`,
       [workflowID],
     );
-    if (rows[0]?.execution_xid !== executionXid) {
+    if (rows[0]?.owner_xid !== ownerXid) {
       throw new DBOSWorkflowConflictError(workflowID);
     }
   }
@@ -6291,11 +6284,11 @@ export class SystemDatabase {
   /** The workflow's current ownership token; null if unowned or missing. */
   @dbRetry()
   async getWorkflowOwner(workflowID: string): Promise<string | null> {
-    const { rows } = await this.pool.query<{ execution_xid: string | null }>(
-      `SELECT execution_xid FROM "${this.schemaName}".workflow_status WHERE workflow_uuid = $1`,
+    const { rows } = await this.pool.query<{ owner_xid: string | null }>(
+      `SELECT owner_xid FROM "${this.schemaName}".workflow_status WHERE workflow_uuid = $1`,
       [workflowID],
     );
-    return rows[0]?.execution_xid ?? null;
+    return rows[0]?.owner_xid ?? null;
   }
 
   async #getOperationResultAndThrowIfCancelled(
