@@ -1346,7 +1346,10 @@ export class SystemDatabase {
     let shouldCommit = false;
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
-      await this.#checkCallerOwner(client, parentWorkflowID);
+      const parentOwnerXid = currentOwnerXid(parentWorkflowID);
+      if (parentOwnerXid !== undefined) {
+        await this.#checkOwner(client, parentWorkflowID, parentOwnerXid);
+      }
       const result = await this.#initWorkflowStatusInternal(client, initStatus, creatorXid, reusePolicy);
       await this.recordOperationResultInternal(
         client,
@@ -1906,7 +1909,10 @@ export class SystemDatabase {
     const client = await this.#connect();
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
-      await this.#checkCallerOwner(client, workflowID);
+      const ownerXid = currentOwnerXid(workflowID);
+      if (ownerXid !== undefined) {
+        await this.#checkOwner(client, workflowID, ownerXid);
+      }
       const existing = await this.#getOperationResultAndThrowIfCancelled(client, workflowID, functionID);
       if (existing !== undefined) {
         await client.query('ROLLBACK');
@@ -6241,8 +6247,9 @@ export class SystemDatabase {
       ownerChecked?: boolean;
     } = {},
   ): Promise<void> {
-    if (!options.ownerChecked) {
-      await this.#checkCallerOwner(client, workflowID);
+    const ownerXid = options.ownerChecked ? undefined : currentOwnerXid(workflowID);
+    if (ownerXid !== undefined) {
+      await this.#checkOwner(client, workflowID, ownerXid);
     }
     try {
       const out = await client.query<operation_outputs>(
@@ -6306,13 +6313,6 @@ export class SystemDatabase {
     );
     if (rows[0]?.owner_xid !== ownerXid) {
       throw new DBOSWorkflowConflictError(workflowID);
-    }
-  }
-
-  async #checkCallerOwner(client: ClientBase, workflowID: string): Promise<void> {
-    const ownerXid = currentOwnerXid(workflowID);
-    if (ownerXid !== undefined) {
-      await this.#checkOwner(client, workflowID, ownerXid);
     }
   }
 
