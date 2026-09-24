@@ -1916,10 +1916,6 @@ export class SystemDatabase {
         await client.query('ROLLBACK');
         return existing;
       }
-      const ownerXid = currentOwnerXid(workflowID);
-      if (ownerXid !== undefined) {
-        await this.#checkOwner(client, workflowID, ownerXid);
-      }
       const startTime = Date.now();
       const output = await callback(client);
       await this.recordOperationResultInternal(
@@ -1932,7 +1928,6 @@ export class SystemDatabase {
         Date.now(),
         {
           output,
-          ownerChecked: true,
         },
       );
       await client.query('COMMIT');
