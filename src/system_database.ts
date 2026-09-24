@@ -1954,41 +1954,42 @@ export class SystemDatabase {
 
     patchName = `DBOS.patch-${patchName}`;
 
-    const { rows } = await this.pool.query<operation_outputs>(
-      `SELECT function_name
-       FROM "${this.schemaName}".operation_outputs
-      WHERE workflow_uuid=$1 AND function_id=$2`,
-      [workflowID, functionID],
-    );
+    const readCheckpointName = async (queryable: Pool | PoolClient) => {
+      const { rows } = await queryable.query<operation_outputs>(
+        `SELECT function_name
+         FROM "${this.schemaName}".operation_outputs
+        WHERE workflow_uuid=$1 AND function_id=$2`,
+        [workflowID, functionID],
+      );
+      return rows.length === 0 ? undefined : rows[0].function_name;
+    };
 
     if (deprecated) {
       // Deprecated does not write anything.  We skip any existing matching patch marker if it matches
-      if (rows.length === 0) {
+      const checkpointName = await readCheckpointName(this.pool);
+      if (checkpointName === undefined) {
         return { isPatched: true, hasEntry: false };
       }
-      return { isPatched: true, hasEntry: rows[0].function_name === patchName };
+      return { isPatched: true, hasEntry: checkpointName === patchName };
     }
 
     // Nondeprecated - skip matching entry, unpatched if nonmatching entry,
-    //  If there is no entry, we insert one that indicates it is patched.
-    if (rows.length !== 0) {
-      if (rows[0].function_name === patchName) {
+    //  If there is no entry, we insert one that indicates it is patched, as an owner-checked checkpoint.
+    const client = await this.#connect();
+    try {
+      return await this.#inTransaction(client, async () => {
+        const checkpointName = await readCheckpointName(client);
+        if (checkpointName !== undefined) {
+          const matches = checkpointName === patchName;
+          return { isPatched: matches, hasEntry: matches };
+        }
+        const dn = Date.now();
+        await this.recordOperationResultInternal(client, workflowID, functionID, patchName, true, dn, dn);
         return { isPatched: true, hasEntry: true };
-      }
-      return { isPatched: false, hasEntry: false };
+      });
+    } finally {
+      client.release();
     }
-
-    // Insert a patchmarker
-    const dn = Date.now();
-    await this.pool.query<operation_outputs>(
-      `INSERT INTO "${this.schemaName}".operation_outputs
-       (workflow_uuid, function_id, output, error, function_name, child_workflow_id, started_at_epoch_ms, completed_at_epoch_ms, application_name, retention_timestamp)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, (EXTRACT(EPOCH FROM now()) * 1000)::bigint)
-       ON CONFLICT DO NOTHING;`,
-      [workflowID, functionID, null, null, patchName, null, dn, dn, this.appName ?? null],
-    );
-
-    return { isPatched: true, hasEntry: true };
   }
 
   // ==================== Workflow Management ====================
