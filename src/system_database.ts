@@ -1909,14 +1909,14 @@ export class SystemDatabase {
     const client = await this.#connect();
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
-      const ownerXid = currentOwnerXid(workflowID);
-      if (ownerXid !== undefined) {
-        await this.#checkOwner(client, workflowID, ownerXid);
-      }
       const existing = await this.#getOperationResultAndThrowIfCancelled(client, workflowID, functionID);
       if (existing !== undefined) {
         await client.query('ROLLBACK');
         return existing;
+      }
+      const ownerXid = currentOwnerXid(workflowID);
+      if (ownerXid !== undefined) {
+        await this.#checkOwner(client, workflowID, ownerXid);
       }
       const startTime = Date.now();
       const output = await callback(client);
