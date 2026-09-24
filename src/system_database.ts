@@ -3287,6 +3287,31 @@ export class SystemDatabase {
     return await this.sendDirectStandalone(destinationID, message, topic, serialization, idempotencyKey);
   }
 
+  /** A send from inside a step of `workflowID`: not recorded, but it lands only while the caller still owns the workflow. */
+  @dbRetry()
+  async sendFromStep(
+    workflowID: string,
+    destinationID: string,
+    message: string | null,
+    topic: string | undefined,
+    serialization: string | null,
+    idempotencyKey?: string,
+  ): Promise<void> {
+    const ownerXid = currentOwnerXid(workflowID);
+    const client: PoolClient = await this.#connect();
+    try {
+      await this.#inTransaction(client, async () => {
+        await this.#sendDirectInternal(client, destinationID, message, topic, serialization, idempotencyKey);
+        // After the insert, in the order the recorded send locks, so they cannot deadlock.
+        if (ownerXid !== undefined) {
+          await this.#checkOwner(client, workflowID, ownerXid);
+        }
+      });
+    } finally {
+      client.release();
+    }
+  }
+
   @dbRetry()
   private async sendDirectStandalone(
     destinationID: string,

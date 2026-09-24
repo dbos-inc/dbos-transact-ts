@@ -99,16 +99,17 @@ class Handoff {
   }
 
   @DBOS.step()
-  static async writingStep(write: 'writeStream' | 'closeStream'): Promise<void> {
+  static async writingStep(write: 'writeStream' | 'closeStream' | 'send'): Promise<void> {
     Handoff.started.set();
     await Handoff.release.wait();
     if (write === 'writeStream') await DBOS.writeStream('key', 'stale');
+    else if (write === 'send') await DBOS.send(DBOS.workflowID!, 'stale', 'topic');
     else await DBOS.closeStream('key');
   }
 
-  // Events are set from the workflow body, since a step may not set them; streams are written from a step.
+  // Events are set from the workflow body, since a step may not set them; streams and messages go from a step.
   @DBOS.workflow()
-  static async writingWorkflow(write: 'setEvent' | 'writeStream' | 'closeStream'): Promise<string> {
+  static async writingWorkflow(write: 'setEvent' | 'writeStream' | 'closeStream' | 'send'): Promise<string> {
     if (write === 'setEvent') {
       Handoff.started.set();
       await Handoff.release.wait();
@@ -120,21 +121,25 @@ class Handoff {
   }
 }
 
-/** Rows a workflow has written to its events and streams tables. */
-async function countEventAndStreamRows(
+/** Rows a workflow has written to its events and streams tables, and messages addressed to it. */
+async function countWorkflowWrites(
   systemDatabaseUrl: string | undefined,
   workflowID: string,
-): Promise<{ events: number; streams: number }> {
+): Promise<{ events: number; streams: number; messages: number }> {
   const client = new Client({ connectionString: systemDatabaseUrl });
   await client.connect();
   try {
-    const count = async (table: string) =>
+    const count = async (table: string, column: string) =>
       (
-        await client.query<{ n: number }>(`SELECT count(*)::int AS n FROM dbos.${table} WHERE workflow_uuid = $1`, [
+        await client.query<{ n: number }>(`SELECT count(*)::int AS n FROM dbos.${table} WHERE ${column} = $1`, [
           workflowID,
         ])
       ).rows[0].n;
-    return { events: await count('workflow_events'), streams: await count('streams') };
+    return {
+      events: await count('workflow_events', 'workflow_uuid'),
+      streams: await count('streams', 'workflow_uuid'),
+      messages: await count('notifications', 'destination_uuid'),
+    };
   } finally {
     await client.end();
   }
@@ -668,8 +673,8 @@ describe('run-workflow-once-tests', () => {
     await expect(handle.getResult()).rejects.toThrow(DBOSWorkflowCancelledError);
   });
 
-  test.each(['setEvent', 'writeStream', 'closeStream'] as const)('stale-execution-cannot-%s', async (write) => {
-    // An execution that lost ownership can neither set events nor write streams, and records no step.
+  test.each(['setEvent', 'writeStream', 'closeStream', 'send'] as const)('stale-execution-cannot-%s', async (write) => {
+    // An execution that lost ownership cannot set events, write streams, or send messages, and records no step.
     Handoff.reset();
     const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
     const workflowID = randomUUID();
@@ -679,7 +684,11 @@ describe('run-workflow-once-tests', () => {
       await stealOwnership(config.systemDatabaseUrl, workflowID);
       Handoff.release.set();
       await retryUntilSuccess(() => expect(sysdb.checkForRunningWorkflow(workflowID)).toBe(false));
-      expect(await countEventAndStreamRows(config.systemDatabaseUrl, workflowID)).toEqual({ events: 0, streams: 0 });
+      expect(await countWorkflowWrites(config.systemDatabaseUrl, workflowID)).toEqual({
+        events: 0,
+        streams: 0,
+        messages: 0,
+      });
       expect(await DBOS.listWorkflowSteps(workflowID)).toHaveLength(0);
     } finally {
       Handoff.release.set();
