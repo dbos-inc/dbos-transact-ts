@@ -1436,6 +1436,21 @@ export class DBOS {
         sermsg.serialization,
         idempotencyKey,
       );
+    } else if (DBOS.isInStep()) {
+      // Inside a step: not recorded, but fenced on the enclosing workflow's ownership.
+      const sermsg = await serializeValue(
+        message,
+        DBOS.#executor.serializer,
+        options?.serializationType ?? DBOS.#defaultSerializationType,
+      );
+      return await DBOSExecutor.globalInstance!.systemDatabase.sendFromStep(
+        DBOS.workflowID!,
+        destinationID,
+        sermsg.serializedValue,
+        topic,
+        sermsg.serialization,
+        idempotencyKey,
+      );
     } else {
       const sermsg = await serializeValue(
         message,

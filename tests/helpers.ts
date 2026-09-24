@@ -6,6 +6,7 @@ import { ensureSystemDatabase } from '../src/system_database';
 import { GlobalLogger } from '../src/telemetry/logs';
 import { deriveDatabaseUrl, dropPGDatabase, ensurePGDatabase, maskDatabaseUrl } from '../src/database_utils';
 import { Client } from 'pg';
+import { randomUUID } from 'node:crypto';
 
 const silentDropLogger = { warn: () => {} };
 
@@ -145,6 +146,16 @@ export async function setWfAndChildrenToPending(workflowId: string, resetRecover
       resetRecoveryAttempts,
     );
   }
+}
+
+/** Dispatch a workflow off its persisted row, marking it PENDING and taking ownership with a fresh token as a queue claim does. */
+export async function redispatchWorkflowById(workflowId: string): Promise<WorkflowHandle<unknown>> {
+  const exec = DBOSExecutor.globalInstance!;
+  const ownerXid = randomUUID();
+  await exec.systemDatabase.setWorkflowStatus(workflowId, StatusString.PENDING, false, { ownerXid });
+  const status = await exec.systemDatabase.getWorkflowStatus(workflowId);
+  expect(status).not.toBeNull();
+  return await exec.executeDequeuedWorkflow(status!, ownerXid);
 }
 
 /**

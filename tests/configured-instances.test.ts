@@ -4,9 +4,11 @@ import { DBOSNotRegisteredError } from '../src/error';
 import {
   generateDBOSTestConfig,
   recoverPendingWorkflows,
+  redispatchWorkflowById,
   setUpDBOSTestSysDb,
   setWfAndChildrenToPending,
 } from './helpers';
+import { randomUUID } from 'node:crypto';
 
 class TestFunctions extends ConfiguredInstance {
   constructor(name: string) {
@@ -357,7 +359,9 @@ describe('recovery-cc-tests', () => {
     expect(claimed.status).toBe(StatusString.PENDING);
     claimed.workflowConfigName = 'no-such-instance';
 
-    await expect(DBOSExecutor.globalInstance!.executeDequeuedWorkflow(claimed)).rejects.toThrow(DBOSNotRegisteredError);
+    await expect(DBOSExecutor.globalInstance!.executeDequeuedWorkflow(claimed, randomUUID())).rejects.toThrow(
+      DBOSNotRegisteredError,
+    );
     // Unbound, the body would have run against a null `this` instead of failing to dispatch.
     expect(ccBindingRuns).toBe(runsBeforeDispatch);
 
@@ -365,10 +369,7 @@ describe('recovery-cc-tests', () => {
     expect((await sysDB.getWorkflowStatus(handle.workflowID))?.status).toBe(StatusString.PENDING);
 
     // Dispatched again against the row's real instance name, it still runs to completion.
-    const rebound = (await sysDB.getWorkflowStatus(handle.workflowID))!;
-    await expect((await DBOSExecutor.globalInstance!.executeDequeuedWorkflow(rebound)).getResult()).resolves.toBe(
-      'configBind',
-    );
+    await expect((await redispatchWorkflowById(handle.workflowID)).getResult()).resolves.toBe('configBind');
     expect(ccBindingRuns).toBe(runsBeforeDispatch + 1);
     expect((await sysDB.getWorkflowStatus(handle.workflowID))?.status).toBe(StatusString.SUCCESS);
   });

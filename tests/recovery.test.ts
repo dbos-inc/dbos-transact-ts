@@ -114,40 +114,6 @@ describe('recovery-tests', () => {
     }
   }
 
-  class RestampExecutor {
-    static stepOneDone = new Event();
-    static proceed = new Event();
-
-    @DBOS.workflow()
-    static async twoStepWorkflow() {
-      await DBOS.runStep(() => Promise.resolve(1), { name: 'stepOne' });
-      RestampExecutor.stepOneDone.set();
-      await RestampExecutor.proceed.wait();
-      return await DBOS.runStep(() => Promise.resolve(2), { name: 'stepTwo' });
-    }
-  }
-
-  test('restamp-executor-id-on-step-checkpoint', async () => {
-    const handle = await DBOS.startWorkflow(RestampExecutor).twoStepWorkflow();
-    await RestampExecutor.stepOneDone.wait();
-
-    // Simulate another executor holding the marker.
-    await systemDBClient.query(`UPDATE dbos.workflow_status SET executor_id=$1 WHERE workflow_uuid=$2`, [
-      'stale-executor',
-      handle.workflowID,
-    ]);
-
-    RestampExecutor.proceed.set();
-    await expect(handle.getResult()).resolves.toBe(2);
-
-    // Checkpointing the second step should have re-stamped executor_id to this executor.
-    const result = await systemDBClient.query<{ executor_id: string }>(
-      `SELECT executor_id FROM dbos.workflow_status WHERE workflow_uuid=$1`,
-      [handle.workflowID],
-    );
-    expect(result.rows[0].executor_id).toBe(globalParams.executorID);
-  });
-
   test('dead-letter-queue', async () => {
     LocalRecovery.cnt = 0;
 
@@ -324,20 +290,23 @@ describe('recovery-tests', () => {
     await expect(handle.getResult()).resolves.toBe('bob');
   });
 
-  test('duplicate-recovery-does-not-rerun-running-workflow', async () => {
-    // Recovery hands a running workflow back to the queue, and each sweep yields exactly one dequeue.
+  test('duplicate-recovery-hands-a-running-workflow-to-a-new-execution', async () => {
+    // Recovery hands a running workflow back to the queue, and each sweep yields exactly one dequeue,
+    // whose execution runs alongside the stale one and becomes the workflow's owner.
     BlockedRecovery.startCount = 0;
     BlockedRecovery.blocker.clear();
     const handle = await DBOS.startWorkflow(BlockedRecovery).blockedWorkflow('bob');
 
-    // The queue claims a workflow before dispatching it, so count dispatches that have finished checking whether it is running.
+    // The queue claims a workflow before dispatching it, so count dispatches as each one completes.
     let dispatched = 0;
     const executor = DBOSExecutor.globalInstance!;
     const dispatch = executor.dispatchDequeuedWorkflows.bind(executor);
-    const dispatchSpy = jest.spyOn(executor, 'dispatchDequeuedWorkflows').mockImplementation(async (workflowIDs) => {
-      await dispatch(workflowIDs);
-      if (workflowIDs.includes(handle.workflowID)) dispatched += 1;
-    });
+    const dispatchSpy = jest
+      .spyOn(executor, 'dispatchDequeuedWorkflows')
+      .mockImplementation(async (workflowIDs, ownerXid) => {
+        await dispatch(workflowIDs, ownerXid);
+        if (workflowIDs.includes(handle.workflowID)) dispatched += 1;
+      });
 
     // Release the workflow even on failure, or teardown hangs waiting on it.
     try {
@@ -359,18 +328,18 @@ describe('recovery-tests', () => {
           expect(status?.recoveryAttempts).toBe(expectedAttempts);
           expect(status?.status).toBe(StatusString.PENDING);
         });
-        // If the workflow completes while this sweep's dispatch is still in flight, that dispatch starts it a second time.
         await retryUntilSuccess(() => expect(dispatched).toBe(expectedAttempts - 1));
-        // The workflow is already running in this process, so it is not started a second time.
-        expect(BlockedRecovery.startCount).toBe(1);
+        // The new owner starts without waiting for the stale execution, which parks at its next write.
+        await retryUntilSuccess(() => expect(BlockedRecovery.startCount).toBe(expectedAttempts));
       }
     } finally {
       BlockedRecovery.blocker.set();
       dispatchSpy.mockRestore();
     }
 
+    // Every execution delivers the owner's recorded outcome.
     await expect(handle.getResult()).resolves.toBe('bob');
-    expect(BlockedRecovery.startCount).toBe(1);
+    expect(BlockedRecovery.startCount).toBe(3);
   });
 
   async function stepOne(): Promise<number | undefined> {

@@ -489,10 +489,7 @@ describe('decoratorless-api-tests', () => {
 
 const WINNER_TX_OUTPUT = 'winner-tx-output';
 const ADOPTED_WF_OUTPUT = 'adopted-workflow-output';
-
-// A duplicate execution's step checkpoint must look older than ours, or the
-// system database's same-millisecond comparison would not see a conflict.
-const winnerEpochMs = () => Date.now() - 60_000;
+const WINNER_EXECUTION = 'another-execution';
 
 type CompletionRow = { output: string | null; error: string | null };
 
@@ -585,8 +582,8 @@ const probeState = { bodyRuns: 0, workflowBodyFinished: 0, claimSysdb: false, wi
 
 /**
  * Mid-transaction, a duplicate execution commits the app-database completion row.
- * When `claimSysdb` is set it also takes the system-database step checkpoint and
- * finishes the workflow, which is what forces this run to park instead of continuing.
+ * When `claimSysdb` is set it also takes the workflow as another execution and finishes
+ * it, so only the ownership check can refuse this run's checkpoint and park it.
  */
 async function raceTransaction(): Promise<string> {
   probeState.bodyRuns += 1;
@@ -600,19 +597,21 @@ async function raceTransaction(): Promise<string> {
       `INSERT INTO dbos.transaction_completion (workflow_id, function_num, output) VALUES ($1, $2, $3)`,
       [workflowID, stepID, SuperJSON.stringify(WINNER_TX_OUTPUT)],
     );
+
+    if (probeState.claimSysdb) {
+      await winner.query(`UPDATE dbos.workflow_status SET owner_xid = $2 WHERE workflow_uuid = $1`, [
+        workflowID,
+        WINNER_EXECUTION,
+      ]);
+      const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+      probeState.winnerRecordedOutput = await sysdb.recordWorkflowOutput(
+        workflowID,
+        { output: DBOSJSON.stringify(ADOPTED_WF_OUTPUT) } as WorkflowStatusInternal,
+        WINNER_EXECUTION,
+      );
+    }
   } finally {
     await winner.end();
-  }
-
-  if (probeState.claimSysdb) {
-    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
-    const winnerMs = winnerEpochMs();
-    await sysdb.recordOperationResult(workflowID, stepID, 'raceTransaction', false, winnerMs, winnerMs, {
-      output: DBOSJSON.stringify(WINNER_TX_OUTPUT),
-    });
-    probeState.winnerRecordedOutput = await sysdb.recordWorkflowOutput(workflowID, {
-      output: DBOSJSON.stringify(ADOPTED_WF_OUTPUT),
-    } as WorkflowStatusInternal);
   }
 
   return 'loser-tx-output';
@@ -671,14 +670,14 @@ describe('datasource-duplicate-execution', () => {
 
     const result = await DBOS.withNextWorkflowID(wfid, () => raceWorkflow());
 
-    // The step conflict aborted this run mid-workflow, so its body never finished and
+    // The refused checkpoint parked this run mid-workflow, so its body never finished and
     // the recorded outcome was adopted in place of the `local:` value it would have made.
     expect(probeState.winnerRecordedOutput).toBe(true);
     expect(probeState.workflowBodyFinished).toBe(0);
     expect(result).toBe(ADOPTED_WF_OUTPUT);
     expect(probeState.bodyRuns).toBe(1);
 
-    // The winner's records still stand, and the loser wrote nothing over them.
+    // The winner's completion row still stands, and the refused checkpoint left no step.
     const { rows: completions } = await probeHandler.pool.query<CompletionRow>(
       `SELECT output, error FROM dbos.transaction_completion WHERE workflow_id = $1`,
       [wfid],
@@ -687,9 +686,7 @@ describe('datasource-duplicate-execution', () => {
     expect(completions[0].error).toBeNull();
     expect(SuperJSON.parse(completions[0].output!)).toBe(WINNER_TX_OUTPUT);
 
-    const steps = await DBOS.listWorkflowSteps(wfid);
-    expect(steps).toHaveLength(1);
-    expect(steps![0].output).toBe(WINNER_TX_OUTPUT);
+    expect(await DBOS.listWorkflowSteps(wfid)).toHaveLength(0);
     expect((await DBOS.getWorkflowStatus(wfid))?.status).toBe('SUCCESS');
   });
 });

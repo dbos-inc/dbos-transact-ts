@@ -32,7 +32,12 @@ import { TelemetryCollector } from './telemetry/collector';
 import { getActiveSpan, runWithTrace, SpanStatusCode, Tracer } from './telemetry/traces';
 import { DBOSContextualLogger, DLogger, GlobalLogger } from './telemetry/logs';
 import { TelemetryExporter } from './telemetry/exporters';
-import { SystemDatabase, type WorkflowStatusInternal, type SystemDatabaseStoredResult } from './system_database';
+import {
+  SystemDatabase,
+  type RunningWorkflowEntry,
+  type WorkflowStatusInternal,
+  type SystemDatabaseStoredResult,
+} from './system_database';
 import { randomUUID } from 'node:crypto';
 import {
   getConfiguredInstance,
@@ -180,6 +185,14 @@ export interface DBOSConfig {
    */
   observabilityQueryTimeoutMs?: number;
   /**
+   * PostgreSQL `idle_in_transaction_session_timeout`, in milliseconds, for connections of the system
+   * database pool DBOS creates: the server ends a session left idle inside an open transaction this
+   * long, releasing its locks. Defaults to 60000. Set to 0 or less to leave the server's setting in
+   * place. Not applied to a custom `systemDatabasePool` or when the connection string's `options`
+   * already sets it.
+   */
+  systemDatabaseIdleTransactionTimeoutMs?: number;
+  /**
    * Whether to create and migrate the system database on launch. Defaults to true.
    *
    * Set to false for a process that must not alter the schema, such as one whose database
@@ -240,12 +253,15 @@ export type DBOSConfigInternal = {
   useListenNotify: boolean;
   notificationCoalesceMs?: number;
   observabilityQueryTimeoutMs?: number;
+  systemDatabaseIdleTransactionTimeoutMs?: number;
   runMigrations: boolean;
 };
 
 export interface InternalWorkflowParams extends WorkflowParams {
   /** Set only by queue dispatch: the claimed row this run was started from. */
   readonly dequeuedStatus?: WorkflowStatusInternal;
+  /** Set with dequeuedStatus: the token the claim wrote, never re-read from the row, where a later claim's token is not ours. */
+  readonly ownerXid?: string;
 }
 
 /** Options for assembling an ENQUEUED workflow row without persisting it. */
@@ -310,6 +326,7 @@ export class DBOSExecutor {
       this.config.notificationCoalesceMs,
       this.appName,
       this.config.observabilityQueryTimeoutMs,
+      this.config.systemDatabaseIdleTransactionTimeoutMs,
     );
 
     new DynamicSchedulerLoop(config.schedulerPollingIntervalMs); // Create the dynamic scheduler, which registers itself.
@@ -610,8 +627,14 @@ export class DBOSExecutor {
       }
     }
     let ires: Awaited<ReturnType<SystemDatabase['initWorkflowStatus']>>;
+    // A direct start's creator token also owns the execution; a dispatch brings its claim's.
+    let ownerXid: string;
     const claimed = params.dequeuedStatus;
     if (claimed) {
+      if (params.ownerXid === undefined) {
+        throw new DBOSError(`Dispatch of workflow ${workflowID} is missing its ownership token`);
+      }
+      ownerXid = params.ownerXid;
       // The claim counted this dispatch; dead-letter the workflow if that exhausted its attempts.
       const claimedAttempts = claimed.recoveryAttempts ?? 0;
       if (
@@ -635,12 +658,13 @@ export class DBOSExecutor {
       };
       serializationType = ires.serialization === DBOSPortableJSON.name() ? 'portable' : undefined;
     } else {
+      ownerXid = randomUUID();
       try {
         if (callerID !== undefined && callerFunctionID !== undefined) {
           const now = Date.now();
           ires = await this.systemDatabase.initChildWorkflowStatus(
             internalStatus,
-            randomUUID(),
+            ownerXid,
             callerID,
             callerFunctionID,
             now,
@@ -650,7 +674,7 @@ export class DBOSExecutor {
         } else {
           ires = await this.systemDatabase.initWorkflowStatus(
             internalStatus,
-            randomUUID(),
+            ownerXid,
             undefined,
             params.workflowIDReusePolicy,
           );
@@ -683,17 +707,7 @@ export class DBOSExecutor {
 
     shouldExecute = ires.shouldExecuteOnThisExecutor;
 
-    // Release the running-workflow map entry before the terminal outcome
-    // becomes durable: once it is visible, a resume can re-dispatch this
-    // workflow ID to this executor, and a stale entry would block that
-    // dispatch. Guarded so the backstop in registerRunningWorkflow's finally
-    // never deletes an entry a resumed run has re-acquired.
-    let runningWorkflowReleased = false;
-    const releaseRunningWorkflow = () => {
-      if (runningWorkflowReleased) return;
-      runningWorkflowReleased = true;
-      this.systemDatabase.clearRunningWorkflow(workflowID);
-    };
+    let runningEntry: RunningWorkflowEntry | undefined;
 
     const eserializer = this.serializer;
     async function handleWorkflowError(
@@ -704,8 +718,7 @@ export class DBOSExecutor {
       const sererr = await serializeResErrorWithSerializer(err, eserializer, ires.serialization ?? null);
       internalStatus.error = sererr.serializedValue;
       internalStatus.status = StatusString.ERROR;
-      releaseRunningWorkflow();
-      const recorded = await exec.systemDatabase.recordWorkflowError(workflowID, internalStatus);
+      const recorded = await exec.systemDatabase.recordWorkflowError(workflowID, internalStatus, ownerXid);
       if (recorded) {
         exec.logger.error(err);
       } else {
@@ -726,6 +739,8 @@ export class DBOSExecutor {
     // result served from the store rather than computed by this run, and the
     // final status overrides anything a caller stamped before parking.
     const adoptRecordedOutcome = async (warning: string): Promise<R> => {
+      // Released first, so a parked run stops counting toward the local concurrency a re-dispatch needs.
+      runningEntry?.release();
       this.logger.warn(warning);
       try {
         // The workflow's row is known to have existed (this run was dispatched
@@ -776,6 +791,7 @@ export class DBOSExecutor {
                 workflowTimeoutMS: undefined, // Becomes deadline
                 deadlineEpochMS,
                 workflowId: workflowID,
+                ownerXid,
                 logger: this.ctxLogger,
                 curWFFunctionId: undefined,
                 activeStreamReads: 0,
@@ -798,8 +814,7 @@ export class DBOSExecutor {
           result = funcResult.deserialized;
           internalStatus.output = funcResult.stringified;
           internalStatus.status = StatusString.SUCCESS;
-          releaseRunningWorkflow();
-          const recorded = await this.systemDatabase.recordWorkflowOutput(workflowID, internalStatus);
+          const recorded = await this.systemDatabase.recordWorkflowOutput(workflowID, internalStatus, ownerXid);
           if (recorded) {
             span.setStatus({ code: SpanStatusCode.OK });
             return result;
@@ -807,15 +822,12 @@ export class DBOSExecutor {
           pendingAdopt = notRecordedWarning;
         } catch (err) {
           if (err instanceof DBOSWorkflowConflictError) {
-            // Another execution owns this workflow's step checkpoints. Release
-            // before parking so a resume re-dispatched here is not blocked.
-            releaseRunningWorkflow();
-            pendingAdopt = `Aborting duplicate execution of workflow ${workflowID}.`;
+            // This execution lost ownership of the workflow.
+            pendingAdopt = `Workflow ${workflowID} is no longer owned by this execution. Waiting for the owner's recorded outcome`;
           } else if (err instanceof DBOSWorkflowCancelledError) {
             if (err.workflowID === workflowID) {
               // The run observed its own cancellation. Park the execution.
               // Of course this relies on the user not abusing DBOSWorkflowCancelledError to not hang.
-              releaseRunningWorkflow();
               pendingAdopt = `Workflow ${workflowID} was cancelled during execution. Waiting for the recorded outcome`;
             } else {
               const e = new DBOSAwaitedWorkflowCancelledError(err.workflowID);
@@ -847,20 +859,14 @@ export class DBOSExecutor {
       }
     };
 
-    if (
-      shouldExecute &&
-      (params.queueName === undefined || params.executeWorkflow) &&
-      !this.systemDatabase.checkForRunningWorkflow(workflowID)
-    ) {
-      const workflowPromise: Promise<R> = runWorkflow();
-
-      this.systemDatabase.registerRunningWorkflow(
+    if (shouldExecute && (params.queueName === undefined || params.executeWorkflow)) {
+      runningEntry = this.systemDatabase.registerRunningWorkflow(
         workflowID,
-        workflowPromise,
-        releaseRunningWorkflow,
         params.queueName,
         params.enqueueOptions?.queuePartitionKey,
       );
+      const workflowPromise: Promise<R> = runWorkflow();
+      this.systemDatabase.trackRunningWorkflow(workflowID, runningEntry, workflowPromise);
 
       // Return the normal handle that doesn't capture errors.
       return new InvokedHandle(workflowPromise, workflowID);
@@ -1015,6 +1021,8 @@ export class DBOSExecutor {
             result = await invokeStepAttempt(attemptNum);
           } catch (error) {
             await rethrowIfCancelled();
+            // Lost ownership parks the workflow; retrying would only rerun the step body.
+            if (error instanceof DBOSWorkflowConflictError) endSpanAndRethrow(error);
             const e = error as Error;
             if (stepConfig.shouldRetry) {
               try {
@@ -1065,6 +1073,7 @@ export class DBOSExecutor {
           result = await invokeStepAttempt(undefined);
         } catch (error) {
           await rethrowIfCancelled();
+          if (error instanceof DBOSWorkflowConflictError) endSpanAndRethrow(error);
           err = error as Error;
         }
       }
@@ -1289,7 +1298,7 @@ export class DBOSExecutor {
   }
 
   /** Fetch the claimed workflows' statuses in as few round trips as possible, then dispatch each. */
-  async dispatchDequeuedWorkflows(workflowIDs: string[]): Promise<void> {
+  async dispatchDequeuedWorkflows(workflowIDs: string[], ownerXid: string): Promise<void> {
     let statuses: Map<string, WorkflowStatusInternal>;
     try {
       statuses = await this.systemDatabase.getWorkflowStatuses(workflowIDs);
@@ -1304,7 +1313,7 @@ export class DBOSExecutor {
         if (!status) {
           throw new DBOSError(`workflow status not found`);
         }
-        await this.executeDequeuedWorkflow(status);
+        await this.executeDequeuedWorkflow(status, ownerXid);
       } catch (e) {
         this.logger.warn(`Could not execute workflow with id ${workflowID}: ${(e as Error).message}`);
       }
@@ -1317,8 +1326,10 @@ export class DBOSExecutor {
    * Deliberately skips initWorkflowStatus: the claim already wrote everything it would
    * (PENDING, executor, deadline, recovery_attempts) and this status was read back from
    * that row, so re-upserting it only rewrites the columns it just read.
+   *
+   * `ownerXid` is the token the claim wrote, never re-read from the row: a later claim's token there is not ours.
    */
-  async executeDequeuedWorkflow(wfStatus: WorkflowStatusInternal): Promise<WorkflowHandle<unknown>> {
+  async executeDequeuedWorkflow(wfStatus: WorkflowStatusInternal, ownerXid: string): Promise<WorkflowHandle<unknown>> {
     const workflowID = wfStatus.workflowUUID;
     if (!wfStatus.input) {
       this.logger.error(`Failed to find inputs for workflowUUID: ${workflowID}`);
@@ -1332,7 +1343,11 @@ export class DBOSExecutor {
       // so it transitions to ERROR instead of being stuck in PENDING.
       this.logger.error(`Failed to deserialize inputs for workflow ${workflowID}: ${(err as Error).message}`);
       const sererr = await serializeResErrorWithSerializer(err as Error, this.serializer, wfStatus.serialization);
-      await this.systemDatabase.recordWorkflowError(workflowID, { ...wfStatus, error: sererr.serializedValue });
+      await this.systemDatabase.recordWorkflowError(
+        workflowID,
+        { ...wfStatus, error: sererr.serializedValue },
+        ownerXid,
+      );
       throw err;
     }
     const recoverCtx = this.#getRecoveryContext(workflowID, wfStatus);
@@ -1365,6 +1380,7 @@ export class DBOSExecutor {
             executeWorkflow: true,
             deadlineEpochMS: wfStatus.deadlineEpochMS,
             dequeuedStatus: wfStatus,
+            ownerXid,
           },
           ...inputs,
         );

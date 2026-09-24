@@ -7,6 +7,7 @@ import {
 import type { QueueRecord, SystemDatabase } from './system_database';
 import type { GlobalLogger } from './telemetry/logs';
 import { globalParams, RESERVED_QUEUE_NAME_PREFIX } from './utils';
+import { randomUUID } from 'node:crypto';
 
 /**
  * Log a single queue's name and its set parameters. Unset parameters are
@@ -833,24 +834,27 @@ class WFQueueRunner {
   private async pollQueue(exec: DBOSExecutor, queue: WorkflowQueue): Promise<boolean> {
     let contentionDetected = false;
     // Helper function that starts dequeued workflows
-    const dispatch = async (wfids: string[]) => {
+    const dispatch = async (wfids: string[], ownerXid: string) => {
       if (wfids.length > 0) {
         await debugTriggerPoint(DEBUG_TRIGGER_WORKFLOW_QUEUE_START);
       }
-      await exec.dispatchDequeuedWorkflows(wfids);
+      await exec.dispatchDequeuedWorkflows(wfids, ownerXid);
     };
     const sysdb = exec.systemDatabase;
     // Dequeue workflows for this queue, either in one batched sweep across partitions or one partition at a time.
     try {
       if (!isPartitionedQueue(queue)) {
+        const ownerXid = randomUUID();
         const wfids = await sysdb.findAndMarkStartableWorkflows(
           queue,
           exec.executorID,
           globalParams.appVersion,
           undefined,
           sysdb.countRunningWorkflowsForQueue(queue.name),
+          0,
+          ownerXid,
         );
-        await dispatch(wfids);
+        await dispatch(wfids, ownerXid);
       } else if (
         queue.partitionConcurrency === 1 &&
         queue.concurrency === undefined &&
@@ -860,13 +864,15 @@ class WFQueueRunner {
         // Batched path: one transaction claims every partition's head (see findAndMarkStartablePartitionedWorkflows).
         const maxTasks = workerBudget(queue, sysdb.countRunningWorkflowsForQueue(queue.name));
         if (maxTasks > 0) {
+          const ownerXid = randomUUID();
           const wfids = await sysdb.findAndMarkStartablePartitionedWorkflows(
             queue,
             exec.executorID,
             globalParams.appVersion,
             maxTasks,
+            ownerXid,
           );
-          await dispatch(wfids);
+          await dispatch(wfids, ownerXid);
         }
       } else {
         // Every other partitioned config sweeps one partition at a time, in random order to prevent starvation.
@@ -877,6 +883,7 @@ class WFQueueRunner {
         for (const partitionKey of partitionKeys) {
           if (workerBudget(queue, running + claimed) <= 0) break;
           let partitionWfids: string[];
+          const ownerXid = randomUUID();
           try {
             partitionWfids = await sysdb.findAndMarkStartableWorkflows(
               queue,
@@ -885,6 +892,7 @@ class WFQueueRunner {
               partitionKey,
               running + claimed,
               sysdb.countRunningWorkflowsForPartition(queue.name, partitionKey),
+              ownerXid,
             );
           } catch (e) {
             // Lock held or claim raced by another worker: skip just this partition, no queue-wide backoff.
@@ -892,7 +900,7 @@ class WFQueueRunner {
             throw e;
           }
           claimed += partitionWfids.length;
-          await dispatch(partitionWfids);
+          await dispatch(partitionWfids, ownerXid);
           await debugTriggerPoint(DEBUG_TRIGGER_BETWEEN_PARTITION_DISPATCHES);
         }
       }

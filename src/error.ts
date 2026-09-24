@@ -21,9 +21,10 @@ export class DBOSInitializationError extends DBOSError {
 }
 
 const ConflictingWFIDError = 5;
+/** Raised when an execution no longer owns its workflow, so it must stop and adopt the owner's outcome. */
 export class DBOSWorkflowConflictError extends DBOSError {
   constructor(workflowID: string) {
-    super(`Conflicting WF ID ${workflowID}`, ConflictingWFIDError);
+    super(`Workflow ${workflowID} is no longer owned by this execution`, ConflictingWFIDError);
   }
 }
 
@@ -244,6 +245,22 @@ export class DBOSWorkflowIDInUseError extends DBOSError {
     );
     // Error serialization records err.name, which is otherwise 'Error'; a replayed rejection is matched on it.
     this.name = 'DBOSWorkflowIDInUseError';
+  }
+}
+
+export const StepNondeterminism = 37;
+/** Raised when an execution records a step ID that it already recorded differently. */
+export class DBOSStepNondeterminismError extends DBOSError {
+  constructor(
+    readonly workflowID: string,
+    readonly stepID: number,
+  ) {
+    super(
+      `Step ${stepID} of workflow ${workflowID} was recorded twice by the same execution with different results. Check that your workflow is deterministic.`,
+      StepNondeterminism,
+    );
+    // Error serialization records err.name, which is otherwise 'Error'.
+    this.name = 'DBOSStepNondeterminismError';
   }
 }
 
