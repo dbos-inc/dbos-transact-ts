@@ -1,4 +1,4 @@
-import { DBOS } from '@dbos-inc/dbos-sdk';
+import { DBOS, DBOSWorkflowConflictError } from '@dbos-inc/dbos-sdk';
 import { Client, Pool } from 'pg';
 import { NodePostgresDataSource } from '..';
 import { dropDB, ensureDB } from './test-helpers';
@@ -50,34 +50,24 @@ describe('NodePostgresDataSource', () => {
       'SELECT * FROM dbos.transaction_completion WHERE workflow_id = $1',
       [workflowID],
     );
-    expect(rows.length).toBe(1);
-    expect(rows[0].workflow_id).toBe(workflowID);
-    expect(rows[0].function_num).toBe(0);
-    expect(rows[0].output).not.toBeNull();
-    expect(SuperJSON.parse(rows[0].output!)).toMatchObject({ user, greet_count: 1 });
+    // Completion cleared the checkpoint the transaction wrote.
+    expect(rows).toHaveLength(0);
   });
 
-  test('rewind drops the checkpoints past the cut', async () => {
+  test('completion drops the checkpoints and rewind reruns past the cut', async () => {
     const user = 'rewindTest';
     await userDB.query('DELETE FROM greetings WHERE name = $1', [user]);
     const workflowID = randomUUID();
 
     await expect(DBOS.withNextWorkflowID(workflowID, () => regTwoInsertWorkflow(user))).resolves.toEqual([1, 2]);
-    const before = await completions(workflowID);
-    expect(before.map((r) => r.function_num)).toEqual([0, 1]);
+    // The step checkpoints cover every transaction once the workflow completes.
+    expect(await completions(workflowID)).toHaveLength(0);
 
-    // Cut at the second transaction. Its checkpoint has to go with the step: left
-    // behind, the replay would read greet_count 2 back out of it instead of running
-    // the INSERT again, and the table would stay at 2.
+    // The first transaction replays from its step checkpoint, so it still reports 1;
+    // the second really runs again, taking the table from 2 to 3.
     const handle = await DBOS.rewindWorkflow<number[]>(workflowID, { startStep: 1 });
-    // The first transaction replays from the checkpoint that survived the cut, so it
-    // still reports 1; the second really runs again, taking the table from 2 to 3.
     await expect(handle.getResult()).resolves.toEqual([1, 3]);
-
-    const after = await completions(workflowID);
-    expect(after.map((r) => r.function_num)).toEqual([0, 1]);
-    expect(SuperJSON.parse(after[0].output!)).toMatchObject({ user, greet_count: 1 });
-    expect(SuperJSON.parse(after[1].output!)).toMatchObject({ user, greet_count: 3 });
+    expect(await completions(workflowID)).toHaveLength(0);
   });
 
   async function completions(workflowID: string) {
@@ -115,11 +105,8 @@ describe('NodePostgresDataSource', () => {
       'SELECT * FROM dbos.transaction_completion WHERE workflow_id = $1',
       [workflowID],
     );
-    expect(rows.length).toBe(1);
-    expect(rows[0].workflow_id).toBe(workflowID);
-    expect(rows[0].function_num).toBe(0);
-    expect(rows[0].output).not.toBeNull();
-    expect(SuperJSON.parse(rows[0].output!)).toMatchObject({ user, greet_count: 1 });
+    // Completion cleared the checkpoint the transaction wrote.
+    expect(rows).toHaveLength(0);
   });
 
   test('rerun insert dataSource.runAsTx function', async () => {
@@ -164,14 +151,8 @@ describe('NodePostgresDataSource', () => {
       'SELECT * FROM dbos.transaction_completion WHERE workflow_id = $1',
       [workflowID],
     );
-    expect(txOutput.length).toBe(1);
-    expect(txOutput[0].workflow_id).toBe(workflowID);
-    expect(txOutput[0].function_num).toBe(0);
-    expect(txOutput[0].output).toBeNull();
-    expect(txOutput[0].error).not.toBeNull();
-    const $error = SuperJSON.parse(txOutput[0].error!);
-    expect($error).toBeInstanceOf(Error);
-    expect(($error as Error).message).toMatch(/^test error \d+$/);
+    // Completion cleared the checkpoint the transaction wrote.
+    expect(txOutput).toHaveLength(0);
   });
 
   test('rerun error dataSource.register function', async () => {
@@ -209,14 +190,8 @@ describe('NodePostgresDataSource', () => {
       'SELECT * FROM dbos.transaction_completion WHERE workflow_id = $1',
       [workflowID],
     );
-    expect(txOutput.length).toBe(1);
-    expect(txOutput[0].workflow_id).toBe(workflowID);
-    expect(txOutput[0].function_num).toBe(0);
-    expect(txOutput[0].output).toBeNull();
-    expect(txOutput[0].error).not.toBeNull();
-    const $error = SuperJSON.parse(txOutput[0].error!);
-    expect($error).toBeInstanceOf(Error);
-    expect(($error as Error).message).toMatch(/^test error \d+$/);
+    // Completion cleared the checkpoint the transaction wrote.
+    expect(txOutput).toHaveLength(0);
   });
 
   test('rerun error dataSource.runAsTx function', async () => {
@@ -359,25 +334,35 @@ describe('NodePostgresDataSource', () => {
     expect((winnerError as Error).message).toBe('winner-error');
     expect(raceState.callCount).toBe(3);
 
-    // Every loser's writes were discarded and the winners' records still stand.
+    // Every loser's writes were discarded, and completion cleared the winners' checkpoints.
     const { rows: tags } = await userDB.query<{ tag: string }>('SELECT tag FROM race_side_effects');
     expect(tags).toHaveLength(0);
     const { rows: txOutput } = await userDB.query<transaction_completion>(
       'SELECT * FROM dbos.transaction_completion WHERE workflow_id = ANY($1)',
-      [[wfid1, wfid2]],
+      [[wfid1, wfid2, wfid3]],
     );
-    expect(txOutput).toHaveLength(2);
-    for (const row of txOutput) {
-      expect(row.error).toBeNull(); // no loser error was ever recorded
-      expect(SuperJSON.parse(row.output!)).toBe('winner-result');
+    expect(txOutput).toHaveLength(0);
+  });
+
+  /** A stale execution cannot apply a step the new owner also runs, nor leave an outcome for it. */
+  test('an execution that loses the workflow mid-transaction rolls back', async () => {
+    await userDB.query('DELETE FROM race_side_effects');
+    const workflowID = randomUUID();
+    await expect(DBOS.withNextWorkflowID(workflowID, () => regStaleWorkflow())).resolves.toBe('conflicted');
+
+    const { rows: tags } = await userDB.query<{ tag: string }>('SELECT tag FROM race_side_effects');
+    expect(tags).toHaveLength(0);
+    expect(staleState.completionsAtConflict).toBe(0);
+    const sysDB = new Client(sysConfig);
+    try {
+      await sysDB.connect();
+      const { rows: steps } = await sysDB.query('SELECT * FROM dbos.operation_outputs WHERE workflow_uuid = $1', [
+        workflowID,
+      ]);
+      expect(steps).toHaveLength(0);
+    } finally {
+      await sysDB.end();
     }
-    const { rows: txError } = await userDB.query<transaction_completion>(
-      'SELECT * FROM dbos.transaction_completion WHERE workflow_id = $1',
-      [wfid3],
-    );
-    expect(txError).toHaveLength(1);
-    expect(txError[0].output).toBeNull(); // the loser never overwrote the winner's error with its own result
-    expect(SuperJSON.parse<Error>(txError[0].error!).message).toBe('winner-error');
   });
 });
 
@@ -482,6 +467,61 @@ async function readFunction(user: string) {
 }
 
 const regRaceFunction = dataSource.registerTransaction(raceFunction);
+
+const sysConfig = { ...config, database: 'node_pg_ds_test_dbos_sys' };
+const staleState = { originalOwner: null as string | null, completionsAtConflict: -1 };
+
+/** Set the workflow's ownership token, returning the one it replaced. */
+async function setOwner(workflowID: string, ownerXid: string | null): Promise<string | null> {
+  const sysDB = new Client(sysConfig);
+  try {
+    await sysDB.connect();
+    const { rows } = await sysDB.query<{ owner_xid: string | null }>(
+      'SELECT owner_xid FROM dbos.workflow_status WHERE workflow_uuid = $1',
+      [workflowID],
+    );
+    await sysDB.query('UPDATE dbos.workflow_status SET owner_xid = $2 WHERE workflow_uuid = $1', [
+      workflowID,
+      ownerXid,
+    ]);
+    return rows[0].owner_xid;
+  } finally {
+    await sysDB.end();
+  }
+}
+
+// Another execution claims the workflow while this transaction is still open.
+async function staleFunction() {
+  await NodePostgresDataSource.client.query("INSERT INTO race_side_effects(tag) VALUES ('stale')");
+  staleState.originalOwner = await setOwner(DBOS.workflowID!, 'another-execution');
+  return 'stale';
+}
+
+const regStaleFunction = dataSource.registerTransaction(staleFunction);
+
+async function staleWorkflow() {
+  try {
+    return await regStaleFunction();
+  } catch (e) {
+    if (!(e instanceof DBOSWorkflowConflictError)) throw e;
+    // Read before completion clears it: the conflict must not have been recorded as the step's outcome.
+    const userDB = new Client(config);
+    try {
+      await userDB.connect();
+      const { rows } = await userDB.query('SELECT * FROM dbos.transaction_completion WHERE workflow_id = $1', [
+        DBOS.workflowID,
+      ]);
+      staleState.completionsAtConflict = rows.length;
+    } finally {
+      await userDB.end();
+    }
+    // A real duplicate parks here instead; reclaimed so this execution's outcome lands.
+    await setOwner(DBOS.workflowID!, staleState.originalOwner);
+    return 'conflicted';
+  }
+}
+
+const regStaleWorkflow = DBOS.registerWorkflow(staleWorkflow);
 
 async function raceWorkflow() {
   return await regRaceFunction();
@@ -614,10 +654,7 @@ describe('NodePostgresDataSourceCreateTxC', () => {
       'SELECT * FROM dbos.transaction_completion WHERE workflow_id = $1',
       [workflowID],
     );
-    expect(rows.length).toBe(1);
-    expect(rows[0].workflow_id).toBe(workflowID);
-    expect(rows[0].function_num).toBe(0);
-    expect(rows[0].output).not.toBeNull();
-    expect(SuperJSON.parse(rows[0].output!)).toMatchObject({ user, greet_count: 1 });
+    // Completion cleared the checkpoint the transaction wrote.
+    expect(rows).toHaveLength(0);
   });
 });

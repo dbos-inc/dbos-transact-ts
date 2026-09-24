@@ -1,10 +1,10 @@
 import { DBOS, DBOSClient, StatusString } from '../src';
 import { DBOSExecutor } from '../src/dbos-executor';
-import { generateDBOSTestConfig, setUpDBOSTestSysDb, Event } from './helpers';
+import { generateDBOSTestConfig, setUpDBOSTestSysDb, Event, retryUntilSuccess } from './helpers';
 import { Client, Pool, PoolClient } from 'pg';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
-import { DBOSError, DBOSNonExistentWorkflowError } from '../src/error';
+import { DBOSError, DBOSNonExistentWorkflowError, DBOSWorkflowCancelledError } from '../src/error';
 import { INTERNAL_QUEUE_NAME, globalParams, sleepms } from '../src/utils';
 import { deserializeValue } from '../src/serialization';
 import {
@@ -265,6 +265,46 @@ const dsWorkflow = DBOS.registerWorkflow(
   { name: 'ds_workflow' },
 );
 
+// Holds after its transactions, so a test can look at the checkpoints of a running workflow.
+const gatedDSWorkflow = DBOS.registerWorkflow(
+  async () => {
+    await insertFirst('a');
+    await insertSecond('b');
+    const g = gate('ds_gated');
+    g.started.set();
+    await g.release.wait();
+    return 'done';
+  },
+  { name: 'gated_ds_workflow' },
+);
+
+const afterTransaction = DBOS.registerStep(() => Promise.resolve(), { name: 'after_transaction' });
+
+// Takes a step after the gate, so a cancel issued while it waits is observed there.
+const cancellableDSWorkflow = DBOS.registerWorkflow(
+  async () => {
+    await insertFirst('a');
+    const g = gate('ds_cancellable');
+    g.started.set();
+    await g.release.wait();
+    await afterTransaction();
+    return 'done';
+  },
+  { name: 'cancellable_ds_workflow' },
+);
+
+const failingDSWorkflow = DBOS.registerWorkflow(
+  async (databaseError: boolean) => {
+    await insertFirst('a');
+    if (databaseError) {
+      // A real driver error, raised outside any step.
+      await firstDS.pool.query('SELECT 1/0');
+    }
+    throw new Error('workflow failed');
+  },
+  { name: 'failing_ds_workflow' },
+);
+
 const rewindChild = DBOS.registerWorkflow(
   (value: number) => {
     runCount('child');
@@ -304,6 +344,7 @@ describe('rewind', () => {
   });
 
   afterEach(async () => {
+    jest.restoreAllMocks();
     await systemDBClient.end();
     await DBOS.shutdown();
     process.env.DBOS__APPVERSION = undefined;
@@ -402,6 +443,11 @@ describe('rewind', () => {
   }
 
   const sysdb = () => DBOSExecutor.globalInstance!.systemDatabase;
+
+  /** Skip the cleanup at completion, leaving checkpoints as a workflow finished before it existed did. */
+  function keepCompletionCheckpoints() {
+    jest.spyOn(DBOSExecutor.prototype, 'deleteCompletedDataSourceCheckpoints').mockResolvedValue(undefined);
+  }
 
   //////////////////////////////////////////
   // Replay
@@ -692,6 +738,7 @@ describe('rewind', () => {
    * `startStep` the system database would reject must never get that far.
    */
   test('rejects-a-negative-start-step-before-dropping-checkpoints', async () => {
+    keepCompletionCheckpoints();
     const workflowID = randomUUID();
     await DBOS.withNextWorkflowID(workflowID, async () => {
       await expect(dsWorkflow()).resolves.toBe(1);
@@ -713,6 +760,7 @@ describe('rewind', () => {
   //////////////////////////////////////////
 
   test('drops-every-registered-data-sources-checkpoints-past-the-cut', async () => {
+    keepCompletionCheckpoints();
     const workflowID = randomUUID();
     await DBOS.withNextWorkflowID(workflowID, async () => {
       await expect(dsWorkflow()).resolves.toBe(1);
@@ -789,6 +837,7 @@ describe('rewind', () => {
    * application.
    */
   test('client-rewind-leaves-the-data-sources-checkpoints-behind', async () => {
+    keepCompletionCheckpoints();
     const workflowID = randomUUID();
     await DBOS.withNextWorkflowID(workflowID, async () => {
       await expect(dsWorkflow()).resolves.toBe(1);
@@ -809,5 +858,76 @@ describe('rewind', () => {
     expect(await secondDS.checkpoints(workflowID)).toEqual([1, 3]);
     expect(await firstDS.rows()).toEqual(['a', 'c']);
     expect(await secondDS.rows()).toEqual(['b', 'd']);
+  });
+
+  //////////////////////////////////////////
+  // Data source checkpoints at completion
+  //////////////////////////////////////////
+
+  /** Checkpoints hold while the workflow runs and are cleared from every data source once it succeeds. */
+  test('completion-drops-every-data-sources-checkpoints', async () => {
+    const g = gate('ds_gated');
+    const handle = await DBOS.startWorkflow(gatedDSWorkflow)();
+    await g.started.wait();
+    expect(await firstDS.checkpoints(handle.workflowID)).toEqual([0]);
+    expect(await secondDS.checkpoints(handle.workflowID)).toEqual([1]);
+
+    g.release.set();
+    await expect(handle.getResult()).resolves.toBe('done');
+    expect(await firstDS.checkpoints(handle.workflowID)).toEqual([]);
+    expect(await secondDS.checkpoints(handle.workflowID)).toEqual([]);
+    expect(await firstDS.rows()).toEqual(['a']);
+    expect(await secondDS.rows()).toEqual(['b']);
+  });
+
+  test('an-error-drops-the-checkpoints', async () => {
+    const workflowID = randomUUID();
+    await expect(DBOS.withNextWorkflowID(workflowID, () => failingDSWorkflow(false))).rejects.toThrow(
+      'workflow failed',
+    );
+    expect((await statusRow(workflowID)).status).toBe(StatusString.ERROR);
+    expect(await firstDS.checkpoints(workflowID)).toEqual([]);
+  });
+
+  /** A database error may have cost a transaction its step checkpoint, leaving its data source checkpoint the only record. */
+  test('a-database-error-keeps-the-checkpoints', async () => {
+    const workflowID = randomUUID();
+    await expect(DBOS.withNextWorkflowID(workflowID, () => failingDSWorkflow(true))).rejects.toThrow(
+      'division by zero',
+    );
+    expect((await statusRow(workflowID)).status).toBe(StatusString.ERROR);
+    expect(await firstDS.checkpoints(workflowID)).toEqual([0]);
+  });
+
+  /** A cancelled workflow can be resumed, and a transaction whose step checkpoint was lost then replays off its data source checkpoint. */
+  test('a-cancelled-workflow-keeps-the-checkpoints-for-its-resume', async () => {
+    const g = gate('ds_cancellable');
+    const handle = await DBOS.startWorkflow(cancellableDSWorkflow)();
+    const workflowID = handle.workflowID;
+    await g.started.wait();
+    await DBOS.cancelWorkflow(workflowID);
+    g.release.set();
+    await expect(handle.getResult()).rejects.toThrow(DBOSWorkflowCancelledError);
+    await retryUntilSuccess(() => expect(sysdb().checkForRunningWorkflow(workflowID)).toBe(false));
+    expect(await firstDS.checkpoints(workflowID)).toEqual([0]);
+
+    // Lose the transaction's step checkpoint, as a crash just after its commit would.
+    await systemDBClient.query(`DELETE FROM "${schema}".operation_outputs WHERE workflow_uuid = $1`, [workflowID]);
+    const resumed = await DBOS.resumeWorkflow<string>(workflowID);
+    await expect(resumed.getResult()).resolves.toBe('done');
+    expect(await firstDS.rows()).toEqual(['a']);
+    expect(await firstDS.checkpoints(workflowID)).toEqual([]);
+  });
+
+  /** A leftover checkpoint is harmless, so a data source that cannot be cleared neither fails the workflow nor stops the others from being cleared. */
+  test('a-failed-cleanup-still-records-the-outcome', async () => {
+    jest.spyOn(firstDS, 'deleteCheckpoints').mockRejectedValue(new Error('datasource down'));
+    const workflowID = randomUUID();
+    await DBOS.withNextWorkflowID(workflowID, async () => {
+      await expect(dsWorkflow()).resolves.toBe(1);
+    });
+    expect((await statusRow(workflowID)).status).toBe(StatusString.SUCCESS);
+    expect(await firstDS.checkpoints(workflowID)).toEqual([0, 2]);
+    expect(await secondDS.checkpoints(workflowID)).toEqual([]);
   });
 });

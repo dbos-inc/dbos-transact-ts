@@ -4,6 +4,8 @@ import {
   isPGRetriableTransactionError,
   DBOSError,
   DBOSStepAlreadyRecordedError,
+  DBOSWorkflowConflictError,
+  assertStillOwnsWorkflow,
   replayRecordedStep,
   registerTransaction,
   runTransaction,
@@ -184,6 +186,8 @@ class PrismaTransactionHandler implements DataSourceTransactionHandler {
     if (inserted === 0) {
       throw new DBOSStepAlreadyRecordedError(workflowID, stepID);
     }
+    // Holding this step's row, so a later owner's insert waits on our commit.
+    await assertStillOwnsWorkflow(workflowID);
   }
 
   async invokeTransactionFunction<This, Args extends unknown[], Return>(
@@ -242,6 +246,8 @@ class PrismaTransactionHandler implements DataSourceTransactionHandler {
         if (saveResults && error instanceof DBOSStepAlreadyRecordedError) {
           return await this.#replayConflictingStep<Return>(workflowID, stepID!);
         }
+        // The new owner wins; recording an error here would replay it as this step's outcome.
+        if (error instanceof DBOSWorkflowConflictError) throw error;
         if (isPGRetriableTransactionError(unwrapPrismaError(error))) {
           DBOS.span?.addEvent('TXN SERIALIZATION FAILURE', { retryWaitMillis: retryWaitMS }, performance.now());
           await new Promise((resolve) => setTimeout(resolve, retryWaitMS));

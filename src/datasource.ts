@@ -1,4 +1,4 @@
-import { functionIDGetIncrement, runWithDataSourceContext } from './context';
+import { currentOwnerXid, functionIDGetIncrement, runWithDataSourceContext } from './context';
 import { DBOS } from './dbos';
 import { DBOSExecutor, OperationType } from './dbos-executor';
 import {
@@ -9,7 +9,7 @@ import {
   registerTransactionalDataSource,
   wrapDBOSFunctionAndRegister,
 } from './decorators';
-import { DBOSError, DBOSInvalidWorkflowTransitionError } from './error';
+import { DBOSError, DBOSInvalidWorkflowTransitionError, DBOSWorkflowConflictError } from './error';
 import { runWithTrace, SpanStatusCode } from './telemetry/traces';
 import { SuperJSON } from 'superjson';
 
@@ -34,7 +34,8 @@ export interface DataSourceTransactionHandler {
   /**
    * Delete this data source's checkpoints for `workflowID` from `startStep` onwards.
    *
-   * Used by rewind, which drops the workflow's history from that step, including datasources checkpoints.
+   * Used by rewind, which drops the workflow's history from that step, including datasources checkpoints,
+   * and on workflow completion (from step 0), once the workflow's step checkpoints cover every transaction.
    */
   deleteCheckpoints?(workflowID: string, startStep: number): Promise<void>;
 
@@ -287,8 +288,26 @@ export interface PGTransactionConfig {
   readOnly?: boolean;
 }
 
-/** Base error type, re-exported so data sources can raise DBOS-typed failures. */
-export { DBOSError };
+/** Error types re-exported so data sources can raise and recognize DBOS-typed failures. */
+export { DBOSError, DBOSWorkflowConflictError };
+
+/**
+ * Throw DBOSWorkflowConflictError if the calling execution no longer owns `workflowID`.
+ *
+ * Data sources call this inside their transaction, after inserting the step's checkpoint:
+ * that row makes a later owner's insert wait on this commit, so a stale execution rolls
+ * back instead of applying a step the new owner also runs. The error must be rethrown
+ * as is, never recorded as the step's outcome.
+ */
+export async function assertStillOwnsWorkflow(workflowID: string): Promise<void> {
+  const ownerXid = currentOwnerXid(workflowID);
+  // No token means nothing to fence on, as in a transaction run outside the workflow's own context.
+  if (ownerXid === undefined) return;
+  const owner = await DBOSExecutor.globalInstance!.systemDatabase.getWorkflowOwner(workflowID);
+  if (owner !== ownerXid) {
+    throw new DBOSWorkflowConflictError(workflowID);
+  }
+}
 
 /**
  * Internal signal that a concurrent duplicate execution recorded this step's outcome first.

@@ -37,6 +37,7 @@ import {
   type RunningWorkflowEntry,
   type WorkflowStatusInternal,
   type SystemDatabaseStoredResult,
+  isDatabaseError,
 } from './system_database';
 import { randomUUID } from 'node:crypto';
 import {
@@ -81,6 +82,7 @@ import { wfQueueRunner } from './wfqueue';
 import { DynamicSchedulerLoop } from './scheduler/scheduler';
 import * as crypto from 'crypto';
 import {
+  deleteCompletedDataSourceCheckpoints,
   forkWorkflow,
   listQueuedWorkflows,
   listWorkflows,
@@ -718,6 +720,10 @@ export class DBOSExecutor {
       const sererr = await serializeResErrorWithSerializer(err, eserializer, ires.serialization ?? null);
       internalStatus.error = sererr.serializedValue;
       internalStatus.status = StatusString.ERROR;
+      // A database error may have cost a step its checkpoint, leaving its data source row the only record.
+      if (!isDatabaseError(err)) {
+        await exec.deleteCompletedDataSourceCheckpoints(workflowID);
+      }
       const recorded = await exec.systemDatabase.recordWorkflowError(workflowID, internalStatus, ownerXid);
       if (recorded) {
         exec.logger.error(err);
@@ -814,6 +820,7 @@ export class DBOSExecutor {
           result = funcResult.deserialized;
           internalStatus.output = funcResult.stringified;
           internalStatus.status = StatusString.SUCCESS;
+          await this.deleteCompletedDataSourceCheckpoints(workflowID);
           const recorded = await this.systemDatabase.recordWorkflowOutput(workflowID, internalStatus, ownerXid);
           if (recorded) {
             span.setStatus({ code: SpanStatusCode.OK });
@@ -1136,6 +1143,12 @@ export class DBOSExecutor {
   ): Promise<string> {
     const newWorkflowID = options.newWorkflowID ?? getNextWFID(undefined);
     return forkWorkflow(this.systemDatabase, workflowID, startStep, { ...options, newWorkflowID });
+  }
+
+  /** Still PENDING, so no rewind can interleave; the step checkpoints now cover every transaction. */
+  async deleteCompletedDataSourceCheckpoints(workflowID: string): Promise<void> {
+    if (transactionalDataSources.size === 0) return;
+    await deleteCompletedDataSourceCheckpoints([...transactionalDataSources.values()], workflowID, this.logger);
   }
 
   /**

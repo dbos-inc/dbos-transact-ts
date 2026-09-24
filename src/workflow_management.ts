@@ -114,7 +114,7 @@ export async function rewindWorkflow(
   if (startStep < 0) {
     throw new DBOSError(`startStep must be >= 0, got ${startStep}`);
   }
-  const withCheckpoints = dataSources.filter((ds) => ds.deleteCheckpoints !== undefined);
+  const withCheckpoints = keepingCheckpoints(dataSources);
   // Deleting a running workflow's checkpoints would pull them out from under the
   // execution that still owns them, so establish the workflow is rewindable before
   // touching anything the system database rewind will not re-check for us.
@@ -125,6 +125,33 @@ export async function rewindWorkflow(
     await ds.deleteCheckpoints!(workflowID, startStep);
   }
   await sysdb.rewindWorkflow(workflowID, startStep, options);
+}
+
+/** The data sources that keep checkpoints of their own; the others do not implement `deleteCheckpoints`. */
+function keepingCheckpoints(dataSources: readonly DataSourceTransactionHandler[]) {
+  return dataSources.filter((ds) => ds.deleteCheckpoints !== undefined);
+}
+
+/**
+ * Drop a finishing workflow's data source checkpoints, which its step checkpoints now cover.
+ *
+ * Best effort: a leftover checkpoint is harmless, so a failure only warns and the other
+ * data sources are still cleared.
+ */
+export async function deleteCompletedDataSourceCheckpoints(
+  dataSources: readonly DataSourceTransactionHandler[],
+  workflowID: string,
+  logger: GlobalLogger,
+): Promise<void> {
+  for (const ds of keepingCheckpoints(dataSources)) {
+    try {
+      await ds.deleteCheckpoints!(workflowID, 0);
+    } catch (e) {
+      logger.warn(
+        `Failed to delete data source ${ds.name} checkpoints of workflow ${workflowID}: ${(e as Error).message}`,
+      );
+    }
+  }
 }
 
 export async function toWorkflowStatus(

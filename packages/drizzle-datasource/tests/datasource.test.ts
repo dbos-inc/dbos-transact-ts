@@ -64,11 +64,8 @@ describe('DrizzleDataSource', () => {
       'SELECT * FROM dbos.transaction_completion WHERE workflow_id = $1',
       [workflowID],
     );
-    expect(rows.length).toBe(1);
-    expect(rows[0].workflow_id).toBe(workflowID);
-    expect(rows[0].function_num).toBe(0);
-    expect(rows[0].output).not.toBeNull();
-    expect(SuperJSON.parse(rows[0].output!)).toMatchObject({ user, greet_count: 1 });
+    // Completion cleared the checkpoint the transaction wrote.
+    expect(rows).toHaveLength(0);
   });
 
   test('rerun insert dataSource.register function', async () => {
@@ -98,11 +95,8 @@ describe('DrizzleDataSource', () => {
       'SELECT * FROM dbos.transaction_completion WHERE workflow_id = $1',
       [workflowID],
     );
-    expect(rows.length).toBe(1);
-    expect(rows[0].workflow_id).toBe(workflowID);
-    expect(rows[0].function_num).toBe(0);
-    expect(rows[0].output).not.toBeNull();
-    expect(SuperJSON.parse(rows[0].output!)).toMatchObject({ user, greet_count: 1 });
+    // Completion cleared the checkpoint the transaction wrote.
+    expect(rows).toHaveLength(0);
   });
 
   test('rerun insert dataSource.runAsTx function', async () => {
@@ -151,14 +145,8 @@ describe('DrizzleDataSource', () => {
       'SELECT * FROM dbos.transaction_completion WHERE workflow_id = $1',
       [workflowID],
     );
-    expect(txOutput.length).toBe(1);
-    expect(txOutput[0].workflow_id).toBe(workflowID);
-    expect(txOutput[0].function_num).toBe(0);
-    expect(txOutput[0].output).toBeNull();
-    expect(txOutput[0].error).not.toBeNull();
-    const $error = SuperJSON.parse(txOutput[0].error!);
-    expect($error).toBeInstanceOf(Error);
-    expect(($error as Error).message).toMatch(/^test error \d+$/);
+    // Completion cleared the checkpoint the transaction wrote.
+    expect(txOutput).toHaveLength(0);
   });
 
   test('rerun error dataSource.register function', async () => {
@@ -200,14 +188,8 @@ describe('DrizzleDataSource', () => {
       'SELECT * FROM dbos.transaction_completion WHERE workflow_id = $1',
       [workflowID],
     );
-    expect(txOutput.length).toBe(1);
-    expect(txOutput[0].workflow_id).toBe(workflowID);
-    expect(txOutput[0].function_num).toBe(0);
-    expect(txOutput[0].output).toBeNull();
-    expect(txOutput[0].error).not.toBeNull();
-    const $error = SuperJSON.parse(txOutput[0].error!);
-    expect($error).toBeInstanceOf(Error);
-    expect(($error as Error).message).toMatch(/^test error \d+$/);
+    // Completion cleared the checkpoint the transaction wrote.
+    expect(txOutput).toHaveLength(0);
   });
 
   test('rerun error dataSource.runAsTx function', async () => {
@@ -350,25 +332,14 @@ describe('DrizzleDataSource', () => {
     expect((winnerError as Error).message).toBe('winner-error');
     expect(raceState.callCount).toBe(3);
 
-    // Every loser's writes were discarded and the winners' records still stand.
+    // Every loser's writes were discarded, and completion cleared the winners' checkpoints.
     const { rows: tags } = await userDB.query<{ tag: string }>('SELECT tag FROM race_side_effects');
     expect(tags).toHaveLength(0);
     const { rows: txOutput } = await userDB.query<transaction_completion>(
       'SELECT * FROM dbos.transaction_completion WHERE workflow_id = ANY($1)',
-      [[wfid1, wfid2]],
+      [[wfid1, wfid2, wfid3]],
     );
-    expect(txOutput).toHaveLength(2);
-    for (const row of txOutput) {
-      expect(row.error).toBeNull(); // no loser error was ever recorded
-      expect(SuperJSON.parse(row.output!)).toBe('winner-result');
-    }
-    const { rows: txError } = await userDB.query<transaction_completion>(
-      'SELECT * FROM dbos.transaction_completion WHERE workflow_id = $1',
-      [wfid3],
-    );
-    expect(txError).toHaveLength(1);
-    expect(txError[0].output).toBeNull(); // the loser never overwrote the winner's error with its own result
-    expect(SuperJSON.parse<Error>(txError[0].error!).message).toBe('winner-error');
+    expect(txOutput).toHaveLength(0);
   });
 });
 
@@ -588,10 +559,7 @@ describe('DrizzleDataSourceCreateTxC', () => {
       'SELECT * FROM dbos.transaction_completion WHERE workflow_id = $1',
       [workflowID],
     );
-    expect(rows.length).toBe(1);
-    expect(rows[0].workflow_id).toBe(workflowID);
-    expect(rows[0].function_num).toBe(0);
-    expect(rows[0].output).not.toBeNull();
-    expect(SuperJSON.parse(rows[0].output!)).toMatchObject({ user, greet_count: 1 });
+    // Completion cleared the checkpoint the transaction wrote.
+    expect(rows).toHaveLength(0);
   });
 });
