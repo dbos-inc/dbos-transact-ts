@@ -3632,29 +3632,41 @@ export class SystemDatabase {
     serializedValue: string,
     serialization: string | null,
   ): Promise<void> {
-    while (true) {
-      try {
-        // Derives the first unused offset inside the insert; two writers can still pick the same one.
-        await this.pool.query(
-          `INSERT INTO "${this.schemaName}".streams (workflow_uuid, key, value, "offset", function_id, serialization)
-           SELECT $1::text, $2::text, $3::text, COALESCE(MAX(s."offset"), -1) + 1, $4::int, $5::text
-           FROM "${this.schemaName}".streams s
-           WHERE s.workflow_uuid = $1 AND s.key = $2`,
-          [workflowID, key, serializedValue, functionID, serialization],
-        );
-      } catch (e) {
-        // Only an offset conflict resolves on retry; anything else would spin forever.
-        if (e instanceof DatabaseError && e.code === '23505') {
-          this.logger.warn(`Stream offset conflict for workflow ${workflowID}, key ${key}; retrying`);
-          await sleepms(100);
-          continue;
+    const executionXid = currentExecutionXid(workflowID);
+    const client: PoolClient = await this.#connect();
+    try {
+      while (true) {
+        try {
+          await this.#inTransaction(client, async () => {
+            // Derives the first unused offset inside the insert; two writers can still pick the same one.
+            await client.query(
+              `INSERT INTO "${this.schemaName}".streams (workflow_uuid, key, value, "offset", function_id, serialization)
+               SELECT $1::text, $2::text, $3::text, COALESCE(MAX(s."offset"), -1) + 1, $4::int, $5::text
+               FROM "${this.schemaName}".streams s
+               WHERE s.workflow_uuid = $1 AND s.key = $2`,
+              [workflowID, key, serializedValue, functionID, serialization],
+            );
+            // After the insert, in the order the workflow-level writes lock, so they cannot deadlock.
+            if (executionXid !== undefined) {
+              await this.#checkOwner(client, workflowID, executionXid);
+            }
+          });
+        } catch (e) {
+          // Only an offset conflict resolves on retry; anything else would spin forever.
+          if (e instanceof DatabaseError && e.code === '23505') {
+            this.logger.warn(`Stream offset conflict for workflow ${workflowID}, key ${key}; retrying`);
+            await sleepms(100);
+            continue;
+          }
+          if (!(e instanceof DBOSWorkflowConflictError)) this.logger.error(e);
+          throw e;
         }
-        this.logger.error(e);
-        throw e;
+        // Notify only after commit, so a woken reader sees the value.
+        this.#signalNotification(DBOS_STREAMS_CHANNEL, `${workflowID}::${key}`);
+        return;
       }
-      // Notify only after commit, so a woken reader sees the value.
-      this.#signalNotification(DBOS_STREAMS_CHANNEL, `${workflowID}::${key}`);
-      return;
+    } finally {
+      client.release();
     }
   }
 

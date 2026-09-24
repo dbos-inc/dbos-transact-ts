@@ -1021,6 +1021,8 @@ export class DBOSExecutor {
             result = await invokeStepAttempt(attemptNum);
           } catch (error) {
             await rethrowIfCancelled();
+            // Lost ownership parks the workflow; retrying would only rerun the step body.
+            if (error instanceof DBOSWorkflowConflictError) endSpanAndRethrow(error);
             const e = error as Error;
             if (stepConfig.shouldRetry) {
               try {
@@ -1071,6 +1073,7 @@ export class DBOSExecutor {
           result = await invokeStepAttempt(undefined);
         } catch (error) {
           await rethrowIfCancelled();
+          if (error instanceof DBOSWorkflowConflictError) endSpanAndRethrow(error);
           err = error as Error;
         }
       }
