@@ -731,11 +731,12 @@ const RETRY_SQLSTATE_PREFIXES = new Set([
 const RETRY_SQLSTATE_CODES = new Set([
   '40003', // statement_completion_unknown
   '25P03', // idle_in_transaction_session_timeout, when the kill lands on an in-flight query; an idle kill surfaces as a message match below
+  '40P01', // deadlock_detected: the victim's transaction rolled back, so rerunning it is safe
 ]);
 
 /**
- * Kept out of the sets above, which feed `dbRetry` and so retry forever. Only bulk maintenance
- * work retries on these; every other path runs READ COMMITTED and never sees them.
+ * Bulk maintenance retries these a bounded number of times. 40001 is kept out of the sets above,
+ * which feed `dbRetry` and so retry forever; every other path runs READ COMMITTED and never sees it.
  */
 const SERIALIZATION_SQLSTATE_CODES = new Set([
   '40001', // serialization_failure (MVCC conflict)
@@ -1900,6 +1901,7 @@ export class SystemDatabase {
     }
   }
 
+  @dbRetry()
   async runTransactionalStep(
     workflowID: string,
     functionID: number,
