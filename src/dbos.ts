@@ -1436,8 +1436,8 @@ export class DBOS {
         sermsg.serialization,
         idempotencyKey,
       );
-    } else if (DBOS.isWithinWorkflow()) {
-      // Inside a step or transaction: not recorded, but fenced on the enclosing workflow's ownership.
+    } else if (DBOS.isInStep()) {
+      // Inside a step: not recorded, but fenced on the enclosing workflow's ownership.
       const sermsg = await serializeValue(
         message,
         DBOS.#executor.serializer,
