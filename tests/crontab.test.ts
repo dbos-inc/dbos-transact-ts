@@ -1,4 +1,4 @@
-// This code was based on code from node-cron:
+// This code was based on code from node-cron 4.6.0:
 //   https://github.com/node-cron/node-cron
 /*
 ISC License
@@ -17,7 +17,12 @@ THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
  OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 */
 
-import { validateCrontab as validate, convertExpression as conversion, TimeMatcher } from '../src/scheduler/crontab';
+import { validateCrontab as validate, convertExpression, TimeMatcher } from '../src/scheduler/crontab';
+
+const conversion = (expression: string) =>
+  convertExpression(expression)
+    .map((field) => field.join(','))
+    .join(' ');
 
 //////////////////
 // Conversion tests
@@ -90,16 +95,24 @@ describe('range-conversion', () => {
 
 describe('step-values-conversion', () => {
   it('should convert step values', () => {
-    const expression = '1,2,3,4,5,6,7,8,9,10/2 0,1,2,3,4,5,6,7,8,9/5 */3 * * *';
-    const expressions = conversion(expression).split(' ');
-    expect(expressions[0]).toBe('2,4,6,8,10');
+    const expressions = conversion('1-10/2 0-9/5 */3 */10 */4 *').split(' ');
+    expect(expressions[0]).toBe('1,3,5,7,9');
     expect(expressions[1]).toBe('0,5');
     expect(expressions[2]).toBe('0,3,6,9,12,15,18,21');
+    expect(expressions[3]).toBe('1,11,21,31');
+    expect(expressions[4]).toBe('1,5,9');
   });
 
-  it('should throw an error if step value is not a number', () => {
-    const expressions = '1,2,3,4,5,6,7,8,9,10/someString 0,1,2,3,4,5,6,7,8,9/5 * * * *';
-    expect(() => conversion(expressions)).toThrow('someString is not a valid step value');
+  it('should reject a step on a list or a non-numeric step', () => {
+    expect(() => validate('1,2,3/2 * * * *')).toThrow('1,2,3/2 is a invalid expression for minute');
+    expect(() => validate('*/someString * * * *')).toThrow('*/someString is a invalid expression for minute');
+  });
+});
+
+describe('inverted-range-conversion', () => {
+  it('should wrap inverted ranges through the field bounds', () => {
+    expect(conversion('0 22-2 * * *').split(' ')[2]).toBe('22,23,0,1,2');
+    expect(conversion('0 0 * * Fri-Mon').split(' ')[5]).toBe('5,6,0,1');
   });
 });
 
@@ -615,18 +628,18 @@ describe('TimeMatcher', () => {
         name: 'day',
         pattern: '0 0 0 */2 * *',
         cases: [
-          { date: new Date(2018, 0, 2, 0, 0, 0), expected: true },
-          { date: new Date(2018, 0, 6, 0, 0, 0), expected: true },
-          { date: new Date(2018, 0, 7, 0, 0, 0), expected: false },
+          { date: new Date(2018, 0, 1, 0, 0, 0), expected: true },
+          { date: new Date(2018, 0, 5, 0, 0, 0), expected: true },
+          { date: new Date(2018, 0, 6, 0, 0, 0), expected: false },
         ],
       },
       {
         name: 'month',
         pattern: '0 0 0 1 */2 *',
         cases: [
-          { date: new Date(2018, 1, 1, 0, 0, 0), expected: true },
-          { date: new Date(2018, 5, 1, 0, 0, 0), expected: true },
-          { date: new Date(2018, 6, 1, 0, 0, 0), expected: false },
+          { date: new Date(2018, 0, 1, 0, 0, 0), expected: true },
+          { date: new Date(2018, 4, 1, 0, 0, 0), expected: true },
+          { date: new Date(2018, 5, 1, 0, 0, 0), expected: false },
         ],
       },
       {
@@ -698,5 +711,86 @@ describe('TimeMatcher', () => {
             }
         });
         */
+  });
+});
+
+describe('extended syntax', () => {
+  const at = (iso: string) => new Date(iso);
+
+  it('should accept nicknames and ? in day fields', () => {
+    expect(conversion('@daily')).toBe(conversion('0 0 * * *'));
+    expect(conversion('0 0 ? * 1')).toBe(conversion('0 0 * * 1'));
+  });
+
+  it('should match L, L-n, nW, nL and n#m tokens', () => {
+    expect(new TimeMatcher('0 0 L * *', 'UTC').match(at('2024-02-29T00:00:00Z'))).toBe(true);
+    expect(new TimeMatcher('0 0 L * *', 'UTC').match(at('2025-02-28T00:00:00Z'))).toBe(true);
+    expect(new TimeMatcher('0 0 L-1 * *', 'UTC').match(at('2025-04-29T00:00:00Z'))).toBe(true);
+    // Nov 15 2025 is a Saturday, so 15W is Friday the 14th
+    expect(new TimeMatcher('0 0 15W * *', 'UTC').match(at('2025-11-14T00:00:00Z'))).toBe(true);
+    expect(new TimeMatcher('0 0 * * 5L', 'UTC').match(at('2025-10-31T00:00:00Z'))).toBe(true);
+    expect(new TimeMatcher('0 0 * * 5L', 'UTC').match(at('2025-10-24T00:00:00Z'))).toBe(false);
+    expect(new TimeMatcher('0 0 * * 2#3', 'UTC').match(at('2025-10-21T00:00:00Z'))).toBe(true);
+    expect(new TimeMatcher('0 0 * * 2#3', 'UTC').match(at('2025-10-14T00:00:00Z'))).toBe(false);
+  });
+
+  it('should reject impossible dates and extra fields', () => {
+    expect(() => validate('0 0 31 2 *')).toThrow('impossible day of month');
+    expect(() => validate('* * * * * * *')).toThrow('expected 5 or 6 fields but got 7');
+    expect(() => validate('0 0 1-15W * *')).toThrow('is a invalid expression for day of month');
+  });
+});
+
+describe('nextWakeupTime', () => {
+  const HOUR = 3600_000;
+
+  // Every matching second in (start, end), found by checking each second
+  function scan(matcher: TimeMatcher, start: number, end: number) {
+    const times: number[] = [];
+    for (let t = start + 1000; t < end; t += 1000) if (matcher.match(t)) times.push(t);
+    return times;
+  }
+
+  function walk(matcher: TimeMatcher, start: number, end: number) {
+    const times: number[] = [];
+    for (let t = matcher.nextWakeupTime(start).getTime(); t < end; t = matcher.nextWakeupTime(t).getTime()) {
+      times.push(t);
+    }
+    return times;
+  }
+
+  // Windows around DST transitions: gaps, repeated hours, a 30-minute shift and a shift at midnight
+  const windows = [
+    { timezone: 'America/New_York', start: '2025-03-09T04:00:00Z' },
+    { timezone: 'America/New_York', start: '2025-11-02T04:00:00Z' },
+    { timezone: 'Australia/Lord_Howe', start: '2025-04-05T12:00:00Z' },
+    { timezone: 'America/Santiago', start: '2025-04-05T22:00:00Z' },
+    { timezone: 'Asia/Kathmandu', start: '2024-02-28T12:00:00Z' },
+  ];
+  const patterns = ['*/10 * * * * *', '*/5 * * * *', '30 1 * * *', '30 2 * * *', '0 0 * * *', '0 0 L * *'];
+
+  test.each(windows)('should find every match in $timezone from $start', ({ timezone, start }) => {
+    const startMs = Date.parse(start);
+    const endMs = startMs + 30 * HOUR;
+    for (const pattern of patterns) {
+      const matcher = new TimeMatcher(pattern, timezone);
+      expect(walk(matcher, startMs, endMs)).toEqual(scan(matcher, startMs, endMs));
+    }
+  });
+
+  it('should skip ahead to distant matches', () => {
+    const matcher = new TimeMatcher('10 19 28-31 * *', 'America/New_York');
+    expect(matcher.nextWakeupTime(new Date('2026-09-01T00:00:00Z')).toISOString()).toBe('2026-09-28T23:10:00.000Z');
+    expect(new TimeMatcher('0 0 29 2 *', 'UTC').nextWakeupTime(new Date('2025-01-01T00:00:00Z')).toISOString()).toBe(
+      '2028-02-29T00:00:00.000Z',
+    );
+  });
+
+  it('should return whole seconds strictly after the base time', () => {
+    const matcher = new TimeMatcher('* * * * * *', 'UTC');
+    expect(matcher.nextWakeupTime(Date.parse('2025-01-01T00:00:00.500Z')).toISOString()).toBe(
+      '2025-01-01T00:00:01.000Z',
+    );
+    expect(matcher.nextWakeupTime(Date.parse('2025-01-01T00:00:01Z')).toISOString()).toBe('2025-01-01T00:00:02.000Z');
   });
 });
