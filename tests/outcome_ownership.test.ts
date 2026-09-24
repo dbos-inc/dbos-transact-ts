@@ -352,10 +352,10 @@ describe('workflow-outcome-ownership', () => {
   });
 
   test('duplicate-execution-releases-the-running-entry-before-parking', async () => {
-    // A conflicting step checkpoint means another execution owns this
-    // workflow's progress. The run must release its running-workflow entry
-    // before parking, so a resume re-dispatched to this executor is not
-    // blocked by the parked run, and then adopt the recorded outcome.
+    // A refused step checkpoint means another execution owns this workflow.
+    // The run must release its running-workflow entry before parking, so it
+    // stops counting toward the local concurrency a re-dispatch needs, and
+    // then adopt the recorded outcome.
     const { handle, ctrl } = await startBlockedRun('blockedStepWorkflow');
     await stealOwnership(systemDBClient, handle.workflowID);
     // ENQUEUED with no queue name: nothing dequeues it, so the run stays

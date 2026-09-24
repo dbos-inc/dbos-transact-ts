@@ -437,7 +437,7 @@ describe('queued-wf-tests-simple', () => {
       //  below that intentionally runs the workflow concurrently.  Promise.all
       //  will run the getResult calls concurrently.  In turn, they will all be in a
       //  race to record their results in system DB.  The system DB reacts by killing
-      //  (throwing a DBOSWorkflowConflictError) from the workflows that conflict, and
+      //  (throwing a DBOSStepNondeterminismError) from the workflows that conflict, and
       //  there's a high probability that this is both of them, as there are 5 separate
       //  races here (to record each of the 5 results).  Boom! (with 15/16 probability).
       const results: number[] = [];

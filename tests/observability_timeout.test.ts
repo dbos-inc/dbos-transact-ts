@@ -359,12 +359,17 @@ describe('system-database-idle-transaction-timeout', () => {
     await setUpDBOSTestSysDb(config);
   });
 
-  function makeSysDb(idleTransactionTimeoutMs?: number, url: string = systemDatabaseUrl, pool?: Pool): SystemDatabase {
+  function makeSysDb(
+    idleTransactionTimeoutMs?: number,
+    url: string = systemDatabaseUrl,
+    pool?: Pool,
+    poolSize: number = 2,
+  ): SystemDatabase {
     return new SystemDatabase(
       url,
       new GlobalLogger(),
       DBOSJSON,
-      2,
+      poolSize,
       pool,
       'dbos',
       false,
@@ -376,16 +381,28 @@ describe('system-database-idle-transaction-timeout', () => {
     );
   }
 
+  const SETTING_QUERY = `SELECT pg_backend_pid()::text AS pid, setting FROM pg_settings WHERE name = 'idle_in_transaction_session_timeout'`;
+
   /** The session's setting in milliseconds, read from a connection of the handle's own pool. */
   async function sessionTimeoutMs(sysdb: SystemDatabase): Promise<string> {
     const client = await sysdb.pool.connect();
     try {
-      const { rows } = await client.query<{ setting: string }>(
-        `SELECT setting FROM pg_settings WHERE name = 'idle_in_transaction_session_timeout'`,
-      );
+      const { rows } = await client.query<{ setting: string }>(SETTING_QUERY);
       return rows[0].setting;
     } finally {
       client.release();
+    }
+  }
+
+  /** The server's own setting, read outside any DBOS pool so no hook can have touched it. */
+  async function serverTimeoutMs(): Promise<string> {
+    const client = new Client({ connectionString: systemDatabaseUrl });
+    await client.connect();
+    try {
+      const { rows } = await client.query<{ setting: string }>(SETTING_QUERY);
+      return rows[0].setting;
+    } finally {
+      await client.end();
     }
   }
 
@@ -417,36 +434,40 @@ describe('system-database-idle-transaction-timeout', () => {
     }
   });
 
-  test('the timeout survives a rolled-back transaction', async () => {
-    const sysdb = makeSysDb(12345);
+  test('the timeout persists on a reused connection', async () => {
+    // A pool of one, so the second checkout is the same session after a return and a rollback.
+    const sysdb = makeSysDb(12345, systemDatabaseUrl, undefined, 1);
     try {
-      const client = await sysdb.pool.connect();
-      try {
-        await client.query('BEGIN');
-        await client.query('ROLLBACK');
-      } finally {
-        client.release();
+      const seen: { pid: string; setting: string }[] = [];
+      for (let checkout = 0; checkout < 2; checkout++) {
+        const client = await sysdb.pool.connect();
+        try {
+          await client.query('BEGIN');
+          await client.query('ROLLBACK');
+          seen.push((await client.query<{ pid: string; setting: string }>(SETTING_QUERY)).rows[0]);
+        } finally {
+          client.release();
+        }
       }
-      expect(await sessionTimeoutMs(sysdb)).toBe('12345');
+      expect(seen[1].pid).toBe(seen[0].pid);
+      expect(seen.map((row) => row.setting)).toEqual(['12345', '12345']);
     } finally {
       await sysdb.destroy();
     }
   });
 
   test('a non-positive timeout leaves the server setting in place', async () => {
-    const baseline = makeSysDb(0);
-    try {
-      expect(baseline.idleTransactionTimeoutMs).toBeUndefined();
-      const serverDefault = await sessionTimeoutMs(baseline);
-      const negative = makeSysDb(-1);
+    // Read outside DBOS, so a hook that wrongly fired for a disabled timeout could not hide behind its own baseline.
+    // Indistinguishable only when the server default already equals the DBOS default.
+    const serverDefault = await serverTimeoutMs();
+    for (const timeout of [0, -1]) {
+      const sysdb = makeSysDb(timeout);
       try {
-        expect(negative.idleTransactionTimeoutMs).toBeUndefined();
-        expect(await sessionTimeoutMs(negative)).toBe(serverDefault);
+        expect(sysdb.idleTransactionTimeoutMs).toBeUndefined();
+        expect(await sessionTimeoutMs(sysdb)).toBe(serverDefault);
       } finally {
-        await negative.destroy();
+        await sysdb.destroy();
       }
-    } finally {
-      await baseline.destroy();
     }
   });
 

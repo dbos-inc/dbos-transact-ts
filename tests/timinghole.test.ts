@@ -97,6 +97,47 @@ class Handoff {
     await Handoff.release.wait();
     return await DBOS.withNextWorkflowID(childID, () => Handoff.childWorkflow());
   }
+
+  @DBOS.step()
+  static async writingStep(write: 'writeStream' | 'closeStream'): Promise<void> {
+    Handoff.started.set();
+    await Handoff.release.wait();
+    if (write === 'writeStream') await DBOS.writeStream('key', 'stale');
+    else await DBOS.closeStream('key');
+  }
+
+  // Events are set from the workflow body, since a step may not set them; streams are written from a step.
+  @DBOS.workflow()
+  static async writingWorkflow(write: 'setEvent' | 'writeStream' | 'closeStream'): Promise<string> {
+    if (write === 'setEvent') {
+      Handoff.started.set();
+      await Handoff.release.wait();
+      await DBOS.setEvent('key', 'stale');
+    } else {
+      await Handoff.writingStep(write);
+    }
+    return 'done';
+  }
+}
+
+/** Rows a workflow has written to its events and streams tables. */
+async function countEventAndStreamRows(
+  systemDatabaseUrl: string | undefined,
+  workflowID: string,
+): Promise<{ events: number; streams: number }> {
+  const client = new Client({ connectionString: systemDatabaseUrl });
+  await client.connect();
+  try {
+    const count = async (table: string) =>
+      (
+        await client.query<{ n: number }>(`SELECT count(*)::int AS n FROM dbos.${table} WHERE workflow_uuid = $1`, [
+          workflowID,
+        ])
+      ).rows[0].n;
+    return { events: await count('workflow_events'), streams: await count('streams') };
+  } finally {
+    await client.end();
+  }
 }
 
 /** Hand the workflow to another execution without changing its status, as a resume's claim does. */
@@ -500,21 +541,24 @@ describe('run-workflow-once-tests', () => {
       expect(owner).not.toBe(firstOwner);
       expect(Handoff.recvCalls).toBe(2);
     });
+    // Two separate sends can share a millisecond timestamp, so which one the owner takes is not fixed.
     await DBOS.send(workflowID, 'hello', 'topic');
     await DBOS.send(workflowID, 'second', 'topic');
 
-    await expect(handle.getResult()).resolves.toBe('hello');
-    await expect(DBOS.retrieveWorkflow(workflowID).getResult()).resolves.toBe('hello');
+    const received = await handle.getResult();
+    expect(['hello', 'second']).toContain(received);
+    await expect(DBOS.retrieveWorkflow(workflowID).getResult()).resolves.toBe(received);
     // The stale execution's consume rolled back with its refused checkpoint, so the
-    // second message is still waiting; a leaked consume would have taken it.
+    // other message is still waiting; a leaked consume would have taken it.
     const client = new Client({ connectionString: config.systemDatabaseUrl });
     await client.connect();
     try {
-      const { rows } = await client.query(
+      const { rows } = await client.query<{ message: string }>(
         `SELECT message FROM dbos.notifications WHERE destination_uuid = $1 AND consumed = false`,
         [workflowID],
       );
       expect(rows).toHaveLength(1);
+      expect(rows[0].message).toContain(received === 'hello' ? 'second' : 'hello');
     } finally {
       await client.end();
     }
@@ -624,6 +668,27 @@ describe('run-workflow-once-tests', () => {
     await expect(handle.getResult()).rejects.toThrow(DBOSWorkflowCancelledError);
   });
 
+  test.each(['setEvent', 'writeStream', 'closeStream'] as const)('stale-execution-cannot-%s', async (write) => {
+    // An execution that lost ownership can neither set events nor write streams, and records no step.
+    Handoff.reset();
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    const workflowID = randomUUID();
+    const handle = await DBOS.startWorkflow(Handoff, { workflowID }).writingWorkflow(write);
+    try {
+      await Handoff.started.wait();
+      await stealOwnership(config.systemDatabaseUrl, workflowID);
+      Handoff.release.set();
+      await retryUntilSuccess(() => expect(sysdb.checkForRunningWorkflow(workflowID)).toBe(false));
+      expect(await countEventAndStreamRows(config.systemDatabaseUrl, workflowID)).toEqual({ events: 0, streams: 0 });
+      expect(await DBOS.listWorkflowSteps(workflowID)).toHaveLength(0);
+    } finally {
+      Handoff.release.set();
+      // Nobody else will write an outcome: cancel so the parked execution returns.
+      await DBOS.cancelWorkflow(workflowID);
+    }
+    await expect(handle.getResult()).rejects.toThrow(DBOSWorkflowCancelledError);
+  });
+
   test('step-recorded-twice-by-the-owner-is-nondeterminism', async () => {
     // A checkpoint that finds its step already recorded with another completion time,
     // while this execution still owns the workflow, is the workflow's own nondeterminism.
@@ -656,6 +721,38 @@ describe('run-workflow-once-tests', () => {
     await expect(
       sysdb.recordOperationResult(workflowID, 10, 'a.step', true, now, now + 3_600_000, { output: '1' }),
     ).rejects.toThrow(DBOSStepNondeterminismError);
+  });
+
+  test('child-init-is-atomic-with-the-parent-step', async () => {
+    // Recording the same child again, as a retry after a landed commit does, is idempotent. A
+    // different child at the same step is nondeterminism, and its status row rolls back with the step.
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    const parent = await DBOS.startWorkflow(Handoff).childWorkflow();
+    await expect(parent.getResult()).resolves.toBe('child');
+    const template = (await sysdb.getWorkflowStatuses([parent.workflowID])).get(parent.workflowID)!;
+    const now = Date.now();
+    const initChild = (childID: string, endTime: number) =>
+      sysdb.initChildWorkflowStatus(
+        { ...template, workflowUUID: childID },
+        randomUUID(),
+        parent.workflowID,
+        10,
+        now,
+        endTime,
+      );
+
+    const childID = randomUUID();
+    await initChild(childID, now);
+    await initChild(childID, now);
+    const otherID = randomUUID();
+    // A far-future completion time, so it cannot equal the recorded step's.
+    await expect(initChild(otherID, now + 3_600_000)).rejects.toThrow(DBOSStepNondeterminismError);
+
+    expect(await DBOS.getWorkflowStatus(otherID)).toBeNull();
+    expect(await DBOS.getWorkflowStatus(childID)).not.toBeNull();
+    const steps = await DBOS.listWorkflowSteps(parent.workflowID);
+    expect(steps).toHaveLength(1);
+    expect(steps![0].childWorkflowID).toBe(childID);
   });
 
   test('owner-check-blocks-a-hand-off-until-commit', async () => {

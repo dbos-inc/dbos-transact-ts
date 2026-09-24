@@ -148,7 +148,7 @@ export async function setWfAndChildrenToPending(workflowId: string, resetRecover
   }
 }
 
-/** Dispatch a workflow off its persisted row exactly as a queue claim does, taking ownership of it with a fresh token. */
+/** Dispatch a workflow off its persisted row, marking it PENDING and taking ownership with a fresh token as a queue claim does. */
 export async function redispatchWorkflowById(workflowId: string): Promise<WorkflowHandle<unknown>> {
   const exec = DBOSExecutor.globalInstance!;
   const ownerXid = randomUUID();
