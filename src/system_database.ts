@@ -1346,6 +1346,7 @@ export class SystemDatabase {
     let shouldCommit = false;
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
+      await this.#checkCallerOwner(client, parentWorkflowID);
       const result = await this.#initWorkflowStatusInternal(client, initStatus, creatorXid, reusePolicy);
       await this.recordOperationResultInternal(
         client,
@@ -1355,7 +1356,7 @@ export class SystemDatabase {
         true,
         startTimeEpochMs,
         endTimeEpochMs,
-        { childWorkflowID: initStatus.workflowUUID },
+        { childWorkflowID: initStatus.workflowUUID, ownerChecked: true },
       );
       shouldCommit = true;
       return result;
@@ -1905,6 +1906,7 @@ export class SystemDatabase {
     const client = await this.#connect();
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
+      await this.#checkCallerOwner(client, workflowID);
       const existing = await this.#getOperationResultAndThrowIfCancelled(client, workflowID, functionID);
       if (existing !== undefined) {
         await client.query('ROLLBACK');
@@ -1922,6 +1924,7 @@ export class SystemDatabase {
         Date.now(),
         {
           output,
+          ownerChecked: true,
         },
       );
       await client.query('COMMIT');
@@ -6235,11 +6238,11 @@ export class SystemDatabase {
       output?: string | null;
       error?: string | null;
       serialization?: string | null;
+      ownerChecked?: boolean;
     } = {},
   ): Promise<void> {
-    const ownerXid = currentOwnerXid(workflowID);
-    if (ownerXid !== undefined) {
-      await this.#checkOwner(client, workflowID, ownerXid);
+    if (!options.ownerChecked) {
+      await this.#checkCallerOwner(client, workflowID);
     }
     try {
       const out = await client.query<operation_outputs>(
@@ -6303,6 +6306,13 @@ export class SystemDatabase {
     );
     if (rows[0]?.owner_xid !== ownerXid) {
       throw new DBOSWorkflowConflictError(workflowID);
+    }
+  }
+
+  async #checkCallerOwner(client: ClientBase, workflowID: string): Promise<void> {
+    const ownerXid = currentOwnerXid(workflowID);
+    if (ownerXid !== undefined) {
+      await this.#checkOwner(client, workflowID, ownerXid);
     }
   }
 
