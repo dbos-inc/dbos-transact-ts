@@ -3009,12 +3009,6 @@ export class SystemDatabase {
         `Shutting down while ${this.runningWorkflowMap.size} workflows are still running: ${Array.from(this.runningWorkflowMap.keys()).join(', ')}`,
       );
     }
-    if (this.workflowEventsMap.map.size > 0) {
-      this.logger.warn('Workflow events map is not empty - shutdown is not clean.');
-    }
-    if (this.notificationsMap.map.size > 0) {
-      this.logger.warn('Message notification map is not empty - shutdown is not clean.');
-    }
   }
 
   /**
