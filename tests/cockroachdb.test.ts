@@ -1,5 +1,7 @@
 import { DBOS } from '../src/';
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
+import { DBOSWorkflowCancelledError } from '../src/error';
+import { StatusString } from '../src/workflow';
 import { dropPGDatabase } from '../src/database_utils';
 import { ensureTestDatabase } from './helpers';
 import { randomUUID } from 'node:crypto';
@@ -54,6 +56,13 @@ class CRDBTestClass {
       await DBOS.setEvent('above', 'doomed');
     }
     return CRDBTestClass.publisherRuns;
+  }
+
+  @DBOS.workflow()
+  static async blockedWorkflow() {
+    while (true) {
+      await DBOS.sleep(100);
+    }
   }
 
   @DBOS.workflow()
@@ -312,5 +321,17 @@ describeIf('cockroachdb', () => {
       warn.mockRestore();
       await client.end();
     }
+  });
+
+  test('workflow-timeout', async () => {
+    // Run the sweep directly first, so an unsupported statement fails here with its own error.
+    await expect(DBOSExecutor.globalInstance!.systemDatabase.cancelTimedOutWorkflows(10)).resolves.toBeInstanceOf(
+      Array,
+    );
+
+    const workflowID = randomUUID();
+    const handle = await DBOS.startWorkflow(CRDBTestClass, { workflowID, timeoutMS: 100 }).blockedWorkflow();
+    await expect(handle.getResult()).rejects.toThrow(new DBOSWorkflowCancelledError(workflowID));
+    expect((await handle.getStatus())?.status).toBe(StatusString.CANCELLED);
   });
 });

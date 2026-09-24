@@ -5,6 +5,7 @@ import type { DataSourceTransactionHandler } from './datasource';
 import { DBOSError, DBOSNonExistentWorkflowError } from './error';
 import { DBOSSerializer, safeParse, safeParseError, safeParsePositionalArgs } from './serialization';
 import { randomUUID } from 'node:crypto';
+import type { GlobalLogger } from './telemetry/logs';
 
 export async function listWorkflows(sysdb: SystemDatabase, input: GetWorkflowsInput): Promise<WorkflowStatus[]> {
   const workflows = await sysdb.listWorkflows(input);
@@ -207,5 +208,49 @@ export async function globalTimeout(sysdb: SystemDatabase, cutoffEpochTimestampM
   // IDs only, so a bulk timeout does not deserialize every row's inputs and outputs.
   for (const workflowID of await sysdb.listTimedOutWorkflowIds(cutoffEpochTimestampMs)) {
     await sysdb.cancelWorkflows([workflowID]);
+  }
+}
+
+export const workflowTimeoutConfig = {
+  /** How often the sweep looks for workflows past their deadline. */
+  pollingIntervalMs: 1000,
+  /** Most workflows one sweep transaction cancels; a full batch sweeps again at once. */
+  batchSize: 1000,
+};
+
+function waitOrAbort(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal.aborted) return resolve();
+    const onAbort = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+/** Cancel this application's active workflows once their deadline passes, until `signal` aborts. */
+export async function workflowTimeoutLoop(
+  sysdb: SystemDatabase,
+  logger: GlobalLogger,
+  signal: AbortSignal,
+): Promise<void> {
+  while (!signal.aborted) {
+    try {
+      while (!signal.aborted) {
+        const cancelled = await sysdb.cancelTimedOutWorkflows(workflowTimeoutConfig.batchSize);
+        for (const workflowID of cancelled) {
+          logger.debug(`Cancelled workflow ${workflowID}: timed out`);
+        }
+        if (cancelled.length < workflowTimeoutConfig.batchSize) break;
+      }
+    } catch (e) {
+      logger.warn(`Exception cancelling timed-out workflows: ${(e as Error).message}`);
+    }
+    await waitOrAbort(workflowTimeoutConfig.pollingIntervalMs, signal);
   }
 }
