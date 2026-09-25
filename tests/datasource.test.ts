@@ -1,13 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import { Client, Pool, PoolConfig } from 'pg';
+import { Client, ClientBase, Pool, PoolConfig } from 'pg';
 import knex, { Knex } from 'knex';
 import { SuperJSON } from 'superjson';
 import { DBOS, FunctionName } from '../src';
 
 import {
   type DataSourceTransactionHandler,
-  createTransactionCompletionSchemaPG,
-  createTransactionCompletionTablePG,
   isPGRetriableTransactionError,
   isPGKeyConflictError,
   registerTransaction,
@@ -40,20 +38,6 @@ import type { WorkflowStatusInternal } from '../src/system_database';
  * Knex user data access interface
  */
 type KnexTransactionConfig = PGTransactionConfig & { name?: string };
-
-// This stuff is all specific to PG DBs...
-//  We are also agnostic about whether there are admin credentials to do this, or not...
-//   it can be done elsewhere.
-interface ExistenceCheck {
-  exists: boolean;
-}
-
-export function schemaExistsQuery(schemaName: string = 'dbos'): string {
-  return `SELECT EXISTS (SELECT FROM information_schema.schemata WHERE schema_name = '${schemaName}')`;
-}
-export function txnOutputTableExistsQuery(schemaName: string = 'dbos'): string {
-  return `SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = '${schemaName}' AND table_name = 'transaction_completion')`;
-}
 
 export interface transaction_outputs {
   workflow_id: string;
@@ -296,16 +280,10 @@ export class DBOSKnexDS implements DBOSDataSource<KnexTransactionConfig> {
   // initializeDBOSSchema - this is up to the user to call.  It's not part of DBOS lifecycle
   async initializeDBOSSchema(): Promise<void> {
     const knex = this.#provider.createInstance();
-    const schemaName = 'dbos'; // Use default schema name for tests
     try {
-      const schemaExists = await knex.raw<{ rows: ExistenceCheck[] }>(schemaExistsQuery(schemaName));
-      if (!schemaExists.rows[0].exists) {
-        await knex.raw(createTransactionCompletionSchemaPG(schemaName));
-      }
-      const txnOutputTableExists = await knex.raw<{ rows: ExistenceCheck[] }>(txnOutputTableExistsQuery(schemaName));
-      if (!txnOutputTableExists.rows[0].exists) {
-        await knex.raw(createTransactionCompletionTablePG(schemaName));
-      }
+      await knex.transaction((trx) =>
+        initializeDataSourceSchemaPG(async (sql) => (await trx.raw<{ rows: Record<string, unknown>[] }>(sql)).rows),
+      );
     } finally {
       try {
         await knex.destroy();
@@ -511,8 +489,12 @@ class ProbeTransactionHandler implements DataSourceTransactionHandler {
 
   async initialize(): Promise<void> {
     this.#poolField = new Pool({ connectionString: config.systemDatabaseUrl });
-    await this.#poolField.query(createTransactionCompletionSchemaPG());
-    await this.#poolField.query(createTransactionCompletionTablePG());
+    const client = await this.#poolField.connect();
+    try {
+      await inPGTransaction(client, () => initializeDataSourceSchemaPG(pgExecutor(client)));
+    } finally {
+      client.release();
+    }
   }
 
   async destroy(): Promise<void> {
@@ -702,11 +684,11 @@ describe('datasource-duplicate-execution', () => {
 const LATEST_DS_VERSION = getDataSourceMigrationsPG().length;
 const quietLogger = { info: () => {}, warn: () => {} };
 
-function pgExecutor(client: Client): DataSourceSQLExecutor {
+function pgExecutor(client: ClientBase): DataSourceSQLExecutor {
   return async (sql) => (await client.query<Record<string, unknown>>(sql)).rows;
 }
 
-async function inPGTransaction<T>(client: Client, fn: () => Promise<T>): Promise<T> {
+async function inPGTransaction<T>(client: ClientBase, fn: () => Promise<T>): Promise<T> {
   await client.query('BEGIN');
   try {
     const result = await fn();

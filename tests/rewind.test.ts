@@ -8,8 +8,7 @@ import { DBOSError, DBOSNonExistentWorkflowError, DBOSWorkflowCancelledError } f
 import { INTERNAL_QUEUE_NAME, globalParams, sleepms } from '../src/utils';
 import { deserializeValue } from '../src/serialization';
 import {
-  createTransactionCompletionSchemaPG,
-  createTransactionCompletionTablePG,
+  initializeDataSourceSchemaPG,
   registerDataSource,
   registerTransaction,
   replayRecordedStep,
@@ -161,8 +160,17 @@ class CheckpointDataSource implements DataSourceTransactionHandler {
 
   async initialize(): Promise<void> {
     this.#poolField = new Pool({ connectionString: config.systemDatabaseUrl });
-    await this.pool.query(createTransactionCompletionSchemaPG(this.schema));
-    await this.pool.query(createTransactionCompletionTablePG(this.schema));
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await initializeDataSourceSchemaPG(
+        async (sql) => (await client.query<Record<string, unknown>>(sql)).rows,
+        this.schema,
+      );
+      await client.query('COMMIT');
+    } finally {
+      client.release();
+    }
     await this.pool.query(`CREATE TABLE IF NOT EXISTS "${this.schema}".rows (v TEXT)`);
   }
 

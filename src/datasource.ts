@@ -354,35 +354,9 @@ export function replayRecordedStep<Return>(recorded: { output?: string | null; e
   return (recorded.output ? SuperJSON.parse(recorded.output) : null) as Return;
 }
 
-export interface CheckSchemaInstallationReturn {
-  schema_exists: number;
-  table_exists: number;
-}
-
-export function checkSchemaInstallationPG(schemaName: string = 'dbos'): string {
+function createTransactionCompletionTablePG(schemaName: string): string {
   return `
-SELECT
-  EXISTS (
-    SELECT 1
-    FROM information_schema.schemata
-    WHERE schema_name = '${schemaName}'
-  ) AS schema_exists,
-  EXISTS (
-    SELECT 1
-    FROM information_schema.tables
-    WHERE table_schema = '${schemaName}'
-      AND table_name = 'transaction_completion'
-  ) AS table_exists;
-`;
-}
-
-export function createTransactionCompletionSchemaPG(schemaName: string = 'dbos'): string {
-  return `CREATE SCHEMA IF NOT EXISTS "${schemaName}";`;
-}
-
-export function createTransactionCompletionTablePG(schemaName: string = 'dbos'): string {
-  return `
-  CREATE TABLE IF NOT EXISTS "${schemaName}".transaction_completion (
+  CREATE TABLE IF NOT EXISTS ${quoteIdent(schemaName)}.transaction_completion (
     workflow_id TEXT NOT NULL,
     function_num INT NOT NULL,
     output TEXT,
