@@ -140,6 +140,22 @@ describe('custom-logger', () => {
     expect(entry?.metadata?.stack).toContain('deep-root');
   });
 
+  test('a top-level AggregateError logs its inner errors', async () => {
+    DBOS.setConfig({ ...generateDBOSTestConfig(), logger: recorder });
+    await DBOS.launch();
+
+    const agg = new AggregateError(
+      [new Error('agg-first'), new Error('agg-second', { cause: new Error('agg-root') })],
+      'all failed',
+    );
+    DBOS.logger.error(agg);
+    const stack = recorder.find('error', 'all failed')?.metadata?.stack;
+    expect(stack).toContain('[errors]');
+    expect(stack).toContain('agg-first');
+    expect(stack).toContain('agg-second');
+    expect(stack).toContain('agg-root');
+  });
+
   test('the original error is passed through in metadata', async () => {
     DBOS.setConfig({ ...generateDBOSTestConfig(), logger: recorder });
     await DBOS.launch();
