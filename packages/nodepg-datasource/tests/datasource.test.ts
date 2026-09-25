@@ -54,18 +54,33 @@ describe('NodePostgresDataSource', () => {
     expect(rows).toHaveLength(0);
   });
 
-  test('completion drops the checkpoints and rewind reruns past the cut', async () => {
+  test('rewind drops the checkpoints past the cut', async () => {
     const user = 'rewindTest';
     await userDB.query('DELETE FROM greetings WHERE name = $1', [user]);
+    rewindState = newRewindState();
     const workflowID = randomUUID();
 
-    await expect(DBOS.withNextWorkflowID(workflowID, () => regTwoInsertWorkflow(user))).resolves.toEqual([1, 2]);
-    // The step checkpoints cover every transaction once the workflow completes.
-    expect(await completions(workflowID)).toHaveLength(0);
+    // A cancelled workflow keeps its checkpoints, so the rewind has some to cut.
+    const execution = DBOS.withNextWorkflowID(workflowID, () => regGatedTwoInsertWorkflow(user));
+    await Promise.race([rewindState.atGate.opened, execution]);
+    await DBOS.cancelWorkflow(workflowID);
+    rewindState.release.open();
+    await expect(execution).rejects.toThrow(/has been cancelled/);
+    expect((await completions(workflowID)).map((r) => r.function_num)).toEqual([0, 1]);
 
-    // The first transaction replays from its step checkpoint, so it still reports 1;
-    // the second really runs again, taking the table from 2 to 3.
-    const handle = await DBOS.rewindWorkflow<number[]>(workflowID, { startStep: 1 });
+    // Hold the queue's only worker so the rewound workflow waits while its checkpoints are inspected.
+    await DBOS.registerQueue('nodepg_rewind_gate', { workerConcurrency: 1, onConflict: 'always_update' });
+    const blocker = await DBOS.startWorkflow(regQueueBlocker, { queueName: 'nodepg_rewind_gate' })();
+    await rewindState.blockerStarted.opened;
+    const handle = await DBOS.rewindWorkflow<number[]>(workflowID, {
+      startStep: 1,
+      queueName: 'nodepg_rewind_gate',
+    });
+    expect((await completions(workflowID)).map((r) => r.function_num)).toEqual([0]);
+
+    // The first transaction replays and still reports 1; the second really runs again, taking the table to 3.
+    rewindState.unblock.open();
+    await blocker.getResult();
     await expect(handle.getResult()).resolves.toEqual([1, 3]);
     expect(await completions(workflowID)).toHaveLength(0);
   });
@@ -344,22 +359,37 @@ describe('NodePostgresDataSource', () => {
     expect(txOutput).toHaveLength(0);
   });
 
+  /** Completion clears the checkpoints, so the workflow reads them back while it still runs. */
+  test('transactions record their outcomes as checkpoints', async () => {
+    const user = 'checkpointProbe';
+    await userDB.query('DELETE FROM greetings WHERE name = $1', [user]);
+    const workflowID = randomUUID();
+    const message = await DBOS.withNextWorkflowID(workflowID, () => regCheckpointProbeWorkflow(user));
+    expect(message).toMatch(/^test error \d+$/);
+
+    expect(probeState.rows).toHaveLength(2);
+    const [output, error] = probeState.rows;
+    expect(output).toMatchObject({ workflow_id: workflowID, function_num: 0, error: null });
+    expect(SuperJSON.parse(output.output!)).toMatchObject({ user, greet_count: 1 });
+    expect(error).toMatchObject({ workflow_id: workflowID, function_num: 1, output: null });
+    expect(SuperJSON.parse<Error>(error.error!).message).toBe(message);
+    expect(await readCompletions(workflowID)).toHaveLength(0);
+  });
+
   /** The checkpoint may be the new owner's only record of the transaction, so a stale execution's cleanup rolls back. */
   test('a stale execution keeps the checkpoints at completion', async () => {
     const user = 'handOffTest';
     await userDB.query('DELETE FROM greetings WHERE name = $1', [user]);
-    handOffState.handedOff = false;
+    const handedOff = new Promise<void>((resolve) => (handOffState.signal = resolve));
     const workflowID = randomUUID();
     const execution = DBOS.withNextWorkflowID(workflowID, () => regHandOffWorkflow(user));
-    execution.catch(() => {});
-    while (!handOffState.handedOff) {
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    }
+    // Surfaces the workflow's own error if it fails before handing off.
+    await Promise.race([handedOff, execution]);
 
     // Its outcome is refused too, so the execution parks until the workflow is cancelled.
     await DBOS.cancelWorkflow(workflowID);
     await expect(execution).rejects.toThrow(/has been cancelled/);
-    expect(await completions(workflowID)).toHaveLength(1);
+    expect(await readCompletions(workflowID)).toHaveLength(1);
   });
 
   /** A stale execution cannot apply a step the new owner also runs, nor leave an outcome for it. */
@@ -486,8 +516,17 @@ async function readFunction(user: string) {
 
 const regRaceFunction = dataSource.registerTransaction(raceFunction);
 
+async function raceWorkflow() {
+  return await regRaceFunction();
+}
+
+const regRaceWorkflow = DBOS.registerWorkflow(raceWorkflow);
+
+const regInsertFunction = dataSource.registerTransaction(insertFunction);
+
+const regErrorFunction = dataSource.registerTransaction(errorFunction);
+
 const sysConfig = { ...config, database: 'node_pg_ds_test_dbos_sys' };
-const staleState = { originalOwner: null as string | null, completionsAtConflict: -1 };
 
 /** Set the workflow's ownership token, returning the one it replaced. */
 async function setOwner(workflowID: string, ownerXid: string | null): Promise<string | null> {
@@ -508,6 +547,38 @@ async function setOwner(workflowID: string, ownerXid: string | null): Promise<st
   }
 }
 
+/** The checkpoints this data source holds for the workflow, read on a connection of their own. */
+async function readCompletions(workflowID: string): Promise<transaction_completion[]> {
+  const client = new Client(config);
+  try {
+    await client.connect();
+    const { rows } = await client.query<transaction_completion>(
+      'SELECT * FROM dbos.transaction_completion WHERE workflow_id = $1 ORDER BY function_num',
+      [workflowID],
+    );
+    return rows;
+  } finally {
+    await client.end();
+  }
+}
+
+const probeState = { rows: [] as transaction_completion[] };
+
+// Reads back the checkpoints its transactions wrote, before completion clears them.
+async function checkpointProbeWorkflow(user: string) {
+  await regInsertFunction(user);
+  const error = await regErrorFunction(user).then(
+    () => undefined,
+    (e: Error) => e,
+  );
+  probeState.rows = await readCompletions(DBOS.workflowID!);
+  return error?.message;
+}
+
+const regCheckpointProbeWorkflow = DBOS.registerWorkflow(checkpointProbeWorkflow);
+
+const staleState = { originalOwner: null as string | null, completionsAtConflict: -1 };
+
 // Another execution claims the workflow while this transaction is still open.
 async function staleFunction() {
   await NodePostgresDataSource.client.query("INSERT INTO race_side_effects(tag) VALUES ('stale')");
@@ -523,16 +594,7 @@ async function staleWorkflow() {
   } catch (e) {
     if (!(e instanceof DBOSWorkflowConflictError)) throw e;
     // Read before completion clears it: the conflict must not have been recorded as the step's outcome.
-    const userDB = new Client(config);
-    try {
-      await userDB.connect();
-      const { rows } = await userDB.query('SELECT * FROM dbos.transaction_completion WHERE workflow_id = $1', [
-        DBOS.workflowID,
-      ]);
-      staleState.completionsAtConflict = rows.length;
-    } finally {
-      await userDB.end();
-    }
+    staleState.completionsAtConflict = (await readCompletions(DBOS.workflowID!)).length;
     // A real duplicate parks here instead; reclaimed so this execution's outcome lands.
     await setOwner(DBOS.workflowID!, staleState.originalOwner);
     return 'conflicted';
@@ -541,33 +603,48 @@ async function staleWorkflow() {
 
 const regStaleWorkflow = DBOS.registerWorkflow(staleWorkflow);
 
-const handOffState = { handedOff: false };
+const handOffState = { signal: () => {} };
 
 // Loses the workflow after its transaction, so its completion is a stale execution's.
 async function handOffWorkflow(user: string) {
   const result = await regInsertFunction(user);
   await setOwner(DBOS.workflowID!, 'another-execution');
-  handOffState.handedOff = true;
+  handOffState.signal();
   return result;
 }
 
 const regHandOffWorkflow = DBOS.registerWorkflow(handOffWorkflow);
 
-async function raceWorkflow() {
-  return await regRaceFunction();
+/** A promise with its resolver, so a test and a workflow can hand control back and forth. */
+function latch() {
+  let open = () => {};
+  const opened = new Promise<void>((resolve) => (open = resolve));
+  return { open, opened };
 }
 
-const regRaceWorkflow = DBOS.registerWorkflow(raceWorkflow);
+function newRewindState() {
+  return { atGate: latch(), release: latch(), blockerStarted: latch(), unblock: latch() };
+}
 
-const regInsertFunction = dataSource.registerTransaction(insertFunction);
+let rewindState = newRewindState();
 
-async function twoInsertWorkflow(user: string) {
+// Waits after its transactions, so the test can cancel it with both checkpoints in place.
+async function gatedTwoInsertWorkflow(user: string) {
   const first = await regInsertFunction(user);
   const second = await regInsertFunction(user);
+  rewindState.atGate.open();
+  await rewindState.release.opened;
   return [first.greet_count, second.greet_count];
 }
-const regTwoInsertWorkflow = DBOS.registerWorkflow(twoInsertWorkflow);
-const regErrorFunction = dataSource.registerTransaction(errorFunction);
+
+const regGatedTwoInsertWorkflow = DBOS.registerWorkflow(gatedTwoInsertWorkflow);
+
+async function queueBlocker() {
+  rewindState.blockerStarted.open();
+  await rewindState.unblock.opened;
+}
+
+const regQueueBlocker = DBOS.registerWorkflow(queueBlocker);
 const regReadFunction = dataSource.registerTransaction(readFunction, { readOnly: true });
 
 class StaticClass {

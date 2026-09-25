@@ -1,4 +1,4 @@
-import { DBOS } from '@dbos-inc/dbos-sdk';
+import { DBOS, DBOSWorkflowConflictError } from '@dbos-inc/dbos-sdk';
 import { Client, Pool } from 'pg';
 import { TypeOrmDataSource } from '..';
 import { dropDB, ensureDB } from './test-helpers';
@@ -329,6 +329,60 @@ describe('TypeOrmDataSource', () => {
     );
     expect(txOutput).toHaveLength(0);
   });
+
+  /** Completion clears the checkpoints, so the workflow reads them back while it still runs. */
+  test('transactions record their outcomes as checkpoints', async () => {
+    const user = 'checkpointProbe';
+    await userDB.query('DELETE FROM greetings WHERE name = $1', [user]);
+    const workflowID = randomUUID();
+    const message = await DBOS.withNextWorkflowID(workflowID, () => regCheckpointProbeWorkflow(user));
+    expect(message).toMatch(/^test error \d+$/);
+
+    expect(probeState.rows).toHaveLength(2);
+    const [output, error] = probeState.rows;
+    expect(output).toMatchObject({ workflow_id: workflowID, function_num: 0, error: null });
+    expect(SuperJSON.parse(output.output!)).toMatchObject({ user, greet_count: 1 });
+    expect(error).toMatchObject({ workflow_id: workflowID, function_num: 1, output: null });
+    expect(SuperJSON.parse<Error>(error.error!).message).toBe(message);
+    expect(await readCompletions(workflowID)).toHaveLength(0);
+  });
+
+  /** The checkpoint may be the new owner's only record of the transaction, so a stale execution's cleanup rolls back. */
+  test('a stale execution keeps the checkpoints at completion', async () => {
+    const user = 'handOffTest';
+    await userDB.query('DELETE FROM greetings WHERE name = $1', [user]);
+    const handedOff = new Promise<void>((resolve) => (handOffState.signal = resolve));
+    const workflowID = randomUUID();
+    const execution = DBOS.withNextWorkflowID(workflowID, () => regHandOffWorkflow(user));
+    // Surfaces the workflow's own error if it fails before handing off.
+    await Promise.race([handedOff, execution]);
+
+    // Its outcome is refused too, so the execution parks until the workflow is cancelled.
+    await DBOS.cancelWorkflow(workflowID);
+    await expect(execution).rejects.toThrow(/has been cancelled/);
+    expect(await readCompletions(workflowID)).toHaveLength(1);
+  });
+
+  /** A stale execution cannot apply a step the new owner also runs, nor leave an outcome for it. */
+  test('an execution that loses the workflow mid-transaction rolls back', async () => {
+    await userDB.query('DELETE FROM race_side_effects');
+    const workflowID = randomUUID();
+    await expect(DBOS.withNextWorkflowID(workflowID, () => regStaleWorkflow())).resolves.toBe('conflicted');
+
+    const { rows: tags } = await userDB.query<{ tag: string }>('SELECT tag FROM race_side_effects');
+    expect(tags).toHaveLength(0);
+    expect(staleState.completionsAtConflict).toBe(0);
+    const sysDB = new Client(sysConfig);
+    try {
+      await sysDB.connect();
+      const { rows: steps } = await sysDB.query('SELECT * FROM dbos.operation_outputs WHERE workflow_uuid = $1', [
+        workflowID,
+      ]);
+      expect(steps).toHaveLength(0);
+    } finally {
+      await sysDB.end();
+    }
+  });
 });
 
 export interface greetings {
@@ -433,6 +487,95 @@ async function readFunction(user: string) {
 
 const regInsertFunction = dataSource.registerTransaction(insertFunction);
 const regErrorFunction = dataSource.registerTransaction(errorFunction);
+
+const sysConfig = { ...config, database: 'typeorm_ds_test_dbos_sys' };
+
+/** Set the workflow's ownership token, returning the one it replaced. */
+async function setOwner(workflowID: string, ownerXid: string | null): Promise<string | null> {
+  const sysDB = new Client(sysConfig);
+  try {
+    await sysDB.connect();
+    const { rows } = await sysDB.query<{ owner_xid: string | null }>(
+      'SELECT owner_xid FROM dbos.workflow_status WHERE workflow_uuid = $1',
+      [workflowID],
+    );
+    await sysDB.query('UPDATE dbos.workflow_status SET owner_xid = $2 WHERE workflow_uuid = $1', [
+      workflowID,
+      ownerXid,
+    ]);
+    return rows[0].owner_xid;
+  } finally {
+    await sysDB.end();
+  }
+}
+
+/** The checkpoints this data source holds for the workflow, read on a connection of their own. */
+async function readCompletions(workflowID: string): Promise<transaction_completion[]> {
+  const client = new Client(config);
+  try {
+    await client.connect();
+    const { rows } = await client.query<transaction_completion>(
+      'SELECT * FROM dbos.transaction_completion WHERE workflow_id = $1 ORDER BY function_num',
+      [workflowID],
+    );
+    return rows;
+  } finally {
+    await client.end();
+  }
+}
+
+const probeState = { rows: [] as transaction_completion[] };
+
+// Reads back the checkpoints its transactions wrote, before completion clears them.
+async function checkpointProbeWorkflow(user: string) {
+  await regInsertFunction(user);
+  const error = await regErrorFunction(user).then(
+    () => undefined,
+    (e: Error) => e,
+  );
+  probeState.rows = await readCompletions(DBOS.workflowID!);
+  return error?.message;
+}
+
+const regCheckpointProbeWorkflow = DBOS.registerWorkflow(checkpointProbeWorkflow);
+
+const staleState = { originalOwner: null as string | null, completionsAtConflict: -1 };
+
+// Another execution claims the workflow while this transaction is still open.
+async function staleFunction() {
+  await dataSource.entityManager.sql`INSERT INTO race_side_effects(tag) VALUES ('stale')`;
+  staleState.originalOwner = await setOwner(DBOS.workflowID!, 'another-execution');
+  return 'stale';
+}
+
+const regStaleFunction = dataSource.registerTransaction(staleFunction);
+
+async function staleWorkflow() {
+  try {
+    return await regStaleFunction();
+  } catch (e) {
+    if (!(e instanceof DBOSWorkflowConflictError)) throw e;
+    // Read before completion clears it: the conflict must not have been recorded as the step's outcome.
+    staleState.completionsAtConflict = (await readCompletions(DBOS.workflowID!)).length;
+    // A real duplicate parks here instead; reclaimed so this execution's outcome lands.
+    await setOwner(DBOS.workflowID!, staleState.originalOwner);
+    return 'conflicted';
+  }
+}
+
+const regStaleWorkflow = DBOS.registerWorkflow(staleWorkflow);
+
+const handOffState = { signal: () => {} };
+
+// Loses the workflow after its transaction, so its completion is a stale execution's.
+async function handOffWorkflow(user: string) {
+  const result = await regInsertFunction(user);
+  await setOwner(DBOS.workflowID!, 'another-execution');
+  handOffState.signal();
+  return result;
+}
+
+const regHandOffWorkflow = DBOS.registerWorkflow(handOffWorkflow);
 const regReadFunction = dataSource.registerTransaction(readFunction, { readOnly: true });
 
 class StaticClass {
