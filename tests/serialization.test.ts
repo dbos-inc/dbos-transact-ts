@@ -1663,5 +1663,33 @@ describe('error-cause-serialization', () => {
       expect(stepErr.message).toBe('step failed');
       expect((stepErr.cause as Error).message).toBe('step root');
     });
+
+    const retriedCauseStep = DBOS.registerStep(
+      async () => {
+        return Promise.reject(new Error('attempt failed', { cause: new Error('attempt root') }));
+      },
+      { name: 'errorCauseRetriedStep', retriesAllowed: true, maxAttempts: 2, intervalSeconds: 0.1 },
+    );
+
+    const retriedCauseWorkflow = DBOS.registerWorkflow(
+      async () => {
+        await retriedCauseStep();
+      },
+      { name: 'errorCauseRetriedWorkflow' },
+    );
+
+    test('each retry attempt keeps its cause once retries are exhausted', async () => {
+      const wfid = randomUUID();
+      await expect(DBOS.withNextWorkflowID(wfid, () => retriedCauseWorkflow())).rejects.toThrow('exceeded its maximum');
+
+      const steps = await DBOS.listWorkflowSteps(wfid);
+      const attempts = (steps?.[0]?.error as Error & { errors: Error[] }).errors;
+      expect(attempts).toHaveLength(2);
+      for (const attempt of attempts) {
+        expect(attempt.message).toBe('attempt failed');
+        expect(attempt.cause).toBeInstanceOf(Error);
+        expect((attempt.cause as Error).message).toBe('attempt root');
+      }
+    });
   });
 });
