@@ -394,6 +394,46 @@ export async function deserializePositionalArgs(
     : (parsed as unknown[]);
 }
 
+// serializeError skips the non-enumerable `cause` and `AggregateError.errors`, so walk them explicitly.
+function serializeErrorWithCause(value: unknown, ancestors: Set<object> = new Set()): unknown {
+  if (!(value instanceof Error)) return serializeError(value);
+  if (ancestors.has(value)) return '[Circular]';
+  const out = serializeError(value);
+  if (typeof out !== 'object' || out === null) return out;
+  ancestors.add(value);
+  const record = out as Record<string, unknown>;
+  if (value.cause !== undefined) record.cause = serializeErrorWithCause(value.cause, ancestors);
+  if (value instanceof AggregateError && Array.isArray(value.errors)) {
+    record.errors = value.errors.map((e: unknown) => serializeErrorWithCause(e, ancestors));
+  }
+  ancestors.delete(value);
+  return out;
+}
+
+function isSerializedErrorLike(value: unknown): value is Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  return typeof record.message === 'string' || typeof record.name === 'string';
+}
+
+function reviveNestedError(value: unknown): unknown {
+  return isSerializedErrorLike(value) ? deserializeErrorWithCause(value) : value;
+}
+
+function defineErrorProperty(err: Error, property: string, value: unknown) {
+  Object.defineProperty(err, property, { value, enumerable: false, writable: true, configurable: true });
+}
+
+function deserializeErrorWithCause(value: unknown): Error {
+  const err = deserializeError(value);
+  if (value instanceof Error || !isSerializedErrorLike(value)) return err;
+  if (value.cause !== undefined) defineErrorProperty(err, 'cause', reviveNestedError(value.cause));
+  if (value.name === 'AggregateError' && Array.isArray(value.errors)) {
+    defineErrorProperty(err, 'errors', value.errors.map(reviveNestedError));
+  }
+  return err;
+}
+
 export async function deserializeResError(
   serializedValue: string | null,
   serialization: string | null,
@@ -405,7 +445,7 @@ export async function deserializeResError(
     const errdata = parsed as JsonWorkflowErrorData;
     throw new PortableWorkflowError(errdata.message, errdata.name, errdata.code, errdata.data);
   }
-  return deserializeError(parsed);
+  return deserializeErrorWithCause(parsed);
 }
 
 // Attempt to deserialize a value, but if it fails, retun the raw string.
@@ -515,12 +555,12 @@ export async function serializeResErrorWithSerializer(
   }
   if (serialization === DBOSJSON.name()) {
     return {
-      serializedValue: DBOSJSON.stringify(serializeError(err)),
+      serializedValue: DBOSJSON.stringify(serializeErrorWithCause(err)),
       serialization: DBOSJSON.name(),
     };
   }
   return {
-    serializedValue: await serializer.stringify(serializeError(err)),
+    serializedValue: await serializer.stringify(serializeErrorWithCause(err)),
     serialization: serializer.name(),
   };
 }

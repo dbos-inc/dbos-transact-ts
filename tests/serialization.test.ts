@@ -1,4 +1,5 @@
 import { Client } from 'pg';
+import { deserializeError } from 'serialize-error';
 import { DBOS, DBOSClient, DBOSConfig, DBOSSerializer, WorkflowHandle } from '../src';
 import { generateDBOSTestConfig, reexecuteWorkflowById, setUpDBOSTestSysDb } from './helpers';
 import {
@@ -10,7 +11,14 @@ import {
   workflow_events_history,
   workflow_status,
 } from '../schemas/system_db_schema';
-import { DBOSJSON, DBOSPortableJSON, SERIALIZER_MARKER_KEY, SERIALIZER_MARKER_VALUE } from '../src/serialization';
+import {
+  DBOSJSON,
+  DBOSPortableJSON,
+  deserializeResError,
+  SERIALIZER_MARKER_KEY,
+  SERIALIZER_MARKER_VALUE,
+  serializeResError,
+} from '../src/serialization';
 import { randomUUID } from 'node:crypto';
 import { DBOSExecutor } from '../src/dbos-executor';
 import { z } from 'zod';
@@ -25,8 +33,9 @@ import { z } from 'zod';
  * 4. "portable-serialization-tests" - the portable format, end to end against the database
  * 5. "custom-serializer-restart-tests" - adding or removing a serializer against existing data
  * 6. "async-serializer-tests" - serializers that return promises
+ * 7. "error-cause-serialization" - `cause` and `AggregateError.errors` in stored errors
  *
- * The first three need no database; the rest do.
+ * The first three need no database; the rest do (except the unit half of 7).
  *
  * Caution: Altering results of these tests likely means a stored-data compatibility break.
  */
@@ -1514,5 +1523,145 @@ describe('async-serializer-tests', () => {
     }
 
     await DBOS.deleteSchedule('async-sched');
+  });
+});
+
+describe('error-cause-serialization', () => {
+  async function roundTrip(err: Error): Promise<Error> {
+    const sererr = await serializeResError(err, DBOSJSON, undefined);
+    return await deserializeResError(sererr.serializedValue, sererr.serialization, DBOSJSON);
+  }
+
+  test('cause chain round-trips as non-enumerable Errors', async () => {
+    const root = new Error('root');
+    const inner = new Error('inner', { cause: root });
+    const outer = new Error('outer', { cause: inner });
+    const revived = await roundTrip(outer);
+
+    expect(revived.message).toBe('outer');
+    expect(revived.cause).toBeInstanceOf(Error);
+    const revivedInner = revived.cause as Error;
+    expect(revivedInner.message).toBe('inner');
+    expect(revivedInner.stack).toBe(inner.stack);
+    expect(revivedInner.cause).toBeInstanceOf(Error);
+    expect((revivedInner.cause as Error).message).toBe('root');
+    expect(Object.getOwnPropertyDescriptor(revived, 'cause')?.enumerable).toBe(false);
+    expect(Object.keys(revived)).not.toContain('cause');
+  });
+
+  test('stored record carries the cause', async () => {
+    const sererr = await serializeResError(new Error('outer', { cause: new Error('inner') }), DBOSJSON, undefined);
+    const stored = DBOSJSON.parse(sererr.serializedValue) as { cause?: { message?: string } };
+    expect(stored.cause?.message).toBe('inner');
+  });
+
+  test('non-Error causes survive verbatim', async () => {
+    const strRevived = await roundTrip(new Error('str', { cause: 'plain reason' }));
+    expect(strRevived.cause).toBe('plain reason');
+    const objRevived = await roundTrip(new Error('obj', { cause: { code: 1, detail: [1, 2] } }));
+    expect(objRevived.cause).toEqual({ code: 1, detail: [1, 2] });
+    expect(objRevived.cause).not.toBeInstanceOf(Error);
+  });
+
+  test('AggregateError keeps its errors', async () => {
+    const agg = new AggregateError([new Error('first'), new Error('second', { cause: new Error('why') })], 'many');
+    const revived = await roundTrip(agg);
+    expect(revived.name).toBe('AggregateError');
+    const errors = (revived as AggregateError).errors as Error[];
+    expect(errors).toHaveLength(2);
+    expect(errors[0]).toBeInstanceOf(Error);
+    expect(errors[0].message).toBe('first');
+    expect((errors[1].cause as Error).message).toBe('why');
+    expect(Object.getOwnPropertyDescriptor(revived, 'errors')?.enumerable).toBe(false);
+  });
+
+  test('circular cause chains terminate', async () => {
+    const a = new Error('a');
+    const b = new Error('b', { cause: a });
+    a.cause = b;
+    const revived = await roundTrip(a);
+    expect((revived.cause as Error).message).toBe('b');
+    expect((revived.cause as Error).cause).toBe('[Circular]');
+  });
+
+  test('the same error twice in one AggregateError is not treated as circular', async () => {
+    const shared = new Error('shared');
+    const revived = await roundTrip(new AggregateError([shared, shared], 'dup'));
+    const errors = (revived as AggregateError).errors as Error[];
+    expect(errors.map((e) => e.message)).toEqual(['shared', 'shared']);
+  });
+
+  test('records written before cause support deserialize unchanged', async () => {
+    const legacy = DBOSJSON.stringify({ name: 'Error', message: 'old', stack: 'Error: old' });
+    const revived = await deserializeResError(legacy, DBOSJSON.name(), DBOSJSON);
+    expect(revived.message).toBe('old');
+    expect('cause' in revived).toBe(false);
+
+    // A non-AggregateError with an enumerable `errors` field keeps the plain-object shape it always had.
+    const withErrors = DBOSJSON.stringify({
+      name: 'ValidationError',
+      message: 'bad',
+      errors: [{ message: 'x', path: 'a' }],
+    });
+    const revivedWithErrors = (await deserializeResError(withErrors, DBOSJSON.name(), DBOSJSON)) as Error & {
+      errors: unknown[];
+    };
+    const plain = deserializeError(DBOSJSON.parse(withErrors)) as Error & { errors: unknown[] };
+    expect(revivedWithErrors.errors).toEqual(plain.errors);
+    expect(revivedWithErrors.errors[0]).not.toBeInstanceOf(Error);
+    expect((revivedWithErrors.errors[0] as { message: string }).message).toBe('x');
+    expect(Object.keys(revivedWithErrors)).toContain('errors');
+  });
+
+  describe('end to end', () => {
+    let config: DBOSConfig;
+
+    beforeAll(() => {
+      config = generateDBOSTestConfig();
+      DBOS.setConfig(config);
+    });
+
+    beforeEach(async () => {
+      await setUpDBOSTestSysDb(config);
+      await DBOS.launch();
+    });
+
+    afterEach(async () => {
+      await DBOS.shutdown();
+    });
+
+    const causeStep = DBOS.registerStep(
+      async () => {
+        return Promise.reject(new Error('step failed', { cause: new Error('step root') }));
+      },
+      { name: 'errorCauseStep' },
+    );
+
+    const causeWorkflow = DBOS.registerWorkflow(
+      async () => {
+        try {
+          await causeStep();
+        } catch (e) {
+          throw new Error('workflow failed', { cause: e });
+        }
+      },
+      { name: 'errorCauseWorkflow' },
+    );
+
+    test('workflow and step errors keep their cause in the system database', async () => {
+      const wfid = randomUUID();
+      await expect(DBOS.withNextWorkflowID(wfid, () => causeWorkflow())).rejects.toThrow('workflow failed');
+
+      const status = await DBOS.getWorkflowStatus(wfid);
+      const wfErr = status?.error as Error;
+      expect(wfErr.message).toBe('workflow failed');
+      expect((wfErr.cause as Error).message).toBe('step failed');
+      expect(((wfErr.cause as Error).cause as Error).message).toBe('step root');
+
+      const steps = await DBOS.listWorkflowSteps(wfid);
+      const stepErr = steps?.[0]?.error as Error;
+      expect(stepErr.message).toBe('step failed');
+      expect((stepErr.cause as Error).message).toBe('step root');
+    });
   });
 });

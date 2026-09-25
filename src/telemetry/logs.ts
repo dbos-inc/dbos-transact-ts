@@ -56,12 +56,13 @@ export type ContextualMetadata = {
 
 export interface StackTrace {
   stack?: string;
+  error?: unknown; // The original logged Error, for loggers that serialize errors themselves
 }
 
 // Append the `cause` (which Error.stack omits) to the stack; inspect() handles nested/circular/non-Error causes.
 function errorStackWithCause(error: Error): string {
   const stack = error.stack ?? `${error.name}: ${error.message}`;
-  return error.cause === undefined ? stack : `${stack}\n  [cause]: ${inspect(error.cause)}`;
+  return error.cause === undefined ? stack : `${stack}\n  [cause]: ${inspect(error.cause, { depth: 10 })}`;
 }
 
 export class GlobalLogger {
@@ -228,7 +229,7 @@ export class GlobalLogger {
   error(inputError: unknown, metadata?: ContextualMetadata & StackTrace): void {
     this.isLogging = true;
     if (inputError instanceof Error) {
-      this.logger.error(inputError.message, { ...metadata, stack: errorStackWithCause(inputError) });
+      this.logger.error(inputError.message, { ...metadata, stack: errorStackWithCause(inputError), error: inputError });
     } else if (typeof inputError === 'string') {
       this.logger.error(inputError, { ...metadata, stack: new Error().stack });
     } else {
@@ -254,7 +255,8 @@ export class GlobalLogger {
  * Contract for custom implementations:
  * - Log entries arrive as strings: DBOS stringifies non-string entries before
  *   delegating, and `error()` receives the message of an `Error` with its
- *   stack trace (including any `cause` chain) in `metadata.stack`.
+ *   stack trace (including any `cause` chain) in `metadata.stack` and the
+ *   original `Error` object in `metadata.error`.
  * - When called from a workflow or step, `metadata.span?.attributes` carries
  *   the operation context (workflow ID, operation name and type, etc.).
  * - DBOS does not filter by `logLevel` before delegating; level routing is the
