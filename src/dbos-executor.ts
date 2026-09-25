@@ -37,7 +37,6 @@ import {
   type RunningWorkflowEntry,
   type WorkflowStatusInternal,
   type SystemDatabaseStoredResult,
-  isDatabaseError,
 } from './system_database';
 import { randomUUID } from 'node:crypto';
 import {
@@ -722,10 +721,7 @@ export class DBOSExecutor {
       const sererr = await serializeResErrorWithSerializer(err, eserializer, ires.serialization ?? null);
       internalStatus.error = sererr.serializedValue;
       internalStatus.status = StatusString.ERROR;
-      // A database error may have cost a step its checkpoint, leaving its data source row the only record.
-      if (!isDatabaseError(err)) {
-        await exec.deleteCompletedDataSourceCheckpoints(workflowID, ownerXid, usedDataSources);
-      }
+      await exec.deleteCompletedDataSourceCheckpoints(workflowID, ownerXid, usedDataSources);
       const recorded = await exec.systemDatabase.recordWorkflowError(workflowID, internalStatus, ownerXid);
       if (recorded) {
         exec.logger.error(err);

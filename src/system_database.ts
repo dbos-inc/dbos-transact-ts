@@ -834,18 +834,6 @@ export function retriablePostgresException(err: unknown): boolean {
   return false;
 }
 
-/**
- * Whether `err` came from a database or the connection to one, found anywhere in its cause chain.
- * Deliberately broad: callers use it to keep state that such a failure may have left as the only record.
- */
-export function isDatabaseError(err: unknown): boolean {
-  if (retriablePostgresException(err)) return true;
-  for (const e of unwrapErrors(err)) {
-    if (e instanceof DatabaseError || isPgDatabaseError(e as AnyErr)) return true;
-  }
-  return false;
-}
-
 /** 57014 is query_canceled, which is how statement_timeout cancels a query. */
 function isStatementTimeout(err: unknown): boolean {
   return !!err && typeof err === 'object' && (err as AnyErr).code === '57014';

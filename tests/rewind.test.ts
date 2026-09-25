@@ -304,12 +304,20 @@ const cancellableDSWorkflow = DBOS.registerWorkflow(
   { name: 'cancellable_ds_workflow' },
 );
 
+const badSQL = registerTransaction(
+  firstDS.name,
+  async () => {
+    const ctx = dsContext.getStore()!;
+    await ctx.client.query(`SELECT * FROM "${ctx.schema}".no_such_table`);
+  },
+  { name: 'badSQL' },
+);
+
 const failingDSWorkflow = DBOS.registerWorkflow(
   async (databaseError: boolean) => {
     await insertFirst('a');
     if (databaseError) {
-      // A real driver error, raised outside any step.
-      await firstDS.pool.query('SELECT 1/0');
+      await badSQL();
     }
     throw new Error('workflow failed');
   },
@@ -951,14 +959,14 @@ describe('rewind', () => {
     expect(await firstDS.checkpoints(workflowID)).toEqual([]);
   });
 
-  /** A database error may have cost a transaction its step checkpoint, leaving its data source checkpoint the only record. */
-  test('a-database-error-keeps-the-checkpoints', async () => {
+  /** A workflow failed by its own SQL error is cleared like any other failure. */
+  test('a-database-error-drops-the-checkpoints', async () => {
     const workflowID = randomUUID();
     await expect(DBOS.withNextWorkflowID(workflowID, () => failingDSWorkflow(true))).rejects.toThrow(
-      'division by zero',
+      'relation "rewind_ds1.no_such_table" does not exist',
     );
     expect((await statusRow(workflowID)).status).toBe(StatusString.ERROR);
-    expect(await firstDS.checkpoints(workflowID)).toEqual([0]);
+    expect(await firstDS.checkpoints(workflowID)).toEqual([]);
   });
 
   /** A cancelled workflow can be resumed, and a transaction whose step checkpoint was lost then replays off its data source checkpoint. */
