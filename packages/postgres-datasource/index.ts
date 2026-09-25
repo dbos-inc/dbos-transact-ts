@@ -9,6 +9,8 @@ import {
   isPGRetriableTransactionError,
   DBOSError,
   DBOSStepAlreadyRecordedError,
+  DBOSWorkflowConflictError,
+  assertStillOwnsWorkflow,
   replayRecordedStep,
   registerTransaction,
   runTransaction,
@@ -94,10 +96,13 @@ class PostgresTransactionHandler implements DataSourceTransactionHandler {
     return this.#dbField;
   }
 
-  async deleteCheckpoints(workflowID: string, startStep: number): Promise<void> {
-    await this.#db/*sql*/ `
-      DELETE FROM ${this.#db(this.schemaName)}.transaction_completion
-      WHERE workflow_id = ${workflowID} AND function_num >= ${startStep}`;
+  async deleteCheckpoints(workflowID: string, startStep: number, beforeCommit?: () => Promise<void>): Promise<void> {
+    await this.#db.begin(async (client) => {
+      await client/*sql*/ `
+        DELETE FROM ${client(this.schemaName)}.transaction_completion
+        WHERE workflow_id = ${workflowID} AND function_num >= ${startStep}`;
+      await beforeCommit?.();
+    });
   }
 
   async #checkExecution(
@@ -130,6 +135,8 @@ class PostgresTransactionHandler implements DataSourceTransactionHandler {
     if (rows.length === 0) {
       throw new DBOSStepAlreadyRecordedError(workflowID, stepID);
     }
+    // Holding this step's row, so a later owner's insert waits on our commit.
+    await assertStillOwnsWorkflow(workflowID);
   }
 
   async #recordError(workflowID: string, stepID: number, error: string): Promise<void> {
@@ -208,6 +215,8 @@ class PostgresTransactionHandler implements DataSourceTransactionHandler {
         if (saveResults && error instanceof DBOSStepAlreadyRecordedError) {
           return await this.#replayConflictingStep<Return>(workflowID, stepID!);
         }
+        // The new owner wins; recording an error here would replay it as this step's outcome.
+        if (error instanceof DBOSWorkflowConflictError) throw error;
         if (isPGRetriableTransactionError(error)) {
           // 400001 is a serialization failure in PostgreSQL
           DBOS.span?.addEvent('TXN SERIALIZATION FAILURE', { retryWaitMillis: retryWaitMS }, performance.now());

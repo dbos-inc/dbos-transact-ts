@@ -3,7 +3,6 @@ import { Client, Pool } from 'pg';
 import { DrizzleDataSource } from '..';
 import { dropDB, ensureDB } from './test-helpers';
 import { randomUUID } from 'crypto';
-import SuperJSON from 'superjson';
 import { pgTable, text, integer } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
@@ -106,9 +105,8 @@ describe('DrizzleDataSource with custom Pool', () => {
       'SELECT * FROM dbos.transaction_completion WHERE workflow_id = $1',
       [workflowID],
     );
-    expect(rows.length).toBe(1);
-    expect(rows[0].output).not.toBeNull();
-    expect(SuperJSON.parse(rows[0].output!)).toMatchObject({ user, greet_count: 1 });
+    // Completion cleared the checkpoint the transaction wrote.
+    expect(rows).toHaveLength(0);
   });
 
   test('transaction runs against the custom pool database', async () => {

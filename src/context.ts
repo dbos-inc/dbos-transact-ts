@@ -3,6 +3,7 @@ import { AsyncLocalStorage } from 'async_hooks';
 import { DBOSError, DBOSInvalidWorkflowTransitionError } from './error';
 import { DBOSExecutor } from './dbos-executor';
 import { WorkflowSerializationFormat } from './workflow';
+import type { DataSourceTransactionHandler } from './datasource';
 
 export interface StepStatus {
   stepID: number;
@@ -41,6 +42,7 @@ export interface DBOSLocalCtx extends DBOSContextOptions {
   stepStatus?: StepStatus; // If currently in a step, its public status object
   curTxFunctionId?: number; // If currently in a tx, its function ID
   ownerXid?: string; // Token this execution wrote to the row's owner_xid; checkpoints land only while it still matches
+  usedDataSources?: Set<DataSourceTransactionHandler>; // Data sources this workflow called; its checkpoints go when it completes
 }
 
 /** The ownership token of the execution writing for `workflowID`, or undefined when there is nothing to check. */

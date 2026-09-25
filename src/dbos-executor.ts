@@ -81,6 +81,7 @@ import { wfQueueRunner } from './wfqueue';
 import { DynamicSchedulerLoop } from './scheduler/scheduler';
 import * as crypto from 'crypto';
 import {
+  deleteCompletedDataSourceCheckpoints,
   forkWorkflow,
   listQueuedWorkflows,
   listWorkflows,
@@ -90,6 +91,7 @@ import {
   workflowTimeoutLoop,
 } from './workflow_management';
 import { maskDatabaseUrl } from './database_utils';
+import type { DataSourceTransactionHandler } from './datasource';
 import { Pool } from 'pg';
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
@@ -708,6 +710,7 @@ export class DBOSExecutor {
     shouldExecute = ires.shouldExecuteOnThisExecutor;
 
     let runningEntry: RunningWorkflowEntry | undefined;
+    const usedDataSources = new Set<DataSourceTransactionHandler>();
 
     const eserializer = this.serializer;
     async function handleWorkflowError(
@@ -718,6 +721,7 @@ export class DBOSExecutor {
       const sererr = await serializeResErrorWithSerializer(err, eserializer, ires.serialization ?? null);
       internalStatus.error = sererr.serializedValue;
       internalStatus.status = StatusString.ERROR;
+      await exec.deleteCompletedDataSourceCheckpoints(workflowID, ownerXid, usedDataSources);
       const recorded = await exec.systemDatabase.recordWorkflowError(workflowID, internalStatus, ownerXid);
       if (recorded) {
         exec.logger.error(err);
@@ -792,6 +796,7 @@ export class DBOSExecutor {
                 deadlineEpochMS,
                 workflowId: workflowID,
                 ownerXid,
+                usedDataSources,
                 logger: this.ctxLogger,
                 curWFFunctionId: undefined,
                 activeStreamReads: 0,
@@ -814,6 +819,7 @@ export class DBOSExecutor {
           result = funcResult.deserialized;
           internalStatus.output = funcResult.stringified;
           internalStatus.status = StatusString.SUCCESS;
+          await this.deleteCompletedDataSourceCheckpoints(workflowID, ownerXid, usedDataSources);
           const recorded = await this.systemDatabase.recordWorkflowOutput(workflowID, internalStatus, ownerXid);
           if (recorded) {
             span.setStatus({ code: SpanStatusCode.OK });
@@ -1136,6 +1142,16 @@ export class DBOSExecutor {
   ): Promise<string> {
     const newWorkflowID = options.newWorkflowID ?? getNextWFID(undefined);
     return forkWorkflow(this.systemDatabase, workflowID, startStep, { ...options, newWorkflowID });
+  }
+
+  /** Clear the checkpoints of the data sources this execution called, committing only while it still owns the workflow. */
+  async deleteCompletedDataSourceCheckpoints(
+    workflowID: string,
+    ownerXid: string,
+    usedDataSources: Set<DataSourceTransactionHandler>,
+  ): Promise<void> {
+    if (usedDataSources.size === 0) return;
+    await deleteCompletedDataSourceCheckpoints(this.systemDatabase, usedDataSources, workflowID, ownerXid, this.logger);
   }
 
   /**
