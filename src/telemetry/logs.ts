@@ -166,7 +166,7 @@ export class GlobalLogger {
     }
 
     // Import Winston dependencies only when OTLP is enabled
-    const { transports, createLogger } = require('winston');
+    const { transports, createLogger, format } = require('winston');
     const winstonTransports: unknown[] = [];
     winstonTransports.push(
       new transports.Console({
@@ -180,7 +180,8 @@ export class GlobalLogger {
       otlpTransport = new OTLPLogQueueTransport(this.telemetryCollector, config?.logLevel || 'info');
       winstonTransports.push(otlpTransport);
     }
-    this.logger = createLogger({ transports: winstonTransports });
+    // Transports format their own output, so skip winston's default JSON serialization of the metadata (and its `error` graph).
+    this.logger = createLogger({ transports: winstonTransports, format: format((info: unknown) => info)() });
 
     if (globalParams.enableOTLP && process.env.DBOS__CAPTURE_STD !== 'false' && this.telemetryCollector?.exporter) {
       interceptStreams((msg, stream) => {
@@ -231,14 +232,21 @@ export class GlobalLogger {
   // metadata can have both ContextualMetadata and the error stack trace
   error(inputError: unknown, metadata?: ContextualMetadata & StackTrace): void {
     this.isLogging = true;
-    if (inputError instanceof Error) {
-      this.logger.error(inputError.message, { ...metadata, stack: errorStackWithCause(inputError), error: inputError });
-    } else if (typeof inputError === 'string') {
-      this.logger.error(inputError, { ...metadata, stack: new Error().stack });
-    } else {
-      this.logger.error(DBOSJSON.stringify(inputError), { ...metadata, stack: new Error().stack });
+    try {
+      if (inputError instanceof Error) {
+        this.logger.error(inputError.message, {
+          ...metadata,
+          stack: errorStackWithCause(inputError),
+          error: inputError,
+        });
+      } else if (typeof inputError === 'string') {
+        this.logger.error(inputError, { ...metadata, stack: new Error().stack });
+      } else {
+        this.logger.error(DBOSJSON.stringify(inputError), { ...metadata, stack: new Error().stack });
+      }
+    } finally {
+      this.isLogging = false;
     }
-    this.isLogging = false;
   }
 
   async destroy() {
