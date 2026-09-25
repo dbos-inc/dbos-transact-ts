@@ -92,6 +92,7 @@ import {
   workflowTimeoutLoop,
 } from './workflow_management';
 import { maskDatabaseUrl } from './database_utils';
+import type { DataSourceTransactionHandler } from './datasource';
 import { Pool } from 'pg';
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
@@ -710,6 +711,7 @@ export class DBOSExecutor {
     shouldExecute = ires.shouldExecuteOnThisExecutor;
 
     let runningEntry: RunningWorkflowEntry | undefined;
+    const usedDataSources = new Set<DataSourceTransactionHandler>();
 
     const eserializer = this.serializer;
     async function handleWorkflowError(
@@ -722,7 +724,7 @@ export class DBOSExecutor {
       internalStatus.status = StatusString.ERROR;
       // A database error may have cost a step its checkpoint, leaving its data source row the only record.
       if (!isDatabaseError(err)) {
-        await exec.deleteCompletedDataSourceCheckpoints(workflowID);
+        await exec.deleteCompletedDataSourceCheckpoints(workflowID, ownerXid, usedDataSources);
       }
       const recorded = await exec.systemDatabase.recordWorkflowError(workflowID, internalStatus, ownerXid);
       if (recorded) {
@@ -798,6 +800,7 @@ export class DBOSExecutor {
                 deadlineEpochMS,
                 workflowId: workflowID,
                 ownerXid,
+                usedDataSources,
                 logger: this.ctxLogger,
                 curWFFunctionId: undefined,
                 activeStreamReads: 0,
@@ -820,7 +823,7 @@ export class DBOSExecutor {
           result = funcResult.deserialized;
           internalStatus.output = funcResult.stringified;
           internalStatus.status = StatusString.SUCCESS;
-          await this.deleteCompletedDataSourceCheckpoints(workflowID);
+          await this.deleteCompletedDataSourceCheckpoints(workflowID, ownerXid, usedDataSources);
           const recorded = await this.systemDatabase.recordWorkflowOutput(workflowID, internalStatus, ownerXid);
           if (recorded) {
             span.setStatus({ code: SpanStatusCode.OK });
@@ -1145,10 +1148,14 @@ export class DBOSExecutor {
     return forkWorkflow(this.systemDatabase, workflowID, startStep, { ...options, newWorkflowID });
   }
 
-  /** Still PENDING, so no rewind can interleave; the step checkpoints now cover every transaction. */
-  async deleteCompletedDataSourceCheckpoints(workflowID: string): Promise<void> {
-    if (transactionalDataSources.size === 0) return;
-    await deleteCompletedDataSourceCheckpoints([...transactionalDataSources.values()], workflowID, this.logger);
+  /** Clear the checkpoints of the data sources this execution called, committing only while it still owns the workflow. */
+  async deleteCompletedDataSourceCheckpoints(
+    workflowID: string,
+    ownerXid: string,
+    usedDataSources: Set<DataSourceTransactionHandler>,
+  ): Promise<void> {
+    if (usedDataSources.size === 0) return;
+    await deleteCompletedDataSourceCheckpoints(this.systemDatabase, usedDataSources, workflowID, ownerXid, this.logger);
   }
 
   /**

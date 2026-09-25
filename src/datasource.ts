@@ -1,4 +1,4 @@
-import { currentOwnerXid, functionIDGetIncrement, runWithDataSourceContext } from './context';
+import { currentOwnerXid, functionIDGetIncrement, getCurrentContextStore, runWithDataSourceContext } from './context';
 import { DBOS } from './dbos';
 import { DBOSExecutor, OperationType } from './dbos-executor';
 import {
@@ -36,8 +36,13 @@ export interface DataSourceTransactionHandler {
    *
    * Used by rewind, which drops the workflow's history from that step, including datasources checkpoints,
    * and on workflow completion (from step 0), once the workflow's step checkpoints cover every transaction.
+   *
+   * When `beforeCommit` is given, run the delete in a transaction and await `beforeCommit` after
+   * the delete but before committing; if it throws, roll back and rethrow. Completion passes one that
+   * throws DBOSWorkflowConflictError once another execution owns the workflow, whose checkpoints
+   * may be the new owner's only record of a transaction.
    */
-  deleteCheckpoints?(workflowID: string, startStep: number): Promise<void>;
+  deleteCheckpoints?(workflowID: string, startStep: number, beforeCommit?: () => Promise<void>): Promise<void>;
 
   /**
    * Invoke a transaction function
@@ -139,6 +144,7 @@ export async function runTransaction<T>(
     );
   }
 
+  recordDataSourceUse(ds);
   const callnum = functionIDGetIncrement();
 
   const tracer = DBOSExecutor.globalInstance!.tracer;
@@ -181,6 +187,12 @@ export async function runTransaction<T>(
   }
 }
 
+/** Note that the running workflow called `ds`, so its completion clears `ds`'s checkpoints. */
+function recordDataSourceUse(ds: DataSourceTransactionHandler) {
+  // Recorded before the step runs, so a replayed step still clears an earlier execution's rows.
+  getCurrentContextStore()?.usedDataSources?.add(ds);
+}
+
 // Transaction wrapper
 export function registerTransaction<This, Args extends unknown[], Return, Config extends FunctionName>(
   dsName: string,
@@ -207,6 +219,7 @@ export function registerTransaction<This, Args extends unknown[], Return, Config
       );
     }
 
+    recordDataSourceUse(ds);
     const tracer = DBOSExecutor.globalInstance!.tracer;
     const span = tracer.startSpan(
       funcName,

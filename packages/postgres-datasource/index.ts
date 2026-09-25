@@ -96,10 +96,13 @@ class PostgresTransactionHandler implements DataSourceTransactionHandler {
     return this.#dbField;
   }
 
-  async deleteCheckpoints(workflowID: string, startStep: number): Promise<void> {
-    await this.#db/*sql*/ `
-      DELETE FROM ${this.#db(this.schemaName)}.transaction_completion
-      WHERE workflow_id = ${workflowID} AND function_num >= ${startStep}`;
+  async deleteCheckpoints(workflowID: string, startStep: number, beforeCommit?: () => Promise<void>): Promise<void> {
+    await this.#db.begin(async (client) => {
+      await client/*sql*/ `
+        DELETE FROM ${client(this.schemaName)}.transaction_completion
+        WHERE workflow_id = ${workflowID} AND function_num >= ${startStep}`;
+      await beforeCommit?.();
+    });
   }
 
   async #checkExecution(

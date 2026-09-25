@@ -344,6 +344,24 @@ describe('NodePostgresDataSource', () => {
     expect(txOutput).toHaveLength(0);
   });
 
+  /** The checkpoint may be the new owner's only record of the transaction, so a stale execution's cleanup rolls back. */
+  test('a stale execution keeps the checkpoints at completion', async () => {
+    const user = 'handOffTest';
+    await userDB.query('DELETE FROM greetings WHERE name = $1', [user]);
+    handOffState.handedOff = false;
+    const workflowID = randomUUID();
+    const execution = DBOS.withNextWorkflowID(workflowID, () => regHandOffWorkflow(user));
+    execution.catch(() => {});
+    while (!handOffState.handedOff) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+
+    // Its outcome is refused too, so the execution parks until the workflow is cancelled.
+    await DBOS.cancelWorkflow(workflowID);
+    await expect(execution).rejects.toThrow(/has been cancelled/);
+    expect(await completions(workflowID)).toHaveLength(1);
+  });
+
   /** A stale execution cannot apply a step the new owner also runs, nor leave an outcome for it. */
   test('an execution that loses the workflow mid-transaction rolls back', async () => {
     await userDB.query('DELETE FROM race_side_effects');
@@ -522,6 +540,18 @@ async function staleWorkflow() {
 }
 
 const regStaleWorkflow = DBOS.registerWorkflow(staleWorkflow);
+
+const handOffState = { handedOff: false };
+
+// Loses the workflow after its transaction, so its completion is a stale execution's.
+async function handOffWorkflow(user: string) {
+  const result = await regInsertFunction(user);
+  await setOwner(DBOS.workflowID!, 'another-execution');
+  handOffState.handedOff = true;
+  return result;
+}
+
+const regHandOffWorkflow = DBOS.registerWorkflow(handOffWorkflow);
 
 async function raceWorkflow() {
   return await regRaceFunction();

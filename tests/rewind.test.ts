@@ -1,6 +1,6 @@
 import { DBOS, DBOSClient, StatusString } from '../src';
 import { DBOSExecutor } from '../src/dbos-executor';
-import { generateDBOSTestConfig, setUpDBOSTestSysDb, Event, retryUntilSuccess } from './helpers';
+import { generateDBOSTestConfig, setUpDBOSTestSysDb, Event, retryUntilSuccess, recoverWorkflow } from './helpers';
 import { Client, Pool, PoolClient } from 'pg';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
@@ -179,11 +179,22 @@ class CheckpointDataSource implements DataSourceTransactionHandler {
     return this.#poolField;
   }
 
-  async deleteCheckpoints(workflowID: string, startStep: number): Promise<void> {
-    await this.pool.query(
-      `DELETE FROM "${this.schema}".transaction_completion WHERE workflow_id = $1 AND function_num >= $2`,
-      [workflowID, startStep],
-    );
+  async deleteCheckpoints(workflowID: string, startStep: number, beforeCommit?: () => Promise<void>): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        `DELETE FROM "${this.schema}".transaction_completion WHERE workflow_id = $1 AND function_num >= $2`,
+        [workflowID, startStep],
+      );
+      await beforeCommit?.();
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   /** The step IDs this data source holds a checkpoint for. */
@@ -304,6 +315,41 @@ const failingDSWorkflow = DBOS.registerWorkflow(
   },
   { name: 'failing_ds_workflow' },
 );
+
+/** Give the workflow to another execution, as a recovery or resume would. */
+async function handOff(workflowID: string) {
+  const client = new Client({ connectionString: config.systemDatabaseUrl });
+  try {
+    await client.connect();
+    await client.query(
+      `UPDATE "${config.systemDatabaseSchemaName ?? 'dbos'}".workflow_status SET owner_xid = 'another-execution' WHERE workflow_uuid = $1`,
+      [workflowID],
+    );
+  } finally {
+    await client.end();
+  }
+}
+
+// Loses the workflow after its transactions, so its completion is a stale execution's.
+const handedOffDSWorkflow = DBOS.registerWorkflow(
+  async () => {
+    await insertFirst('a');
+    await insertSecond('b');
+    await handOff(DBOS.workflowID!);
+    return 'done';
+  },
+  { name: 'handed_off_ds_workflow' },
+);
+
+const secondOnlyDSWorkflow = DBOS.registerWorkflow(
+  async () => {
+    await insertSecond('b');
+    return 'done';
+  },
+  { name: 'second_only_ds_workflow' },
+);
+
+const idleWorkflow = DBOS.registerWorkflow(() => Promise.resolve('idle'), { name: 'idle_workflow' });
 
 const rewindChild = DBOS.registerWorkflow(
   (value: number) => {
@@ -446,7 +492,23 @@ describe('rewind', () => {
 
   /** Skip the cleanup at completion, leaving checkpoints as a workflow finished before it existed did. */
   function keepCompletionCheckpoints() {
-    jest.spyOn(DBOSExecutor.prototype, 'deleteCompletedDataSourceCheckpoints').mockResolvedValue(undefined);
+    return jest.spyOn(DBOSExecutor.prototype, 'deleteCompletedDataSourceCheckpoints').mockResolvedValue(undefined);
+  }
+
+  /** Record whether each of `ds`'s checkpoint deletes committed or rolled back. */
+  function recordDeletes(ds: CheckpointDataSource): string[] {
+    const outcomes: string[] = [];
+    const deleteCheckpoints = ds.deleteCheckpoints.bind(ds);
+    jest.spyOn(ds, 'deleteCheckpoints').mockImplementation(async (...args) => {
+      try {
+        await deleteCheckpoints(...args);
+        outcomes.push('committed');
+      } catch (error) {
+        outcomes.push('rolled back');
+        throw error;
+      }
+    });
+    return outcomes;
   }
 
   //////////////////////////////////////////
@@ -928,6 +990,55 @@ describe('rewind', () => {
     });
     expect((await statusRow(workflowID)).status).toBe(StatusString.SUCCESS);
     expect(await firstDS.checkpoints(workflowID)).toEqual([0, 2]);
+    expect(await secondDS.checkpoints(workflowID)).toEqual([]);
+  });
+
+  /** A stale execution rolls its delete back, since the checkpoints may be the new owner's only record of a transaction. */
+  test('a-stale-execution-keeps-the-checkpoints', async () => {
+    const firstDeletes = recordDeletes(firstDS);
+    const secondDeletes = recordDeletes(secondDS);
+    const handle = await DBOS.startWorkflow(handedOffDSWorkflow)();
+    const workflowID = handle.workflowID;
+
+    await retryUntilSuccess(() => expect(firstDeletes).toHaveLength(1));
+    // Rolled back on the first data source, which stops the cleanup there.
+    expect(firstDeletes).toEqual(['rolled back']);
+    expect(secondDeletes).toEqual([]);
+    expect(await firstDS.checkpoints(workflowID)).toEqual([0]);
+    expect(await secondDS.checkpoints(workflowID)).toEqual([1]);
+
+    // Release the parked execution.
+    await DBOS.cancelWorkflow(workflowID);
+    await expect(handle.getResult()).rejects.toThrow(DBOSWorkflowCancelledError);
+    await retryUntilSuccess(() => expect(sysdb().checkForRunningWorkflow(workflowID)).toBe(false));
+  });
+
+  test('cleanup-skips-the-data-sources-the-workflow-never-called', async () => {
+    const firstDeletes = recordDeletes(firstDS);
+    const secondDeletes = recordDeletes(secondDS);
+    const workflowID = randomUUID();
+    await expect(DBOS.withNextWorkflowID(workflowID, () => secondOnlyDSWorkflow())).resolves.toBe('done');
+    await expect(idleWorkflow()).resolves.toBe('idle');
+    expect(firstDeletes).toEqual([]);
+    expect(secondDeletes).toEqual(['committed']);
+    expect(await secondDS.checkpoints(workflowID)).toEqual([]);
+  });
+
+  /** A recovered execution replays every transaction from its step checkpoint, yet still clears what the earlier execution left. */
+  test('recovery-clears-an-earlier-executions-checkpoints', async () => {
+    const keep = keepCompletionCheckpoints();
+    const workflowID = randomUUID();
+    await expect(DBOS.withNextWorkflowID(workflowID, () => secondOnlyDSWorkflow())).resolves.toBe('done');
+    expect(await secondDS.checkpoints(workflowID)).toEqual([0]);
+    keep.mockRestore();
+
+    await systemDBClient.query(`UPDATE "${schema}".workflow_status SET status = $2 WHERE workflow_uuid = $1`, [
+      workflowID,
+      StatusString.PENDING,
+    ]);
+    const handle = await recoverWorkflow(workflowID);
+    await expect(handle.getResult()).resolves.toBe('done');
+    expect(await secondDS.rows()).toEqual(['b']);
     expect(await secondDS.checkpoints(workflowID)).toEqual([]);
   });
 });

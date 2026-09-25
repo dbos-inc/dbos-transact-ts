@@ -2,7 +2,7 @@ import type { SystemDatabase, WorkflowStatusInternal } from './system_database';
 import type { StepInfo, WorkflowStatus, GetWorkflowsInput, ListWorkflowStepsOptions } from './workflow';
 import { StatusString } from './workflow';
 import type { DataSourceTransactionHandler } from './datasource';
-import { DBOSError, DBOSNonExistentWorkflowError } from './error';
+import { DBOSError, DBOSNonExistentWorkflowError, DBOSWorkflowConflictError } from './error';
 import { DBOSSerializer, safeParse, safeParseError, safeParsePositionalArgs } from './serialization';
 import { randomUUID } from 'node:crypto';
 import type { GlobalLogger } from './telemetry/logs';
@@ -133,20 +133,31 @@ function keepingCheckpoints(dataSources: readonly DataSourceTransactionHandler[]
 }
 
 /**
- * Drop a finishing workflow's data source checkpoints, which its step checkpoints now cover.
+ * Drop a finishing workflow's data source checkpoints, which its step checkpoints now cover,
+ * committing each delete only while `ownerXid` still owns the workflow.
  *
  * Best effort: a leftover checkpoint is harmless, so a failure only warns and the other
- * data sources are still cleared.
+ * data sources are still cleared. Once another execution owns the workflow, the
+ * checkpoints are its own and the rest are left alone.
  */
 export async function deleteCompletedDataSourceCheckpoints(
-  dataSources: readonly DataSourceTransactionHandler[],
+  sysdb: SystemDatabase,
+  dataSources: Iterable<DataSourceTransactionHandler>,
   workflowID: string,
+  ownerXid: string,
   logger: GlobalLogger,
 ): Promise<void> {
-  for (const ds of keepingCheckpoints(dataSources)) {
+  // Runs after the delete, so every row it removed predates any later owner's.
+  const stillOwner = async () => {
+    if ((await sysdb.getWorkflowOwner(workflowID)) !== ownerXid) {
+      throw new DBOSWorkflowConflictError(workflowID);
+    }
+  };
+  for (const ds of keepingCheckpoints([...dataSources])) {
     try {
-      await ds.deleteCheckpoints!(workflowID, 0);
+      await ds.deleteCheckpoints!(workflowID, 0, stillOwner);
     } catch (e) {
+      if (e instanceof DBOSWorkflowConflictError) return;
       logger.warn(
         `Failed to delete data source ${ds.name} checkpoints of workflow ${workflowID}: ${(e as Error).message}`,
       );
