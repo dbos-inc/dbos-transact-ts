@@ -130,6 +130,45 @@ describe('custom-logger', () => {
     expect(strEntry?.metadata?.stack).not.toContain('__dbos_serializer');
   });
 
+  test('errors nested inside a cause are not truncated in the stack metadata', async () => {
+    DBOS.setConfig({ ...generateDBOSTestConfig(), logger: recorder });
+    await DBOS.launch();
+
+    const agg = new AggregateError([new Error('agg-inner', { cause: new Error('deep-root') })], 'many');
+    DBOS.logger.error(new Error('deep', { cause: { context: { failures: agg } } }));
+    const entry = recorder.find('error', 'deep');
+    expect(entry?.metadata?.stack).toContain('deep-root');
+  });
+
+  test('a top-level AggregateError logs its inner errors', async () => {
+    DBOS.setConfig({ ...generateDBOSTestConfig(), logger: recorder });
+    await DBOS.launch();
+
+    const agg = new AggregateError(
+      [new Error('agg-first'), new Error('agg-second', { cause: new Error('agg-root') })],
+      'all failed',
+    );
+    DBOS.logger.error(agg);
+    const stack = recorder.find('error', 'all failed')?.metadata?.stack;
+    expect(stack).toContain('[errors]');
+    expect(stack).toContain('agg-first');
+    expect(stack).toContain('agg-second');
+    expect(stack).toContain('agg-root');
+  });
+
+  test('the original error is passed through in metadata', async () => {
+    DBOS.setConfig({ ...generateDBOSTestConfig(), logger: recorder });
+    await DBOS.launch();
+
+    const err = Object.assign(new Error('original'), { extra: 42 });
+    DBOS.logger.error(err);
+    const entry = recorder.find('error', 'original');
+    expect(entry?.metadata?.error).toBe(err);
+
+    DBOS.logger.error('a string entry');
+    expect(recorder.find('error', 'a string entry')?.metadata?.error).toBeUndefined();
+  });
+
   test('error without a cause keeps an unmodified stack', async () => {
     DBOS.setConfig({ ...generateDBOSTestConfig(), logger: recorder });
     await DBOS.launch();
