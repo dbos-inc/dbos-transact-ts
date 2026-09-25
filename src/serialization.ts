@@ -417,7 +417,7 @@ function addNestedErrors(record: Record<string, unknown>, value: Error, ancestor
           addNestedErrors(entry as Record<string, unknown>, e, ancestors);
         }
       });
-    } else {
+    } else if (value instanceof AggregateError) {
       record.errors = errors.map((e: unknown) => serializeErrorWithCause(e, ancestors));
     }
   }
