@@ -455,7 +455,7 @@ export function getDbosSchemaPermissionsSql(schemaName: string, roleName: string
   ];
 }
 
-export async function grantDbosSchemaPermissions(
+async function grantDbosSchemaPermissions(
   databaseUrl: string,
   roleName: string,
   logger: GlobalLogger,

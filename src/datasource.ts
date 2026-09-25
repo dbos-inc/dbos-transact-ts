@@ -110,12 +110,9 @@ export interface DBOSDataSource<Config extends { name?: string }> {
   //   `static get client(): WhateverClient;`
   //   `get client(): WhateverClient;`
 
-  // A way to initialize the internal schema used by the DS for transaction tracking
-  //  This is only for testing, it should be documented how to create this entirely
-  //  outside of DBOS.
-  //   `async initializeDBOSSchema(): Promise<void>;`
-  //  or, it can be static, such as:
-  //   `static async initializeDBOSSchema(c: Config | Connection)`
+  // A static way to create or migrate the DS's transaction schema out of band, for use with
+  //  `runMigrations: false`, built on `initializeDataSourceSchemaPG`:
+  //   `static async initializeDBOSSchema(c: Config | Connection, schemaName?: string, options?: { applicationRole?: string })`
 }
 
 /// Calling into DBOS
@@ -308,7 +305,7 @@ export interface PGTransactionConfig {
 }
 
 /** Error types re-exported so data sources can raise and recognize DBOS-typed failures. */
-export { DBOSError, DBOSInitializationError, DBOSWorkflowConflictError };
+export { DBOSError, DBOSWorkflowConflictError };
 
 /**
  * Throw DBOSWorkflowConflictError if the calling execution no longer owns `workflowID`.
@@ -372,6 +369,9 @@ function createTransactionCompletionTablePG(schemaName: string): string {
 /** Records the data source schema version; separate from the system database's `dbos_migrations`, since the two may share a schema. */
 export const DATASOURCE_MIGRATIONS_TABLE = 'dbos_transaction_completion_migrations';
 
+/** Longest a migrating transaction may sit idle while holding the migration lock. */
+const MIGRATION_IDLE_TIMEOUT = '30s';
+
 /** Options shared by data source constructors. */
 export interface DataSourceMigrationOptions {
   /**
@@ -413,17 +413,6 @@ async function readDataSourceVersion(exec: DataSourceSQLExecutor, schemaName: st
   return rows.length > 0 ? Number(rows[0].version) : 0;
 }
 
-/** The recorded and latest data source schema versions; a missing version table reads as 0. */
-export async function getDataSourceMigrationVersions(
-  exec: DataSourceSQLExecutor,
-  schemaName: string = 'dbos',
-): Promise<{ current: number; latest: number }> {
-  return {
-    current: await readDataSourceVersion(exec, schemaName),
-    latest: getDataSourceMigrationsPG(schemaName).length,
-  };
-}
-
 /**
  * Bring the data source schema to the latest version. `exec` must run every statement in one
  * transaction, so the advisory lock serializes concurrent migrators until it commits.
@@ -439,6 +428,8 @@ export async function migrateDataSourcePG(exec: DataSourceSQLExecutor, schemaNam
   const isCockroach = typeof serverVersion === 'string' && /cockroachdb/i.test(serverVersion);
   // CockroachDB has no advisory locks; its migration statements are idempotent, so racing migrators converge.
   if (!isCockroach) {
+    // A frozen or partitioned migrator's session is killed, rolling back and releasing the lock.
+    await exec(`SET LOCAL idle_in_transaction_session_timeout = '${MIGRATION_IDLE_TIMEOUT}'`);
     // The function sits in FROM so no client has to decode its void result.
     await exec(
       `SELECT 1 AS locked FROM pg_advisory_xact_lock(${advisoryLockKey(`dbos.datasource_migrations.${schemaName}`)})`,
@@ -474,7 +465,8 @@ export async function verifyDataSourcePG(
   schemaName: string = 'dbos',
   dataSourceName?: string,
 ): Promise<void> {
-  const { current, latest } = await getDataSourceMigrationVersions(exec, schemaName);
+  const current = await readDataSourceVersion(exec, schemaName);
+  const latest = getDataSourceMigrationsPG(schemaName).length;
   // A schema ahead of this build belongs to a newer peer, which migration also tolerates.
   if (current < latest) {
     const which = dataSourceName ? `Data source '${dataSourceName}'` : 'Data source';

@@ -800,6 +800,28 @@ describe('data source schema migrations', () => {
     expect(await recordedVersions()).toEqual([LATEST_DS_VERSION]);
   });
 
+  test('a frozen migrator loses the lock instead of blocking its peers', async () => {
+    const frozen = await connect();
+    const killed = new Promise<Error>((resolve) => frozen.on('error', resolve));
+    try {
+      // Shorten the idle timeout so the server kills the frozen session quickly.
+      const exec = pgExecutor(frozen);
+      const shortTimeout: DataSourceSQLExecutor = (sql) =>
+        exec(
+          sql.replace(/idle_in_transaction_session_timeout = '[^']*'/, "idle_in_transaction_session_timeout = '1s'"),
+        );
+      // Takes the lock and migrates, then sits idle in its transaction.
+      await frozen.query('BEGIN');
+      await migrateDataSourcePG(shortTimeout, schemaName);
+
+      await migrate();
+      expect(await recordedVersions()).toEqual([LATEST_DS_VERSION]);
+      expect((await killed).message).toMatch(/idle-in-transaction timeout/);
+    } finally {
+      await frozen.end().catch(() => {});
+    }
+  });
+
   test('an application role holding only the granted permissions uses the schema', async () => {
     const role = `ds_app_${randomUUID().replace(/-/g, '').slice(0, 8)}`;
     const password = 'ds_app_password';
