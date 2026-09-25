@@ -2,8 +2,6 @@ import { PoolConfig } from 'pg';
 import { DBOS, FunctionName } from '@dbos-inc/dbos-sdk';
 import {
   type DataSourceTransactionHandler,
-  createTransactionCompletionSchemaPG,
-  createTransactionCompletionTablePG,
   isPGRetriableTransactionError,
   DBOSError,
   DBOSStepAlreadyRecordedError,
@@ -15,8 +13,11 @@ import {
   DBOSDataSource,
   registerDataSource,
   PGTransactionConfig,
-  CheckSchemaInstallationReturn,
-  checkSchemaInstallationPG,
+  DataSourceMigrationOptions,
+  DataSourceSQLExecutor,
+  initializeDataSourceSchemaPG,
+  migrateDataSourcePG,
+  verifyDataSourcePG,
 } from '@dbos-inc/dbos-sdk/datasource';
 import { DataSource, EntityManager } from 'typeorm';
 import type { PostgresConnectionOptions } from 'typeorm/driver/postgres/PostgresConnectionOptions';
@@ -33,6 +34,10 @@ interface DBOSTypeOrmLocalCtx {
 }
 
 const asyncLocalCtx = new AsyncLocalStorage<DBOSTypeOrmLocalCtx>();
+
+function typeOrmExecutor(db: DataSource | EntityManager): DataSourceSQLExecutor {
+  return async (sql) => await db.query<Record<string, unknown>[]>(sql);
+}
 
 interface transaction_completion {
   workflow_id: string;
@@ -52,6 +57,7 @@ class TypeOrmTransactionHandler implements DataSourceTransactionHandler {
     private readonly entities?: Function[],
     private readonly providedDataSource?: DataSource,
     schemaName: string = 'dbos',
+    private readonly options: DataSourceMigrationOptions = {},
   ) {
     this.schemaName = schemaName;
   }
@@ -94,29 +100,18 @@ class TypeOrmTransactionHandler implements DataSourceTransactionHandler {
       await ds?.destroy();
     }
 
-    let installed = false;
-    try {
-      const res = await this.dataSource.query<CheckSchemaInstallationReturn[]>(
-        checkSchemaInstallationPG(this.schemaName),
-      );
-      installed = !!res[0]?.schema_exists && !!res[0]?.table_exists;
-    } catch (e) {
-      throw new Error(
-        `In initialization of 'TypeOrmDataSource' ${this.name}: Database could not be reached: ${(e as Error).message}`,
-      );
+    if (this.options.runMigrations === false) {
+      await verifyDataSourcePG(typeOrmExecutor(this.dataSource), this.schemaName, this.name);
+      return;
     }
 
-    // Install
-    if (!installed) {
-      try {
-        await this.dataSource.query(createTransactionCompletionSchemaPG(this.schemaName));
-        await this.dataSource.query(createTransactionCompletionTablePG(this.schemaName));
-      } catch (err) {
-        throw new Error(
-          `In initialization of 'TypeOrmDataSource' ${this.name}: The '${this.schemaName}.transaction_completion' table does not exist, and could not be created.  This should be added to your database migrations.
+    try {
+      await this.dataSource.transaction((em) => migrateDataSourcePG(typeOrmExecutor(em), this.schemaName));
+    } catch (err) {
+      throw new Error(
+        `In initialization of 'TypeOrmDataSource' ${this.name}: The '${this.schemaName}' transaction schema could not be migrated: ${(err as Error).message}. This should be added to your database migrations.
           See: https://docs.dbos.dev/typescript/tutorials/transaction-tutorial#installing-the-dbos-schema`,
-        );
-      }
+      );
     }
   }
 
@@ -312,11 +307,20 @@ export class TypeOrmDataSource implements DBOSDataSource<TypeORMTransactionConfi
     return TypeOrmDataSource.#getEntityManager(this.#provider);
   }
 
-  static async initializeDBOSSchema(config: PoolConfig, schemaName: string = 'dbos'): Promise<void> {
+  /**
+   * Create or migrate the DBOS transaction schema, typically with a privileged role,
+   * optionally granting `applicationRole` the minimal permissions to use it.
+   */
+  static async initializeDBOSSchema(
+    config: PoolConfig,
+    schemaName: string = 'dbos',
+    options: { applicationRole?: string } = {},
+  ): Promise<void> {
     const ds = await TypeOrmTransactionHandler.createDataSource(config, []);
     try {
-      await ds.query(createTransactionCompletionSchemaPG(schemaName));
-      await ds.query(createTransactionCompletionTablePG(schemaName));
+      await ds.transaction((em) =>
+        initializeDataSourceSchemaPG(typeOrmExecutor(em), schemaName, options.applicationRole),
+      );
     } finally {
       await ds.destroy();
     }
@@ -331,12 +335,13 @@ export class TypeOrmDataSource implements DBOSDataSource<TypeORMTransactionConfi
     entities?: Function[],
     dataSource?: DataSource,
     schemaName: string = 'dbos',
+    options: DataSourceMigrationOptions = {},
   ) {
     if (config && entities) {
-      this.#provider = new TypeOrmTransactionHandler(name, config, entities, undefined, schemaName);
+      this.#provider = new TypeOrmTransactionHandler(name, config, entities, undefined, schemaName, options);
       registerDataSource(this.#provider);
     } else if (dataSource) {
-      this.#provider = new TypeOrmTransactionHandler(name, undefined, undefined, dataSource, schemaName);
+      this.#provider = new TypeOrmTransactionHandler(name, undefined, undefined, dataSource, schemaName, options);
       registerDataSource(this.#provider);
     } else {
       throw new TypeError(
@@ -351,12 +356,18 @@ export class TypeOrmDataSource implements DBOSDataSource<TypeORMTransactionConfi
     // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
     entities: Function[],
     schemaName: string = 'dbos',
+    options: DataSourceMigrationOptions = {},
   ) {
-    return new TypeOrmDataSource(name, config, entities, undefined, schemaName);
+    return new TypeOrmDataSource(name, config, entities, undefined, schemaName, options);
   }
 
-  static createFromDataSource(name: string, ds: DataSource, schemaName: string = 'dbos') {
-    return new TypeOrmDataSource(name, undefined, undefined, ds, schemaName);
+  static createFromDataSource(
+    name: string,
+    ds: DataSource,
+    schemaName: string = 'dbos',
+    options: DataSourceMigrationOptions = {},
+  ) {
+    return new TypeOrmDataSource(name, undefined, undefined, ds, schemaName, options);
   }
 
   /**

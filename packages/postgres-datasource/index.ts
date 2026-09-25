@@ -3,8 +3,6 @@
 import postgres, { type Sql } from 'postgres';
 import { DBOS, FunctionName } from '@dbos-inc/dbos-sdk';
 import {
-  createTransactionCompletionSchemaPG,
-  createTransactionCompletionTablePG,
   type DataSourceTransactionHandler,
   isPGRetriableTransactionError,
   DBOSError,
@@ -18,8 +16,11 @@ import {
   PGTransactionConfig,
   DBOSDataSource,
   registerDataSource,
-  CheckSchemaInstallationReturn,
-  checkSchemaInstallationPG,
+  DataSourceMigrationOptions,
+  DataSourceSQLExecutor,
+  initializeDataSourceSchemaPG,
+  migrateDataSourcePG,
+  verifyDataSourcePG,
 } from '@dbos-inc/dbos-sdk/datasource';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { SuperJSON } from 'superjson';
@@ -40,6 +41,10 @@ type Options = postgres.Options<{}>;
 
 const asyncLocalCtx = new AsyncLocalStorage<PostgresDataSourceContext>();
 
+function sqlExecutor(sql: Sql | postgres.TransactionSql): DataSourceSQLExecutor {
+  return async (text) => (await sql.unsafe(text)) as unknown as Record<string, unknown>[];
+}
+
 class PostgresTransactionHandler implements DataSourceTransactionHandler {
   #dbField: Sql | undefined;
   readonly schemaName: string;
@@ -48,6 +53,7 @@ class PostgresTransactionHandler implements DataSourceTransactionHandler {
     readonly name: string,
     private readonly options: Options = {},
     schemaName: string = 'dbos',
+    private readonly migrationOptions: DataSourceMigrationOptions = {},
   ) {
     this.schemaName = schemaName;
   }
@@ -57,29 +63,18 @@ class PostgresTransactionHandler implements DataSourceTransactionHandler {
     this.#dbField = postgres(this.options);
     await db?.end();
 
-    let installed = false;
-    try {
-      const rows = (await this.#dbField.unsafe(
-        checkSchemaInstallationPG(this.schemaName),
-      )) as CheckSchemaInstallationReturn[];
-      installed = !!rows[0]?.schema_exists && !!rows[0]?.table_exists;
-    } catch (e) {
-      throw new Error(
-        `In initialization of 'PostgresDataSource' ${this.name}: Database could not be reached: ${(e as Error).message}`,
-      );
+    if (this.migrationOptions.runMigrations === false) {
+      await verifyDataSourcePG(sqlExecutor(this.#dbField), this.schemaName, this.name);
+      return;
     }
 
-    // Install
-    if (!installed) {
-      try {
-        await this.#dbField.unsafe(createTransactionCompletionSchemaPG(this.schemaName));
-        await this.#dbField.unsafe(createTransactionCompletionTablePG(this.schemaName));
-      } catch (err) {
-        throw new Error(
-          `In initialization of 'PostgresDataSource' ${this.name}: The '${this.schemaName}.transaction_completion' table does not exist, and could not be created.  This should be added to your database migrations.
+    try {
+      await this.#dbField.begin((client) => migrateDataSourcePG(sqlExecutor(client), this.schemaName));
+    } catch (err) {
+      throw new Error(
+        `In initialization of 'PostgresDataSource' ${this.name}: The '${this.schemaName}' transaction schema could not be migrated: ${(err as Error).message}. This should be added to your database migrations.
           See: https://docs.dbos.dev/typescript/tutorials/transaction-tutorial#installing-the-dbos-schema`,
-        );
-      }
+      );
     }
   }
 
@@ -266,11 +261,20 @@ export class PostgresDataSource implements DBOSDataSource<PostgresTransactionOpt
     return PostgresDataSource.#getClient(this.#provider);
   }
 
-  static async initializeDBOSSchema(options: Options = {}, schemaName: string = 'dbos'): Promise<void> {
+  /**
+   * Create or migrate the DBOS transaction schema, typically with a privileged role,
+   * optionally granting `applicationRole` the minimal permissions to use it.
+   */
+  static async initializeDBOSSchema(
+    options: Options = {},
+    schemaName: string = 'dbos',
+    initOptions: { applicationRole?: string } = {},
+  ): Promise<void> {
     const pg = postgres({ ...options, onnotice: () => {} });
     try {
-      await pg.unsafe(createTransactionCompletionSchemaPG(schemaName));
-      await pg.unsafe(createTransactionCompletionTablePG(schemaName));
+      await pg.begin((client) =>
+        initializeDataSourceSchemaPG(sqlExecutor(client), schemaName, initOptions.applicationRole),
+      );
     } finally {
       await pg.end();
     }
@@ -282,8 +286,9 @@ export class PostgresDataSource implements DBOSDataSource<PostgresTransactionOpt
     readonly name: string,
     options: Options = {},
     schemaName: string = 'dbos',
+    migrationOptions: DataSourceMigrationOptions = {},
   ) {
-    this.#provider = new PostgresTransactionHandler(name, options, schemaName);
+    this.#provider = new PostgresTransactionHandler(name, options, schemaName, migrationOptions);
     registerDataSource(this.#provider);
   }
 

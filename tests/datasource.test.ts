@@ -19,10 +19,18 @@ import {
   DBOSStepAlreadyRecordedError,
   registerDataSource,
   replayRecordedStep,
+  DATASOURCE_MIGRATIONS_TABLE,
+  DataSourceSQLExecutor,
+  getDataSourceMigrationsPG,
+  getDataSourcePermissionsSQL,
+  initializeDataSourceSchemaPG,
+  migrateDataSourcePG,
+  verifyDataSourcePG,
 } from '../src/datasource';
 import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
 import { AsyncLocalStorage } from 'async_hooks';
-import { DBOSInvalidWorkflowTransitionError } from '../src/error';
+import { DBOSInitializationError, DBOSInvalidWorkflowTransitionError } from '../src/error';
+import { deriveDatabaseUrl, dropPGDatabase, ensurePGDatabase } from '../src/database_utils';
 import { sleepms } from '../src/utils';
 import { DBOSJSON } from '../src/serialization';
 import { DBOSExecutor } from '../src/dbos-executor';
@@ -688,5 +696,168 @@ describe('datasource-duplicate-execution', () => {
 
     expect(await DBOS.listWorkflowSteps(wfid)).toHaveLength(0);
     expect((await DBOS.getWorkflowStatus(wfid))?.status).toBe('SUCCESS');
+  });
+});
+
+const LATEST_DS_VERSION = getDataSourceMigrationsPG().length;
+const quietLogger = { info: () => {}, warn: () => {} };
+
+function pgExecutor(client: Client): DataSourceSQLExecutor {
+  return async (sql) => (await client.query<Record<string, unknown>>(sql)).rows;
+}
+
+async function inPGTransaction<T>(client: Client, fn: () => Promise<T>): Promise<T> {
+  await client.query('BEGIN');
+  try {
+    const result = await fn();
+    await client.query('COMMIT');
+    return result;
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  }
+}
+
+describe('data source schema migrations', () => {
+  const adminUrl = deriveDatabaseUrl(generateDBOSTestConfig().systemDatabaseUrl!, 'dbostest_ds_migrations');
+  let admin: Client;
+  let schemaName: string;
+
+  async function connect(url: string = adminUrl): Promise<Client> {
+    const client = new Client({ connectionString: url });
+    await client.connect();
+    return client;
+  }
+
+  async function migrate(client: Client = admin): Promise<void> {
+    await inPGTransaction(client, () => migrateDataSourcePG(pgExecutor(client), schemaName));
+  }
+
+  async function recordedVersions(): Promise<number[]> {
+    const { rows } = await admin.query<{ version: string }>(
+      `SELECT version FROM "${schemaName}".${DATASOURCE_MIGRATIONS_TABLE}`,
+    );
+    return rows.map((r) => Number(r.version));
+  }
+
+  async function schemaExists(): Promise<boolean> {
+    const { rowCount } = await admin.query('SELECT 1 FROM pg_namespace WHERE nspname = $1', [schemaName]);
+    return rowCount === 1;
+  }
+
+  beforeAll(async () => {
+    await ensurePGDatabase(adminUrl, quietLogger);
+  });
+
+  afterAll(async () => {
+    await dropPGDatabase(adminUrl, quietLogger);
+  });
+
+  beforeEach(async () => {
+    schemaName = `ds_mig_${randomUUID().replace(/-/g, '').slice(0, 8)}`;
+    admin = await connect();
+  });
+
+  afterEach(async () => {
+    await admin.query(`DROP SCHEMA IF EXISTS "${schemaName}" CASCADE`);
+    await admin.end();
+  });
+
+  test('migrates a fresh schema to the latest version', async () => {
+    await migrate();
+    expect(await recordedVersions()).toEqual([LATEST_DS_VERSION]);
+    // Migrating again at the latest version changes nothing.
+    await migrate();
+    expect(await recordedVersions()).toEqual([LATEST_DS_VERSION]);
+    await admin.query(`SELECT * FROM "${schemaName}".transaction_completion`);
+  });
+
+  test('verification rejects an unmigrated schema and creates nothing', async () => {
+    const error = await verifyDataSourcePG(pgExecutor(admin), schemaName, 'app-db').then(
+      () => undefined,
+      (e: unknown) => e,
+    );
+    expect(error).toBeInstanceOf(DBOSInitializationError);
+    expect((error as Error).message).toMatch(/'app-db' schema '.*' is at transaction schema version 0/);
+    expect(await schemaExists()).toBe(false);
+
+    await migrate();
+    await verifyDataSourcePG(pgExecutor(admin), schemaName);
+  });
+
+  test('verification and migration accept a schema ahead of this build', async () => {
+    await migrate();
+    await admin.query(`UPDATE "${schemaName}".${DATASOURCE_MIGRATIONS_TABLE} SET version = version + 1000`);
+    await verifyDataSourcePG(pgExecutor(admin), schemaName);
+    await migrate();
+    expect(await recordedVersions()).toEqual([LATEST_DS_VERSION + 1000]);
+  });
+
+  test('adopts a transaction_completion table created before versioning', async () => {
+    await admin.query(`CREATE SCHEMA "${schemaName}"`);
+    await admin.query(
+      `CREATE TABLE "${schemaName}".transaction_completion (workflow_id TEXT NOT NULL, function_num INT NOT NULL,
+       output TEXT, error TEXT, created_at BIGINT NOT NULL DEFAULT 0, PRIMARY KEY (workflow_id, function_num))`,
+    );
+    await admin.query(`INSERT INTO "${schemaName}".transaction_completion (workflow_id, function_num) VALUES ('w', 1)`);
+
+    await expect(verifyDataSourcePG(pgExecutor(admin), schemaName)).rejects.toThrow(DBOSInitializationError);
+    await migrate();
+    expect(await recordedVersions()).toEqual([LATEST_DS_VERSION]);
+    const { rows } = await admin.query(`SELECT function_num FROM "${schemaName}".transaction_completion`);
+    expect(rows).toEqual([{ function_num: 1 }]);
+  });
+
+  test('concurrent migrators record the version once', async () => {
+    const clients = await Promise.all(Array.from({ length: 8 }, () => connect()));
+    try {
+      await Promise.all(clients.map((c) => migrate(c)));
+    } finally {
+      await Promise.all(clients.map((c) => c.end()));
+    }
+    expect(await recordedVersions()).toEqual([LATEST_DS_VERSION]);
+  });
+
+  test('an application role holding only the granted permissions uses the schema', async () => {
+    const role = `ds_app_${randomUUID().replace(/-/g, '').slice(0, 8)}`;
+    const password = 'ds_app_password';
+    await admin.query(`CREATE ROLE "${role}" LOGIN PASSWORD '${password}'`);
+    try {
+      await inPGTransaction(admin, () => initializeDataSourceSchemaPG(pgExecutor(admin), schemaName, role));
+
+      const roleUrl = new URL(adminUrl);
+      roleUrl.username = role;
+      roleUrl.password = password;
+      const app = await connect(roleUrl.toString());
+      try {
+        await verifyDataSourcePG(pgExecutor(app), schemaName);
+        // At the latest version, migration issues no DDL, so the role may run it too.
+        await migrate(app);
+
+        const table = `"${schemaName}".transaction_completion`;
+        await app.query(`INSERT INTO ${table} (workflow_id, function_num, output) VALUES ('w', 1, 'o')`);
+        expect((await app.query(`SELECT output FROM ${table} WHERE workflow_id = 'w'`)).rows).toEqual([
+          { output: 'o' },
+        ]);
+        await app.query(`DELETE FROM ${table} WHERE workflow_id = 'w'`);
+
+        // The role truly lacks CREATE, so it could not have migrated on its own.
+        await expect(app.query(`CREATE TABLE "${schemaName}".nope (x INT)`)).rejects.toThrow(/permission denied/);
+      } finally {
+        await app.end();
+      }
+    } finally {
+      await admin.query(`DROP SCHEMA IF EXISTS "${schemaName}" CASCADE`);
+      await admin.query(`DROP OWNED BY "${role}"`);
+      await admin.query(`DROP ROLE "${role}"`);
+    }
+  });
+
+  test('permission statements quote the schema and role', () => {
+    expect(getDataSourcePermissionsSQL('my"schema', 'app role')).toEqual([
+      `GRANT USAGE ON SCHEMA "my""schema" TO "app role"`,
+      `GRANT SELECT, INSERT, DELETE ON "my""schema".transaction_completion TO "app role"`,
+      `GRANT SELECT ON "my""schema".${DATASOURCE_MIGRATIONS_TABLE} TO "app role"`,
+    ]);
   });
 });

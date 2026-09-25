@@ -9,7 +9,13 @@ import {
   registerTransactionalDataSource,
   wrapDBOSFunctionAndRegister,
 } from './decorators';
-import { DBOSError, DBOSInvalidWorkflowTransitionError, DBOSWorkflowConflictError } from './error';
+import {
+  DBOSError,
+  DBOSInitializationError,
+  DBOSInvalidWorkflowTransitionError,
+  DBOSWorkflowConflictError,
+} from './error';
+import { advisoryLockKey } from './system_database';
 import { runWithTrace, SpanStatusCode } from './telemetry/traces';
 import { SuperJSON } from 'superjson';
 
@@ -302,7 +308,7 @@ export interface PGTransactionConfig {
 }
 
 /** Error types re-exported so data sources can raise and recognize DBOS-typed failures. */
-export { DBOSError, DBOSWorkflowConflictError };
+export { DBOSError, DBOSInitializationError, DBOSWorkflowConflictError };
 
 /**
  * Throw DBOSWorkflowConflictError if the calling execution no longer owns `workflowID`.
@@ -385,6 +391,150 @@ export function createTransactionCompletionTablePG(schemaName: string = 'dbos'):
     PRIMARY KEY (workflow_id, function_num)
   );
 `;
+}
+
+/// Data source schema migrations
+
+/** Records the data source schema version; separate from the system database's `dbos_migrations`, since the two may share a schema. */
+export const DATASOURCE_MIGRATIONS_TABLE = 'dbos_transaction_completion_migrations';
+
+/** Options shared by data source constructors. */
+export interface DataSourceMigrationOptions {
+  /**
+   * Whether `initialize` creates and migrates the data source's DBOS schema. Defaults to true.
+   * When false, it only verifies the schema is migrated, so the role needs no DDL privileges;
+   * migrate out of band with the data source's static `initializeDBOSSchema`.
+   */
+  runMigrations?: boolean;
+}
+
+/** Runs one parameter-free SQL statement and returns its rows. */
+export type DataSourceSQLExecutor = (sql: string) => Promise<ReadonlyArray<Record<string, unknown>>>;
+
+/** The data source schema migrations, in order; migration N moves the schema to version N. */
+export function getDataSourceMigrationsPG(schemaName: string = 'dbos'): string[] {
+  // Migration 1 is IF NOT EXISTS so schemas created before versioning adopt it cleanly.
+  return [createTransactionCompletionTablePG(schemaName)];
+}
+
+function quoteLiteral(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
+function quoteIdent(name: string): string {
+  return `"${name.replace(/"/g, '""')}"`;
+}
+
+async function pgTableExists(exec: DataSourceSQLExecutor, schemaName: string, table: string): Promise<boolean> {
+  // pg_catalog, not information_schema, which hides tables the role holds no grant on.
+  const rows = await exec(
+    `SELECT 1 AS present FROM pg_catalog.pg_tables WHERE schemaname = ${quoteLiteral(schemaName)} AND tablename = ${quoteLiteral(table)}`,
+  );
+  return rows.length > 0;
+}
+
+async function readDataSourceVersion(exec: DataSourceSQLExecutor, schemaName: string): Promise<number> {
+  if (!(await pgTableExists(exec, schemaName, DATASOURCE_MIGRATIONS_TABLE))) return 0;
+  const rows = await exec(`SELECT version FROM ${quoteIdent(schemaName)}.${DATASOURCE_MIGRATIONS_TABLE}`);
+  return rows.length > 0 ? Number(rows[0].version) : 0;
+}
+
+/** The recorded and latest data source schema versions; a missing version table reads as 0. */
+export async function getDataSourceMigrationVersions(
+  exec: DataSourceSQLExecutor,
+  schemaName: string = 'dbos',
+): Promise<{ current: number; latest: number }> {
+  return {
+    current: await readDataSourceVersion(exec, schemaName),
+    latest: getDataSourceMigrationsPG(schemaName).length,
+  };
+}
+
+/**
+ * Bring the data source schema to the latest version. `exec` must run every statement in one
+ * transaction, so the advisory lock serializes concurrent migrators until it commits.
+ * Issues no DDL when the schema is already at or ahead of the latest version.
+ */
+export async function migrateDataSourcePG(exec: DataSourceSQLExecutor, schemaName: string = 'dbos'): Promise<void> {
+  const migrations = getDataSourceMigrationsPG(schemaName);
+  const latest = migrations.length;
+  if ((await readDataSourceVersion(exec, schemaName)) >= latest) return;
+
+  const versionRows = await exec('SELECT version() AS version');
+  const serverVersion = versionRows[0]?.version;
+  const isCockroach = typeof serverVersion === 'string' && /cockroachdb/i.test(serverVersion);
+  // CockroachDB has no advisory locks; its migration statements are idempotent, so racing migrators converge.
+  if (!isCockroach) {
+    // The function sits in FROM so no client has to decode its void result.
+    await exec(
+      `SELECT 1 AS locked FROM pg_advisory_xact_lock(${advisoryLockKey(`dbos.datasource_migrations.${schemaName}`)})`,
+    );
+  }
+  const current = await readDataSourceVersion(exec, schemaName);
+  if (current >= latest) return;
+
+  const quotedSchema = quoteIdent(schemaName);
+  const table = `${quotedSchema}.${DATASOURCE_MIGRATIONS_TABLE}`;
+  // Check first: CREATE ... IF NOT EXISTS still demands the CREATE privilege.
+  const schemaRows = await exec(
+    `SELECT 1 AS present FROM pg_catalog.pg_namespace WHERE nspname = ${quoteLiteral(schemaName)}`,
+  );
+  if (schemaRows.length === 0) {
+    await exec(`CREATE SCHEMA IF NOT EXISTS ${quotedSchema}`);
+  }
+  if (!(await pgTableExists(exec, schemaName, DATASOURCE_MIGRATIONS_TABLE))) {
+    await exec(`CREATE TABLE IF NOT EXISTS ${table} (version BIGINT NOT NULL PRIMARY KEY)`);
+  }
+
+  for (let v = current + 1; v <= latest; v++) {
+    await exec(migrations[v - 1]);
+  }
+  await exec(
+    current === 0 ? `INSERT INTO ${table} (version) VALUES (${latest})` : `UPDATE ${table} SET version = ${latest}`,
+  );
+}
+
+/** Throw unless the data source schema is migrated, creating and changing nothing. */
+export async function verifyDataSourcePG(
+  exec: DataSourceSQLExecutor,
+  schemaName: string = 'dbos',
+  dataSourceName?: string,
+): Promise<void> {
+  const { current, latest } = await getDataSourceMigrationVersions(exec, schemaName);
+  // A schema ahead of this build belongs to a newer peer, which migration also tolerates.
+  if (current < latest) {
+    const which = dataSourceName ? `Data source '${dataSourceName}'` : 'Data source';
+    throw new DBOSInitializationError(
+      `${which} schema '${schemaName}' is at transaction schema version ${current}, but this version of DBOS ` +
+        `requires ${latest}. This data source is configured with runMigrations disabled, so it will not migrate it: ` +
+        `either migrate it out of band (the data source's static \`initializeDBOSSchema\`) or enable runMigrations.`,
+    );
+  }
+}
+
+/** The minimal grants a data source needs at runtime: read the version, read and write checkpoints. */
+export function getDataSourcePermissionsSQL(schemaName: string, roleName: string): string[] {
+  const quotedSchema = quoteIdent(schemaName);
+  const quotedRole = quoteIdent(roleName);
+  return [
+    `GRANT USAGE ON SCHEMA ${quotedSchema} TO ${quotedRole}`,
+    `GRANT SELECT, INSERT, DELETE ON ${quotedSchema}.transaction_completion TO ${quotedRole}`,
+    `GRANT SELECT ON ${quotedSchema}.${DATASOURCE_MIGRATIONS_TABLE} TO ${quotedRole}`,
+  ];
+}
+
+/** Migrate the data source schema in one transaction, then grant `applicationRole` its runtime permissions. */
+export async function initializeDataSourceSchemaPG(
+  exec: DataSourceSQLExecutor,
+  schemaName: string = 'dbos',
+  applicationRole?: string,
+): Promise<void> {
+  await migrateDataSourcePG(exec, schemaName);
+  if (applicationRole) {
+    for (const stmt of getDataSourcePermissionsSQL(schemaName, applicationRole)) {
+      await exec(stmt);
+    }
+  }
 }
 
 const SQLSTATE_PATTERN = /^[0-9A-Z]{5}$/;
