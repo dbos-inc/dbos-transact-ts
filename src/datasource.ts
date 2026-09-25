@@ -423,13 +423,12 @@ export async function migrateDataSourcePG(exec: DataSourceSQLExecutor, schemaNam
   const latest = migrations.length;
   if ((await readDataSourceVersion(exec, schemaName)) >= latest) return;
 
+  // A frozen or partitioned migrator's session is killed, rolling back and releasing the lock.
+  await exec(`SET LOCAL idle_in_transaction_session_timeout = '${MIGRATION_IDLE_TIMEOUT}'`);
   const versionRows = await exec('SELECT version() AS version');
   const serverVersion = versionRows[0]?.version;
-  const isCockroach = typeof serverVersion === 'string' && /cockroachdb/i.test(serverVersion);
-  // CockroachDB has no advisory locks, so every statement below tolerates a racing migrator.
-  if (!isCockroach) {
-    // A frozen or partitioned migrator's session is killed, rolling back and releasing the lock.
-    await exec(`SET LOCAL idle_in_transaction_session_timeout = '${MIGRATION_IDLE_TIMEOUT}'`);
+  // CockroachDB has no pg_advisory_xact_lock, so it migrates unserialized.
+  if (!(typeof serverVersion === 'string' && /cockroachdb/i.test(serverVersion))) {
     // The function sits in FROM so no client has to decode its void result.
     await exec(
       `SELECT 1 AS locked FROM pg_advisory_xact_lock(${advisoryLockKey(`dbos.datasource_migrations.${schemaName}`)})`,
@@ -445,19 +444,17 @@ export async function migrateDataSourcePG(exec: DataSourceSQLExecutor, schemaNam
     `SELECT 1 AS present FROM pg_catalog.pg_namespace WHERE nspname = ${quoteLiteral(schemaName)}`,
   );
   if (schemaRows.length === 0) {
-    await exec(`CREATE SCHEMA IF NOT EXISTS ${quotedSchema}`);
+    await exec(`CREATE SCHEMA ${quotedSchema}`);
   }
   if (!(await pgTableExists(exec, schemaName, DATASOURCE_MIGRATIONS_TABLE))) {
-    await exec(`CREATE TABLE IF NOT EXISTS ${table} (version BIGINT NOT NULL PRIMARY KEY)`);
+    await exec(`CREATE TABLE ${table} (version BIGINT NOT NULL PRIMARY KEY)`);
   }
 
   for (let v = current + 1; v <= latest; v++) {
     await exec(migrations[v - 1]);
   }
   await exec(
-    current === 0
-      ? `INSERT INTO ${table} (version) VALUES (${latest}) ON CONFLICT DO NOTHING`
-      : `UPDATE ${table} SET version = ${latest}`,
+    current === 0 ? `INSERT INTO ${table} (version) VALUES (${latest})` : `UPDATE ${table} SET version = ${latest}`,
   );
 }
 
