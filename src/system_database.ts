@@ -1,5 +1,6 @@
 import { DBOSExecutor } from './dbos-executor';
-import { DatabaseError, Pool, PoolClient, Notification, Client, PoolConfig, ClientBase } from 'pg';
+import { Pool, PoolClient, Notification, Client, PoolConfig, ClientBase } from 'pg';
+import type { DatabaseError } from 'pg';
 import {
   DBOSWorkflowConflictError,
   DBOSNonExistentWorkflowError,
@@ -753,9 +754,9 @@ const RETRY_NODE_ERRNOS = new Set([
   'ECONNABORTED',
 ]);
 
-function isPgDatabaseError(e: AnyErr): e is DatabaseError & AnyErr {
-  // DatabaseError has 'code' (SQLSTATE)
-  return !!e && typeof e === 'object' && typeof e.code === 'string' && e.code.length === 5;
+function isPgDatabaseError(e: unknown): e is DatabaseError & AnyErr {
+  // Matched by shape, not instanceof: a user-supplied pool may throw another pg copy's DatabaseError.
+  return !!e && typeof e === 'object' && typeof (e as AnyErr).code === 'string' && (e as AnyErr).code!.length === 5;
 }
 
 function sqlStateLooksRetryable(sqlstate: string | undefined): boolean {
@@ -3677,7 +3678,7 @@ export class SystemDatabase {
           });
         } catch (e) {
           // Only an offset conflict resolves on retry; anything else would spin forever.
-          if (e instanceof DatabaseError && e.code === '23505') {
+          if (isPgDatabaseError(e) && e.code === '23505') {
             this.logger.warn(`Stream offset conflict for workflow ${workflowID}, key ${key}; retrying`);
             await sleepms(100);
             continue;
@@ -3725,7 +3726,7 @@ export class SystemDatabase {
           await client.query('COMMIT');
         } catch (e) {
           // Only an offset conflict resolves on retry; anything else would spin forever.
-          const offsetConflict = e instanceof DatabaseError && e.code === '23505';
+          const offsetConflict = isPgDatabaseError(e) && e.code === '23505';
           // Log before touching the connection again: a failing ROLLBACK is what would propagate.
           if (!offsetConflict) this.logger.error(e);
           // Roll back before waiting, so a retry does not hold an aborted transaction open.
@@ -5402,7 +5403,7 @@ export class SystemDatabase {
         ],
       );
     } catch (e) {
-      if (e instanceof DatabaseError && e.code === '23505') {
+      if (isPgDatabaseError(e) && e.code === '23505') {
         throw new Error(`Schedule '${schedule.scheduleName}' already exists`);
       }
       throw e;
