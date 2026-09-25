@@ -1419,6 +1419,32 @@ describe('run-migrations-flag', () => {
       await dbClient.end();
     }
   });
+
+  test('DBOS.migrate prepares a system database for a role that cannot run DDL', async () => {
+    const role = `dbos_app_${randomUUID().replace(/-/g, '').slice(0, 8)}`;
+    const password = 'dbos_app_password';
+    const admin = new Client({ connectionString: config.systemDatabaseUrl });
+    await admin.connect();
+    try {
+      await admin.query(`CREATE ROLE "${role}" LOGIN PASSWORD '${password}'`);
+      await DBOS.migrate(unmigratedUrl, { applicationRole: role });
+
+      const roleUrl = new URL(unmigratedUrl);
+      roleUrl.username = role;
+      roleUrl.password = password;
+      const workflow = DBOS.registerWorkflow(() => Promise.resolve('migrated out of band'), {
+        name: 'dbos-migrate-role-test',
+      });
+      DBOS.setConfig({ ...config, systemDatabaseUrl: roleUrl.toString(), runMigrations: false });
+      await DBOS.launch();
+      assert.equal(await workflow(), 'migrated out of band');
+    } finally {
+      await DBOS.shutdown();
+      await dropPGDatabase(unmigratedUrl, silentDropLogger);
+      await admin.query(`DROP ROLE IF EXISTS "${role}"`);
+      await admin.end();
+    }
+  });
 });
 
 describe('long-sleep-tests', () => {

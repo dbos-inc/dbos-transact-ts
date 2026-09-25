@@ -455,7 +455,7 @@ export function getDbosSchemaPermissionsSql(schemaName: string, roleName: string
   ];
 }
 
-export async function grantDbosSchemaPermissions(
+async function grantDbosSchemaPermissions(
   databaseUrl: string,
   roleName: string,
   logger: GlobalLogger,
@@ -536,7 +536,12 @@ async function releaseSystemDatabaseClient(client: ClientBase, customPool?: Pool
  * against one system database contend for the same lock; changing it here changes it everywhere.
  */
 export function retentionLockKey(schemaName: string): bigint {
-  return createHash('sha256').update(`dbos.retention.${schemaName}`).digest().readBigInt64BE(0);
+  return advisoryLockKey(`dbos.retention.${schemaName}`);
+}
+
+/** A Postgres advisory lock key: the leading 8 bytes of SHA-256 over `lockName`, as a signed big-endian integer. */
+export function advisoryLockKey(lockName: string): bigint {
+  return createHash('sha256').update(lockName).digest().readBigInt64BE(0);
 }
 
 async function isCockroachDB(client: ClientBase): Promise<boolean> {
@@ -565,6 +570,19 @@ export async function ensureSystemDatabase(
     });
   } finally {
     await releaseSystemDatabaseClient(client, customPool);
+  }
+}
+
+/** Create or migrate the system database, then grant `applicationRole`, if given, access to its schema. */
+export async function migrateSystemDatabase(
+  sysDbUrl: string,
+  logger: GlobalLogger,
+  schemaName: string = 'dbos',
+  applicationRole?: string,
+): Promise<void> {
+  await ensureSystemDatabase(sysDbUrl, logger, undefined, schemaName);
+  if (applicationRole) {
+    await grantDbosSchemaPermissions(sysDbUrl, applicationRole, logger, schemaName);
   }
 }
 

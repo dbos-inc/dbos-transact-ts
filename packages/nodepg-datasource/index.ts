@@ -3,8 +3,6 @@
 import { DBOS, FunctionName } from '@dbos-inc/dbos-sdk';
 import {
   type DataSourceTransactionHandler,
-  createTransactionCompletionSchemaPG,
-  createTransactionCompletionTablePG,
   isPGRetriableTransactionError,
   DBOSError,
   DBOSStepAlreadyRecordedError,
@@ -16,8 +14,11 @@ import {
   PGTransactionConfig,
   DBOSDataSource,
   registerDataSource,
-  CheckSchemaInstallationReturn,
-  checkSchemaInstallationPG,
+  DataSourceMigrationOptions,
+  DataSourceSQLExecutor,
+  initializeDataSourceSchemaPG,
+  migrateDataSourcePG,
+  verifyDataSourcePG,
 } from '@dbos-inc/dbos-sdk/datasource';
 import { Client, type ClientBase, type ClientConfig, Pool, type PoolConfig } from 'pg';
 import { AsyncLocalStorage } from 'node:async_hooks';
@@ -36,6 +37,10 @@ export { NodePostgresTransactionOptions };
 
 const asyncLocalCtx = new AsyncLocalStorage<NodePostgresDataSourceContext>();
 
+function clientExecutor(client: ClientBase): DataSourceSQLExecutor {
+  return async (sql) => (await client.query<Record<string, unknown>>(sql)).rows;
+}
+
 class NodePostgresTransactionHandler implements DataSourceTransactionHandler {
   #poolField: Pool | undefined;
   readonly schemaName: string;
@@ -44,6 +49,7 @@ class NodePostgresTransactionHandler implements DataSourceTransactionHandler {
     readonly name: string,
     private readonly config: PoolConfig,
     schemaName: string = 'dbos',
+    private readonly options: DataSourceMigrationOptions = {},
   ) {
     this.schemaName = schemaName;
   }
@@ -53,33 +59,23 @@ class NodePostgresTransactionHandler implements DataSourceTransactionHandler {
     this.#poolField = new Pool(this.config);
     await pool?.end();
 
-    const client = await this.#poolField.connect();
+    if (this.options.runMigrations === false) {
+      const client = await this.#poolField.connect();
+      try {
+        await verifyDataSourcePG(clientExecutor(client), this.schemaName, this.name);
+      } finally {
+        client.release();
+      }
+      return;
+    }
 
     try {
-      let installed = false;
-      try {
-        const res = await client.query<CheckSchemaInstallationReturn>(checkSchemaInstallationPG(this.schemaName));
-        installed = !!res.rows[0].schema_exists && !!res.rows[0].table_exists;
-      } catch (e) {
-        throw new Error(
-          `In initialization of 'NodePostgresDataSource' ${this.name}: Database could not be queried: ${(e as Error).message}`,
-        );
-      }
-
-      // Install
-      if (!installed) {
-        try {
-          await client.query(createTransactionCompletionSchemaPG(this.schemaName));
-          await client.query(createTransactionCompletionTablePG(this.schemaName));
-        } catch (err) {
-          throw new Error(
-            `In initialization of 'NodePostgresDataSource' ${this.name}: The '${this.schemaName}.transaction_completion' table does not exist, and could not be created.  This should be added to your database migrations.
-            See: https://docs.dbos.dev/typescript/tutorials/transaction-tutorial#installing-the-dbos-schema`,
-          );
-        }
-      }
-    } finally {
-      client.release();
+      await this.#transaction((client) => migrateDataSourcePG(clientExecutor(client), this.schemaName));
+    } catch (err) {
+      throw new Error(
+        `In initialization of 'NodePostgresDataSource' ${this.name}: The '${this.schemaName}' transaction schema could not be migrated: ${(err as Error).message}. This should be added to your database migrations.
+        See: https://docs.dbos.dev/typescript/tutorials/transaction-tutorial#installing-the-dbos-schema`,
+      );
     }
   }
 
@@ -298,12 +294,26 @@ export class NodePostgresDataSource implements DBOSDataSource<NodePostgresTransa
     return NodePostgresDataSource.#getClient(this.#provider);
   }
 
-  static async initializeDBOSSchema(config: ClientConfig, schemaName: string = 'dbos'): Promise<void> {
+  /**
+   * Create or migrate the DBOS transaction schema, typically with a privileged role,
+   * optionally granting `applicationRole` the minimal permissions to use it.
+   */
+  static async initializeDBOSSchema(
+    config: ClientConfig,
+    schemaName: string = 'dbos',
+    options: { applicationRole?: string } = {},
+  ): Promise<void> {
     const client = new Client(config);
     try {
       await client.connect();
-      await client.query(createTransactionCompletionSchemaPG(schemaName));
-      await client.query(createTransactionCompletionTablePG(schemaName));
+      await client.query('BEGIN');
+      try {
+        await initializeDataSourceSchemaPG(clientExecutor(client), schemaName, options.applicationRole);
+        await client.query('COMMIT');
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+      }
     } finally {
       await client.end();
     }
@@ -315,8 +325,9 @@ export class NodePostgresDataSource implements DBOSDataSource<NodePostgresTransa
     readonly name: string,
     config: PoolConfig,
     schemaName: string = 'dbos',
+    options: DataSourceMigrationOptions = {},
   ) {
-    this.#provider = new NodePostgresTransactionHandler(name, config, schemaName);
+    this.#provider = new NodePostgresTransactionHandler(name, config, schemaName, options);
     registerDataSource(this.#provider);
   }
 

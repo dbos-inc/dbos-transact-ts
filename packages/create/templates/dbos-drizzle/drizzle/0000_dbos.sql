@@ -8,3 +8,9 @@ CREATE TABLE IF NOT EXISTS dbos.transaction_completion (
     created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM now())*1000)::bigint,
     PRIMARY KEY (workflow_id, function_num)
 );
+
+CREATE TABLE IF NOT EXISTS dbos.dbos_transaction_completion_migrations (
+    version BIGINT NOT NULL PRIMARY KEY
+);
+
+INSERT INTO dbos.dbos_transaction_completion_migrations (version) VALUES (1) ON CONFLICT DO NOTHING;
