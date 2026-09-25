@@ -426,7 +426,7 @@ export async function migrateDataSourcePG(exec: DataSourceSQLExecutor, schemaNam
   const versionRows = await exec('SELECT version() AS version');
   const serverVersion = versionRows[0]?.version;
   const isCockroach = typeof serverVersion === 'string' && /cockroachdb/i.test(serverVersion);
-  // CockroachDB has no advisory locks; its migration statements are idempotent, so racing migrators converge.
+  // CockroachDB has no advisory locks, so every statement below tolerates a racing migrator.
   if (!isCockroach) {
     // A frozen or partitioned migrator's session is killed, rolling back and releasing the lock.
     await exec(`SET LOCAL idle_in_transaction_session_timeout = '${MIGRATION_IDLE_TIMEOUT}'`);
@@ -455,7 +455,9 @@ export async function migrateDataSourcePG(exec: DataSourceSQLExecutor, schemaNam
     await exec(migrations[v - 1]);
   }
   await exec(
-    current === 0 ? `INSERT INTO ${table} (version) VALUES (${latest})` : `UPDATE ${table} SET version = ${latest}`,
+    current === 0
+      ? `INSERT INTO ${table} (version) VALUES (${latest}) ON CONFLICT DO NOTHING`
+      : `UPDATE ${table} SET version = ${latest}`,
   );
 }
 
