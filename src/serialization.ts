@@ -399,15 +399,29 @@ function serializeErrorWithCause(value: unknown, ancestors: Set<object> = new Se
   if (!(value instanceof Error)) return serializeError(value);
   if (ancestors.has(value)) return '[Circular]';
   const out = serializeError(value);
-  if (typeof out !== 'object' || out === null) return out;
+  if (typeof out === 'object' && out !== null) addNestedErrors(out as Record<string, unknown>, value, ancestors);
+  return out;
+}
+
+// An enumerable `errors` array (e.g. DBOSMaxStepRetriesError) keeps serializeError's copy; its Error entries gain their causes.
+function addNestedErrors(record: Record<string, unknown>, value: Error, ancestors: Set<object>) {
   ancestors.add(value);
-  const record = out as Record<string, unknown>;
   if (value.cause !== undefined) record.cause = serializeErrorWithCause(value.cause, ancestors);
-  if (value instanceof AggregateError && Array.isArray(value.errors)) {
-    record.errors = value.errors.map((e: unknown) => serializeErrorWithCause(e, ancestors));
+  const errors = (value as { errors?: unknown }).errors;
+  if (Array.isArray(errors)) {
+    const copied = record.errors;
+    if (Array.isArray(copied)) {
+      errors.forEach((e: unknown, i) => {
+        const entry: unknown = copied[i];
+        if (e instanceof Error && !ancestors.has(e) && typeof entry === 'object' && entry !== null) {
+          addNestedErrors(entry as Record<string, unknown>, e, ancestors);
+        }
+      });
+    } else {
+      record.errors = errors.map((e: unknown) => serializeErrorWithCause(e, ancestors));
+    }
   }
   ancestors.delete(value);
-  return out;
 }
 
 function isSerializedErrorLike(value: unknown): value is Record<string, unknown> {
@@ -420,18 +434,31 @@ function reviveNestedError(value: unknown): unknown {
   return isSerializedErrorLike(value) ? deserializeErrorWithCause(value) : value;
 }
 
-function defineErrorProperty(err: Error, property: string, value: unknown) {
-  Object.defineProperty(err, property, { value, enumerable: false, writable: true, configurable: true });
+function defineHiddenProperty(target: object, property: string, value: unknown) {
+  Object.defineProperty(target, property, { value, enumerable: false, writable: true, configurable: true });
 }
 
 function deserializeErrorWithCause(value: unknown): Error {
   const err = deserializeError(value);
   if (value instanceof Error || !isSerializedErrorLike(value)) return err;
-  if (value.cause !== undefined) defineErrorProperty(err, 'cause', reviveNestedError(value.cause));
-  if (value.name === 'AggregateError' && Array.isArray(value.errors)) {
-    defineErrorProperty(err, 'errors', value.errors.map(reviveNestedError));
-  }
+  reviveNestedErrors(err, value);
   return err;
+}
+
+// Outside AggregateError, `errors` entries keep deserializeError's plain-object shape and only gain their causes.
+function reviveNestedErrors(target: object, value: Record<string, unknown>) {
+  if (value.cause !== undefined) defineHiddenProperty(target, 'cause', reviveNestedError(value.cause));
+  if (!Array.isArray(value.errors)) return;
+  if (value.name === 'AggregateError') {
+    defineHiddenProperty(target, 'errors', value.errors.map(reviveNestedError));
+    return;
+  }
+  const revived = (target as { errors?: unknown }).errors;
+  if (!Array.isArray(revived)) return;
+  value.errors.forEach((raw: unknown, i) => {
+    const entry: unknown = revived[i];
+    if (isSerializedErrorLike(raw) && typeof entry === 'object' && entry !== null) reviveNestedErrors(entry, raw);
+  });
 }
 
 export async function deserializeResError(
