@@ -699,7 +699,8 @@ describe('KyselyDataSourceWithCustomKysely', () => {
   });
 
   afterAll(async () => {
-    await DBOS.shutdown();
+    // Deregister so later suites don't re-initialize the datasource over the destroyed custom Kysely.
+    await DBOS.shutdown({ deregister: true });
     await userDB.end();
   });
 
