@@ -23,7 +23,12 @@ import {
   listQueuedWorkflows,
   listWorkflows,
 } from '../src/workflow_management';
-import { DBOSAwaitedWorkflowCancelledError, DBOSStepTimeoutError, DBOSWorkflowCancelledError } from '../src/error';
+import {
+  DBOSAwaitedWorkflowCancelledError,
+  DBOSNonExistentWorkflowError,
+  DBOSStepTimeoutError,
+  DBOSWorkflowCancelledError,
+} from '../src/error';
 import assert from 'node:assert';
 import { DBOSJSON } from '../src/serialization';
 
@@ -392,8 +397,7 @@ describe('workflow-management-tests', () => {
     expect(TestEndpoints.tries).toBe(2);
     expect(result.rows[0].status).toBe(StatusString.SUCCESS);
 
-    // Resume a non-existent workflow is a no-op (bulk UPDATE affects 0 rows)
-    await DBOS.resumeWorkflow('fake-workflow');
+    await expect(DBOS.resumeWorkflow('fake-workflow')).rejects.toThrow(DBOSNonExistentWorkflowError);
 
     // fork the workflow
     const wfh = await DBOS.forkWorkflow(workflowID, 0);
@@ -416,6 +420,30 @@ describe('workflow-management-tests', () => {
     );
     // expect(result.rows[0].attempts).toBe(String(1));
     expect(result.rows[0].status).toBe(StatusString.SUCCESS);
+  });
+
+  test('test-resume-nonexistent-workflow', async () => {
+    const missingID = randomUUID();
+
+    // Resuming a missing ID must fail, not return a handle whose getResult() polls forever
+    await expect(DBOS.resumeWorkflow(missingID)).rejects.toThrow(DBOSNonExistentWorkflowError);
+    const client = await DBOSClient.create({ systemDatabaseUrl: config.systemDatabaseUrl! });
+    try {
+      await expect(client.resumeWorkflow(missingID)).rejects.toThrow(DBOSNonExistentWorkflowError);
+
+      // Resuming a workflow that exists but already completed is still a legal no-op
+      const wfid = randomUUID();
+      await DBOS.withNextWorkflowID(wfid, () => simpleResumeWorkflow(5));
+      await expect((await DBOS.resumeWorkflow<number>(wfid)).getResult()).resolves.toBe(5);
+      await expect((await client.resumeWorkflow<number>(wfid)).getResult()).resolves.toBe(5);
+
+      // A bulk resume containing a missing ID is all-or-nothing: nothing is re-enqueued
+      await expect(DBOS.resumeWorkflows([wfid, missingID])).rejects.toThrow(DBOSNonExistentWorkflowError);
+      await expect(client.resumeWorkflows([wfid, missingID])).rejects.toThrow(DBOSNonExistentWorkflowError);
+      expect((await DBOS.getWorkflowStatus(wfid))?.status).toBe(StatusString.SUCCESS);
+    } finally {
+      await client.destroy();
+    }
   });
 
   test('test-cancel-after-final-step', async () => {
@@ -585,6 +613,10 @@ describe('workflow-management-tests', () => {
     await systemDBClient.query(`UPDATE "dbos"."dbos_migrations" SET "version" = 0;`);
     await DBOS.launch();
     await expect(TestEndpoints.testWorkflow('alice')).resolves.toBe('alice');
+  });
+
+  const simpleResumeWorkflow = DBOS.registerWorkflow(async (x: number) => Promise.resolve(x), {
+    name: 'simpleResumeWorkflow',
   });
 
   class TestEndpoints {

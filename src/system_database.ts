@@ -2048,17 +2048,44 @@ export class SystemDatabase {
   }
 
   async resumeWorkflows(workflowIDs: string[], queueName?: string): Promise<void> {
-    await this.pool.query(
-      `UPDATE "${this.schemaName}".workflow_status
-       SET status = $1, owner_xid = NULL, queue_name = $2, recovery_attempts = 0,
-           workflow_deadline_epoch_ms = NULL, deduplication_id = NULL,
-           started_at_epoch_ms = NULL,
-           updated_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint,
-           completed_at = NULL
-       WHERE workflow_uuid = ANY($3)
-         AND status NOT IN ($4, $5)`,
-      [StatusString.ENQUEUED, queueName ?? INTERNAL_QUEUE_NAME, workflowIDs, StatusString.SUCCESS, StatusString.ERROR],
-    );
+    const client = await this.#connect();
+    try {
+      await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
+      // Check existence separately: a zero-row update also means "already complete", a legal no-op.
+      const { rows } = await client.query<{ workflow_uuid: string }>(
+        `SELECT workflow_uuid FROM "${this.schemaName}".workflow_status WHERE workflow_uuid = ANY($1)`,
+        [workflowIDs],
+      );
+      const existing = new Set(rows.map((r) => r.workflow_uuid));
+      const missing = workflowIDs.filter((id) => !existing.has(id));
+      if (missing.length > 0) {
+        throw new DBOSNonExistentWorkflowError(`Workflow ${missing.join(', ')} does not exist`);
+      }
+      await client.query(
+        `UPDATE "${this.schemaName}".workflow_status
+         SET status = $1, owner_xid = NULL, queue_name = $2, recovery_attempts = 0,
+             workflow_deadline_epoch_ms = NULL, deduplication_id = NULL,
+             started_at_epoch_ms = NULL,
+             updated_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint,
+             completed_at = NULL
+         WHERE workflow_uuid = ANY($3)
+           AND status NOT IN ($4, $5)`,
+        [
+          StatusString.ENQUEUED,
+          queueName ?? INTERNAL_QUEUE_NAME,
+          workflowIDs,
+          StatusString.SUCCESS,
+          StatusString.ERROR,
+        ],
+      );
+      await client.query('COMMIT');
+    } catch (e) {
+      // Swallowed: a rollback failure must not mask why we are rolling back.
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw e;
+    } finally {
+      client.release();
+    }
   }
 
   async setWorkflowPriority(workflowID: string, priority: number): Promise<void> {
