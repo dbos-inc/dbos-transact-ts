@@ -581,12 +581,20 @@ export class DBOSClient {
     return this.systemDatabase.cancelWorkflows(workflowIDs, options?.cancelChildren);
   }
 
-  resumeWorkflow(workflowID: string, options?: { queueName?: string }): Promise<void> {
-    return this.systemDatabase.resumeWorkflows([workflowID], options?.queueName);
+  async resumeWorkflow<T = unknown>(
+    workflowID: string,
+    options?: { queueName?: string },
+  ): Promise<WorkflowHandle<Awaited<T>>> {
+    const handles = await this.resumeWorkflows<T>([workflowID], options);
+    return handles[0];
   }
 
-  resumeWorkflows(workflowIDs: string[], options?: { queueName?: string }): Promise<void> {
-    return this.systemDatabase.resumeWorkflows(workflowIDs, options?.queueName);
+  async resumeWorkflows<T = unknown>(
+    workflowIDs: string[],
+    options?: { queueName?: string },
+  ): Promise<WorkflowHandle<Awaited<T>>[]> {
+    await this.systemDatabase.resumeWorkflows(workflowIDs, options?.queueName);
+    return workflowIDs.map((wfid) => this.retrieveWorkflow<T>(wfid));
   }
 
   setWorkflowPriority(workflowID: string, priority: number): Promise<void> {

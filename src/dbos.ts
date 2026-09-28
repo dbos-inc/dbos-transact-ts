@@ -1062,6 +1062,7 @@ export class DBOS {
   /**
    * Resume a workflow given its ID.
    * @param workflowID - ID of the workflow
+   * @throws DBOSNonExistentWorkflowError if the workflow does not exist
    */
   static async resumeWorkflow<T>(
     workflowID: string,
@@ -1075,6 +1076,7 @@ export class DBOS {
    * Resume multiple workflows given their IDs.
    * @param workflowIDs - IDs of the workflows to resume
    * @returns An array of workflow handles
+   * @throws DBOSNonExistentWorkflowError if any workflow does not exist; none are resumed
    */
   static async resumeWorkflows<T>(
     workflowIDs: string[],
