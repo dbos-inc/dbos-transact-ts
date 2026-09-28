@@ -6,6 +6,8 @@ import {
   isPGRetriableTransactionError,
   DBOSError,
   DBOSStepAlreadyRecordedError,
+  DBOSWorkflowConflictError,
+  assertStillOwnsWorkflow,
   replayRecordedStep,
   registerTransaction,
   runTransaction,
@@ -95,12 +97,15 @@ class KnexTransactionHandler implements DataSourceTransactionHandler {
     return this.#knexDBField;
   }
 
-  async deleteCheckpoints(workflowID: string, startStep: number): Promise<void> {
-    await this.#knexDB<transaction_completion>('transaction_completion')
-      .withSchema('dbos')
-      .where('workflow_id', workflowID)
-      .where('function_num', '>=', startStep)
-      .delete();
+  async deleteCheckpoints(workflowID: string, startStep: number, beforeCommit?: () => Promise<void>): Promise<void> {
+    await this.#knexDB.transaction(async (client) => {
+      await client<transaction_completion>('transaction_completion')
+        .withSchema('dbos')
+        .where('workflow_id', workflowID)
+        .where('function_num', '>=', startStep)
+        .delete();
+      await beforeCommit?.();
+    });
   }
 
   async #checkExecution(
@@ -168,6 +173,8 @@ class KnexTransactionHandler implements DataSourceTransactionHandler {
     if (rows.length === 0) {
       throw new DBOSStepAlreadyRecordedError(workflowID, stepID);
     }
+    // Holding this step's row, so a later owner's insert waits on our commit.
+    await assertStillOwnsWorkflow(workflowID);
   }
 
   async invokeTransactionFunction<This, Args extends unknown[], Return>(
@@ -220,6 +227,8 @@ class KnexTransactionHandler implements DataSourceTransactionHandler {
         if (saveResults && error instanceof DBOSStepAlreadyRecordedError) {
           return await this.#replayConflictingStep<Return>(workflowID, stepID!);
         }
+        // The new owner wins; recording an error here would replay it as this step's outcome.
+        if (error instanceof DBOSWorkflowConflictError) throw error;
         if (isPGRetriableTransactionError(error)) {
           DBOS.span?.addEvent('TXN SERIALIZATION FAILURE', { retryWaitMillis: retryWaitMS }, performance.now());
           await new Promise((resolve) => setTimeout(resolve, retryWaitMS));
