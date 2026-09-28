@@ -394,6 +394,73 @@ export async function deserializePositionalArgs(
     : (parsed as unknown[]);
 }
 
+// serializeError skips the non-enumerable `cause` and `AggregateError.errors`, so walk them explicitly.
+function serializeErrorWithCause(value: unknown, ancestors: Set<object> = new Set()): unknown {
+  if (!(value instanceof Error)) return serializeError(value);
+  if (ancestors.has(value)) return '[Circular]';
+  const out = serializeError(value);
+  if (typeof out === 'object' && out !== null) addNestedErrors(out as Record<string, unknown>, value, ancestors);
+  return out;
+}
+
+// An enumerable `errors` array (e.g. DBOSMaxStepRetriesError) keeps serializeError's copy; its Error entries gain their causes.
+function addNestedErrors(record: Record<string, unknown>, value: Error, ancestors: Set<object>) {
+  ancestors.add(value);
+  if (value.cause !== undefined) record.cause = serializeErrorWithCause(value.cause, ancestors);
+  const errors = (value as { errors?: unknown }).errors;
+  if (Array.isArray(errors)) {
+    const copied = record.errors;
+    if (Array.isArray(copied)) {
+      errors.forEach((e: unknown, i) => {
+        const entry: unknown = copied[i];
+        if (e instanceof Error && !ancestors.has(e) && typeof entry === 'object' && entry !== null) {
+          addNestedErrors(entry as Record<string, unknown>, e, ancestors);
+        }
+      });
+    } else if (value instanceof AggregateError) {
+      record.errors = errors.map((e: unknown) => serializeErrorWithCause(e, ancestors));
+    }
+  }
+  ancestors.delete(value);
+}
+
+function isSerializedErrorLike(value: unknown): value is Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  return typeof record.message === 'string' || typeof record.name === 'string';
+}
+
+function reviveNestedError(value: unknown): unknown {
+  return isSerializedErrorLike(value) ? deserializeErrorWithCause(value) : value;
+}
+
+function defineHiddenProperty(target: object, property: string, value: unknown) {
+  Object.defineProperty(target, property, { value, enumerable: false, writable: true, configurable: true });
+}
+
+function deserializeErrorWithCause(value: unknown): Error {
+  const err = deserializeError(value);
+  if (value instanceof Error || !isSerializedErrorLike(value)) return err;
+  reviveNestedErrors(err, value);
+  return err;
+}
+
+// Outside AggregateError, `errors` entries keep deserializeError's plain-object shape and only gain their causes.
+function reviveNestedErrors(target: object, value: Record<string, unknown>) {
+  if (value.cause !== undefined) defineHiddenProperty(target, 'cause', reviveNestedError(value.cause));
+  if (!Array.isArray(value.errors)) return;
+  if (value.name === 'AggregateError') {
+    defineHiddenProperty(target, 'errors', value.errors.map(reviveNestedError));
+    return;
+  }
+  const revived = (target as { errors?: unknown }).errors;
+  if (!Array.isArray(revived)) return;
+  value.errors.forEach((raw: unknown, i) => {
+    const entry: unknown = revived[i];
+    if (isSerializedErrorLike(raw) && typeof entry === 'object' && entry !== null) reviveNestedErrors(entry, raw);
+  });
+}
+
 export async function deserializeResError(
   serializedValue: string | null,
   serialization: string | null,
@@ -405,7 +472,7 @@ export async function deserializeResError(
     const errdata = parsed as JsonWorkflowErrorData;
     throw new PortableWorkflowError(errdata.message, errdata.name, errdata.code, errdata.data);
   }
-  return deserializeError(parsed);
+  return deserializeErrorWithCause(parsed);
 }
 
 // Attempt to deserialize a value, but if it fails, retun the raw string.
@@ -515,12 +582,12 @@ export async function serializeResErrorWithSerializer(
   }
   if (serialization === DBOSJSON.name()) {
     return {
-      serializedValue: DBOSJSON.stringify(serializeError(err)),
+      serializedValue: DBOSJSON.stringify(serializeErrorWithCause(err)),
       serialization: DBOSJSON.name(),
     };
   }
   return {
-    serializedValue: await serializer.stringify(serializeError(err)),
+    serializedValue: await serializer.stringify(serializeErrorWithCause(err)),
     serialization: serializer.name(),
   };
 }
