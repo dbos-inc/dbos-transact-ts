@@ -62,7 +62,6 @@ import {
   DBOSLocalCtx,
   runWithTopContext,
 } from './context';
-import { serializeError } from 'serialize-error';
 import { globalParams, sleepms, INTERNAL_QUEUE_NAME } from './utils';
 import {
   DBOSPortableJSON,
@@ -1091,9 +1090,10 @@ export class DBOSExecutor {
     if (result === dbosNull) {
       // Record the error, then throw it.
       err = err === dbosNull ? new DBOSMaxStepRetriesError(stepFnName, maxAttempts, errors) : err;
+      const sererr = await serializeResErrorWithSerializer(err as Error, this.serializer, this.serializer.name());
       await this.systemDatabase.recordOperationResult(wfid, funcID, stepFnName, true, startTime, Date.now(), {
-        error: await this.serializer.stringify(serializeError(err)),
-        serialization: this.serializer.name(),
+        error: sererr.serializedValue,
+        serialization: sererr.serialization,
       });
       span.setStatus({ code: SpanStatusCode.ERROR, message: (err as Error).message });
       this.tracer.endSpan(span);
@@ -1215,6 +1215,7 @@ export class DBOSExecutor {
         // complete. Don't checkpoint it, so a resumed workflow re-executes it.
         throw e;
       }
+      const sererr = await serializeResErrorWithSerializer(e as Error, this.serializer, this.serializer.name());
       await this.systemDatabase.recordOperationResult(
         workflowID,
         functionID,
@@ -1223,7 +1224,8 @@ export class DBOSExecutor {
         startTime,
         Date.now(),
         {
-          error: await this.serializer.stringify(serializeError(e)),
+          error: sererr.serializedValue,
+          serialization: sererr.serialization,
           childWorkflowID: childWfId,
         },
       );
