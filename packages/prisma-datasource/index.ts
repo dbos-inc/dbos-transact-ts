@@ -11,10 +11,11 @@ import {
   runTransaction,
   DBOSDataSource,
   registerDataSource,
-  createTransactionCompletionSchemaPG,
-  createTransactionCompletionTablePG,
-  CheckSchemaInstallationReturn,
-  checkSchemaInstallationPG,
+  DataSourceMigrationOptions,
+  DataSourceSQLExecutor,
+  initializeDataSourceSchemaPG,
+  migrateDataSourcePG,
+  verifyDataSourcePG,
 } from '@dbos-inc/dbos-sdk/datasource';
 import { AsyncLocalStorage } from 'async_hooks';
 import { SuperJSON } from 'superjson';
@@ -58,6 +59,20 @@ export type TransactionConfig = {
 
 const asyncLocalCtx = new AsyncLocalStorage<PrismaDataSourceContext>();
 
+function prismaExecutor(prisma: PrismaLike): DataSourceSQLExecutor {
+  return async (text) => {
+    // Only queries return rows; statements go through $executeRawUnsafe, which decodes no result columns.
+    if (/^\s*SELECT\b/i.test(text)) {
+      return await prisma.$queryRawUnsafe<Record<string, unknown>[]>(text);
+    }
+    await prisma.$executeRawUnsafe(text);
+    return [];
+  };
+}
+
+// Waiting on a concurrent migrator's lock can outlast Prisma's default interactive-transaction timeout.
+const MIGRATION_TRANSACTION_OPTIONS = { maxWait: 60_000, timeout: 60_000 };
+
 class PrismaTransactionHandler implements DataSourceTransactionHandler {
   readonly schemaName: string;
 
@@ -65,6 +80,7 @@ class PrismaTransactionHandler implements DataSourceTransactionHandler {
     readonly name: string,
     private readonly prismaAccess: PrismaLike | (() => PrismaLike),
     schemaName: string = 'dbos',
+    private readonly options: DataSourceMigrationOptions = {},
   ) {
     this.schemaName = schemaName;
   }
@@ -84,29 +100,21 @@ class PrismaTransactionHandler implements DataSourceTransactionHandler {
   }
 
   async initialize(): Promise<void> {
-    let installed = false;
-    try {
-      const res = await this.#prismaDB.$queryRawUnsafe<CheckSchemaInstallationReturn[]>(
-        checkSchemaInstallationPG(this.schemaName),
-      );
-      installed = !!res[0]?.schema_exists && !!res[0]?.table_exists;
-    } catch (e) {
-      throw new Error(
-        `In initialization of 'PrismaDataSource' ${this.name}: Database could not be queried: ${(e as Error).message}`,
-      );
+    if (this.options.runMigrations === false) {
+      await verifyDataSourcePG(prismaExecutor(this.#prismaDB), this.schemaName, this.name);
+      return;
     }
 
-    // Install
-    if (!installed) {
-      try {
-        await this.#prismaDB.$executeRawUnsafe(createTransactionCompletionSchemaPG(this.schemaName));
-        await this.#prismaDB.$executeRawUnsafe(createTransactionCompletionTablePG(this.schemaName));
-      } catch (err) {
-        throw new Error(
-          `In initialization of 'PrismaDataSource' ${this.name}: The '${this.schemaName}.transaction_completion' table does not exist, and could not be created.  This should be added to your database migrations.
+    try {
+      await (this.#prismaDB as unknown as PrismaLikeTx).$transaction(
+        (tx) => migrateDataSourcePG(prismaExecutor(tx), this.schemaName),
+        MIGRATION_TRANSACTION_OPTIONS,
+      );
+    } catch (err) {
+      throw new Error(
+        `In initialization of 'PrismaDataSource' ${this.name}: The '${this.schemaName}' transaction schema could not be migrated: ${(err as Error).message}. This should be added to your database migrations.
           See: https://docs.dbos.dev/typescript/tutorials/transaction-tutorial#installing-the-dbos-schema`,
-        );
-      }
+      );
     }
   }
 
@@ -293,9 +301,19 @@ export class PrismaDataSource<PrismaClient> implements DBOSDataSource<Transactio
     return PrismaDataSource.#getClient(this.#provider) as PrismaClient;
   }
 
-  static async initializeDBOSSchema(prisma: PrismaLike, schemaName: string = 'dbos') {
-    await prisma.$queryRawUnsafe(createTransactionCompletionSchemaPG(schemaName));
-    await prisma.$queryRawUnsafe(createTransactionCompletionTablePG(schemaName));
+  /**
+   * Create or migrate the DBOS transaction schema, typically with a privileged role,
+   * optionally granting `applicationRole` the minimal permissions to use it.
+   */
+  static async initializeDBOSSchema(
+    prisma: PrismaLike,
+    schemaName: string = 'dbos',
+    options: { applicationRole?: string } = {},
+  ) {
+    await (prisma as unknown as PrismaLikeTx).$transaction(
+      (tx) => initializeDataSourceSchemaPG(prismaExecutor(tx), schemaName, options.applicationRole),
+      MIGRATION_TRANSACTION_OPTIONS,
+    );
   }
 
   static async uninitializeDBOSSchema(prisma: PrismaLike, schemaName: string = 'dbos') {
@@ -309,8 +327,9 @@ export class PrismaDataSource<PrismaClient> implements DBOSDataSource<Transactio
     readonly name: string,
     prismaAccess: PrismaLike | (() => PrismaLike),
     schemaName: string = 'dbos',
+    options: DataSourceMigrationOptions = {},
   ) {
-    this.#provider = new PrismaTransactionHandler(name, prismaAccess, schemaName);
+    this.#provider = new PrismaTransactionHandler(name, prismaAccess, schemaName, options);
     registerDataSource(this.#provider);
   }
 

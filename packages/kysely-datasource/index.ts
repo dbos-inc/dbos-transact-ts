@@ -13,10 +13,11 @@ import {
   runTransaction,
   DBOSDataSource,
   registerDataSource,
-  createTransactionCompletionSchemaPG,
-  createTransactionCompletionTablePG,
-  CheckSchemaInstallationReturn,
-  checkSchemaInstallationPG,
+  DataSourceMigrationOptions,
+  DataSourceSQLExecutor,
+  initializeDataSourceSchemaPG,
+  migrateDataSourcePG,
+  verifyDataSourcePG,
 } from '@dbos-inc/dbos-sdk/datasource';
 import { AsyncLocalStorage } from 'async_hooks';
 import { Kysely, sql, Transaction, IsolationLevel, PostgresDialect } from 'kysely';
@@ -48,6 +49,10 @@ interface KyselyDataSourceContext<DB> {
 
 const asyncLocalCtx = new AsyncLocalStorage();
 
+function kyselyExecutor(db: Kysely<any>): DataSourceSQLExecutor {
+  return async (text) => (await sql.raw<Record<string, unknown>>(text).execute(db)).rows;
+}
+
 class KyselyTransactionHandler implements DataSourceTransactionHandler {
   #kyselyDBField: Kysely<DBOSKyselyTables>;
   readonly schemaName: string;
@@ -57,6 +62,7 @@ class KyselyTransactionHandler implements DataSourceTransactionHandler {
     readonly name: string,
     poolConfigOrKysely: PoolConfig | Kysely<any>,
     schemaName: string = 'dbos',
+    private readonly options: DataSourceMigrationOptions = {},
   ) {
     this.schemaName = schemaName;
 
@@ -83,30 +89,20 @@ class KyselyTransactionHandler implements DataSourceTransactionHandler {
       await kyselyDB?.destroy();
     }
 
-    // Check for connectivity & the schema
-    let installed = false;
-    try {
-      const { rows } = await sql
-        .raw<CheckSchemaInstallationReturn>(checkSchemaInstallationPG(this.schemaName))
-        .execute(this.#kyselyDBField);
-      const { schema_exists, table_exists } = rows[0];
-      installed = !!schema_exists && !!table_exists;
-    } catch (e) {
-      throw new Error(
-        `In initialization of 'KyselyDataSource' ${this.name}: Database could not be reached: ${(e as Error).message}`,
-      );
+    if (this.options.runMigrations === false) {
+      await verifyDataSourcePG(kyselyExecutor(this.#kyselyDBField), this.schemaName, this.name);
+      return;
     }
 
-    if (!installed) {
-      try {
-        await sql.raw(createTransactionCompletionSchemaPG(this.schemaName)).execute(this.#kyselyDBField);
-        await sql.raw(createTransactionCompletionTablePG(this.schemaName)).execute(this.#kyselyDBField);
-      } catch (err) {
-        throw new Error(
-          `In initialization of 'KyselyDataSource' ${this.name}: The '${this.schemaName}.transaction_completion' table does not exist, and could not be created.  This should be added to your database migrations.
+    try {
+      await this.#kyselyDBField
+        .transaction()
+        .execute((trx) => migrateDataSourcePG(kyselyExecutor(trx), this.schemaName));
+    } catch (err) {
+      throw new Error(
+        `In initialization of 'KyselyDataSource' ${this.name}: The '${this.schemaName}' transaction schema could not be migrated: ${(err as Error).message}. This should be added to your database migrations.
             See: https://docs.dbos.dev/typescript/tutorials/transaction-tutorial#installing-the-dbos-schema`,
-        );
-      }
+      );
     }
   }
 
@@ -299,15 +295,27 @@ export class KyselyDataSource<DB> implements DBOSDataSource<TransactionConfig> {
     return KyselyDataSource.#getClient(this.#provider);
   }
 
-  static async initializeDBOSSchema(poolConfig: PoolConfig, schemaName: string = 'dbos') {
+  /**
+   * Create or migrate the DBOS transaction schema, typically with a privileged role,
+   * optionally granting `applicationRole` the minimal permissions to use it.
+   */
+  static async initializeDBOSSchema(
+    poolConfig: PoolConfig,
+    schemaName: string = 'dbos',
+    options: { applicationRole?: string } = {},
+  ) {
     const client = new Kysely({
       dialect: new PostgresDialect({
         pool: new Pool(poolConfig),
       }),
     });
-    await sql.raw(createTransactionCompletionSchemaPG(schemaName)).execute(client);
-    await sql.raw(createTransactionCompletionTablePG(schemaName)).execute(client);
-    await client.destroy();
+    try {
+      await client
+        .transaction()
+        .execute((trx) => initializeDataSourceSchemaPG(kyselyExecutor(trx), schemaName, options.applicationRole));
+    } finally {
+      await client.destroy();
+    }
   }
 
   static async uninitializeDBOSSchema(poolConfig: PoolConfig, schemaName: string = 'dbos') {
@@ -330,8 +338,9 @@ export class KyselyDataSource<DB> implements DBOSDataSource<TransactionConfig> {
     readonly name: string,
     poolConfigOrKysely: PoolConfig | Kysely<any>,
     schemaName: string = 'dbos',
+    options: DataSourceMigrationOptions = {},
   ) {
-    this.#provider = new KyselyTransactionHandler(name, poolConfigOrKysely, schemaName);
+    this.#provider = new KyselyTransactionHandler(name, poolConfigOrKysely, schemaName, options);
     registerDataSource(this.#provider);
   }
 

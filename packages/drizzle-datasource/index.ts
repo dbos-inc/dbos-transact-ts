@@ -2,8 +2,6 @@ import { Client, ClientConfig, Pool, PoolClient, PoolConfig } from 'pg';
 import { DBOS, FunctionName } from '@dbos-inc/dbos-sdk';
 import {
   type DataSourceTransactionHandler,
-  createTransactionCompletionSchemaPG,
-  createTransactionCompletionTablePG,
   isPGRetriableTransactionError,
   DBOSError,
   DBOSStepAlreadyRecordedError,
@@ -14,8 +12,11 @@ import {
   runTransaction,
   DBOSDataSource,
   registerDataSource,
-  CheckSchemaInstallationReturn,
-  checkSchemaInstallationPG,
+  DataSourceMigrationOptions,
+  DataSourceSQLExecutor,
+  initializeDataSourceSchemaPG,
+  migrateDataSourcePG,
+  verifyDataSourcePG,
 } from '@dbos-inc/dbos-sdk/datasource';
 import { drizzle, NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { AsyncLocalStorage } from 'async_hooks';
@@ -31,6 +32,14 @@ interface DrizzleLocalCtx {
 export type TransactionConfig = Pick<PgTransactionConfig, 'isolationLevel' | 'accessMode'> & { name?: string };
 
 const asyncLocalCtx = new AsyncLocalStorage<DrizzleLocalCtx>();
+
+function drizzleExecutor(db: Pick<NodePgDatabase<{ [key: string]: object }>, 'execute'>): DataSourceSQLExecutor {
+  return async (text) => (await db.execute<Record<string, unknown>>(sql.raw(text))).rows;
+}
+
+function clientExecutor(client: Pick<Client, 'query'>): DataSourceSQLExecutor {
+  return async (text) => (await client.query<Record<string, unknown>>(text)).rows;
+}
 
 export interface transaction_completion {
   workflow_id: string;
@@ -54,6 +63,7 @@ class DrizzleTransactionHandler implements DataSourceTransactionHandler {
     private readonly configOrPool: PoolConfig | Pool,
     private readonly entities: { [key: string]: object } = {},
     schemaName: string = 'dbos',
+    private readonly options: DataSourceMigrationOptions = {},
   ) {
     this.schemaName = schemaName;
     this.#userProvidedPool = configOrPool instanceof Pool;
@@ -67,30 +77,18 @@ class DrizzleTransactionHandler implements DataSourceTransactionHandler {
     this.#connection = { db, end: this.#userProvidedPool ? async () => {} : () => driver.end() };
     await conn?.end();
 
-    let installed = false;
-    try {
-      const res = (await db.execute(sql.raw(checkSchemaInstallationPG(this.schemaName)))) as unknown;
-      const row = Array.isArray(res)
-        ? (res as CheckSchemaInstallationReturn[])[0]
-        : ((res as { rows?: CheckSchemaInstallationReturn[] }).rows?.[0] ??
-          (res as CheckSchemaInstallationReturn[])[0]);
-      installed = !!row?.schema_exists && !!row?.table_exists;
-    } catch (e) {
-      throw new Error(
-        `In initialization of 'DrizzleDataSource' ${this.name}: Database could not be queried: ${(e as Error).message}`,
-      );
+    if (this.options.runMigrations === false) {
+      await verifyDataSourcePG(drizzleExecutor(db), this.schemaName, this.name);
+      return;
     }
 
-    if (!installed) {
-      try {
-        await db.execute(sql.raw(createTransactionCompletionSchemaPG(this.schemaName)));
-        await db.execute(sql.raw(createTransactionCompletionTablePG(this.schemaName)));
-      } catch (err) {
-        throw new Error(
-          `In initialization of 'DrizzleDataSource' ${this.name}: The '${this.schemaName}.transaction_completion' table does not exist, and could not be created.  This should be added to your database migrations.
+    try {
+      await db.transaction((tx) => migrateDataSourcePG(drizzleExecutor(tx), this.schemaName));
+    } catch (err) {
+      throw new Error(
+        `In initialization of 'DrizzleDataSource' ${this.name}: The '${this.schemaName}' transaction schema could not be migrated: ${(err as Error).message}. This should be added to your database migrations.
           See: https://docs.dbos.dev/typescript/tutorials/transaction-tutorial#installing-the-dbos-schema`,
-        );
-      }
+      );
     }
   }
 
@@ -291,19 +289,30 @@ export class DrizzleDataSource<CT = NodePgDatabase<{ [key: string]: object }>>
     return DrizzleDataSource.#getClient(this.#provider) as CT;
   }
 
+  /**
+   * Create or migrate the DBOS transaction schema, typically with a privileged role,
+   * optionally granting `applicationRole` the minimal permissions to use it.
+   * A provided client runs the statements in its current transaction, if any; a config gets a fresh transaction.
+   */
   static async initializeDBOSSchema(
     configOrClient: ClientConfig | Client | PoolClient,
     schemaName: string = 'dbos',
+    options: { applicationRole?: string } = {},
   ): Promise<void> {
     if (typeof configOrClient === 'object' && 'query' in configOrClient) {
-      await configOrClient.query(createTransactionCompletionSchemaPG(schemaName));
-      await configOrClient.query(createTransactionCompletionTablePG(schemaName));
+      await initializeDataSourceSchemaPG(clientExecutor(configOrClient), schemaName, options.applicationRole);
     } else {
       const client = new Client(configOrClient);
       try {
         await client.connect();
-        await client.query(createTransactionCompletionSchemaPG(schemaName));
-        await client.query(createTransactionCompletionTablePG(schemaName));
+        await client.query('BEGIN');
+        try {
+          await initializeDataSourceSchemaPG(clientExecutor(client), schemaName, options.applicationRole);
+          await client.query('COMMIT');
+        } catch (err) {
+          await client.query('ROLLBACK');
+          throw err;
+        }
       } finally {
         await client.end();
       }
@@ -317,8 +326,9 @@ export class DrizzleDataSource<CT = NodePgDatabase<{ [key: string]: object }>>
     configOrPool: PoolConfig | Pool,
     entities: { [key: string]: object } = {},
     schemaName: string = 'dbos',
+    options: DataSourceMigrationOptions = {},
   ) {
-    this.#provider = new DrizzleTransactionHandler(name, configOrPool, entities, schemaName);
+    this.#provider = new DrizzleTransactionHandler(name, configOrPool, entities, schemaName, options);
     registerDataSource(this.#provider);
   }
 

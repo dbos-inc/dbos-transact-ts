@@ -10,7 +10,7 @@ import { TelemetryExporter } from '../telemetry/exporters';
 import * as readline from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 import { DBOSClient, GetWorkflowsInput, StatusString } from '..';
-import { DEFAULT_RENAME_BATCH_SIZE, ensureSystemDatabase, grantDbosSchemaPermissions } from '../system_database';
+import { DEFAULT_RENAME_BATCH_SIZE, migrateSystemDatabase } from '../system_database';
 import { exit } from 'node:process';
 import { inspect } from 'node:util';
 import { runCommand } from './commands';
@@ -130,12 +130,7 @@ program
       try {
         // Load the DBOS system schema.
         logger.info(`Creating DBOS system database and schema: ${schemaName}`);
-        await ensureSystemDatabase(systemDatabaseUrl, logger, undefined, schemaName);
-
-        // Grant permissions to application role if specified
-        if (options.appRole) {
-          await grantDbosSchemaPermissions(systemDatabaseUrl, options.appRole, logger, schemaName);
-        }
+        await migrateSystemDatabase(systemDatabaseUrl, logger, schemaName, options.appRole);
       } catch (e) {
         logger.error(e);
         process.exit(1);

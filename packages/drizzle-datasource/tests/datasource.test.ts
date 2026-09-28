@@ -706,3 +706,49 @@ describe('DrizzleDataSourceCreateTxC', () => {
     expect(rows).toHaveLength(0);
   });
 });
+
+describe('DrizzleDataSource migrations', () => {
+  const userDB = new Pool(config);
+
+  afterAll(async () => {
+    await userDB.end();
+  });
+
+  afterEach(async () => {
+    await DBOS.shutdown();
+  });
+
+  test('verify-only initialization requires the schema to be migrated out of band', async () => {
+    const suffix = randomUUID().replace(/-/g, '').slice(0, 8);
+    const schemaName = `ds_mig_${suffix}`;
+    const role = `ds_app_${suffix}`;
+    const admin = new Client({ ...config, database: 'postgres' });
+    await admin.connect();
+    try {
+      await ensureDB(admin, config.database);
+    } finally {
+      await admin.end();
+    }
+    await userDB.query(`CREATE ROLE "${role}"`);
+    try {
+      new DrizzleDataSource(`verify-only-${suffix}`, config, {}, schemaName, { runMigrations: false });
+      DBOS.setConfig({ name: 'drizzle-ds-test' });
+      await expect(DBOS.launch()).rejects.toThrow(/is at transaction schema version 0/);
+      await DBOS.shutdown();
+      const { rowCount } = await userDB.query('SELECT 1 FROM pg_namespace WHERE nspname = $1', [schemaName]);
+      expect(rowCount).toBe(0);
+
+      await DrizzleDataSource.initializeDBOSSchema(config, schemaName, { applicationRole: role });
+      await DBOS.launch();
+      const { rows } = await userDB.query<{ allowed: boolean }>(
+        `SELECT has_table_privilege($1, $2, 'INSERT') AS allowed`,
+        [role, `"${schemaName}".transaction_completion`],
+      );
+      expect(rows).toEqual([{ allowed: true }]);
+    } finally {
+      await userDB.query(`DROP SCHEMA IF EXISTS "${schemaName}" CASCADE`);
+      await userDB.query(`DROP OWNED BY "${role}"`);
+      await userDB.query(`DROP ROLE "${role}"`);
+    }
+  });
+});

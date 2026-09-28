@@ -97,6 +97,7 @@ import {
   WorkflowScheduleInternal,
   WorkflowScheduleUpdate,
   VersionInfo,
+  migrateSystemDatabase,
 } from './system_database';
 import { readStreamCore, readStreamOffsetCore } from './streams';
 import { PoolClient } from 'pg';
@@ -484,6 +485,25 @@ export class DBOS {
    */
   static isInitialized(): boolean {
     return !!DBOSExecutor.globalInstance?.initialized;
+  }
+
+  /**
+   * Create or migrate the DBOS system database, typically with a privileged role, without launching DBOS.
+   * Pair it with `runMigrations: false` for application processes whose role cannot run DDL.
+   * @param systemDatabaseUrl - The system database to create or migrate
+   * @param options.schemaName - The schema holding the DBOS system tables (default: `dbos`)
+   * @param options.applicationRole - A role to grant access to the system schema once migrated
+   */
+  static async migrate(
+    systemDatabaseUrl: string,
+    options: { schemaName?: string; applicationRole?: string } = {},
+  ): Promise<void> {
+    await migrateSystemDatabase(
+      systemDatabaseUrl,
+      new GlobalLogger(),
+      options.schemaName ?? 'dbos',
+      options.applicationRole,
+    );
   }
 
   /**

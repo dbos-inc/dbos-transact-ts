@@ -13,10 +13,11 @@ import {
   runTransaction,
   DBOSDataSource,
   registerDataSource,
-  createTransactionCompletionSchemaPG,
-  createTransactionCompletionTablePG,
-  CheckSchemaInstallationReturn,
-  checkSchemaInstallationPG,
+  DataSourceMigrationOptions,
+  DataSourceSQLExecutor,
+  initializeDataSourceSchemaPG,
+  migrateDataSourcePG,
+  verifyDataSourcePG,
 } from '@dbos-inc/dbos-sdk/datasource';
 import { AsyncLocalStorage } from 'async_hooks';
 import knex, { type Knex } from 'knex';
@@ -40,6 +41,10 @@ export type TransactionConfig = Pick<Knex.TransactionConfig, 'isolationLevel' | 
 
 const asyncLocalCtx = new AsyncLocalStorage<KnexDataSourceContext>();
 
+function knexExecutor(knexDB: Knex): DataSourceSQLExecutor {
+  return async (sql) => (await knexDB.raw<{ rows: Record<string, unknown>[] }>(sql)).rows;
+}
+
 class KnexTransactionHandler implements DataSourceTransactionHandler {
   #knexDBField: Knex | undefined;
   readonly schemaName: string;
@@ -48,6 +53,7 @@ class KnexTransactionHandler implements DataSourceTransactionHandler {
     readonly name: string,
     private readonly config: Knex.Config,
     schemaName: string = 'dbos',
+    private readonly options: DataSourceMigrationOptions = {},
   ) {
     this.schemaName = schemaName;
   }
@@ -57,30 +63,18 @@ class KnexTransactionHandler implements DataSourceTransactionHandler {
     this.#knexDBField = knex(this.config);
     await knexDB?.destroy();
 
-    // Check for connectivity & the schema
-    let installed = false;
-    try {
-      const { rows } = await this.#knexDBField.raw<{ rows: CheckSchemaInstallationReturn[] }>(
-        checkSchemaInstallationPG(this.schemaName),
-      );
-      installed = !!rows[0].schema_exists && !!rows[0].table_exists;
-    } catch (e) {
-      DBOS.logger.error(e);
-      throw new Error(
-        `In initialization of 'KnexDataSource' ${this.name}: Database could not be reached: ${(e as Error).message}`,
-      );
+    if (this.options.runMigrations === false) {
+      await verifyDataSourcePG(knexExecutor(this.#knexDBField), this.schemaName, this.name);
+      return;
     }
 
-    if (!installed) {
-      try {
-        await this.#knexDBField.raw(createTransactionCompletionSchemaPG(this.schemaName));
-        await this.#knexDBField.raw(createTransactionCompletionTablePG(this.schemaName));
-      } catch (err) {
-        throw new Error(
-          `In initialization of 'KnexDataSource' ${this.name}: The '${this.schemaName}.transaction_completion' table does not exist, and could not be created.  This should be added to your database migrations.
+    try {
+      await this.#knexDBField.transaction((trx) => migrateDataSourcePG(knexExecutor(trx), this.schemaName));
+    } catch (err) {
+      throw new Error(
+        `In initialization of 'KnexDataSource' ${this.name}: The '${this.schemaName}' transaction schema could not be migrated: ${(err as Error).message}. This should be added to your database migrations.
             See: https://docs.dbos.dev/typescript/tutorials/transaction-tutorial#installing-the-dbos-schema`,
-        );
-      }
+      );
     }
   }
 
@@ -279,7 +273,15 @@ export class KnexDataSource implements DBOSDataSource<TransactionConfig> {
     return KnexDataSource.#getClient(this.#provider);
   }
 
-  static async initializeDBOSSchema(knexOrConfig: Knex.Config, schemaName: string = 'dbos') {
+  /**
+   * Create or migrate the DBOS transaction schema, typically with a privileged role,
+   * optionally granting `applicationRole` the minimal permissions to use it.
+   */
+  static async initializeDBOSSchema(
+    knexOrConfig: Knex.Config,
+    schemaName: string = 'dbos',
+    options: { applicationRole?: string } = {},
+  ) {
     if (isKnex(knexOrConfig)) {
       await $initSchema(knexOrConfig);
     } else {
@@ -292,8 +294,9 @@ export class KnexDataSource implements DBOSDataSource<TransactionConfig> {
     }
 
     async function $initSchema(knexDB: Knex) {
-      await knexDB.raw(createTransactionCompletionSchemaPG(schemaName));
-      await knexDB.raw(createTransactionCompletionTablePG(schemaName));
+      await knexDB.transaction((trx) =>
+        initializeDataSourceSchemaPG(knexExecutor(trx), schemaName, options.applicationRole),
+      );
     }
   }
 
@@ -322,8 +325,9 @@ export class KnexDataSource implements DBOSDataSource<TransactionConfig> {
     readonly name: string,
     config: Knex.Config,
     schemaName: string = 'dbos',
+    options: DataSourceMigrationOptions = {},
   ) {
-    this.#provider = new KnexTransactionHandler(name, config, schemaName);
+    this.#provider = new KnexTransactionHandler(name, config, schemaName, options);
     registerDataSource(this.#provider);
   }
 
