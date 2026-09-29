@@ -871,7 +871,8 @@ export class DBOSExecutor {
         params.queueName,
         params.enqueueOptions?.queuePartitionKey,
       );
-      const workflowPromise: Promise<R> = runWorkflow();
+      // A run retries through outages even when launched from a background loop that has since stopped.
+      const workflowPromise: Promise<R> = runWithoutAbortableDbRetries(runWorkflow);
       this.systemDatabase.trackRunningWorkflow(workflowID, runningEntry, workflowPromise);
 
       // Return the normal handle that doesn't capture errors.
@@ -1332,8 +1333,7 @@ export class DBOSExecutor {
         if (!status) {
           throw new DBOSError(`workflow status not found`);
         }
-        // The workflow must retry through outages even after the queue runner stops.
-        await runWithoutAbortableDbRetries(() => this.executeDequeuedWorkflow(status, ownerXid));
+        await this.executeDequeuedWorkflow(status, ownerXid);
       } catch (e) {
         this.logger.warn(`Could not execute workflow with id ${workflowID}: ${(e as Error).message}`);
       }

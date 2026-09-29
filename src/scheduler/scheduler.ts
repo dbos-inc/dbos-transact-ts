@@ -194,6 +194,9 @@ export class DynamicSchedulerLoop implements DBOSLifecycleCallback {
               }
             }
 
+            // An abandoned backfill means shutdown began; a loop started now would outlive destroy().
+            if (signal.aborted) return;
+
             // Active and no running loop — start one
             const controller = new AbortController();
             const executor = DBOSExecutor.globalInstance!;
