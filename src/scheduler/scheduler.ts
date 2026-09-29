@@ -8,6 +8,7 @@ import { TimeMatcher } from './crontab';
 import { DBOSExecutor } from '../dbos-executor';
 import { DBOSError } from '../error';
 import { StatusString } from '../workflow';
+import { runWithAbortableDbRetries } from '../context';
 
 // Because of function contravariance, we need to use any here.
 // We can't use generics because they don't support applySchedules and its array of schedules.
@@ -100,7 +101,8 @@ export class DynamicSchedulerLoop implements DBOSLifecycleCallback {
   }
 
   async initialize(): Promise<void> {
-    this.#pollingPromise = this.#pollingLoop(this.#mainController.signal);
+    const signal = this.#mainController.signal;
+    this.#pollingPromise = runWithAbortableDbRetries(signal, () => this.#pollingLoop(signal));
     await Promise.resolve();
   }
 
@@ -195,17 +197,20 @@ export class DynamicSchedulerLoop implements DBOSLifecycleCallback {
             // Active and no running loop — start one
             const controller = new AbortController();
             const executor = DBOSExecutor.globalInstance!;
-            const promise = DynamicSchedulerLoop.#scheduleLoop(
-              sched.scheduleName,
-              sched.workflowName,
-              sched.workflowClassName,
-              sched.schedule,
-              sched.context,
-              executor.serializer,
-              controller.signal,
-              sched.cronTimezone ?? undefined,
-              sched.queueName ?? undefined,
-              sched.applicationName,
+            // Only enqueues, never runs the workflow, so its retries may be abandoned when the loop stops.
+            const promise = runWithAbortableDbRetries(controller.signal, () =>
+              DynamicSchedulerLoop.#scheduleLoop(
+                sched.scheduleName,
+                sched.workflowName,
+                sched.workflowClassName,
+                sched.schedule,
+                sched.context,
+                executor.serializer,
+                controller.signal,
+                sched.cronTimezone ?? undefined,
+                sched.queueName ?? undefined,
+                sched.applicationName,
+              ),
             );
             this.#scheduleLoops.set(sched.scheduleName, { controller, promise, signature });
           }

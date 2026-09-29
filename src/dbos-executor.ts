@@ -61,6 +61,7 @@ import {
   getCurrentContextStore,
   DBOSLocalCtx,
   runWithTopContext,
+  runWithoutAbortableDbRetries,
 } from './context';
 import { globalParams, sleepms, INTERNAL_QUEUE_NAME } from './utils';
 import {
@@ -1331,7 +1332,8 @@ export class DBOSExecutor {
         if (!status) {
           throw new DBOSError(`workflow status not found`);
         }
-        await this.executeDequeuedWorkflow(status, ownerXid);
+        // The workflow must retry through outages even after the queue runner stops.
+        await runWithoutAbortableDbRetries(() => this.executeDequeuedWorkflow(status, ownerXid));
       } catch (e) {
         this.logger.warn(`Could not execute workflow with id ${workflowID}: ${(e as Error).message}`);
       }

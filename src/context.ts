@@ -87,6 +87,29 @@ export function getCurrentContextStore(): DBOSLocalCtx | undefined {
   return asyncLocalCtx.getStore();
 }
 
+// Stop signal of the background DBOS loop (scheduler, queue runner) whose system database retries may be abandoned.
+const dbRetryAbortCtx = new AsyncLocalStorage<AbortSignal | undefined>();
+
+/** Run a background loop so its system database retries give up once `signal` aborts. Must never run user code. */
+export function runWithAbortableDbRetries<R>(signal: AbortSignal, callback: () => Promise<R>): Promise<R> {
+  return dbRetryAbortCtx.run(signal, callback);
+}
+
+/** Leave an abortable-retry scope, e.g. to launch a workflow from a background loop. */
+export function runWithoutAbortableDbRetries<R>(callback: () => Promise<R>): Promise<R> {
+  return dbRetryAbortCtx.run(undefined, callback);
+}
+
+/** The signal that may cut short the current system database retry, if any. */
+export function currentDbRetryAbortSignal(): AbortSignal | undefined {
+  const signal = dbRetryAbortCtx.getStore();
+  if (!signal) return undefined;
+  // Never inside a workflow: an abandoned retry's error would be recorded as the workflow's outcome.
+  const ctx = asyncLocalCtx.getStore();
+  if (ctx && isWithinWorkflowCtx(ctx)) return undefined;
+  return signal;
+}
+
 export function getNextWFID(assignedID?: string) {
   let wfId = assignedID;
   if (!wfId) {
