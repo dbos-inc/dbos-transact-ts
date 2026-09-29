@@ -771,6 +771,7 @@ const RETRY_NODE_ERRNOS = new Set([
   'ENETUNREACH',
   'ETIMEDOUT',
   'ECONNABORTED',
+  'EAI_AGAIN', // DNS lookup failed temporarily, e.g. while a container's hostname is briefly unresolvable
 ]);
 
 function isPgDatabaseError(e: unknown): e is DatabaseError & AnyErr {
