@@ -65,6 +65,32 @@ function failStepCheckpoints() {
   return { state, failed, spy };
 }
 
+/** Make the SUCCESS write of `workflowID`'s outcome fail as if the database refused connections, while `state.failing` is set. */
+function failOutputWrites(workflowID: string) {
+  const state = { failing: true, attempts: 0 };
+  const failed = new Event();
+  type Internal = {
+    updateWorkflowStatus: (client: unknown, id: string, status: string, ...rest: unknown[]) => Promise<number>;
+  };
+  const proto = SystemDatabase.prototype as unknown as Internal;
+  const original = proto.updateWorkflowStatus;
+  const spy = jest.spyOn(proto, 'updateWorkflowStatus').mockImplementation(async function (
+    this: unknown,
+    client: unknown,
+    id: string,
+    status: string,
+    ...rest: unknown[]
+  ) {
+    if (state.failing && id === workflowID && status === StatusString.SUCCESS) {
+      state.attempts++;
+      failed.set();
+      throw connectionRefused();
+    }
+    return original.call(this, client, id, status, ...rest);
+  });
+  return { state, failed, spy };
+}
+
 async function scheduledWorkflow(_scheduledDate: Date, _context: unknown) {}
 const checkpointQueueName = 'shutdown_db_outage_checkpoint_queue';
 const dispatchQueueName = 'shutdown_db_outage_dispatch_queue';
@@ -165,6 +191,28 @@ describe('shutdown-during-db-outage', () => {
     const status = await DBOS.getWorkflowStatus(workflowID);
     expect(status?.status).toBe(StatusString.SUCCESS);
     await expect(DBOS.retrieveWorkflow<string>(workflowID).getResult()).resolves.toBe('step');
+  }, 30000);
+
+  test('queued-workflow-output-keeps-retrying-through-shutdown', async () => {
+    const workflowID = `shutdown-db-outage-output-${Date.now()}`;
+    const { state, failed } = failOutputWrites(workflowID);
+    await DBOS.startWorkflow(dispatchedWorkflow, { workflowID, queueName: dispatchQueueName })();
+
+    // The outcome write runs outside the workflow's context, so only the run's own retry scope protects it.
+    await within(failed.wait(), 'the output write to hit the outage');
+    const attemptsAtShutdown = state.attempts;
+    const shutdown = DBOS.shutdown({ workflowCompletionTimeoutMS: WAIT_TIMEOUT_MS });
+    await sleepms(1000);
+    const attemptsBeforeRecovery = state.attempts;
+    state.failing = false;
+    await within(shutdown, 'shutdown to drain the workflow');
+
+    // Had the write been abandoned, the connection error would have been recorded as the workflow's outcome.
+    expect(attemptsBeforeRecovery).toBeGreaterThan(attemptsAtShutdown);
+    await DBOS.launch();
+    const status = await DBOS.getWorkflowStatus(workflowID);
+    expect(status?.status).toBe(StatusString.SUCCESS);
+    await expect(DBOS.retrieveWorkflow<string>(workflowID).getResult()).resolves.toBe('dispatched');
   }, 30000);
 
   test('workflow-code-ignores-an-aborted-retry-scope', async () => {
