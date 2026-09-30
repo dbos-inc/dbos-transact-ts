@@ -186,6 +186,7 @@ export interface ListWorkflowsBody {
   executor_id?: string | string[];
   queues_only?: boolean;
   was_forked_from?: boolean;
+  is_fork?: boolean;
   has_parent?: boolean;
   attributes?: Record<string, unknown>;
   schedule_name?: string | string[];
@@ -317,6 +318,7 @@ export interface ListQueuedWorkflowsBody {
   load_output?: boolean; // Load the output of the workflow (default false)
   executor_id?: string | string[];
   was_forked_from?: boolean;
+  is_fork?: boolean;
   has_parent?: boolean;
   attributes?: Record<string, unknown>;
   schedule_name?: string | string[];
@@ -766,6 +768,7 @@ export interface GetWorkflowAggregatesBody {
   schedule_name?: string[];
   application_name?: string[];
   was_forked_from?: boolean;
+  is_fork?: boolean;
   has_parent?: boolean;
   attributes?: Record<string, unknown>;
 }
