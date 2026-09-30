@@ -1174,13 +1174,6 @@ describe('dbos-streaming-tests', () => {
     expect(await readAll(streamKey)).toEqual(['v0']);
     expect(await readAll(emptyKey)).toEqual([]);
     expect(await readAll(legacyKey)).toEqual(['v0']);
-
-    // The bulk fetch the conductor uses reports exactly what readStream yields.
-    expect(await sysdb.getAllStreamEntries(wfid)).toEqual({
-      [streamKey]: ['v0'],
-      [emptyKey]: [],
-      [legacyKey]: ['v0'],
-    });
   });
 
   test('value-equal-to-close-marker-ends-stream-on-both-reads', async () => {
@@ -1225,11 +1218,6 @@ describe('dbos-streaming-tests', () => {
     // The replay must stop where the live read did, not one value later.
     expect(await (await reexecuteWorkflowById(readerID)).getResult()).toEqual(['v0']);
     expect(readerCalls).toBe(2);
-
-    // The bulk fetch the conductor uses agrees too.
-    expect(await DBOSExecutor.globalInstance!.systemDatabase.getAllStreamEntries(wfid)).toEqual({
-      [streamKey]: ['v0'],
-    });
   });
 
   test('concurrent-reads-in-one-workflow-are-rejected', async () => {

@@ -4,7 +4,7 @@ import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import { generateDBOSTestConfig, setUpDBOSTestSysDb, retryUntilSuccess, Event } from './helpers';
 import { sleepConfig, sleepms } from '../src/utils';
 import { DBOSError } from '../src/error';
-import type { Conductor } from '../src/conductor/conductor';
+import type { ConductorConnection } from '../src/enterprise';
 
 // Every wait in this file is bounded: an unbounded one outlives the jest timeout that fails the test.
 const WAIT_TIMEOUT_MS = 10000;
@@ -184,15 +184,15 @@ describe('shutdown-workflow-completion-timeout', () => {
     await waitFor(conductorOrder.started, 'the blocking workflow to start');
 
     let stopSawWorkflowDone: boolean | undefined = undefined;
-    const fakeConductor = {
+    const fakeConductor: ConductorConnection = {
+      start() {},
       stop() {
         stopSawWorkflowDone = conductorOrder.state.done;
+        return Promise.resolve();
       },
-      // No retention round to wait for.
-      awaitRetention: () => Promise.resolve(),
     };
     const executor = DBOSExecutor.globalInstance!;
-    executor.conductor = fakeConductor as unknown as Conductor;
+    executor.conductor = fakeConductor;
 
     const shutdownPromise = trackShutdown(DBOS.shutdown({ workflowCompletionTimeoutMS: 10000 }));
     try {

@@ -82,18 +82,10 @@ describe('observability-query-timeout', () => {
     const sysdb = makeSysDb();
     const statements = captureStatements(sysdb);
     const workflowID = 'no-such-workflow';
-    const start = new Date(Date.now() - 3600_000).toISOString();
-    const end = new Date(Date.now() + 3600_000).toISOString();
 
     const cases: [string, () => Promise<unknown>][] = [
       ['listWorkflows', () => sysdb.listWorkflows({})],
       ['getAllOperationResults', () => sysdb.getAllOperationResults(workflowID)],
-      ['getWorkflowAggregates', () => sysdb.getWorkflowAggregates({ groupByStatus: true, selectCount: true })],
-      ['getStepAggregates', () => sysdb.getStepAggregates({ groupByFunctionName: true, selectCount: true })],
-      ['getMetrics', () => sysdb.getMetrics(start, end)],
-      ['getAllEvents', () => sysdb.getAllEvents(workflowID)],
-      ['getAllNotifications', () => sysdb.getAllNotifications(workflowID)],
-      ['getAllStreamEntries', () => sysdb.getAllStreamEntries(workflowID)],
       ['listApplicationVersions', () => sysdb.listApplicationVersions()],
     ];
 
@@ -161,18 +153,6 @@ describe('observability-query-timeout', () => {
     }
   });
 
-  test('a timed-out query under @dbRetry rejects instead of retrying forever', async () => {
-    const sysdb = makeSysDb(300);
-    const start = new Date(0).toISOString();
-    const end = new Date(Date.now() + 3_600_000).toISOString();
-    try {
-      const error = await whileWorkflowStatusIsLocked(() => sysdb.getMetrics(start, end).catch((e: unknown) => e));
-      expect(error).toBeInstanceOf(DBOSQueryTimeoutError);
-    } finally {
-      await sysdb.destroy();
-    }
-  });
-
   test('a capped query runs under the cap, at read committed', async () => {
     const sysdb = makeSysDb();
     try {
@@ -214,49 +194,6 @@ describe('observability-query-timeout', () => {
       await expect(sysdb.listWorkflows({})).resolves.toBeDefined();
     } finally {
       await sysdb.destroy();
-    }
-  });
-
-  test('deserialization runs after the transaction commits', async () => {
-    // node-postgres keeps the portal's snapshot alive until commit, so parsing inside would extend the hold the cap bounds.
-    const log: string[] = [];
-    const recording: DBOSSerializer = {
-      name: () => 'recording',
-      stringify: (value) => DBOSJSON.stringify(value),
-      parse: (text) => {
-        log.push('PARSE');
-        return DBOSJSON.parse(text);
-      },
-    };
-    const workflowID = 'observability-timeout-parse-order';
-    const seed = new Client(getClientConfig(systemDatabaseUrl));
-    await seed.connect();
-    try {
-      await seed.query(
-        `INSERT INTO "dbos".workflow_status
-           (workflow_uuid, status, name, authenticated_roles, created_at, updated_at, recovery_attempts)
-         VALUES ($1, 'SUCCESS', 'parseOrderProbe', '[]', 1, 1, 1) ON CONFLICT DO NOTHING`,
-        [workflowID],
-      );
-      // A null serialization routes the value through the handle's own serializer, which reads only its own format.
-      await seed.query(
-        `INSERT INTO "dbos".workflow_events (workflow_uuid, key, value, serialization) VALUES ($1, 'k', $2, NULL)
-         ON CONFLICT DO NOTHING`,
-        [workflowID, DBOSJSON.stringify(1)],
-      );
-
-      const sysdb = makeSysDb(undefined, 2, recording);
-      captureStatements(sysdb, log);
-      try {
-        await expect(sysdb.getAllEvents(workflowID)).resolves.toEqual({ k: 1 });
-        expect(log).toContain('PARSE');
-        expect(log.indexOf('COMMIT')).toBeLessThan(log.indexOf('PARSE'));
-      } finally {
-        await sysdb.destroy();
-      }
-    } finally {
-      await seed.query(`DELETE FROM "dbos".workflow_status WHERE workflow_uuid = $1`, [workflowID]).catch(() => {});
-      await seed.end();
     }
   });
 

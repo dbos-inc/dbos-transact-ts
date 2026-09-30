@@ -936,37 +936,6 @@ describe('dynamic-scheduler-tests', () => {
     await DBOS.deleteSchedule('search-b');
   });
 
-  test('schedule-name-survives-export-import', async () => {
-    await DBOS.createSchedule({
-      scheduleName: 'export-test',
-      workflowFn: regScheduledWf,
-      schedule: '0 0 * * *', // daily, won't fire on its own during the test
-    });
-    const handle = await DBOS.triggerSchedule('export-test');
-    await handle.getResult();
-    const workflowID = handle.workflowID;
-
-    const original = await DBOS.getWorkflowStatus(workflowID);
-    expect(original).not.toBeNull();
-    expect(original!.scheduleName).toBe('export-test');
-
-    // Export, delete, then reimport: scheduleName must survive the round-trip.
-    const sysDb = DBOSExecutor.globalInstance!.systemDatabase;
-    const exported = await sysDb.exportWorkflow(workflowID, true);
-    await DBOS.deleteWorkflow(workflowID);
-    expect(await DBOS.listWorkflows({ workflowIDs: [workflowID] })).toEqual([]);
-
-    await sysDb.importWorkflow(exported);
-    const imported = await DBOS.getWorkflowStatus(workflowID);
-    expect(imported).not.toBeNull();
-    expect(imported!.scheduleName).toBe('export-test');
-    // The reimported run is still found by the scheduleName filter.
-    const found = await DBOS.listWorkflows({ scheduleName: 'export-test' });
-    expect(found.map((w) => w.workflowID)).toEqual([workflowID]);
-
-    await DBOS.deleteSchedule('export-test');
-  });
-
   // ---------------------------------------------------------------------------
   // Backfill schedule
   // ---------------------------------------------------------------------------

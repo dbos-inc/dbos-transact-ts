@@ -139,6 +139,7 @@ jobs:
         run: |
           npm ci
           npm run check:package
+          npm run test:publish
 
   # Runs the dbos-enterprise suite against this core, pairing with the same-named enterprise branch when one exists.
   enterprise:
@@ -159,6 +160,17 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+      cockroachdb:
+        image: cockroachdb/cockroach:latest
+        ports:
+          - 26257:26257
+        env:
+          COCKROACH_ARGS: start-single-node --insecure
+        options: >-
+          --health-cmd "curl -f http://localhost:8080/health?ready=1 || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
 
     steps:
       - uses: actions/checkout@v4.1.1
@@ -215,3 +227,4 @@ jobs:
         working-directory: dbos-enterprise-ts
         env:
           PGPASSWORD: dbos
+          DBOS_COCKROACHDB_URL: postgresql://root@localhost:26257/postgres

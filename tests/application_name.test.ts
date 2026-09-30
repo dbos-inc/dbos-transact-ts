@@ -1,8 +1,7 @@
 import { Client } from 'pg';
 import { DBOS, DBOSClient, StatusString } from '../src';
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
-import { garbageCollect, globalTimeout } from '../src/workflow_management';
-import { cutoffPastAllCompletions, generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
+import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
 import { globalParams } from '../src/utils';
 import type { GetWorkflowsInput } from '../src/workflow';
 import { DBOSJSON } from '../src/serialization';
@@ -269,39 +268,6 @@ describe('application-name', () => {
     } finally {
       await anon.destroy();
     }
-
-    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
-    const aggregates = await sysdb.getWorkflowAggregates({
-      groupByName: true,
-      selectCount: true,
-      applicationName: [PEER],
-    });
-    expect(aggregates.map((r) => r.group.name)).toEqual(['peerWorkflow']);
-
-    // Grouping partitions where the filter deliberately overlaps.
-    const grouped = await sysdb.getWorkflowAggregates({
-      groupByApplicationName: true,
-      selectCount: true,
-      applicationName: [APP, PEER],
-    });
-    expect(new Set(grouped.map((r) => r.group.application_name))).toEqual(new Set([APP, PEER, null]));
-
-    // Unset would have dropped the peer's group entirely.
-    const ungrouped = await sysdb.getWorkflowAggregates({ groupByApplicationName: true, selectCount: true });
-    expect(new Set(ungrouped.map((r) => r.group.application_name))).toEqual(new Set([APP, null]));
-
-    const steps = await sysdb.getStepAggregates({
-      groupByFunctionName: true,
-      selectCount: true,
-      applicationName: [PEER],
-    });
-    expect(steps.map((r) => r.group.function_name)).toEqual(['theirStep']);
-
-    const windowStart = new Date(0).toISOString();
-    const windowEnd = new Date(Date.now() + 3600_000).toISOString();
-    const metrics = await sysdb.getMetrics(windowStart, windowEnd, [PEER]);
-    const stepNames = metrics.filter((m) => m.metricType === 'step_count').map((m) => m.metricName);
-    expect(new Set(stepNames)).toEqual(new Set(['theirStep']));
   });
 
   test('unclaimed schedules and queues belong to every application', async () => {
@@ -423,37 +389,6 @@ describe('application-name', () => {
     );
     expect(rows[0].status).toBe(StatusString.ENQUEUED);
     expect(rows[0].application_name).toBe(PEER);
-  });
-
-  test('bulk operations across applications', async () => {
-    class BulkTest {
-      @DBOS.workflow()
-      static async aWorkflow(): Promise<string> {
-        return Promise.resolve('ok');
-      }
-    }
-
-    await DBOS.launch();
-    const mine = await DBOS.startWorkflow(BulkTest).aWorkflow();
-    await mine.getResult();
-
-    const old = Date.now() - 1_000_000;
-    await insertPeerWorkflow(client, 'appname-gc-peer', { status: StatusString.SUCCESS, createdAt: old });
-    await insertPeerWorkflow(client, 'appname-gc-peer-pending', { status: StatusString.PENDING, createdAt: old });
-
-    // Retention spans every application, so the peer's old terminal row goes along with ours.
-    await garbageCollect(DBOSExecutor.globalInstance!.systemDatabase, cutoffPastAllCompletions(), undefined);
-    const collected = await client.query(`SELECT 1 FROM dbos.workflow_status WHERE workflow_uuid = ANY($1)`, [
-      ['appname-gc-peer', mine.workflowID],
-    ]);
-    expect(collected.rowCount).toBe(0);
-
-    // Timing out cancels running work, so it stays scoped: a peer's in-flight workflow is left alone.
-    await globalTimeout(DBOSExecutor.globalInstance!.systemDatabase, Date.now());
-    const { rows } = await client.query<{ status: string }>(
-      `SELECT status FROM dbos.workflow_status WHERE workflow_uuid = 'appname-gc-peer-pending'`,
-    );
-    expect(rows[0].status).toBe(StatusString.PENDING);
   });
 
   test('versions are per application', async () => {
