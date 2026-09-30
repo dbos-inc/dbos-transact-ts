@@ -29,17 +29,22 @@ function git(args, cwd) {
  */
 export function computeVersion({ ref, commit = 'HEAD', cwd } = {}) {
   const branch = ref ?? process.env.GITHUB_REF_NAME ?? git(['rev-parse', '--abbrev-ref', 'HEAD'], cwd);
-  const described = git(['describe', '--tags', '--long', '--abbrev=7', '--match', 'v[0-9]*', commit], cwd);
+  const release = RELEASE_BRANCH.exec(branch);
+  // A release branch is versioned only by its own minor's tags: a commit with no changes since the previous
+  // release carries that release's tag too, and must still build as the older line.
+  const patterns = release
+    ? ['--match', `v${release[1]}.${release[2]}`, '--match', `v${release[1]}.${release[2]}.*`]
+    : ['--match', 'v[0-9]*'];
+  const described = git(['describe', '--tags', '--long', '--abbrev=7', ...patterns, commit], cwd);
   const match = DESCRIBE.exec(described);
   if (!match) {
     throw new Error(`Cannot parse git describe output "${described}"; expected a vX.Y tag in the commit's history`);
   }
   const [, nearest, heightStr, sha] = match;
-  const [major, minor, floor] = highestTagAt(git(['rev-list', '-n1', nearest], cwd), cwd);
+  const [major, minor, floor] = highestTagAt(git(['rev-list', '-n1', nearest], cwd), cwd, release);
   const height = Number(heightStr);
   const patch = floor + height;
 
-  const release = RELEASE_BRANCH.exec(branch);
   if (release) {
     if (Number(release[1]) !== major || Number(release[2]) !== minor) {
       throw new Error(`Branch ${branch} is versioned by tag v${major}.${minor}; the branch name and tag disagree`);
@@ -54,12 +59,14 @@ export function computeVersion({ ref, commit = 'HEAD', cwd } = {}) {
 }
 
 // Several vX.Y[.Z] tags may share a commit, such as a release tag and a later patch-floor tag; the highest wins.
-function highestTagAt(commit, cwd) {
+// On a release branch only that minor's tags are considered, matching the describe above.
+function highestTagAt(commit, cwd, release) {
   const parsed = git(['tag', '--points-at', commit, '--list', 'v[0-9]*'], cwd)
     .split('\n')
     .map((tag) => TAG.exec(tag))
     .filter(Boolean)
-    .map(([, major, minor, patch]) => [Number(major), Number(minor), Number(patch ?? 0)]);
+    .map(([, major, minor, patch]) => [Number(major), Number(minor), Number(patch ?? 0)])
+    .filter(([major, minor]) => !release || (major === Number(release[1]) && minor === Number(release[2])));
   parsed.sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2]);
   return parsed[parsed.length - 1];
 }
