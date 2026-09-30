@@ -48,6 +48,10 @@
       "types": "./dist/src/eventreceiver.d.ts",
       "import": "./dist/src/eventreceiver.js",
       "require": "./dist/src/eventreceiver.js"
+    },
+    "./internal/*": {
+      "types": "./dist/src/*.d.ts",
+      "default": "./dist/src/*.js"
     }
   },
   "typesVersions": {
@@ -57,6 +61,9 @@
       ],
       "eventreceiver": [
         "./dist/src/eventreceiver.d.ts"
+      ],
+      "internal/*": [
+        "./dist/src/*.d.ts"
       ]
     }
   },

@@ -139,3 +139,79 @@ jobs:
         run: |
           npm ci
           npm run check:package
+
+  # Runs the dbos-enterprise suite against this core, pairing with the same-named enterprise branch when one exists.
+  enterprise:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Fork PRs get no secrets, so the app token cannot be minted there.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+
+    services:
+      postgres:
+        image: postgres:16
+        ports:
+          - 5432:5432
+        env:
+          POSTGRES_PASSWORD: dbos
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4.1.1
+        with:
+          path: dbos-transact-ts
+
+      # The enterprise repo is private, so its checkout needs a token from the GitHub App installed on it.
+      - uses: actions/create-github-app-token@v2
+        id: app
+        with:
+          app-id: ${{ vars.ENTERPRISE_APP_ID }}
+          private-key: ${{ secrets.ENTERPRISE_APP_PRIVATE_KEY }}
+          owner: dbos-inc
+          repositories: dbos-enterprise-ts
+
+      # Same-named branch first, then the PR's base so a release branch pairs with its own release, then main.
+      - name: Resolve paired enterprise ref
+        id: pair
+        env:
+          TOKEN: ${{ steps.app.outputs.token }}
+          HEAD_REF: ${{ github.head_ref || github.ref_name }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          url="https://x-access-token:$TOKEN@github.com/dbos-inc/dbos-enterprise-ts"
+          for ref in "$HEAD_REF" "$BASE_REF" main; do
+            if [ -n "$ref" ] && git ls-remote --exit-code --heads "$url" "refs/heads/$ref" >/dev/null; then break; fi
+          done
+          echo "Testing against dbos-enterprise-ts@$ref"
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4.1.1
+        with:
+          repository: dbos-inc/dbos-enterprise-ts
+          token: ${{ steps.app.outputs.token }}
+          ref: ${{ steps.pair.outputs.ref }}
+          path: dbos-enterprise-ts
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4.0.2
+        with:
+          node-version: '20'
+
+      # Enterprise links this checkout into its node_modules and builds it, so only the dependencies are needed here.
+      - name: Install core
+        run: npm ci
+        working-directory: dbos-transact-ts
+
+      - name: Build, lint, and test enterprise
+        run: |
+          npm ci
+          npm run build
+          npm run lint
+          npm test
+        working-directory: dbos-enterprise-ts
+        env:
+          PGPASSWORD: dbos
