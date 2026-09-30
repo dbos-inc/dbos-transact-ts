@@ -12,11 +12,11 @@ jest.config.js
 dbos-config.yaml
 tsconfig.json
 tsconfig.*.json
-version.json
 
 # repo folders that shouldn't be published
 .vscode/
 .github/
+publish/
 tests/
 coverage/
 packages/
