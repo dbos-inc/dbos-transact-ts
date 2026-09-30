@@ -32,12 +32,13 @@ import {
   cancellableSleep,
   dbRetryConfig,
   INTERNAL_QUEUE_NAME,
+  interruptibleSleep,
   Semaphore,
   sleepConfig,
   sleepms,
 } from './utils';
 import { GlobalLogger } from './telemetry/logs';
-import { currentOwnerXid } from './context';
+import { currentDbRetryAbortSignal, currentOwnerXid } from './context';
 import { QueueRateLimit, WorkflowQueue } from './wfqueue';
 import { AsyncResource } from 'async_hooks';
 import { createHash, randomUUID } from 'crypto';
@@ -770,6 +771,7 @@ const RETRY_NODE_ERRNOS = new Set([
   'ENETUNREACH',
   'ETIMEDOUT',
   'ECONNABORTED',
+  'EAI_AGAIN', // DNS lookup failed temporarily, e.g. while a container's hostname is briefly unresolvable
 ]);
 
 function isPgDatabaseError(e: unknown): e is DatabaseError & AnyErr {
@@ -905,6 +907,9 @@ async function retryOnSerializationError<T>(operation: () => Promise<T>): Promis
  * block the workflow and retry the operation until it reconnects and succeeds.
  * In other words, if DBOS loses its database connection, everything pauses until the connection is recovered,
  * trading off availability for correctness.
+ *
+ * The exception is a background DBOS loop run under `runWithAbortableDbRetries`: once its stop signal
+ * aborts, the last connection error is rethrown, so stopping the loop (e.g. at shutdown) cannot hang.
  */
 function dbRetry(
   options: {
@@ -923,11 +928,13 @@ function dbRetry(
       const maxBackoff = options.maxBackoff ?? dbRetryConfig.maxBackoffSec;
       let retries = 0;
       let backoff = options.initialBackoff ?? dbRetryConfig.initialBackoffSec;
+      const abortSignal = currentDbRetryAbortSignal();
       while (true) {
         try {
           return await method.apply(this, args);
         } catch (e) {
           if (retriablePostgresException(e)) {
+            if (abortSignal?.aborted) throw e;
             retries++;
             // Calculate backoff with jitter
             const actualBackoff = backoff * (0.5 + Math.random());
@@ -936,7 +943,12 @@ function dbRetry(
                 `Retrying in ${actualBackoff.toFixed(2)}s (attempt ${retries})`,
             );
             // Sleep with backoff
-            await sleepms(actualBackoff * 1000); // Convert to milliseconds
+            if (abortSignal) {
+              await interruptibleSleep(actualBackoff * 1000, abortSignal);
+              if (abortSignal.aborted) throw e;
+            } else {
+              await sleepms(actualBackoff * 1000); // Convert to milliseconds
+            }
             // Increase backoff for next attempt (exponential)
             backoff = Math.min(backoff * 2, maxBackoff);
           } else {

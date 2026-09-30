@@ -7,6 +7,7 @@ import {
 import type { QueueRecord, SystemDatabase } from './system_database';
 import type { GlobalLogger } from './telemetry/logs';
 import { globalParams, RESERVED_QUEUE_NAME_PREFIX } from './utils';
+import { runWithAbortableDbRetries } from './context';
 import { randomUUID } from 'node:crypto';
 
 /**
@@ -630,7 +631,13 @@ class WFQueueRunner {
     this.states.clear();
     this.listenQueueNames = listenQueuesArg ? new Set(listenQueuesArg) : null;
     this.abortController = new AbortController();
+    // Dispatch leaves this scope before running a workflow, so only the runner's own retries are abandoned on stop.
+    await runWithAbortableDbRetries(this.abortController.signal, () =>
+      this.runDispatchLoop(exec, maxConcurrentQueueDispatches),
+    );
+  }
 
+  private async runDispatchLoop(exec: DBOSExecutor, maxConcurrentQueueDispatches: number): Promise<void> {
     const startNow = Date.now();
 
     // Internal queues are process-private and bypass the listenQueues filter.

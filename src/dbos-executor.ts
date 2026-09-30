@@ -61,6 +61,7 @@ import {
   getCurrentContextStore,
   DBOSLocalCtx,
   runWithTopContext,
+  runWithoutAbortableDbRetries,
 } from './context';
 import { globalParams, sleepms, INTERNAL_QUEUE_NAME } from './utils';
 import {
@@ -870,7 +871,8 @@ export class DBOSExecutor {
         params.queueName,
         params.enqueueOptions?.queuePartitionKey,
       );
-      const workflowPromise: Promise<R> = runWorkflow();
+      // A run retries through outages even when launched from a background loop that has since stopped.
+      const workflowPromise: Promise<R> = runWithoutAbortableDbRetries(runWorkflow);
       this.systemDatabase.trackRunningWorkflow(workflowID, runningEntry, workflowPromise);
 
       // Return the normal handle that doesn't capture errors.
