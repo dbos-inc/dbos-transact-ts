@@ -187,6 +187,7 @@ export interface GetWorkflowsInput {
   queuesOnly?: boolean; // Return only workflows that are actively enqueued
   forkedFrom?: string | string[]; // Get workflows forked from this workflow ID (or any of these workflow IDs).
   wasForkedFrom?: boolean; // Filter workflows that have (or have not) been forked from.
+  isFork?: boolean; // Filter workflows that are (or are not) themselves a fork. Opposite end of the relationship from wasForkedFrom.
   parentWorkflowID?: string | string[]; // Get workflows started by this parent workflow ID (or any of these parent workflow IDs).
   hasParent?: boolean; // Filter workflows that have (or do not have) a parent workflow.
   attributes?: Record<string, unknown>; // Retrieve workflows whose custom attributes contain all of these key-value pairs.

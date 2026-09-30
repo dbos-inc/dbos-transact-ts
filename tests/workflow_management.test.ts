@@ -2626,6 +2626,33 @@ describe('test-fork', () => {
     expect(notForkedFromIDs).toContain(forkedWithTimeout.workflowID);
     expect(notForkedFromIDs).toContain(forkedHandle2.workflowID);
     expect(notForkedFromIDs).toContain(forkedHandle3.workflowID);
+
+    // isFork filters the other end of the relationship: the forks themselves.
+    const forkIDs = [
+      forkedHandle.workflowID,
+      forkedWithTimeout.workflowID,
+      forkedHandle2.workflowID,
+      forkedHandle3.workflowID,
+    ];
+    const isForkWorkflows = await DBOS.listWorkflows({ isFork: true });
+    const isForkIDs = new Set(isForkWorkflows.map((w) => w.workflowID));
+    for (const w of isForkWorkflows) {
+      expect(w.forkedFrom).toBeDefined();
+    }
+    for (const id of forkIDs) {
+      expect(isForkIDs).toContain(id);
+    }
+    expect(isForkIDs).not.toContain(wfid);
+
+    const notForkWorkflows = await DBOS.listWorkflows({ isFork: false });
+    const notForkIDs = new Set(notForkWorkflows.map((w) => w.workflowID));
+    for (const w of notForkWorkflows) {
+      expect(w.forkedFrom).toBeUndefined();
+    }
+    expect(notForkIDs).toContain(wfid);
+    for (const id of forkIDs) {
+      expect(notForkIDs).not.toContain(id);
+    }
   });
 
   test('test-fork-from-failure', async () => {
@@ -4895,6 +4922,23 @@ describe('test-workflow-aggregates', () => {
     });
     expect(notForked.length).toBe(1);
     expect(notForked[0].count).toBe(2);
+
+    // isFork=true: the two forks themselves; isFork=false: only the original.
+    const isFork = await sysdb.getWorkflowAggregates({
+      groupByStatus: true,
+      isFork: true,
+      selectCount: true,
+    });
+    expect(isFork.length).toBe(1);
+    expect(isFork[0].count).toBe(2);
+
+    const notFork = await sysdb.getWorkflowAggregates({
+      groupByStatus: true,
+      isFork: false,
+      selectCount: true,
+    });
+    expect(notFork.length).toBe(1);
+    expect(notFork[0].count).toBe(1);
 
     // Non-existent origin returns empty
     const empty = await sysdb.getWorkflowAggregates({
