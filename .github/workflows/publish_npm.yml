@@ -11,7 +11,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      id-token: write # npm trusted publishing authenticates with an OIDC token instead of a secret
     strategy:
+      fail-fast: false # one package failing must not cancel the others mid-publish
       matrix:
         package:
           [
@@ -33,41 +35,24 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4.1.1
         with:
-          fetch-depth: 0 # fetch-depth 0 needed for NBGV
-      - name: Use Node.js 20
+          fetch-depth: 0 # the version is derived from tags and commit history
+          fetch-tags: true
+      - name: Use Node.js 24
         uses: actions/setup-node@v4.0.2
         with:
-          node-version: 20
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - name: Update npm # trusted publishing needs npm 11.5.1 or later
+        run: npm install -g npm@latest
+      - name: Compute version
+        id: version
+        run: node publish/version.mjs
       - run: npm ci; npm run build
-      - name: Nerdbank.GitVersioning
-        id: nbgv
-        uses: dotnet/nbgv@v0.4.2
-        with:
-          stamp: ${{ matrix.package }}/package.json
-      - run: cd ${{ matrix.package }}; npm run build
-      - name: Publish release to npm
-        uses: JS-DevTools/npm-publish@v4
-        id: npmrelease
-        # boolean properties from NBGV step appears to be converted into *capitalized* strings
-        # so explicitly string compare PublicRelease output value
-        if: ${{ steps.nbgv.outputs.PublicRelease == 'True'}}
-        with:
-          token: ${{ secrets.NPM_PUBLISH_GRANULAR }}
-          registry: https://registry.npmjs.org/
-          tag: ${{ steps.nbgv.outputs.PrereleaseVersion == '' && 'latest' || 'preview' }} # Assign a 'preview' tag to versions end with '-preview'. Otherwise, assign a 'latest' tag to the latest release.
-          access: public
-          package: ${{ matrix.package }}
-      - name: Publish test package to npm
-        uses: JS-DevTools/npm-publish@v4
-        id: npmtest
-        if: ${{ steps.nbgv.outputs.PublicRelease == 'False'}}
-        with:
-          token: ${{ secrets.NPM_PUBLISH_GRANULAR }}
-          registry: https://registry.npmjs.org/
-          tag: 'test'
-          access: public
-          package: ${{ matrix.package }}
-      - if: ${{ steps.npmrelease.outputs.type }}
-        run: echo "Published a new release package!"
-      - if: ${{ steps.npmtest.outputs.type }}
-        run: echo "Published a new test package!"
+      - name: Stamp version
+        run: npm pkg set version=${{ steps.version.outputs.version }}
+        working-directory: ${{ matrix.package }}
+      - run: npm run build
+        working-directory: ${{ matrix.package }}
+      - name: Publish ${{ steps.version.outputs.version }} to npm as ${{ steps.version.outputs.dist_tag }}
+        run: npm publish --access public --tag ${{ steps.version.outputs.dist_tag }}
+        working-directory: ${{ matrix.package }}
