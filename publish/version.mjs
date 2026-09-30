@@ -14,7 +14,8 @@ import { appendFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
 const RELEASE_BRANCH = /^release\/v(\d+)\.(\d+)$/;
-const DESCRIBE = /^v(\d+)\.(\d+)(?:\.(\d+))?-(\d+)-g([0-9a-f]+)$/;
+const DESCRIBE = /^(v\d+\.\d+(?:\.\d+)?)-(\d+)-g([0-9a-f]+)$/;
+const TAG = /^v(\d+)\.(\d+)(?:\.(\d+))?$/;
 
 function git(args, cwd) {
   return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
@@ -33,11 +34,10 @@ export function computeVersion({ ref, commit = 'HEAD', cwd } = {}) {
   if (!match) {
     throw new Error(`Cannot parse git describe output "${described}"; expected a vX.Y tag in the commit's history`);
   }
-  const [, tagMajor, tagMinor, tagPatch, heightStr, sha] = match;
-  const major = Number(tagMajor);
-  const minor = Number(tagMinor);
+  const [, nearest, heightStr, sha] = match;
+  const [major, minor, floor] = highestTagAt(git(['rev-list', '-n1', nearest], cwd), cwd);
   const height = Number(heightStr);
-  const patch = Number(tagPatch ?? 0) + height;
+  const patch = floor + height;
 
   const release = RELEASE_BRANCH.exec(branch);
   if (release) {
@@ -51,6 +51,17 @@ export function computeVersion({ ref, commit = 'HEAD', cwd } = {}) {
     return { version: `${next}-preview`, distTag: 'preview' };
   }
   return { version: `${next}-test.${sha}`, distTag: 'test' };
+}
+
+// Several vX.Y[.Z] tags may share a commit, such as a release tag and a later patch-floor tag; the highest wins.
+function highestTagAt(commit, cwd) {
+  const parsed = git(['tag', '--points-at', commit, '--list', 'v[0-9]*'], cwd)
+    .split('\n')
+    .map((tag) => TAG.exec(tag))
+    .filter(Boolean)
+    .map(([, major, minor, patch]) => [Number(major), Number(minor), Number(patch ?? 0)]);
+  parsed.sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2]);
+  return parsed[parsed.length - 1];
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
