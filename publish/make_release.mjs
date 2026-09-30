@@ -12,6 +12,8 @@
 // Versions are derived from the tag by publish/version.mjs, so no commit is needed on any branch.
 
 import { execFileSync, spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { computeVersion } from './version.mjs';
 
@@ -25,7 +27,9 @@ function git(args, options = {}) {
 }
 
 function gh(args, options = {}) {
-  return execFileSync('gh', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'], ...options }).trim();
+  return (
+    execFileSync('gh', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'], ...options }) ?? ''
+  ).trim();
 }
 
 function refExists(ref) {
@@ -58,7 +62,18 @@ function main() {
     if (!remoteRefExists(`refs/heads/${branch}`)) {
       throw new ReleaseError(`${branch} does not exist on origin`);
     }
+    // A dispatched workflow runs the file as committed on that branch, so the branch must carry this scheme.
+    if (
+      spawnSync('git', ['cat-file', '-e', `origin/${branch}:publish/version.mjs`], { stdio: 'ignore' }).status !== 0
+    ) {
+      throw new ReleaseError(`${branch} predates tag-based versioning and cannot be patched with this script`);
+    }
+    const tagged = exactTag(`origin/${branch}`);
+    if (tagged) {
+      throw new ReleaseError(`${branch} has no commits since ${tagged}; nothing new to publish`);
+    }
     const { version } = computeVersion({ ref: branch, commit: `origin/${branch}` });
+    checkUnpublished(version);
     console.log(`Publishing ${version} from ${branch}`);
     if (!values['no-publish']) publish(branch);
     return;
@@ -78,7 +93,13 @@ function main() {
   }
 
   createTag(tag, branch, version);
-  git(['push', '--atomic', 'origin', `refs/tags/${tag}`, `HEAD:refs/heads/${branch}`], { stdio: 'inherit' });
+  try {
+    git(['push', '--atomic', 'origin', `refs/tags/${tag}`, `HEAD:refs/heads/${branch}`], { stdio: 'inherit' });
+  } catch (error) {
+    // The atomic push left origin untouched, so deleting the local tag restores the starting state.
+    git(['tag', '--delete', tag]);
+    throw error;
+  }
   console.log(`Pushed tag ${tag} and branch ${branch} at ${git(['rev-parse', '--short', 'HEAD'])}`);
   if (!values['no-publish']) publish(branch);
 }
@@ -106,11 +127,38 @@ function checkReady() {
     throw new ReleaseError('Local main differs from origin/main');
   }
   // Each release commit carries exactly one tag; a second tag would make versions ambiguous.
-  const existing = spawnSync('git', ['describe', '--tags', '--exact-match', '--match', 'v[0-9]*', 'HEAD'], {
+  const existing = exactTag('HEAD');
+  if (existing) {
+    throw new ReleaseError(`main has no commits since ${existing}; nothing to release`);
+  }
+}
+
+// The v* tag sitting exactly on a commit, or undefined.
+function exactTag(commit) {
+  const result = spawnSync('git', ['describe', '--tags', '--exact-match', '--match', 'v[0-9]*', commit], {
     encoding: 'utf8',
   });
-  if (existing.status === 0) {
-    throw new ReleaseError(`main has no commits since ${existing.stdout.trim()}; nothing to release`);
+  return result.status === 0 ? result.stdout.trim() : undefined;
+}
+
+// Refuse a version that would republish or fall below what the root package already has on npm.
+function checkUnpublished(version) {
+  const [major, minor, patch] = version.split('.').map(Number);
+  const root = git(['rev-parse', '--show-toplevel']);
+  const name = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).name;
+  const out = execFileSync('npm', ['view', name, 'versions', '--json'], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  const parsed = JSON.parse(out);
+  const pattern = new RegExp(`^${major}\\.${minor}\\.(\\d+)$`);
+  const published = (Array.isArray(parsed) ? parsed : [parsed])
+    .map((v) => pattern.exec(v))
+    .filter(Boolean)
+    .map((m) => Number(m[1]));
+  if (published.length > 0 && Math.max(...published) >= patch) {
+    const highest = `${major}.${minor}.${Math.max(...published)}`;
+    throw new ReleaseError(`Version ${version} is not above ${highest}, which ${name} already has on npm`);
   }
 }
 
@@ -132,6 +180,7 @@ function createTag(tag, branch, version) {
     if (computed !== `${version}.0`) {
       throw new ReleaseError(`A build of ${branch} would be versioned ${computed}, not ${version}.0`);
     }
+    checkUnpublished(computed);
   } catch (error) {
     git(['tag', '--delete', tag]);
     throw error;

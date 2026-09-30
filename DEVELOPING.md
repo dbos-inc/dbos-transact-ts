@@ -25,7 +25,7 @@ node publish/make_release.mjs --patch 5.3
 ```
 
 Pass `--no-publish` to tag and push without running the publish workflow.
-You need the [GitHub CLI](https://cli.github.com/) logged in with `repo` and `workflow` scopes, and permission to create branches and tags in this repo.
+You need the [GitHub CLI](https://cli.github.com/) logged in with the `repo` scope, and permission to create branches and tags in this repo.
 
 ### Versions
 
@@ -39,7 +39,4 @@ Run it on any checkout to see what a build of the current branch would be versio
 | anything else  | `X.(Y+1).<commits since tag>-test.<sha>` | `test`       |
 
 The publish workflow runs on every push to `main`, so each merge publishes a preview.
-Dispatching it manually on any other branch publishes a `test` build, which is how to try out the publish path without touching `latest`.
-
-Release branches created before this scheme (`release/v5.2` and earlier) already have patch versions higher than the commit count since their tag.
-To publish a patch from one of them, first tag its tip with the last version published from it, such as `v5.2.11`; later commits are then versioned `5.2.12` and up.
+Dispatching it manually on a branch other than `main` or a release branch publishes a `test` build, which is how to try out the publish path without touching `latest` or `preview`.
