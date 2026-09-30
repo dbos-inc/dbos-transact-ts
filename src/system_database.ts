@@ -308,6 +308,7 @@ export interface GetWorkflowAggregatesInput {
   authenticatedUser?: string[];
   forkedFrom?: string[];
   wasForkedFrom?: boolean;
+  isFork?: boolean;
   parentWorkflowID?: string[];
   hasParent?: boolean;
   attributes?: Record<string, unknown>;
@@ -4619,6 +4620,11 @@ export class SystemDatabase {
       paramCounter++;
     }
 
+    // Matches the forks themselves, as opposed to wasForkedFrom, which matches the workflows they were forked from.
+    if (input.isFork !== undefined) {
+      whereClauses.push(input.isFork ? `forked_from IS NOT NULL` : `forked_from IS NULL`);
+    }
+
     if (input.hasParent !== undefined) {
       if (input.hasParent) {
         whereClauses.push(`parent_workflow_id IS NOT NULL`);
@@ -4807,6 +4813,11 @@ export class SystemDatabase {
       whereClauses.push(`was_forked_from = $${paramIdx}`);
       params.push(input.wasForkedFrom);
       paramIdx++;
+    }
+
+    // Matches the forks themselves, as opposed to wasForkedFrom, which matches the workflows they were forked from.
+    if (input.isFork !== undefined) {
+      whereClauses.push(input.isFork ? `forked_from IS NOT NULL` : `forked_from IS NULL`);
     }
 
     if (input.hasParent !== undefined) {

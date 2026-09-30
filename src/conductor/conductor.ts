@@ -327,6 +327,7 @@ export class Conductor {
               executorId: body.executor_id,
               queuesOnly: body.queues_only,
               wasForkedFrom: body.was_forked_from,
+              isFork: body.is_fork,
               hasParent: body.has_parent,
               attributes: body.attributes,
               scheduleName: body.schedule_name,
@@ -368,6 +369,7 @@ export class Conductor {
               loadOutput: (bodyQueued.load_output ?? false) && !this.metadataOnlyMode, // Default to false if not provided
               executorId: bodyQueued.executor_id,
               wasForkedFrom: bodyQueued.was_forked_from,
+              isFork: bodyQueued.is_fork,
               hasParent: bodyQueued.has_parent,
               attributes: bodyQueued.attributes,
               scheduleName: bodyQueued.schedule_name,
@@ -861,6 +863,7 @@ export class Conductor {
                 scheduleName: aggBody.schedule_name,
                 applicationName: aggBody.application_name,
                 wasForkedFrom: aggBody.was_forked_from,
+                isFork: aggBody.is_fork,
                 hasParent: aggBody.has_parent,
                 attributes: aggBody.attributes,
               });
