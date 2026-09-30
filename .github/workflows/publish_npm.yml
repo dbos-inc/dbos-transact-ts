@@ -13,6 +13,7 @@ jobs:
       contents: read
       id-token: write # npm trusted publishing authenticates with an OIDC token instead of a secret
     strategy:
+      fail-fast: false # one package failing must not cancel the others mid-publish
       matrix:
         package:
           [
