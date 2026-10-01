@@ -765,15 +765,6 @@ function isStatementTimeout(err: unknown): boolean {
   return !!err && typeof err === 'object' && (err as AnyErr).code === '57014';
 }
 
-/**
- * If a workflow encounters a database connection issue while performing an operation,
- * block the workflow and retry the operation until it reconnects and succeeds.
- * In other words, if DBOS loses its database connection, everything pauses until the connection is recovered,
- * trading off availability for correctness.
- *
- * The exception is a background DBOS loop run under `runWithAbortableDbRetries`: once its stop signal
- * aborts, the last connection error is rethrown, so stopping the loop (e.g. at shutdown) cannot hang.
- */
 /** Run `operation` under the {@link dbRetry} policy, for code that cannot take the decorator. */
 export async function withDbRetry<T>(
   operation: () => Promise<T>,
@@ -813,6 +804,15 @@ export async function withDbRetry<T>(
   }
 }
 
+/**
+ * If a workflow encounters a database connection issue while performing an operation,
+ * block the workflow and retry the operation until it reconnects and succeeds.
+ * In other words, if DBOS loses its database connection, everything pauses until the connection is recovered,
+ * trading off availability for correctness.
+ *
+ * The exception is a background DBOS loop run under `runWithAbortableDbRetries`: once its stop signal
+ * aborts, the last connection error is rethrown, so stopping the loop (e.g. at shutdown) cannot hang.
+ */
 function dbRetry(
   options: {
     initialBackoff?: number;

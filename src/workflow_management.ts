@@ -209,7 +209,6 @@ export async function toWorkflowStatus(
   };
 }
 
-/** Enforce retention across the entire system database. */
 export const workflowTimeoutConfig = {
   /** How often the sweep looks for workflows past their deadline. */
   pollingIntervalMs: 1000,
