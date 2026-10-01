@@ -200,10 +200,6 @@ export interface GetWorkflowsInput {
   loadOutput?: boolean; // Load the output of the workflow (default true)
 }
 
-export interface GetPendingWorkflowsOutput {
-  workflowUUID: string;
-}
-
 export interface StepInfo {
   readonly functionID: number;
   readonly name: string;

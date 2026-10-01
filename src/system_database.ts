@@ -668,15 +668,6 @@ const RETRY_SQLSTATE_CODES = new Set([
   '40P01', // deadlock_detected: the victim's transaction rolled back, so rerunning it is safe
 ]);
 
-/**
- * Bulk maintenance retries these a bounded number of times. 40001 is kept out of the sets above,
- * which feed `dbRetry` and so retry forever; every other path runs READ COMMITTED and never sees it.
- */
-const SERIALIZATION_SQLSTATE_CODES = new Set([
-  '40001', // serialization_failure (MVCC conflict)
-  '40P01', // deadlock_detected
-]);
-
 // Node.js transient network error codes (system call level)
 const RETRY_NODE_ERRNOS = new Set([
   'ECONNRESET',
@@ -688,7 +679,7 @@ const RETRY_NODE_ERRNOS = new Set([
   'EAI_AGAIN', // DNS lookup failed temporarily, e.g. while a container's hostname is briefly unresolvable
 ]);
 
-function isPgDatabaseError(e: unknown): e is DatabaseError & AnyErr {
+export function isPgDatabaseError(e: unknown): e is DatabaseError & AnyErr {
   // Matched by shape, not instanceof: a user-supplied pool may throw another pg copy's DatabaseError.
   return !!e && typeof e === 'object' && typeof (e as AnyErr).code === 'string' && (e as AnyErr).code!.length === 5;
 }
@@ -719,7 +710,7 @@ function messageLooksRetryable(msg: string): boolean {
   );
 }
 
-function* unwrapErrors(e: unknown): Generator<unknown, void, void> {
+export function* unwrapErrors(e: unknown): Generator<unknown, void, void> {
   // Walk through AggregateError.errors and cause chains
   const queue: unknown[] = [e];
   const seen = new Set<unknown>();
@@ -772,16 +763,6 @@ export function retriablePostgresException(err: unknown): boolean {
 /** 57014 is query_canceled, which is how statement_timeout cancels a query. */
 function isStatementTimeout(err: unknown): boolean {
   return !!err && typeof err === 'object' && (err as AnyErr).code === '57014';
-}
-
-export function isSerializationError(err: unknown): boolean {
-  for (const e of unwrapErrors(err)) {
-    const anyErr = e as AnyErr;
-    if (isPgDatabaseError(anyErr) && !!anyErr.code && SERIALIZATION_SQLSTATE_CODES.has(anyErr.code)) {
-      return true;
-    }
-  }
-  return false;
 }
 
 /**
@@ -931,6 +912,9 @@ export class SystemDatabase {
 
   // Set by destroy(), so polling waits end instead of running on against a pool that outlives this handle.
   #destroyed: boolean = false;
+  get destroyed(): boolean {
+    return this.#destroyed;
+  }
 
   // Connections a retention round holds right now. destroy() cuts them, since closing the
   // pool would otherwise wait on the lock session and on any statement in flight.
@@ -1011,24 +995,6 @@ export class SystemDatabase {
   /** Check out a pool connection guarded for as long as we hold it. See {@link borrowClient}. */
   connect(): Promise<PoolClient> {
     return borrowClient(this.pool, this.#onClientError);
-  }
-
-  /** Borrow a connection for a retention round, so destroy() can cut it. */
-  async borrowRetentionClient(): Promise<PoolClient> {
-    if (this.#destroyed) {
-      throw new Error('System database shutting down');
-    }
-    const client = await this.connect();
-    this.retentionClients.add(client);
-    return client;
-  }
-
-  /** Return a retention connection, unless destroy() already cut it: a second release would throw. */
-  releaseRetentionClient(client: PoolClient): void {
-    if (this.retentionClients.delete(client)) {
-      // No error argument: a genuinely dead connection is still evicted by the pool's own check.
-      client.release();
-    }
   }
 
   /**
