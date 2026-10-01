@@ -2,6 +2,15 @@ import { randomUUID } from 'crypto';
 import { DBOS, DBOSClient, StatusString } from '../src';
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import { globalParams } from '../src/utils';
+import * as enterprise from '../src/enterprise';
+import type { ConductorConnection } from '../src/enterprise';
+
+class FakeConductor implements ConductorConnection {
+  start() {}
+  stop() {
+    return Promise.resolve();
+  }
+}
 import { generateDBOSTestConfig, recoverPendingWorkflows, setUpDBOSTestSysDb } from './helpers';
 
 describe('test-app-version', () => {
@@ -139,6 +148,8 @@ describe('test-app-version', () => {
     const originalVMID = process.env.DBOS__VMID;
     const originalCloud = globalParams.dbosCloud;
     const originalSysDbUrl = process.env.DBOS_SYSTEM_DATABASE_URL;
+    // The executor ID is core's to assign; the Conductor client itself is not under test here.
+    const load = jest.spyOn(enterprise, 'load').mockReturnValue({ ConductorWebsocket: FakeConductor });
     try {
       // An empty DBOS__VMID is an unset one
       process.env.DBOS__VMID = '';
@@ -159,6 +170,7 @@ describe('test-app-version', () => {
       await DBOS.launch({ conductorKey: 'test-key', conductorURL: 'ws://127.0.0.1:1' });
       expect(DBOS.executorID).toBe('cloud-vm');
     } finally {
+      load.mockRestore();
       globalParams.dbosCloud = originalCloud;
       if (originalVMID === undefined) {
         delete process.env.DBOS__VMID;

@@ -87,7 +87,7 @@ import {
 import { randomUUID } from 'node:crypto';
 
 import { StepConfig, validateStepConfig } from './step';
-import { Conductor } from './conductor/conductor';
+import * as enterprise from './enterprise';
 import {
   DuplicationPolicy,
   EnqueueOptions,
@@ -120,7 +120,7 @@ type AnyConstructor = new (...args: unknown[]) => object;
 
 // Declare all the options a user can pass to the DBOS object during launch()
 export interface DBOSLaunchOptions {
-  // For DBOS Conductor
+  // For DBOS Conductor, which requires the @dbos-inc/dbos-enterprise package
   conductorURL?: string;
   conductorKey?: string;
   conductorExecutorMetadata?: Record<string, unknown>;
@@ -524,6 +524,9 @@ export class DBOS {
     }
     const internalConfig = translateDbosConfig(config);
 
+    // DBOS Cloud always uses Conductor. Checked before any state exists, so a missing package fails cleanly.
+    const loadedEnterprise = options?.conductorKey || globalParams.dbosCloud ? enterprise.load() : undefined;
+
     globalParams.enableOTLP = DBOS.#dbosConfig?.enableOTLP ?? globalParams.dbosCloud;
     globalParams.tracingEnabled = DBOS.#dbosConfig?.tracingEnabled || globalParams.enableOTLP;
 
@@ -588,19 +591,17 @@ export class DBOS {
       const cloudAppName = process.env.DBOS__CONDUCTOR_APP_NAME;
       const cloudConductorKey = process.env.DBOS__CONDUCTOR_KEY;
       const cloudConductorURL = process.env.DBOS__CONDUCTOR_URL;
-      if (cloudAppName && cloudConductorKey && cloudConductorURL) {
+      if (loadedEnterprise && cloudAppName && cloudConductorKey && cloudConductorURL) {
         DBOS.logger.debug('Starting Conductor connection (DBOS Cloud)');
-        executor.conductor = new Conductor(
-          executor,
-          cloudAppName,
-          cloudConductorKey,
-          cloudConductorURL,
-          undefined,
-          conductorMetadataOnlyMode,
-        );
-        executor.conductor.dispatchLoop();
+        executor.conductor = new loadedEnterprise.ConductorWebsocket(executor, {
+          appName: cloudAppName,
+          conductorKey: cloudConductorKey,
+          conductorURL: cloudConductorURL,
+          metadataOnlyMode: conductorMetadataOnlyMode,
+        });
+        executor.conductor.start();
       }
-    } else if (options?.conductorKey) {
+    } else if (loadedEnterprise && options?.conductorKey) {
       if (!options.conductorURL) {
         const dbosDomain = process.env.DBOS_DOMAIN || 'cloud.dbos.dev';
         options.conductorURL = `wss://${dbosDomain}/conductor/v1alpha1`;
@@ -616,15 +617,14 @@ export class DBOS {
       }
       const appName = DBOSExecutor.globalInstance.appName;
       assert(appName, 'Application name must be set in configuration in order to use DBOS Conductor');
-      executor.conductor = new Conductor(
-        executor,
+      executor.conductor = new loadedEnterprise.ConductorWebsocket(executor, {
         appName,
-        options.conductorKey,
-        options.conductorURL,
+        conductorKey: options.conductorKey,
+        conductorURL: options.conductorURL,
         executorMetadata,
-        conductorMetadataOnlyMode,
-      );
-      executor.conductor.dispatchLoop();
+        metadataOnlyMode: conductorMetadataOnlyMode,
+      });
+      executor.conductor.start();
     }
   }
 
@@ -689,11 +689,8 @@ export class DBOS {
 
       // Stop the conductor
       if (executor?.conductor) {
-        const conductor = executor.conductor;
-        conductor.stop();
-        // Grace only: a round still running past this is cut when the system database is
-        // destroyed, so shutdown waits at most this long plus one connect timeout.
-        await conductor.awaitRetention();
+        // A retention round still running past its grace is cut when the system database is destroyed.
+        await executor.conductor.stop();
         executor.conductor = undefined;
       }
 

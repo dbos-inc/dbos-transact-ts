@@ -20,7 +20,6 @@ import {
   serializeResError,
 } from '../src/serialization';
 import { randomUUID } from 'node:crypto';
-import { DBOSExecutor } from '../src/dbos-executor';
 import { z } from 'zod';
 
 /**
@@ -514,34 +513,6 @@ describe('portable-serialization-tests', () => {
     expect(pser.rows[0].serialization).toBe(DBOSPortableJSON.name());
     expect(pser.rows[0].output).toBe('"s-1-k:v@\\"m\\""');
 
-    // Messages
-    await checkMsgSer(drdwfh.workflowID, 'default', DBOSPortableJSON.name());
-    await checkMsgSer(drdwfh.workflowID, 'native', DBOSJSON.name());
-    //await checkMsgSer(drdwfh.workflowID, 'portable', DBOSPortableJSON.name()); // This got deleted
-
-    // Events
-    await checkEvtSer(wfhp.workflowID, 'defstat', DBOSPortableJSON.name());
-    await checkEvtSer(wfhp.workflowID, 'nstat', DBOSJSON.name());
-    await checkEvtSer(wfhp.workflowID, 'pstat', DBOSPortableJSON.name());
-
-    // Streams
-    await checkStreamSer(wfhp.workflowID, 'defstream', DBOSPortableJSON.name());
-    await checkStreamSer(wfhp.workflowID, 'nstream', DBOSJSON.name());
-    await checkStreamSer(wfhp.workflowID, 'pstream', DBOSPortableJSON.name());
-
-    // Test copy+paste workflow
-    const sysDb = DBOSExecutor.globalInstance!.systemDatabase;
-    // Export with children
-    const exported = await sysDb.exportWorkflow(wfhp.workflowID, true);
-
-    // Delete the workflow so it can be reimported
-    await DBOS.deleteWorkflow(wfhp.workflowID, true);
-
-    // Importing the workflow succeeds after deletion
-    await sysDb.importWorkflow(exported);
-
-    // Check everything still there
-    expect(await wfhp.getResult()).toBe('s-1-k:v@"m"');
     // Messages
     await checkMsgSer(drdwfh.workflowID, 'default', DBOSPortableJSON.name());
     await checkMsgSer(drdwfh.workflowID, 'native', DBOSJSON.name());

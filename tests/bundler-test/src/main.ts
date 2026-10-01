@@ -33,10 +33,20 @@ async function main() {
     const workflowResult = await BundlerTestApp.testWorkflow('bundler-test-input');
     console.log('Workflow result:', workflowResult);
 
-    console.log('DBOS bundler test completed successfully!');
-
     // Shutdown DBOS
     await DBOS.shutdown();
+
+    // Without @dbos-inc/dbos-enterprise installed, the bundle still builds and Conductor asks for the package.
+    try {
+      await DBOS.launch({ conductorKey: 'bundler-test-key', conductorURL: 'ws://127.0.0.1:1' });
+      throw new Error('Conductor launched without @dbos-inc/dbos-enterprise');
+    } catch (error) {
+      if (!(error instanceof Error) || !error.message.includes('npm install @dbos-inc/dbos-enterprise')) throw error;
+      console.log('Conductor asked for @dbos-inc/dbos-enterprise');
+    }
+    await DBOS.shutdown();
+
+    console.log('DBOS bundler test completed successfully!');
 
     process.exit(0);
   } catch (error) {

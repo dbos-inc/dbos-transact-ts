@@ -1,7 +1,6 @@
 import { randomUUID } from 'crypto';
 import { DBOS, DBOSClient, Debouncer } from '../src';
 import { DBOSConfig } from '../src/dbos-executor';
-import * as protocol from '../src/conductor/protocol';
 import { generateDBOSTestConfig, setUpDBOSTestSysDb, Event } from './helpers';
 
 // Custom workflow attributes: a JSON-serializable Record attached to a workflow at creation
@@ -214,25 +213,6 @@ describe('workflow-attributes', () => {
 
     sync.block.set();
     await handle.getResult();
-  });
-
-  test('attributes survive the conductor protocol as JSON', async () => {
-    const handle = await DBOS.startWorkflow(noopWorkflow, {
-      workflowAttributes: { customer: 'acme', tier: 1 },
-    })();
-    await handle.getResult();
-
-    const statuses = await DBOS.listWorkflows({ attributes: { customer: 'acme' } });
-    expect(statuses.map((s) => s.workflowID)).toEqual([handle.workflowID]);
-
-    // Attributes are JSON on the wire and survive response serialization.
-    const output = new protocol.WorkflowsOutput(statuses[0]);
-    expect(output.Attributes).toBeDefined();
-    expect(JSON.parse(output.Attributes!)).toEqual({ customer: 'acme', tier: 1 });
-
-    const response = new protocol.ListWorkflowsResponse('test-request', [output]);
-    const serialized = JSON.parse(JSON.stringify(response)) as { output: { Attributes: string }[] };
-    expect(JSON.parse(serialized.output[0].Attributes)).toEqual({ customer: 'acme', tier: 1 });
   });
 
   test('debounced user workflow gets attributes', async () => {

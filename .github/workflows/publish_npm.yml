@@ -51,6 +51,11 @@ jobs:
       - name: Stamp version
         run: npm pkg set version=${{ steps.version.outputs.version }}
         working-directory: ${{ matrix.package }}
+      - name: Stamp enterprise peer range
+        if: matrix.package == '.'
+        run: |
+          range=$(node publish/peer_range.mjs)
+          npm pkg set "peerDependencies.@dbos-inc/dbos-enterprise=$range"
       - run: npm run build
         working-directory: ${{ matrix.package }}
       - name: Publish ${{ steps.version.outputs.version }} to npm as ${{ steps.version.outputs.dist_tag }}
