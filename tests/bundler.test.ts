@@ -84,6 +84,7 @@ describe('DBOS Bundler Tests', () => {
       },
     );
 
+    expect(output).toContain('Conductor asked for @dbos-inc/dbos-enterprise');
     expect(output).toContain('DBOS bundler test completed successfully!');
     expect({ code, signal }).toEqual({ code: 0, signal: null });
   }, 300000);

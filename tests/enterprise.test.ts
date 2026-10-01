@@ -20,7 +20,7 @@ describe('enterprise-loader', () => {
     ['Package subpath \'./internal/utils\' is not defined by "exports"', 'ERR_PACKAGE_PATH_NOT_EXPORTED'],
     ["Cannot find module 'ws'", 'MODULE_NOT_FOUND'],
   ])('broken package is not reported as absent (%s)', (message, code) => {
-    jest.spyOn(enterprise.enterpriseLoader, 'require').mockImplementation(() => {
+    jest.replaceProperty(enterprise.enterpriseLoader, 'override', () => {
       throw Object.assign(new Error(message), { code });
     });
     let error: unknown;
@@ -37,7 +37,7 @@ describe('enterprise-loader', () => {
   });
 
   test('a package without the Conductor client is a version mismatch', () => {
-    jest.spyOn(enterprise.enterpriseLoader, 'require').mockReturnValue({});
+    jest.replaceProperty(enterprise.enterpriseLoader, 'override', () => ({}));
     expect(() => enterprise.load()).toThrow('it does not export ConductorWebsocket');
   });
 });

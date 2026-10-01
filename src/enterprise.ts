@@ -6,9 +6,9 @@ import { globalParams } from './utils';
 
 export const ENTERPRISE_PACKAGE = '@dbos-inc/dbos-enterprise';
 
+// Tests substitute the loaded module here.
 export const enterpriseLoader = {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  require: (id: string): unknown => require(id),
+  override: undefined as (() => unknown) | undefined,
 };
 
 /** The Conductor client, connected for the life of a launched DBOS instance. */
@@ -51,7 +51,13 @@ function versionMismatch(cause: string): DBOSInitializationError {
 export function load(): Enterprise {
   let loaded: Partial<Enterprise>;
   try {
-    loaded = enterpriseLoader.require(ENTERPRISE_PACKAGE) as Partial<Enterprise>;
+    // A literal specifier inside try: bundlers include the package when it is installed and tolerate its absence.
+    loaded = (
+      enterpriseLoader.override
+        ? enterpriseLoader.override()
+        : // eslint-disable-next-line @typescript-eslint/no-require-imports
+          require('@dbos-inc/dbos-enterprise')
+    ) as Partial<Enterprise>;
   } catch (e) {
     if (isEnterpriseMissing(e)) {
       throw new DBOSInitializationError(
