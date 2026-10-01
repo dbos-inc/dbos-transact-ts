@@ -25,22 +25,6 @@ async function ownerOf(client: Client, table: string, keyColumn: string, key: st
   return rows[0]?.application_name ?? null;
 }
 
-/** Insert a step row as though a peer application had recorded it. */
-async function insertPeerStep(
-  client: Client,
-  workflowID: string,
-  functionName: string,
-  options: { applicationName?: string | null } = {},
-): Promise<void> {
-  const owner = 'applicationName' in options ? options.applicationName : PEER;
-  await client.query(
-    `INSERT INTO dbos.operation_outputs
-       (workflow_uuid, function_id, function_name, output, serialization, completed_at_epoch_ms, application_name)
-     VALUES ($1, 0, $2, '1', 'portable_json', $3, $4)`,
-    [workflowID, functionName, Date.now(), owner],
-  );
-}
-
 /** Insert a workflow row as though a peer application had enqueued it. */
 async function insertPeerWorkflow(
   client: Client,
@@ -232,7 +216,6 @@ describe('application-name', () => {
     await mine.getResult();
 
     await insertPeerWorkflow(client, 'appname-filter-peer', { status: StatusString.SUCCESS });
-    await insertPeerStep(client, 'appname-filter-peer', 'theirStep');
     await insertPeerWorkflow(client, 'appname-filter-unclaimed', {
       status: StatusString.SUCCESS,
       applicationName: null,
