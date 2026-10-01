@@ -33,23 +33,17 @@ export interface Enterprise {
   ConductorWebsocket: ConductorFactory;
 }
 
-// Node reports a missing package by the specifier that failed, so a missing dependency of enterprise differs.
-function isEnterpriseMissing(e: unknown): boolean {
-  const err = e as { code?: string; message?: string };
-  return err?.code === 'MODULE_NOT_FOUND' && (err.message ?? '').split('\n')[0].includes(`'${ENTERPRISE_PACKAGE}'`);
-}
-
-function versionMismatch(cause: string): DBOSInitializationError {
-  // The package imports core internals, so failing to load is almost always a version mismatch.
+// One message for every failure: bundlers report an absent package too many different ways to tell apart reliably.
+function unavailable(cause: string): DBOSInitializationError {
   return new DBOSInitializationError(
-    `The ${ENTERPRISE_PACKAGE} package is installed but could not be loaded by @dbos-inc/dbos-sdk ${globalParams.dbosVersion}. ` +
-      `The two must share a minor version; upgrade both together. Cause: ${cause}`,
+    `Connecting to DBOS Conductor requires ${ENTERPRISE_PACKAGE}, at the same minor version as @dbos-inc/dbos-sdk ` +
+      `(${globalParams.dbosVersion}). Install or upgrade it with \`npm install ${ENTERPRISE_PACKAGE}\`. Cause: ${cause}`,
   );
 }
 
-/** Load @dbos-inc/dbos-enterprise, telling an absent package apart from one that fails to load. */
+/** Load @dbos-inc/dbos-enterprise. */
 export function load(): Enterprise {
-  let loaded: Partial<Enterprise>;
+  let loaded: Partial<Enterprise> | undefined;
   try {
     // A literal specifier inside try: bundlers include the package when it is installed and tolerate its absence.
     loaded = (
@@ -57,18 +51,12 @@ export function load(): Enterprise {
         ? enterpriseLoader.override()
         : // eslint-disable-next-line @typescript-eslint/no-require-imports
           require('@dbos-inc/dbos-enterprise')
-    ) as Partial<Enterprise>;
+    ) as Partial<Enterprise> | undefined;
   } catch (e) {
-    if (isEnterpriseMissing(e)) {
-      throw new DBOSInitializationError(
-        `Connecting to DBOS Conductor requires the ${ENTERPRISE_PACKAGE} package. Install it with \`npm install ${ENTERPRISE_PACKAGE}\`.`,
-        e as Error,
-      );
-    }
-    throw versionMismatch((e as Error).message?.split('\n')[0] ?? String(e));
+    throw unavailable(e instanceof Error ? e.message.split('\n')[0] : String(e));
   }
   if (typeof loaded?.ConductorWebsocket !== 'function') {
-    throw versionMismatch('it does not export ConductorWebsocket');
+    throw unavailable('it does not export ConductorWebsocket');
   }
   return loaded as Enterprise;
 }

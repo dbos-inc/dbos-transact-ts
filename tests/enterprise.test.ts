@@ -14,29 +14,21 @@ describe('enterprise-loader', () => {
   test('absent package gets the install hint', () => {
     expect(() => enterprise.load()).toThrow(DBOSInitializationError);
     expect(() => enterprise.load()).toThrow('npm install @dbos-inc/dbos-enterprise');
+    expect(() => enterprise.load()).toThrow("Cannot find module '@dbos-inc/dbos-enterprise'");
   });
 
   test.each([
-    ['Package subpath \'./internal/utils\' is not defined by "exports"', 'ERR_PACKAGE_PATH_NOT_EXPORTED'],
-    ["Cannot find module 'ws'", 'MODULE_NOT_FOUND'],
-  ])('broken package is not reported as absent (%s)', (message, code) => {
+    'Package subpath \'./internal/utils\' is not defined by "exports"',
+    'Cannot require module @dbos-inc/dbos-enterprise',
+  ])('a load failure names its cause (%s)', (message) => {
     jest.replaceProperty(enterprise.enterpriseLoader, 'override', () => {
-      throw Object.assign(new Error(message), { code });
+      throw new Error(message);
     });
-    let error: unknown;
-    try {
-      enterprise.load();
-    } catch (e) {
-      error = e;
-    }
-    expect(error).toBeInstanceOf(DBOSInitializationError);
-    const text = (error as Error).message;
-    expect(text).toContain('is installed but could not be loaded');
-    expect(text).toContain(message);
-    expect(text).not.toContain('npm install');
+    expect(() => enterprise.load()).toThrow('npm install @dbos-inc/dbos-enterprise');
+    expect(() => enterprise.load()).toThrow(`Cause: ${message}`);
   });
 
-  test('a package without the Conductor client is a version mismatch', () => {
+  test('a package without the Conductor client names that cause', () => {
     jest.replaceProperty(enterprise.enterpriseLoader, 'override', () => ({}));
     expect(() => enterprise.load()).toThrow('it does not export ConductorWebsocket');
   });
