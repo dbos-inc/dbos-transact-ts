@@ -1717,8 +1717,18 @@ export class SystemDatabase {
     }
   }
 
-  async getAllOperationResults(workflowID: string, limit?: number, offset?: number): Promise<operation_outputs[]> {
-    let query = `SELECT * FROM "${this.schemaName}".operation_outputs WHERE workflow_uuid=$1 ORDER BY function_id`;
+  async getAllOperationResults(
+    workflowID: string,
+    limit?: number,
+    offset?: number,
+    loadOutput: boolean = true,
+  ): Promise<operation_outputs[]> {
+    // Skip the output/error payload columns when the caller does not need them,
+    // mirroring how listWorkflows skips its payload joins when loadOutput is false.
+    const columns = loadOutput
+      ? '*'
+      : 'workflow_uuid, function_id, function_name, child_workflow_id, started_at_epoch_ms, completed_at_epoch_ms, application_name, retention_timestamp';
+    let query = `SELECT ${columns} FROM "${this.schemaName}".operation_outputs WHERE workflow_uuid=$1 ORDER BY function_id`;
     const params: unknown[] = [workflowID];
     if (limit !== undefined) {
       params.push(limit);

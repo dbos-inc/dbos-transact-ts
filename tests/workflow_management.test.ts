@@ -1253,6 +1253,30 @@ describe('test-list-steps', () => {
     expect(offsetOnly![0].name).toBe('DBOS.sleep');
   });
 
+  test('test-list-steps-load-output-false-skips-payloads', async () => {
+    const wfid = randomUUID();
+    const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).testWorkflow();
+    await handle.getResult();
+
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    const withOutput = await sysdb.getAllOperationResults(wfid);
+    expect(withOutput.length).toBe(3);
+    expect(withOutput[0].output).not.toBeUndefined();
+
+    const withoutOutput = await sysdb.getAllOperationResults(wfid, undefined, undefined, false);
+    expect(withoutOutput.length).toBe(3);
+    for (const row of withoutOutput) {
+      expect(row.output).toBeUndefined();
+      expect(row.error).toBeUndefined();
+    }
+
+    const steps = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid, false);
+    expect(steps!.length).toBe(3);
+    expect(steps![0].name).toBe('stepOne');
+    expect(steps![0].output).toBeNull();
+    expect(steps![0].error).toBeNull();
+  });
+
   test('test-list-workflows-has-parent', async () => {
     // Run a parent workflow that starts a child
     const parentId = randomUUID();
