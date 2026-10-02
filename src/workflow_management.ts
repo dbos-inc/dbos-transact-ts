@@ -35,7 +35,7 @@ export async function listWorkflowSteps(
     return undefined;
   }
 
-  const $steps = await sysdb.getAllOperationResults(workflowID, options?.limit, options?.offset);
+  const $steps = await sysdb.getAllOperationResults(workflowID, options?.limit, options?.offset, loadOutput);
 
   const steps: StepInfo[] = await Promise.all(
     $steps.map(async (step) => ({
