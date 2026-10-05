@@ -57,6 +57,9 @@ class NodePostgresTransactionHandler implements DataSourceTransactionHandler {
   async initialize(): Promise<void> {
     const pool = this.#poolField;
     this.#poolField = new Pool(this.config);
+    this.#poolField.on('error', (err: Error) => {
+      DBOS.logger.warn(`Unexpected error in NodePostgresDataSource pool: ${err}`);
+    });
     await pool?.end();
 
     if (this.options.runMigrations === false) {

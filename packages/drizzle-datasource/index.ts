@@ -73,6 +73,11 @@ class DrizzleTransactionHandler implements DataSourceTransactionHandler {
     const conn = this.#connection;
 
     const driver = this.configOrPool instanceof Pool ? this.configOrPool : new Pool(this.configOrPool);
+    if (!this.#userProvidedPool) {
+      driver.on('error', (err: Error) => {
+        DBOS.logger.warn(`Unexpected error in DrizzleDataSource pool: ${err}`);
+      });
+    }
     const db = drizzle({ client: driver, schema: this.entities });
     this.#connection = { db, end: this.#userProvidedPool ? async () => {} : () => driver.end() };
     await conn?.end();

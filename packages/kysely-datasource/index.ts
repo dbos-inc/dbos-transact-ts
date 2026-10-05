@@ -72,10 +72,18 @@ class KyselyTransactionHandler implements DataSourceTransactionHandler {
       this.poolConfig = poolConfigOrKysely;
       this.#kyselyDBField = new Kysely<DBOSKyselyTables>({
         dialect: new PostgresDialect({
-          pool: new Pool(poolConfigOrKysely),
+          pool: KyselyTransactionHandler.#createPool(poolConfigOrKysely),
         }),
       });
     }
+  }
+
+  static #createPool(config: PoolConfig): Pool {
+    const pool = new Pool(config);
+    pool.on('error', (err: Error) => {
+      DBOS.logger.warn(`Unexpected error in KyselyDataSource pool: ${err}`);
+    });
+    return pool;
   }
 
   async initialize(): Promise<void> {
@@ -83,7 +91,7 @@ class KyselyTransactionHandler implements DataSourceTransactionHandler {
       const kyselyDB = this.#kyselyDBField;
       this.#kyselyDBField = new Kysely<DBOSKyselyTables>({
         dialect: new PostgresDialect({
-          pool: new Pool(this.poolConfig),
+          pool: KyselyTransactionHandler.#createPool(this.poolConfig),
         }),
       });
       await kyselyDB?.destroy();
