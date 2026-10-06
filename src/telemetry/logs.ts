@@ -60,7 +60,7 @@ export interface StackTrace {
 }
 
 // Append the `cause` and `errors` (which Error.stack omits) to the stack; inspect() handles nested/circular/non-Error values.
-function errorStackWithCause(error: Error): string {
+export function errorStackWithCause(error: Error): string {
   let stack = error.stack ?? `${error.name}: ${error.message}`;
   if (error.cause !== undefined) stack += `\n  [cause]: ${inspect(error.cause, { depth: 10 })}`;
   const errors = (error as { errors?: unknown }).errors;

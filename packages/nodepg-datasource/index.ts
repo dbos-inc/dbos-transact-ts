@@ -19,6 +19,7 @@ import {
   initializeDataSourceSchemaPG,
   migrateDataSourcePG,
   verifyDataSourcePG,
+  guardDataSourcePoolPG,
 } from '@dbos-inc/dbos-sdk/datasource';
 import { Client, type ClientBase, type ClientConfig, Pool, type PoolConfig } from 'pg';
 import { AsyncLocalStorage } from 'node:async_hooks';
@@ -57,6 +58,7 @@ class NodePostgresTransactionHandler implements DataSourceTransactionHandler {
   async initialize(): Promise<void> {
     const pool = this.#poolField;
     this.#poolField = new Pool(this.config);
+    guardDataSourcePoolPG(this.#poolField, 'NodePostgresDataSource');
     await pool?.end();
 
     if (this.options.runMigrations === false) {

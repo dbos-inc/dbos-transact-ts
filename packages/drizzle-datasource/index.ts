@@ -17,6 +17,7 @@ import {
   initializeDataSourceSchemaPG,
   migrateDataSourcePG,
   verifyDataSourcePG,
+  guardDataSourcePoolPG,
 } from '@dbos-inc/dbos-sdk/datasource';
 import { drizzle, NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { AsyncLocalStorage } from 'async_hooks';
@@ -73,6 +74,9 @@ class DrizzleTransactionHandler implements DataSourceTransactionHandler {
     const conn = this.#connection;
 
     const driver = this.configOrPool instanceof Pool ? this.configOrPool : new Pool(this.configOrPool);
+    if (!this.#userProvidedPool) {
+      guardDataSourcePoolPG(driver, 'DrizzleDataSource');
+    }
     const db = drizzle({ client: driver, schema: this.entities });
     this.#connection = { db, end: this.#userProvidedPool ? async () => {} : () => driver.end() };
     await conn?.end();

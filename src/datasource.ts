@@ -16,7 +16,9 @@ import {
   DBOSWorkflowConflictError,
 } from './error';
 import { advisoryLockKey } from './system_database';
+import { errorStackWithCause } from './telemetry/logs';
 import { runWithTrace, SpanStatusCode } from './telemetry/traces';
+import type { Pool } from 'pg';
 import { SuperJSON } from 'superjson';
 
 /**
@@ -523,4 +525,21 @@ export function isPGRetriableTransactionError(error: unknown): boolean {
 
 export function isPGKeyConflictError(error: unknown): boolean {
   return getPGErrorCode(error) === '23505';
+}
+
+/** Add error handlers for active and idle connections */
+export function guardDataSourcePoolPG(pool: Pool, dataSourceType: string): void {
+  const warn = (where: string, err: Error) => {
+    const code = (err as { code?: unknown }).code;
+    (DBOSExecutor.globalInstance?.logger ?? DBOS.logger).warn(
+      `Unexpected error ${where}${typeof code === 'string' ? ` (${code})` : ''}: ${errorStackWithCause(err)}`,
+    );
+  };
+  // idle connections
+  pool.on('error', (err: Error) => warn(`in ${dataSourceType} pool`, err));
+
+  const onClientError = (err: Error) => warn(`on a ${dataSourceType} connection`, err);
+  // active connections
+  pool.on('acquire', (client) => client.on('error', onClientError));
+  pool.on('release', (_err, client) => client.removeListener('error', onClientError));
 }

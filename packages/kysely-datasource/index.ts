@@ -18,6 +18,7 @@ import {
   initializeDataSourceSchemaPG,
   migrateDataSourcePG,
   verifyDataSourcePG,
+  guardDataSourcePoolPG,
 } from '@dbos-inc/dbos-sdk/datasource';
 import { AsyncLocalStorage } from 'async_hooks';
 import { Kysely, sql, Transaction, IsolationLevel, PostgresDialect } from 'kysely';
@@ -72,10 +73,16 @@ class KyselyTransactionHandler implements DataSourceTransactionHandler {
       this.poolConfig = poolConfigOrKysely;
       this.#kyselyDBField = new Kysely<DBOSKyselyTables>({
         dialect: new PostgresDialect({
-          pool: new Pool(poolConfigOrKysely),
+          pool: KyselyTransactionHandler.#createPool(poolConfigOrKysely),
         }),
       });
     }
+  }
+
+  static #createPool(config: PoolConfig): Pool {
+    const pool = new Pool(config);
+    guardDataSourcePoolPG(pool, 'KyselyDataSource');
+    return pool;
   }
 
   async initialize(): Promise<void> {
@@ -83,7 +90,7 @@ class KyselyTransactionHandler implements DataSourceTransactionHandler {
       const kyselyDB = this.#kyselyDBField;
       this.#kyselyDBField = new Kysely<DBOSKyselyTables>({
         dialect: new PostgresDialect({
-          pool: new Pool(this.poolConfig),
+          pool: KyselyTransactionHandler.#createPool(this.poolConfig),
         }),
       });
       await kyselyDB?.destroy();
