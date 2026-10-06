@@ -18,6 +18,7 @@ import {
   initializeDataSourceSchemaPG,
   migrateDataSourcePG,
   verifyDataSourcePG,
+  guardDataSourcePoolPG,
 } from '@dbos-inc/dbos-sdk/datasource';
 import { AsyncLocalStorage } from 'async_hooks';
 import { Kysely, sql, Transaction, IsolationLevel, PostgresDialect } from 'kysely';
@@ -80,9 +81,7 @@ class KyselyTransactionHandler implements DataSourceTransactionHandler {
 
   static #createPool(config: PoolConfig): Pool {
     const pool = new Pool(config);
-    pool.on('error', (err: Error) => {
-      DBOS.logger.warn(`Unexpected error in KyselyDataSource pool: ${err}`);
-    });
+    guardDataSourcePoolPG(pool, 'KyselyDataSource');
     return pool;
   }
 
