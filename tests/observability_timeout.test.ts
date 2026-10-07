@@ -144,7 +144,7 @@ describe('observability-query-timeout', () => {
     try {
       const error = await whileWorkflowStatusIsLocked(() => sysdb.listWorkflows({}).catch((e: unknown) => e));
       expect(error).toBeInstanceOf(DBOSQueryTimeoutError);
-      // No cause: dbRetry unwraps cause chains and would retry the underlying 57014 forever.
+      // No cause: the typed timeout replaces the driver's query_canceled error.
       expect((error as { cause?: unknown }).cause).toBeUndefined();
       // The cancelled query leaves its connection usable.
       await expect(sysdb.listWorkflows({})).resolves.toBeDefined();
@@ -448,6 +448,33 @@ describe('system-database-idle-transaction-timeout', () => {
     } finally {
       await sysdb.destroy();
     }
+  });
+
+  test('a canceled query is not retriable, but an admin shutdown is', async () => {
+    const sysdb = makeSysDb();
+    try {
+      const client = await sysdb.pool.connect();
+      let error: unknown;
+      try {
+        await client.query('BEGIN');
+        await client.query('SET LOCAL statement_timeout = 10');
+        error = await client.query('SELECT pg_sleep(1)').catch((e: unknown) => e);
+        await client.query('ROLLBACK');
+      } finally {
+        client.release();
+      }
+      expect((error as DatabaseError).code).toBe('57014');
+      expect(retriablePostgresException(error)).toBe(false);
+    } finally {
+      await sysdb.destroy();
+    }
+
+    const canceled = new DatabaseError('canceling statement due to user request', 0, 'error');
+    canceled.code = '57014';
+    expect(retriablePostgresException(canceled)).toBe(false);
+    const shutdown = new DatabaseError('terminating connection due to administrator command', 0, 'error');
+    shutdown.code = '57P01';
+    expect(retriablePostgresException(shutdown)).toBe(true);
   });
 
   test('an idle-in-transaction kill is classified as retriable', () => {
