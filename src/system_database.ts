@@ -2209,7 +2209,6 @@ export class SystemDatabase {
    * Stream entries written by the discarded run remain in place, with the exception of
    * the close sentinel, which has to go so new entries can be appended.
    */
-  @dbRetry()
   async rewindWorkflow(
     workflowID: string,
     startStep: number,
@@ -2348,7 +2347,6 @@ export class SystemDatabase {
     return result[0];
   }
 
-  @dbRetry()
   async bulkForkWorkflows(
     originalWorkflowIDs: string[],
     forkedWorkflowIDs: string[],
