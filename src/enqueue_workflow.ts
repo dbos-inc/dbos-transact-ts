@@ -4,7 +4,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { DBOSExecutor } from './dbos-executor';
+import { checkRecordedChildStart, DBOSExecutor } from './dbos-executor';
 import {
   getCurrentContextStore,
   getNextWFID,
@@ -17,7 +17,7 @@ import { RetrievedHandle } from './workflow';
 import type { WorkflowHandle } from './workflow';
 import type { WorkflowStatusInternal } from './system_database';
 import { DBOSInvalidWorkflowTransitionError, DBOSQueueDuplicatedError, DBOSWorkflowIDInUseError } from './error';
-import { deserializeResError, serializeResError } from './serialization';
+import { serializeResError } from './serialization';
 import { globalParams } from './utils';
 
 /**
@@ -70,10 +70,16 @@ export async function enqueueWorkflowWithOptions<T = unknown>(
   if (callerID !== undefined && callerFunctionID !== undefined) {
     const recorded = await sysdb.getOperationResultAndThrowIfCancelled(callerID, callerFunctionID);
     if (recorded) {
-      if (recorded.error) {
-        throw await deserializeResError(recorded.error, recorded.serialization ?? null, exec.serializer);
-      }
-      return new RetrievedHandle<T>(recorded.childWorkflowID!);
+      return new RetrievedHandle<T>(
+        await checkRecordedChildStart(
+          recorded,
+          callerID,
+          callerFunctionID,
+          options.workflowName,
+          assignedID,
+          exec.serializer,
+        ),
+      );
     }
   }
 
