@@ -264,6 +264,46 @@ export interface InternalWorkflowParams extends WorkflowParams {
   readonly dequeuedStatus?: WorkflowStatusInternal;
   /** Set with dequeuedStatus: the token the claim wrote, never re-read from the row, where a later claim's token is not ours. */
   readonly ownerXid?: string;
+  /** Whether the caller chose the `workflowUUID` */
+  readonly explicitWorkflowID?: boolean;
+}
+
+/**
+ * Check a child start recorded at the caller's position against the start replaying it, and return
+ * the recorded child ID. If the workflow name differs, or the caller passed a workflow ID and that
+ * differs from what we have recorded, throw DBOSUnexpectedStepError.
+ */
+export async function checkRecordedChildStart(
+  recorded: SystemDatabaseStoredResult,
+  callerID: string,
+  callerFunctionID: number,
+  workflowName: string,
+  requestedWorkflowID: string | undefined,
+  serializer: DBOSSerializer,
+): Promise<string> {
+  if (recorded.functionName !== workflowName) {
+    throw new DBOSUnexpectedStepError(callerID, callerFunctionID, workflowName, recorded.functionName ?? '?');
+  }
+  if (recorded.error) {
+    throw await deserializeResError(recorded.error, recorded.serialization ?? null, serializer);
+  }
+  if (!recorded.childWorkflowID) {
+    throw new DBOSUnexpectedStepError(
+      callerID,
+      callerFunctionID,
+      `${workflowName} (workflow start)`,
+      `${workflowName} (step)`,
+    );
+  }
+  if (requestedWorkflowID !== undefined && recorded.childWorkflowID !== requestedWorkflowID) {
+    throw new DBOSUnexpectedStepError(
+      callerID,
+      callerFunctionID,
+      `${workflowName} (workflow ID ${requestedWorkflowID})`,
+      `${workflowName} (workflow ID ${recorded.childWorkflowID})`,
+    );
+  }
+  return recorded.childWorkflowID;
 }
 
 /** Options for assembling an ENQUEUED workflow row without persisting it. */
@@ -622,10 +662,12 @@ export class DBOSExecutor {
     if (callerFunctionID !== undefined && callerID !== undefined) {
       const result = await this.systemDatabase.getOperationResultAndThrowIfCancelled(callerID, callerFunctionID);
       if (result) {
-        if (result.error) {
-          throw await deserializeResError(result.error, result.serialization ?? null, this.serializer);
-        }
-        return new RetrievedHandle(result.childWorkflowID!);
+        // With a return existing policy, we expect the recorded wf ID to differ from whatever the caller specified.
+        const requestedID =
+          params.explicitWorkflowID && params.duplicationPolicy !== 'return-existing' ? workflowID : undefined;
+        return new RetrievedHandle(
+          await checkRecordedChildStart(result, callerID, callerFunctionID, wfname, requestedID, this.serializer),
+        );
       }
     }
     let ires: Awaited<ReturnType<SystemDatabase['initWorkflowStatus']>>;

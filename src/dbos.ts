@@ -1850,8 +1850,9 @@ export class DBOS {
 
     if (isChild) {
       const pwfid = ppctx!.workflowId!;
-      const wfParams: WorkflowParams = {
+      const wfParams: InternalWorkflowParams = {
         workflowUUID: wfId || pwfid + '-' + funcId,
+        explicitWorkflowID: wfId !== undefined,
         configuredInstance: instance,
         queueName,
         timeoutMS,
