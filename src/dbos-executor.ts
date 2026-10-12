@@ -387,7 +387,11 @@ export class DBOSExecutor {
     this.logger.info(`Executor ID: ${this.executorID}`);
     this.logger.info(`Application version: ${globalParams.appVersion}`);
 
-    await this.recoverPendingWorkflows([this.executorID]);
+    if (!skipSelfRecovery) {
+      await this.recoverPendingWorkflows([this.executorID]);
+    } else {
+      this.logger.info('Skipping executor self recovery because Conductor is enabled');
+    }
 
     this.logger.info('DBOS launched!');
   }

@@ -573,7 +573,8 @@ export class DBOS {
       await ds.initialize();
     }
 
-    await executor.init();
+    const conductorEnabled = globalParams.dbosCloud || !!options?.conductorKey;
+    await executor.init(conductorEnabled);
 
     // Register the current application version
     await executor.systemDatabase.createApplicationVersion(globalParams.appVersion);
