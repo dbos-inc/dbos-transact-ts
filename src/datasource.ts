@@ -357,7 +357,7 @@ function createTransactionCompletionTablePG(schemaName: string): string {
   return `
   CREATE TABLE IF NOT EXISTS ${quoteIdent(schemaName)}.transaction_completion (
     workflow_id TEXT NOT NULL,
-    function_num INT NOT NULL,
+    function_num INT4 NOT NULL,
     output TEXT,
     error TEXT,
     created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM now())*1000)::bigint,
