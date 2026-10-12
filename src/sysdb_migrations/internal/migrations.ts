@@ -1137,7 +1137,7 @@ $$ LANGUAGE plpgsql;`,
     // messages the discarded run took delivery of.
     {
       name: '121_notifications_consumed_by_function_id',
-      pg: [`ALTER TABLE "${schemaName}"."notifications" ADD COLUMN IF NOT EXISTS "consumed_by_function_id" INTEGER`],
+      pg: [`ALTER TABLE "${schemaName}"."notifications" ADD COLUMN IF NOT EXISTS "consumed_by_function_id" INT4`],
     },
     // Holds only active workflows with a deadline, so the timeout sweep reads just the expired ones.
     {

@@ -1,7 +1,7 @@
 import { DBOS, ConfiguredInstance, DBOSClient } from '../src';
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
-import { generateDBOSTestConfig, setUpDBOSTestSysDb, dropDatabase } from './helpers';
-import { sleepms } from '../src/utils';
+import { generateDBOSTestConfig, setUpDBOSTestSysDb, dropDatabase, reexecuteWorkflowById } from './helpers';
+import { dbRetryConfig, sleepms } from '../src/utils';
 
 describe('dynamic-scheduler-tests', () => {
   let config: DBOSConfig;
@@ -39,6 +39,78 @@ describe('dynamic-scheduler-tests', () => {
 
   const regMyWf = DBOS.registerWorkflow(myWorkflow, { name: 'myWorkflow' });
   const regOtherWf = DBOS.registerWorkflow(otherWorkflow, { name: 'otherWorkflow' });
+
+  const createNightlyWorkflow = DBOS.registerWorkflow(
+    async () => {
+      try {
+        await DBOS.createSchedule({ scheduleName: 'nightly', workflowFn: regMyWf, schedule: '0 0 * * *' });
+      } catch {
+        return 'failed';
+      }
+      return 'created';
+    },
+    { name: 'createNightlyWorkflow' },
+  );
+
+  test('schedule-failure-replays-recorded-error', async () => {
+    await DBOS.createSchedule({ scheduleName: 'nightly', workflowFn: regMyWf, schedule: '0 0 * * *' });
+    const handle = await DBOS.startWorkflow(createNightlyWorkflow)();
+    await expect(handle.getResult()).resolves.toBe('failed');
+    const steps = await DBOS.listWorkflowSteps(handle.workflowID);
+    expect(steps?.map((s) => s.name)).toEqual(['DBOS.createSchedule']);
+    expect(steps![0].error?.message).toContain('already exists');
+    expect(steps![0].output).toBeNull();
+
+    // With the schedule gone, a replay re-throws the recorded error instead of re-creating it.
+    await DBOS.deleteSchedule('nightly');
+    const replayed = await reexecuteWorkflowById(handle.workflowID);
+    await expect(replayed.getResult()).resolves.toBe('failed');
+    expect(await DBOS.getSchedule('nightly')).toBeNull();
+  });
+
+  test('schedule-transient-error-is-retried-not-recorded', async () => {
+    const savedBackoff = { ...dbRetryConfig };
+    dbRetryConfig.initialBackoffSec = 0.05;
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    const spy = jest
+      .spyOn(sysdb, 'createSchedule')
+      .mockRejectedValueOnce(Object.assign(new Error('connection lost'), { code: 'ECONNRESET' }));
+    try {
+      const handle = await DBOS.startWorkflow(createNightlyWorkflow)();
+      await expect(handle.getResult()).resolves.toBe('created');
+      expect(spy).toHaveBeenCalledTimes(2);
+      const steps = await DBOS.listWorkflowSteps(handle.workflowID);
+      expect(steps?.map((s) => s.name)).toEqual(['DBOS.createSchedule']);
+      expect(steps![0].error).toBeNull();
+      expect(await DBOS.getSchedule('nightly')).not.toBeNull();
+    } finally {
+      spy.mockRestore();
+      Object.assign(dbRetryConfig, savedBackoff);
+    }
+  });
+
+  test('schedule-non-retriable-database-error-is-recorded', async () => {
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    // XX000 is internal_error, which is not retriable.
+    const spy = jest
+      .spyOn(sysdb, 'createSchedule')
+      .mockRejectedValue(Object.assign(new Error('disk full'), { code: 'XX000' }));
+    let workflowID: string;
+    try {
+      const handle = await DBOS.startWorkflow(createNightlyWorkflow)();
+      workflowID = handle.workflowID;
+      await expect(handle.getResult()).resolves.toBe('failed');
+      const steps = await DBOS.listWorkflowSteps(workflowID);
+      expect(steps![0].error?.message).toBe('disk full');
+    } finally {
+      spy.mockRestore();
+    }
+
+    // Once retries give up, the error is the operation's answer: a replay re-throws it rather than re-running.
+    const replayed = await reexecuteWorkflowById(workflowID);
+    await expect(replayed.getResult()).resolves.toBe('failed');
+    expect(await DBOS.getSchedule('nightly')).toBeNull();
+  });
 
   test('schedule-crud', async () => {
     // Create a schedule with context

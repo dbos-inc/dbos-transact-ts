@@ -60,7 +60,13 @@ import {
   DEBUG_TRIGGER_PARTITIONED_DEQUEUE_AFTER_CANDIDATES,
   debugTriggerPoint,
 } from './debugpoint';
-import { DBOSPortableJSON, DBOSSerializer } from './serialization';
+import {
+  DBOSPortableJSON,
+  DBOSSerializer,
+  deserializeResError,
+  deserializeValue,
+  serializeResErrorWithSerializer,
+} from './serialization';
 
 /* Result from Sys DB */
 export interface SystemDatabaseStoredResult {
@@ -687,6 +693,8 @@ export function isPgDatabaseError(e: unknown): e is DatabaseError & AnyErr {
 function sqlStateLooksRetryable(sqlstate: string | undefined): boolean {
   if (!sqlstate) return false;
   if (RETRY_SQLSTATE_CODES.has(sqlstate)) return true;
+  // query_canceled (a statement timeout or an explicit cancel); retrying would undo it
+  if (sqlstate === '57014') return false;
   const prefix = sqlstate.toString().slice(0, 2);
   return RETRY_SQLSTATE_PREFIXES.has(prefix);
 }
@@ -1022,7 +1030,7 @@ export class SystemDatabase {
         return result;
       } catch (e) {
         await client.query('ROLLBACK').catch(() => {});
-        // No `cause`: dbRetry walks the cause chain and would retry 57014 forever as an operator intervention.
+        // No `cause`: the typed timeout replaces the driver's query_canceled error.
         throw isStatementTimeout(e) ? new DBOSQueryTimeoutError(timeoutMs) : e;
       }
     } finally {
@@ -1717,6 +1725,7 @@ export class SystemDatabase {
     }
   }
 
+  @dbRetry()
   async getAllOperationResults(
     workflowID: string,
     limit?: number,
@@ -1777,43 +1786,89 @@ export class SystemDatabase {
     }
   }
 
-  @dbRetry()
+  /** Checkpoint an operation's failure so a replay re-throws it instead of re-running. */
+  async recordOperationError(
+    workflowID: string,
+    functionID: number,
+    functionName: string,
+    startTimeEpochMs: number,
+    error: unknown,
+    childWorkflowID?: string,
+  ): Promise<void> {
+    let serialized: { serializedValue: string | null; serialization: string | null };
+    try {
+      serialized = await serializeResErrorWithSerializer(error as Error, this.serializer, this.serializer.name());
+      await deserializeValue(serialized.serializedValue, serialized.serialization, this.serializer);
+    } catch (serError) {
+      // A checkpoint replay could not load would wedge the workflow; leave it unrecorded so replay re-runs.
+      this.logger.warn(
+        `Not checkpointing ${functionName} failure in workflow ${workflowID}: its error cannot be serialized: ${String(serError)}`,
+      );
+      return;
+    }
+    await this.recordOperationResult(workflowID, functionID, functionName, true, startTimeEpochMs, Date.now(), {
+      error: serialized.serializedValue,
+      serialization: serialized.serialization,
+      childWorkflowID,
+    });
+  }
+
   async runTransactionalStep(
     workflowID: string,
     functionID: number,
     functionName: string,
     callback: (client: PoolClient) => Promise<string | null>,
   ): Promise<SystemDatabaseStoredResult | undefined> {
-    const client = await this.connect();
-    try {
-      await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
-      const existing = await this.#getOperationResultAndThrowIfCancelled(client, workflowID, functionID);
-      if (existing !== undefined) {
+    const startTime = Date.now();
+    // The latest attempt's callback failure, told apart from a check or checkpoint failure.
+    let callbackError: unknown = undefined;
+    const attempt = async (): Promise<SystemDatabaseStoredResult | undefined> => {
+      callbackError = undefined;
+      const client = await this.connect();
+      try {
+        await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
+        const existing = await this.#getOperationResultAndThrowIfCancelled(client, workflowID, functionID);
+        if (existing !== undefined) {
+          await client.query('ROLLBACK');
+          return existing;
+        }
+        let output: string | null;
+        try {
+          output = await callback(client);
+        } catch (e) {
+          callbackError = e;
+          throw e;
+        }
+        await this.recordOperationResultInternal(
+          client,
+          workflowID,
+          functionID,
+          functionName,
+          true,
+          startTime,
+          Date.now(),
+          {
+            output,
+          },
+        );
+        await client.query('COMMIT');
+        await debugTriggerPoint(DEBUG_TRIGGER_STEP_COMMIT);
+        return undefined;
+      } catch (e) {
         await client.query('ROLLBACK');
-        return existing;
+        throw e;
+      } finally {
+        client.release();
       }
-      const startTime = Date.now();
-      const output = await callback(client);
-      await this.recordOperationResultInternal(
-        client,
-        workflowID,
-        functionID,
-        functionName,
-        true,
-        startTime,
-        Date.now(),
-        {
-          output,
-        },
-      );
-      await client.query('COMMIT');
-      await debugTriggerPoint(DEBUG_TRIGGER_STEP_COMMIT);
-      return undefined;
+    };
+    try {
+      return await withDbRetry(attempt);
     } catch (e) {
-      await client.query('ROLLBACK');
+      // Retries are done and the transaction rolled back, so record the callback's own failure separately.
+      if (e === callbackError) {
+        await this.recordOperationError(workflowID, functionID, functionName, startTime, e);
+      }
       throw e;
-    } finally {
-      client.release();
     }
   }
 
@@ -1868,6 +1923,7 @@ export class SystemDatabase {
   }
 
   // ==================== Workflow Management ====================
+  @dbRetry()
   async cancelWorkflows(workflowIDs: string[], cancelChildren: boolean = false): Promise<void> {
     if (!cancelChildren) {
       await this.#cancelWorkflows(workflowIDs);
@@ -1904,6 +1960,7 @@ export class SystemDatabase {
     await this.#checkIfCanceled(this.pool, workflowID);
   }
 
+  @dbRetry()
   async resumeWorkflows(workflowIDs: string[], queueName?: string): Promise<void> {
     const client = await this.connect();
     try {
@@ -1955,6 +2012,7 @@ export class SystemDatabase {
     );
   }
 
+  @dbRetry()
   async setWorkflowDelay(workflowID: string, delayUntilEpochMS: number): Promise<void> {
     await this.pool.query(
       `UPDATE "${this.schemaName}".workflow_status
@@ -2087,6 +2145,7 @@ export class SystemDatabase {
     return result.rows.map((row) => row.workflow_uuid);
   }
 
+  @dbRetry()
   async getWorkflowChildren(workflowID: string): Promise<string[]> {
     // BFS to find all descendant workflows
     const descendants = new Set<string>();
@@ -2101,6 +2160,7 @@ export class SystemDatabase {
     return [...descendants];
   }
 
+  @dbRetry()
   async deleteWorkflows(workflowIDs: string[], deleteChildren: boolean = false): Promise<void> {
     const allIds = [...workflowIDs];
     if (deleteChildren) {
@@ -2149,7 +2209,6 @@ export class SystemDatabase {
    * Stream entries written by the discarded run remain in place, with the exception of
    * the close sentinel, which has to go so new entries can be appended.
    */
-  @dbRetry()
   async rewindWorkflow(
     workflowID: string,
     startStep: number,
@@ -2849,6 +2908,8 @@ export class SystemDatabase {
   ): Promise<void> {
     topic = topic ?? this.nullTopic;
     const messageUUID = idempotencyKey ? `${idempotencyKey}::${destinationID}` : randomUUID();
+    const startTime = Date.now();
+    let missing: DBOSNonExistentWorkflowError | undefined;
     const client: PoolClient = await this.connect();
 
     try {
@@ -2868,12 +2929,17 @@ export class SystemDatabase {
       const err: DatabaseError = error as DatabaseError;
       if (err.code === '23503') {
         // Foreign key constraint violation (only expected for the INSERT query)
-        throw new DBOSNonExistentWorkflowError(`Sent to non-existent destination workflow UUID: ${destinationID}`);
+        missing = new DBOSNonExistentWorkflowError(`Sent to non-existent destination workflow UUID: ${destinationID}`);
       } else {
         throw err;
       }
     } finally {
       client.release();
+    }
+    if (missing) {
+      // A missing destination is the send's answer; the transaction has rolled back, so record it separately.
+      await this.recordOperationError(workflowID, functionID, DBOS_FUNCNAME_SEND, startTime, missing);
+      throw missing;
     }
   }
 
@@ -3951,6 +4017,7 @@ export class SystemDatabase {
   }
 
   // ==================== Queries & Maintenance ====================
+  @dbRetry()
   async listWorkflows(input: GetWorkflowsInput): Promise<WorkflowStatusInternal[]> {
     const schemaName = this.schemaName;
     const selectColumns = [
@@ -5173,6 +5240,9 @@ export class SystemDatabase {
     if (result !== undefined) {
       if (result.functionName !== functionName) {
         throw new DBOSUnexpectedStepError(workflowID, functionID, functionName, result.functionName!);
+      }
+      if (result.error) {
+        throw await deserializeResError(result.error, result.serialization ?? null, this.serializer);
       }
       return result.output;
     }
