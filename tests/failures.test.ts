@@ -1,4 +1,4 @@
-import { DBOS, ConfiguredInstance, WorkflowHandle } from '../src/';
+import { DBOS, ConfiguredInstance } from '../src/';
 import { generateDBOSTestConfig, reexecuteWorkflowById, setUpDBOSTestSysDb } from './helpers';
 import { randomUUID } from 'node:crypto';
 import { StatusString } from '../src/workflow';
@@ -310,53 +310,6 @@ describe('failures-tests', () => {
     expect(getDBOSErrorCode(err!)).toBe(UnexpectedStep);
   });
 
-  test('non-deterministic-child-start-order', async () => {
-    const prefix = randomUUID();
-    NDWFChildOrder.prefix = prefix;
-    NDWFChildOrder.swap = false;
-    const parentID = `${prefix}-parent`;
-    await DBOS.withNextWorkflowID(parentID, async () => {
-      await expect(NDWFChildOrder.parent()).resolves.toEqual([
-        ['x', 'x'],
-        ['y', 'y'],
-      ]);
-    });
-
-    // The replay starts the same two children in the other order, so each start finds the other
-    // branch's child recorded at its position. Unchecked, each branch would silently get the other's
-    // handle and result: [['y', 'x'], ['x', 'y']].
-    NDWFChildOrder.swap = true;
-    const ndh = await reexecuteWorkflowById(parentID);
-    const err = await ndh.getResult().then(
-      () => undefined,
-      (e: Error) => e,
-    );
-    expect(getDBOSErrorCode(err!)).toBe(UnexpectedStep);
-  });
-
-  test('non-deterministic-child-enqueue-order', async () => {
-    await DBOS.registerQueue(NDWF_CHILD_QUEUE);
-    const prefix = randomUUID();
-    NDWFChildOrder.prefix = prefix;
-    NDWFChildOrder.swap = false;
-    const parentID = `${prefix}-enqueue-parent`;
-    await DBOS.withNextWorkflowID(parentID, async () => {
-      await expect(NDWFChildOrder.enqueueParent()).resolves.toEqual([
-        ['x', 'x'],
-        ['y', 'y'],
-      ]);
-    });
-
-    // Same swap, through the options-based enqueue path.
-    NDWFChildOrder.swap = true;
-    const ndh = await reexecuteWorkflowById(parentID);
-    const err = await ndh.getResult().then(
-      () => undefined,
-      (e: Error) => e,
-    );
-    expect(getDBOSErrorCode(err!)).toBe(UnexpectedStep);
-  });
-
   test('non-deterministic-child-name', async () => {
     const parentID = randomUUID();
     NDWFChildName.flag = true;
@@ -637,53 +590,6 @@ class NDWFT {
   static async nondetWorkflow() {
     if (NDWFT.flag) return NDWFT.stepOne();
     return NDWFT.stepTwo();
-  }
-}
-
-const NDWF_CHILD_QUEUE = 'ndwf-child-queue';
-
-// A parent that starts two explicitly-ID'd children in an order the test flips between runs.
-class NDWFChildOrder {
-  static prefix = '';
-  static swap = false;
-
-  @DBOS.workflow()
-  static async child(tag: string) {
-    return Promise.resolve(tag);
-  }
-
-  @DBOS.workflow()
-  static async parent() {
-    const tags = NDWFChildOrder.swap ? ['y', 'x'] : ['x', 'y'];
-    const handles: WorkflowHandle<string>[] = [];
-    for (const tag of tags) {
-      handles.push(
-        await DBOS.startWorkflow(NDWFChildOrder, { workflowID: `${NDWFChildOrder.prefix}-${tag}` }).child(tag),
-      );
-    }
-    const results = await Promise.all(handles.map((h) => h.getResult()));
-    return tags.map((tag, i) => [tag, results[i]]);
-  }
-
-  @DBOS.workflow()
-  static async enqueueParent() {
-    const tags = NDWFChildOrder.swap ? ['y', 'x'] : ['x', 'y'];
-    const handles: WorkflowHandle<string>[] = [];
-    for (const tag of tags) {
-      handles.push(
-        await DBOS.enqueueWorkflowWithOptions<string>(
-          {
-            queueName: NDWF_CHILD_QUEUE,
-            workflowName: 'child',
-            workflowClassName: 'NDWFChildOrder',
-            workflowID: `${NDWFChildOrder.prefix}-${tag}`,
-          },
-          tag,
-        ),
-      );
-    }
-    const results = await Promise.all(handles.map((h) => h.getResult()));
-    return tags.map((tag, i) => [tag, results[i]]);
   }
 }
 
