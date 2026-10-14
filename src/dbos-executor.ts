@@ -622,6 +622,9 @@ export class DBOSExecutor {
     if (callerFunctionID !== undefined && callerID !== undefined) {
       const result = await this.systemDatabase.getOperationResultAndThrowIfCancelled(callerID, callerFunctionID);
       if (result) {
+        if (result.functionName !== wfname) {
+          throw new DBOSUnexpectedStepError(callerID, callerFunctionID, wfname, result.functionName ?? '?');
+        }
         if (result.error) {
           throw await deserializeResError(result.error, result.serialization ?? null, this.serializer);
         }
