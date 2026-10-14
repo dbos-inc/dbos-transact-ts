@@ -48,6 +48,7 @@ describe('enterprise-launch', () => {
 
   afterEach(async () => {
     await DBOS.shutdown();
+    jest.restoreAllMocks();
   });
 
   test('refused launch leaves nothing behind', async () => {
@@ -91,15 +92,11 @@ describe('enterprise-launch', () => {
       ConductorWebsocket: FakeConductor,
     }));
 
-    try {
-      await DBOS.launch({ conductorKey: 'test-key', conductorURL: 'ws://127.0.0.1:1' });
-      expect(recoverSpy).not.toHaveBeenCalled();
-      await DBOS.shutdown();
+    await DBOS.launch({ conductorKey: 'test-key', conductorURL: 'ws://127.0.0.1:1' });
+    expect(recoverSpy).not.toHaveBeenCalled();
+    await DBOS.shutdown();
 
-      await DBOS.launch();
-      expect(recoverSpy).toHaveBeenCalled();
-    } finally {
-      recoverSpy.mockRestore();
-    }
+    await DBOS.launch();
+    expect(recoverSpy).toHaveBeenCalled();
   });
 });

@@ -390,7 +390,7 @@ export class DBOSExecutor {
     if (!this.conductor) {
       await this.recoverPendingWorkflows([this.executorID]);
     } else {
-      this.logger.info('Skipping executor self recovery because Conductor is enabled');
+      this.logger.debug('Skipping executor self recovery because Conductor is enabled');
     }
 
     this.logger.info('DBOS launched!');
