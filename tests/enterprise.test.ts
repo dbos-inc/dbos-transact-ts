@@ -1,5 +1,5 @@
 import { DBOS } from '../src';
-import { DBOSConfig } from '../src/dbos-executor';
+import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import * as enterprise from '../src/enterprise';
 import { DBOSInitializationError } from '../src/error';
 import { globalParams } from '../src/utils';
@@ -48,6 +48,7 @@ describe('enterprise-launch', () => {
 
   afterEach(async () => {
     await DBOS.shutdown();
+    jest.restoreAllMocks();
   });
 
   test('refused launch leaves nothing behind', async () => {
@@ -77,5 +78,25 @@ describe('enterprise-launch', () => {
         process.env.DBOS_SYSTEM_DATABASE_URL = originalSysDbUrl;
       }
     }
+  });
+
+  test('skips self recovery when Conductor is enabled', async () => {
+    class FakeConductor implements enterprise.ConductorConnection {
+      start() {}
+      stop() {
+        return Promise.resolve();
+      }
+    }
+    const recoverSpy = jest.spyOn(DBOSExecutor.prototype, 'recoverPendingWorkflows');
+    jest.replaceProperty(enterprise.enterpriseLoader, 'override', () => ({
+      ConductorWebsocket: FakeConductor,
+    }));
+
+    await DBOS.launch({ conductorKey: 'test-key', conductorURL: 'ws://127.0.0.1:1' });
+    expect(recoverSpy).not.toHaveBeenCalled();
+    await DBOS.shutdown();
+
+    await DBOS.launch();
+    expect(recoverSpy).toHaveBeenCalled();
   });
 });

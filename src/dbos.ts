@@ -573,19 +573,6 @@ export class DBOS {
       await ds.initialize();
     }
 
-    await executor.init();
-
-    // Register the current application version
-    await executor.systemDatabase.createApplicationVersion(globalParams.appVersion);
-    const latest = await executor.systemDatabase.getLatestApplicationVersion();
-    if (latest.versionName !== globalParams.appVersion) {
-      executor.logger.warn(
-        `Current version '${globalParams.appVersion}' is not the latest version. Latest version is '${latest.versionName}'.`,
-      );
-    }
-
-    await DBOSExecutor.globalInstance.initEventReceivers(this.#dbosConfig?.listenQueues || null);
-
     const conductorMetadataOnlyMode = options?.conductorMetadataOnlyMode === true;
     if (globalParams.dbosCloud) {
       const cloudAppName = process.env.DBOS__CONDUCTOR_APP_NAME;
@@ -599,7 +586,6 @@ export class DBOS {
           conductorURL: cloudConductorURL,
           metadataOnlyMode: conductorMetadataOnlyMode,
         });
-        executor.conductor.start();
       }
     } else if (loadedEnterprise && options?.conductorKey) {
       if (!options.conductorURL) {
@@ -624,6 +610,22 @@ export class DBOS {
         executorMetadata,
         metadataOnlyMode: conductorMetadataOnlyMode,
       });
+    }
+
+    await executor.init();
+
+    // Register the current application version
+    await executor.systemDatabase.createApplicationVersion(globalParams.appVersion);
+    const latest = await executor.systemDatabase.getLatestApplicationVersion();
+    if (latest.versionName !== globalParams.appVersion) {
+      executor.logger.warn(
+        `Current version '${globalParams.appVersion}' is not the latest version. Latest version is '${latest.versionName}'.`,
+      );
+    }
+
+    await DBOSExecutor.globalInstance.initEventReceivers(this.#dbosConfig?.listenQueues || null);
+
+    if (executor.conductor) {
       executor.conductor.start();
     }
   }

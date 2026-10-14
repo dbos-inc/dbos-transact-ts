@@ -387,7 +387,9 @@ export class DBOSExecutor {
     this.logger.info(`Executor ID: ${this.executorID}`);
     this.logger.info(`Application version: ${globalParams.appVersion}`);
 
-    await this.recoverPendingWorkflows([this.executorID]);
+    if (!this.conductor) {
+      await this.recoverPendingWorkflows([this.executorID]);
+    }
 
     this.logger.info('DBOS launched!');
   }
