@@ -16,7 +16,12 @@ import { buildEnqueueStatus, type EnqueueWorkflowOptions } from './enqueue_optio
 import { RetrievedHandle } from './workflow';
 import type { WorkflowHandle } from './workflow';
 import type { WorkflowStatusInternal } from './system_database';
-import { DBOSInvalidWorkflowTransitionError, DBOSQueueDuplicatedError, DBOSWorkflowIDInUseError } from './error';
+import {
+  DBOSInvalidWorkflowTransitionError,
+  DBOSQueueDuplicatedError,
+  DBOSUnexpectedStepError,
+  DBOSWorkflowIDInUseError,
+} from './error';
 import { deserializeResError, serializeResError } from './serialization';
 import { globalParams } from './utils';
 
@@ -70,6 +75,14 @@ export async function enqueueWorkflowWithOptions<T = unknown>(
   if (callerID !== undefined && callerFunctionID !== undefined) {
     const recorded = await sysdb.getOperationResultAndThrowIfCancelled(callerID, callerFunctionID);
     if (recorded) {
+      if (recorded.functionName !== options.workflowName) {
+        throw new DBOSUnexpectedStepError(
+          callerID,
+          callerFunctionID,
+          options.workflowName,
+          recorded.functionName ?? '?',
+        );
+      }
       if (recorded.error) {
         throw await deserializeResError(recorded.error, recorded.serialization ?? null, exec.serializer);
       }

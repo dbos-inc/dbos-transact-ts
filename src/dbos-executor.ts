@@ -626,6 +626,9 @@ export class DBOSExecutor {
     if (callerFunctionID !== undefined && callerID !== undefined) {
       const result = await this.systemDatabase.getOperationResultAndThrowIfCancelled(callerID, callerFunctionID);
       if (result) {
+        if (result.functionName !== wfname) {
+          throw new DBOSUnexpectedStepError(callerID, callerFunctionID, wfname, result.functionName ?? '?');
+        }
         if (result.error) {
           throw await deserializeResError(result.error, result.serialization ?? null, this.serializer);
         }
@@ -1221,21 +1224,7 @@ export class DBOSExecutor {
         // complete. Don't checkpoint it, so a resumed workflow re-executes it.
         throw e;
       }
-      const sererr = await serializeResErrorWithSerializer(e as Error, this.serializer, this.serializer.name());
-      await this.systemDatabase.recordOperationResult(
-        workflowID,
-        functionID,
-        functionName,
-        false,
-        startTime,
-        Date.now(),
-        {
-          error: sererr.serializedValue,
-          serialization: sererr.serialization,
-          childWorkflowID: childWfId,
-        },
-      );
-
+      await this.systemDatabase.recordOperationError(workflowID, functionID, functionName, startTime, e, childWfId);
       throw e;
     }
   }

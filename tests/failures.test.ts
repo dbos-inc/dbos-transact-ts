@@ -310,6 +310,23 @@ describe('failures-tests', () => {
     expect(getDBOSErrorCode(err!)).toBe(UnexpectedStep);
   });
 
+  test('non-deterministic-child-name', async () => {
+    const parentID = randomUUID();
+    NDWFChildName.flag = true;
+    await DBOS.withNextWorkflowID(parentID, async () => {
+      await expect(NDWFChildName.parent()).resolves.toBe('A');
+    });
+
+    // The replay starts a different child workflow at the position where childA was recorded.
+    NDWFChildName.flag = false;
+    const ndh = await reexecuteWorkflowById(parentID);
+    const err = await ndh.getResult().then(
+      () => undefined,
+      (e: Error) => e,
+    );
+    expect(getDBOSErrorCode(err!)).toBe(UnexpectedStep);
+  });
+
   test('not launched', async () => {
     await DBOS.shutdown();
     const df = DBOS.registerWorkflow(
@@ -573,5 +590,28 @@ class NDWFT {
   static async nondetWorkflow() {
     if (NDWFT.flag) return NDWFT.stepOne();
     return NDWFT.stepTwo();
+  }
+}
+
+// A parent that starts one of two child workflows, chosen by a flag the test flips between runs.
+class NDWFChildName {
+  static flag = true;
+
+  @DBOS.workflow()
+  static async childA() {
+    return Promise.resolve('A');
+  }
+
+  @DBOS.workflow()
+  static async childB() {
+    return Promise.resolve('B');
+  }
+
+  @DBOS.workflow()
+  static async parent() {
+    const h = NDWFChildName.flag
+      ? await DBOS.startWorkflow(NDWFChildName).childA()
+      : await DBOS.startWorkflow(NDWFChildName).childB();
+    return h.getResult();
   }
 }

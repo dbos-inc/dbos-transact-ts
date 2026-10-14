@@ -11,7 +11,7 @@ import { Client } from 'pg';
 import { WorkflowHandle, WorkflowStatus } from '../src/workflow';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as abortableSleep } from 'node:timers/promises';
-import { globalParams, sleepms } from '../src/utils';
+import { dbRetryConfig, globalParams, sleepms } from '../src/utils';
 import { SystemDatabase } from '../src/system_database';
 import { GlobalLogger } from '../src/telemetry/logs';
 import { getWorkflow, listQueuedWorkflows, listWorkflows } from '../src/workflow_management';
@@ -609,6 +609,114 @@ describe('workflow-management-tests', () => {
 
   const simpleResumeWorkflow = DBOS.registerWorkflow(async (x: number) => Promise.resolve(x), {
     name: 'simpleResumeWorkflow',
+  });
+
+  const forkTargetWorkflow = DBOS.registerWorkflow(async (x: number) => Promise.resolve(x), {
+    name: 'forkTargetWorkflow',
+  });
+  const forkMaybeMissingWorkflow = DBOS.registerWorkflow(
+    async (targetID: string) => {
+      try {
+        await DBOS.forkWorkflow(targetID, 1);
+      } catch {
+        return 'missing';
+      }
+      return 'forked';
+    },
+    { name: 'forkMaybeMissingWorkflow' },
+  );
+
+  test('fork-nonexistent-workflow-replays-recorded-error', async () => {
+    const missingID = randomUUID();
+    const handle = await DBOS.startWorkflow(forkMaybeMissingWorkflow)(missingID);
+    await expect(handle.getResult()).resolves.toBe('missing');
+    const steps = await DBOS.listWorkflowSteps(handle.workflowID);
+    expect(steps?.map((s) => s.name)).toEqual(['DBOS.forkWorkflow']);
+    expect(steps![0].error?.message).toContain(missingID);
+
+    // Once the target exists, a replay still takes the recorded branch and forks nothing.
+    await DBOS.withNextWorkflowID(missingID, () => forkTargetWorkflow(1));
+    const replayed = await reexecuteWorkflowById(handle.workflowID);
+    await expect(replayed.getResult()).resolves.toBe('missing');
+    expect(await DBOS.listWorkflows({ forkedFrom: missingID })).toEqual([]);
+  });
+
+  const failingChildWorkflow = DBOS.registerWorkflow(
+    async () => {
+      await Promise.resolve();
+      throw new Error('child failed');
+    },
+    { name: 'failingChildWorkflow' },
+  );
+  const awaitFailingChildWorkflow = DBOS.registerWorkflow(
+    async (childID: string) => {
+      try {
+        await DBOS.getResult(childID);
+      } catch (e) {
+        return (e as Error).message;
+      }
+      return 'succeeded';
+    },
+    { name: 'awaitFailingChildWorkflow' },
+  );
+
+  test('get-result-replays-recorded-error', async () => {
+    const childID = randomUUID();
+    const childHandle = await DBOS.startWorkflow(failingChildWorkflow, { workflowID: childID })();
+    await expect(childHandle.getResult()).rejects.toThrow('child failed');
+
+    const handle = await DBOS.startWorkflow(awaitFailingChildWorkflow)(childID);
+    await expect(handle.getResult()).resolves.toBe('child failed');
+    const steps = await DBOS.listWorkflowSteps(handle.workflowID);
+    expect(steps![0].error?.message).toBe('child failed');
+
+    // The replay re-throws the recorded error rather than awaiting the now-deleted child.
+    await DBOS.deleteWorkflow(childID);
+    const replayed = await reexecuteWorkflowById(handle.workflowID);
+    await expect(replayed.getResult()).resolves.toBe('child failed');
+  });
+
+  const cancelWithChildrenWorkflow = DBOS.registerWorkflow(
+    async (targetID: string) => {
+      await DBOS.cancelWorkflow(targetID, { cancelChildren: true });
+    },
+    { name: 'cancelWithChildrenWorkflow' },
+  );
+
+  test('workflow-command-transient-error-is-retried-not-recorded', async () => {
+    const savedBackoff = { ...dbRetryConfig };
+    dbRetryConfig.initialBackoffSec = 0.05;
+    const targetID = randomUUID();
+    const pool = DBOSExecutor.globalInstance!.systemDatabase.pool;
+    const originalQuery = pool.query.bind(pool) as (text: unknown, params?: unknown) => Promise<unknown>;
+    let calls = 0;
+    // Fail the first child lookup for the target with a connection error.
+    const spy = jest.spyOn(pool, 'query').mockImplementation(((text: unknown, params?: unknown) => {
+      const ids = Array.isArray(params) ? (params[0] as unknown) : undefined;
+      if (
+        typeof text === 'string' &&
+        text.includes('parent_workflow_id = ANY') &&
+        Array.isArray(ids) &&
+        ids.includes(targetID)
+      ) {
+        calls += 1;
+        if (calls === 1) {
+          return Promise.reject(Object.assign(new Error('connection lost'), { code: 'ECONNRESET' }));
+        }
+      }
+      return originalQuery(text, params);
+    }) as never);
+    try {
+      const handle = await DBOS.startWorkflow(cancelWithChildrenWorkflow)(targetID);
+      await handle.getResult();
+      expect(calls).toBe(2);
+      const steps = await DBOS.listWorkflowSteps(handle.workflowID);
+      expect(steps?.map((s) => s.name)).toEqual(['DBOS.cancelWorkflow']);
+      expect(steps![0].error).toBeNull();
+    } finally {
+      spy.mockRestore();
+      Object.assign(dbRetryConfig, savedBackoff);
+    }
   });
 
   class TestEndpoints {

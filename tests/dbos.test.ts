@@ -1,5 +1,5 @@
 import { WorkflowHandle, DBOS, DBOSSerializer } from '../src/';
-import { generateDBOSTestConfig, setUpDBOSTestSysDb, Event, retryUntilSuccess } from './helpers';
+import { generateDBOSTestConfig, setUpDBOSTestSysDb, Event, retryUntilSuccess, reexecuteWorkflowById } from './helpers';
 import { randomUUID } from 'node:crypto';
 import { StatusString } from '../src/workflow';
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
@@ -327,6 +327,40 @@ describe('dbos-tests', () => {
     await expect(retrievedHandle.getStatus()).resolves.toMatchObject({
       status: StatusString.SUCCESS,
     });
+  });
+
+  const sendDestinationWorkflow = DBOS.registerWorkflow(async () => Promise.resolve(), {
+    name: 'sendDestinationWorkflow',
+  });
+  const sendToMaybeMissingWorkflow = DBOS.registerWorkflow(
+    async (destinationID: string) => {
+      try {
+        await DBOS.send(destinationID, 'hello');
+      } catch {
+        return 'missing';
+      }
+      return 'sent';
+    },
+    { name: 'sendToMaybeMissingWorkflow' },
+  );
+
+  test('send-missing-destination-replays-recorded-error', async () => {
+    const destinationID = randomUUID();
+    const handle = await DBOS.startWorkflow(sendToMaybeMissingWorkflow)(destinationID);
+    await expect(handle.getResult()).resolves.toBe('missing');
+    const steps = await DBOS.listWorkflowSteps(handle.workflowID);
+    expect(steps?.map((s) => s.name)).toEqual(['DBOS.send']);
+    expect(steps![0].error?.message).toContain(destinationID);
+
+    // Once the destination exists, a replay still takes the recorded branch and delivers nothing.
+    await DBOS.withNextWorkflowID(destinationID, () => sendDestinationWorkflow());
+    const replayed = await reexecuteWorkflowById(handle.workflowID);
+    await expect(replayed.getResult()).resolves.toBe('missing');
+    const { rows } = await DBOSExecutor.globalInstance!.systemDatabase.pool.query(
+      'SELECT message_uuid FROM dbos.notifications WHERE destination_uuid = $1',
+      [destinationID],
+    );
+    expect(rows).toEqual([]);
   });
 
   describe('workflow-timeout', () => {
