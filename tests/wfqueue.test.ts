@@ -2586,6 +2586,16 @@ describe('database-backed-queue-crud', () => {
     await DBOS.deleteQueue(filteredOutName);
   });
 
+  test('registerQueue-always-update-refreshes-runner-tracked-queue', async () => {
+    const queueName = `runner_live_update_${randomUUID()}`;
+    await DBOS.registerQueue(queueName, { globalConcurrency: 2, minPollingIntervalMs: 100 });
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    await DBOS.registerQueue(queueName, { globalConcurrency: 1, onConflict: 'always_update' });
+    const tracked = wfQueueRunner.getTrackedQueue(queueName);
+    expect(tracked?.concurrency).toBe(1);
+    await DBOS.deleteQueue(queueName);
+  });
+
   test('async-getters-reflect-cross-process-changes', async () => {
     const queueName = `test_freshness_${randomUUID()}`;
     await DBOS.registerQueue(queueName, { concurrency: 5 });

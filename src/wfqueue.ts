@@ -593,6 +593,11 @@ class WFQueueRunner {
   private listenQueueNames: Set<string> | null = null;
   /** Per-queue scheduling state, keyed by queue name. */
   private readonly states: Map<string, QueueRuntimeState> = new Map();
+  /**
+   * Bumped when `registerQueue` updates a queue the runner already tracks, so a
+   * concurrent `refreshDbQueues` read cannot apply a stale row over it.
+   */
+  private readonly queueConfigGenerations: Map<string, number> = new Map();
 
   private static readonly defaultMinPollingIntervalMs: number = 1000;
   private static readonly defaultMaxPollingIntervalMs: number = 120000;
@@ -609,6 +614,21 @@ class WFQueueRunner {
 
   getInternalQueue(name: string): WorkflowQueue | undefined {
     return this.internalQueues.get(name);
+  }
+
+  /** Queue object used by the runner for polling, if the queue is currently tracked. */
+  getTrackedQueue(name: string): WorkflowQueue | undefined {
+    return this.states.get(name)?.queue;
+  }
+
+  /** Push a freshly persisted queue row to the runner without waiting for reconcile. */
+  applyRegisteredQueue(record: QueueRecord): void {
+    const existing = this.states.get(record.name);
+    if (existing === undefined) {
+      return;
+    }
+    applyRecord(existing.queue, record);
+    this.queueConfigGenerations.set(record.name, (this.queueConfigGenerations.get(record.name) ?? 0) + 1);
   }
 
   stop() {
@@ -672,6 +692,7 @@ class WFQueueRunner {
       return;
     }
 
+    const generationsBeforeRead = new Map(this.queueConfigGenerations);
     const present = new Set<string>();
     for (const record of records) {
       // An internal queue owns its name outright; its process-local configuration wins.
@@ -686,8 +707,13 @@ class WFQueueRunner {
       present.add(record.name);
       const existing = this.states.get(record.name);
       if (existing) {
+        const genBefore = generationsBeforeRead.get(record.name);
+        const genNow = this.queueConfigGenerations.get(record.name);
+        if (genBefore !== genNow) {
+          continue;
+        }
         // Refresh config in place, preserving this queue's polling/backoff state.
-        existing.queue = new WorkflowQueue(record);
+        applyRecord(existing.queue, record);
       } else {
         this.ensureState(new WorkflowQueue(record), now);
       }

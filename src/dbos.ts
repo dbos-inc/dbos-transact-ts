@@ -2572,6 +2572,7 @@ export class DBOS {
       throw new Error(`Queue '${name}' missing from database after upsert`);
     }
     const queue = new WorkflowQueue(persisted);
+    wfQueueRunner.applyRegisteredQueue(persisted);
     if (inserted) {
       DBOSExecutor.globalInstance!.logger.info(`Registered new queue:`);
       logQueue(DBOSExecutor.globalInstance!.logger, queue);
