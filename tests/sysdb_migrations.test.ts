@@ -93,6 +93,11 @@ describe('sysdb migration runner', () => {
     expect(second.toVersion).toBe(migrations.length);
     expect(second.appliedCount).toBe(0);
 
+    expect(await indexDefinition(client, 'idx_application_versions_timestamp')).toContain('(version_timestamp DESC)');
+    expect(await indexDefinition(client, 'idx_application_versions_owner_timestamp')).toContain(
+      '(application_name, version_timestamp DESC)',
+    );
+
     // The new partial indexes should exist; the broad indexes they replace should not.
     expect(await indexExists(client, 'idx_workflow_status_pending')).toBe(true);
     expect(await indexExists(client, 'idx_workflow_status_failed')).toBe(true);
@@ -125,6 +130,29 @@ describe('sysdb migration runner', () => {
     expect(await indexExists(client, 'idx_notifications')).toBe(false);
     expect(await indexExists(client, 'idx_workflow_topic')).toBe(true);
     expect(await tableExists(client, 'event_dispatch_kv')).toBe(true);
+  });
+
+  test('upgrades existing application versions without retiming or deleting them', async () => {
+    const migrations = allMigrations(TEST_SCHEMA, { useListenNotify: false });
+    const beforeIndexes = migrations.findIndex(
+      (migration) => migration.name === '124_application_versions_timestamp_index',
+    );
+    expect(beforeIndexes).toBeGreaterThan(0);
+    await runSysMigrationsPg(client, migrations.slice(0, beforeIndexes), TEST_SCHEMA, { onWarn: () => {} });
+    await client.query(`
+      INSERT INTO "${TEST_SCHEMA}".application_versions
+        (version_id, version_name, version_timestamp, created_at, application_name)
+      VALUES ('old', 'old', 200, 100, 'ours'), ('latest', 'latest', 300, 150, NULL)
+    `);
+    const before = await client.query(`SELECT * FROM "${TEST_SCHEMA}".application_versions ORDER BY version_id`);
+    const result = await runSysMigrationsPg(client, migrations, TEST_SCHEMA, { onWarn: () => {} });
+    expect(result.appliedCount).toBe(2);
+    expect(await indexExists(client, 'idx_application_versions_timestamp')).toBe(true);
+    expect(await indexExists(client, 'idx_application_versions_owner_timestamp')).toBe(true);
+    const after = await client.query(`SELECT * FROM "${TEST_SCHEMA}".application_versions ORDER BY version_id`);
+    expect(after.rows).toEqual(before.rows);
+    const rerun = await runSysMigrationsPg(client, migrations, TEST_SCHEMA, { onWarn: () => {} });
+    expect(rerun.appliedCount).toBe(0);
   });
 
   // application_name stays nullable everywhere (NULL is what SDKs predating it write); addressing names stay globally unique.
