@@ -318,7 +318,9 @@ describe('entitlements', () => {
     'a malformed answer blocks startup (%j)',
     async (body) => {
       conductor.body = body;
-      await expect(check({ enterpriseKey: 'enterprise-key' })).rejects.toThrow('unable to check entitlements');
+      await expect(check({ enterpriseKey: 'enterprise-key' })).rejects.toThrow(
+        'unable to process the entitlements answer',
+      );
     },
   );
 
