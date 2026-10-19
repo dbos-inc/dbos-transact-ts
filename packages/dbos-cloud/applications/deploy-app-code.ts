@@ -19,7 +19,7 @@ import {
 import path from 'path';
 import { Application } from './types.js';
 import JSZip from 'jszip';
-import fg from 'fast-glob';
+import { glob } from 'tinyglobby';
 import chalk from 'chalk';
 import { registerApp } from './register-app.js';
 import { Logger } from 'winston';
@@ -80,9 +80,11 @@ async function createZipData(logger: CLILogger, deployConfigFile: string): Promi
     '**/.python-version',
   ];
 
-  const files = await fg(globPattern, {
+  const files = await glob(globPattern, {
     dot: true,
     onlyFiles: true,
+    absolute: true,
+    expandDirectories: false,
     ignore: [...hardcodedIgnorePatterns, ...globIgnorePatterns],
   });
 
