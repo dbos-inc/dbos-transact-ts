@@ -157,6 +157,18 @@ export function translateDbosConfig(options: Partial<DBOSConfig>): DBOSConfigInt
   ) {
     throw new Error('notificationCoalesceMs must be a finite number at least 1 millisecond');
   }
+  if (
+    options.autoUpgradeIntervalMs !== undefined &&
+    (!Number.isFinite(options.autoUpgradeIntervalMs) || options.autoUpgradeIntervalMs <= 0)
+  ) {
+    throw new Error('autoUpgradeIntervalMs must be a finite positive number of milliseconds');
+  }
+  if (
+    options.autoUpgradeGraceMs !== undefined &&
+    (!Number.isFinite(options.autoUpgradeGraceMs) || options.autoUpgradeGraceMs < 0)
+  ) {
+    throw new Error('autoUpgradeGraceMs must be a finite non-negative number of milliseconds');
+  }
   validateObservabilityQueryTimeoutMs(options.observabilityQueryTimeoutMs);
   validateIdleTransactionTimeoutMs(options.systemDatabaseIdleTransactionTimeoutMs);
   const systemDatabaseUrl = getSystemDatabaseUrl({
@@ -191,6 +203,9 @@ export function translateDbosConfig(options: Partial<DBOSConfig>): DBOSConfigInt
     observabilityQueryTimeoutMs: options.observabilityQueryTimeoutMs,
     systemDatabaseIdleTransactionTimeoutMs: options.systemDatabaseIdleTransactionTimeoutMs,
     runMigrations: options.runMigrations ?? true,
+    autoUpgrade: options.autoUpgrade === true,
+    autoUpgradeIntervalMs: options.autoUpgradeIntervalMs,
+    autoUpgradeGraceMs: options.autoUpgradeGraceMs,
   };
 }
 

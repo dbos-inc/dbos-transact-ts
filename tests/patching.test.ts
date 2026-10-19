@@ -2,6 +2,7 @@ import { DBOS } from '../src';
 import { generateDBOSTestConfig, reexecuteWorkflowById, setUpDBOSTestSysDb } from './helpers';
 import { DBOSConfig } from '../src/dbos-executor';
 import { getDBOSErrorCode, UnexpectedStep } from '../src/error';
+import { GlobalLogger } from '../src/telemetry/logs';
 
 const step1 = DBOS.registerStep(async () => Promise.resolve(1), { name: 'step1' });
 const step2 = DBOS.registerStep(async () => Promise.resolve(2), { name: 'step2' });
@@ -110,24 +111,29 @@ const depatchedWF2 = DBOS.registerWorkflow(
 
 describe('patching-tests', () => {
   let config: DBOSConfig;
+  let warnSpy: jest.SpyInstance;
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
+    // The deprecated flag still pins the application version, and says it is deprecated.
     config.enablePatching = true;
     await setUpDBOSTestSysDb(config);
     DBOS.setConfig(config);
   });
 
   beforeEach(async () => {
+    warnSpy = jest.spyOn(GlobalLogger.prototype, 'warn');
     await DBOS.launch();
   });
 
   afterEach(async () => {
     await DBOS.shutdown();
+    warnSpy.mockRestore();
   });
 
   test('patch-last-step', async () => {
     expect(DBOS.applicationVersion).toBe('PATCHING_ENABLED');
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('enablePatching is deprecated'));
     const origWfh = await DBOS.startWorkflow(origWF)();
     await expect(origWfh.getResult()).resolves.toBe(3);
     await expect((await reexecuteWorkflowById(origWfh.workflowID))?.getResult()).resolves.toBe(3);

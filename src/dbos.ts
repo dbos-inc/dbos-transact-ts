@@ -89,6 +89,12 @@ import { randomUUID } from 'node:crypto';
 import { StepConfig, validateStepConfig } from './step';
 import * as enterprise from './enterprise';
 import {
+  AutoUpgradeLoop,
+  autoUpgradableWorkflows,
+  DEFAULT_AUTO_UPGRADE_GRACE_MS,
+  DEFAULT_AUTO_UPGRADE_INTERVAL_MS,
+} from './auto_upgrade';
+import {
   DuplicationPolicy,
   EnqueueOptions,
   DBOS_FUNCNAME_WRITESTREAM,
@@ -524,9 +530,6 @@ export class DBOS {
     }
     const internalConfig = translateDbosConfig(config);
 
-    // DBOS Cloud always uses Conductor. Checked before any state exists, so a missing package fails cleanly.
-    const loadedEnterprise = options?.conductorKey || globalParams.dbosCloud ? enterprise.load() : undefined;
-
     globalParams.enableOTLP = DBOS.#dbosConfig?.enableOTLP ?? globalParams.dbosCloud;
     globalParams.tracingEnabled = DBOS.#dbosConfig?.tracingEnabled || globalParams.enableOTLP;
 
@@ -538,6 +541,28 @@ export class DBOS {
     }
 
     finalizeClassRegistrations();
+
+    // Every enterprise feature requires Conductor to report the org entitled to it, and the package.
+    const features = enterprise.enabledFeatures(config);
+    const entitlementOptions = {
+      enterpriseKey: config.transactEnterpriseKey,
+      conductorKey: options?.conductorKey,
+      conductorURL: options?.conductorURL,
+    };
+    await enterprise.requireEnterprise(features, entitlementOptions);
+    // DBOS Cloud always uses Conductor.
+    let loadedEnterprise =
+      options?.conductorKey || globalParams.dbosCloud
+        ? enterprise.load()
+        : features.length > 0
+          ? enterprise.load(features[0].description)
+          : undefined;
+    // Workflows can also enroll for auto-upgrade individually, which the config flag's check above does not cover.
+    const autoUpgradableWorkflowNames = autoUpgradableWorkflows(internalConfig.autoUpgrade);
+    if (autoUpgradableWorkflowNames.length > 0 && !internalConfig.autoUpgrade) {
+      await enterprise.requireEnterprise([enterprise.AUTO_UPGRADE], entitlementOptions);
+      loadedEnterprise ??= enterprise.load(enterprise.AUTO_UPGRADE.description);
+    }
 
     // Globally set the application name, version and executor ID.
     // Only launch may change these: work outliving a shutdown still checkpoints under this identity.
@@ -566,6 +591,14 @@ export class DBOS {
     recordDBOSLaunch();
 
     const executor: DBOSExecutor = DBOSExecutor.globalInstance;
+
+    if (DBOS.#dbosConfig?.enablePatching) {
+      executor.logger.warn(
+        'enablePatching is deprecated and will be removed in a future release. ' +
+          'DBOS.patch and DBOS.deprecatePatch no longer require it. ' +
+          'To keep every deployment on one application version, as the flag does, set applicationVersion explicitly.',
+      );
+    }
 
     // Initialize data sources before executor.init() dispatches recovery, so recovered
     // workflows can run their transactions immediately instead of racing initialization.
@@ -628,6 +661,20 @@ export class DBOS {
     if (executor.conductor) {
       executor.conductor.start();
     }
+
+    // Start the auto-upgrade loop if any workflow takes part.
+    if (autoUpgradableWorkflowNames.length > 0) {
+      assert(loadedEnterprise, 'the enterprise package is loaded whenever a workflow enrolls in auto-upgrade');
+      const upgradePass = new loadedEnterprise.AutoUpgradePass(executor, {
+        graceMs: internalConfig.autoUpgradeGraceMs ?? DEFAULT_AUTO_UPGRADE_GRACE_MS,
+      });
+      executor.autoUpgrader = new AutoUpgradeLoop(
+        upgradePass,
+        internalConfig.autoUpgradeIntervalMs ?? DEFAULT_AUTO_UPGRADE_INTERVAL_MS,
+        executor.logger,
+      );
+      executor.autoUpgrader.start();
+    }
   }
 
   /**
@@ -687,6 +734,12 @@ export class DBOS {
         await executor.deactivateEventReceivers();
         await executor.awaitRunningWorkflows(drainTimeoutMS);
         await executor.stopWorkflowTimeoutSweep();
+      }
+
+      // The upgrader lets go of its per-application lease before the system database is destroyed.
+      if (executor?.autoUpgrader) {
+        await executor.autoUpgrader.stop();
+        executor.autoUpgrader = undefined;
       }
 
       // Stop the conductor
@@ -2183,10 +2236,6 @@ export class DBOS {
       );
     }
 
-    if (!DBOS.#dbosConfig?.enablePatching) {
-      throw new DBOSInvalidWorkflowTransitionError('Patching is not enabled.  See `enablePatching` in `DBOSConfig`');
-    }
-
     const patched = await DBOSExecutor.globalInstance!.systemDatabase.checkPatch(
       DBOS.workflowID!,
       functionIDGet(),
@@ -2213,10 +2262,6 @@ export class DBOS {
       throw new DBOSInvalidWorkflowTransitionError(
         '`DBOS.deprecatePatch` must be called from a workflow, and not within a step',
       );
-    }
-
-    if (!DBOS.#dbosConfig?.enablePatching) {
-      throw new DBOSInvalidWorkflowTransitionError('Patching is not enabled.  See `enablePatching` in `DBOSConfig`');
     }
 
     const patched = await DBOSExecutor.globalInstance!.systemDatabase.checkPatch(
