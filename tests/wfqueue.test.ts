@@ -1689,7 +1689,11 @@ describe('queue-time-outs', () => {
       workflowID,
       queueName: timeoutQueue.name,
     }).timeoutParentStartWF(100);
-    await expect(handle.getResult()).rejects.toThrow(new DBOSAwaitedWorkflowCancelledError(childID));
+    // The parent recorded this error, so it comes back deserialized as a plain Error carrying the original fields.
+    await expect(handle.getResult()).rejects.toMatchObject({
+      message: `Awaited ${childID} was cancelled`,
+      workflowID: childID,
+    });
     await expect(handle.getStatus()).resolves.toMatchObject({
       status: StatusString.ERROR,
     });
@@ -1736,7 +1740,10 @@ describe('queue-time-outs', () => {
       timeoutMS: 4000,
     }).timeoutParentEnqueueWF(100);
     await events_map.get(childID)?.wait();
-    await expect(handle.getResult()).rejects.toThrow(new DBOSAwaitedWorkflowCancelledError(childID));
+    await expect(handle.getResult()).rejects.toMatchObject({
+      message: `Awaited ${childID} was cancelled`,
+      workflowID: childID,
+    });
     await expect(handle.getStatus()).resolves.toMatchObject({
       status: StatusString.ERROR,
     });
