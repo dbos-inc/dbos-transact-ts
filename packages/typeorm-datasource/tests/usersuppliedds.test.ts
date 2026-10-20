@@ -9,6 +9,7 @@ import { TypeOrmDataSource } from '..';
 import { DBOS } from '@dbos-inc/dbos-sdk';
 import { Client } from 'pg';
 import { randomUUID } from 'crypto';
+import { SuperJSON } from 'superjson';
 import { ensurePGDatabase } from '../../../dist/src/database_utils';
 
 const config = { user: process.env.PGUSER || 'postgres', database: 'typeorm_demo_ds' };
@@ -108,7 +109,7 @@ describe('TypeOrmDataSourceDemo', () => {
   });
 
   afterAll(async () => {
-    await AppDataSource.destroy();
+    if (AppDataSource.isInitialized) await AppDataSource.destroy();
   });
 
   beforeEach(async () => {
@@ -128,27 +129,37 @@ describe('TypeOrmDataSourceDemo', () => {
     expect(nusers).toBe(1);
   });
 
-  test('rerun replays the recorded transaction output', async () => {
+  // Leaves the outcome a committed execution of the workflow's first step would have checkpointed.
+  async function plantCompletion(workflowID: string, column: 'output' | 'error', value: unknown) {
+    await AppDataSource.query(
+      `INSERT INTO dbos.transaction_completion (workflow_id, function_num, ${column}) VALUES ($1, 0, $2)`,
+      [workflowID, SuperJSON.stringify(value)],
+    );
+  }
+
+  test('a recorded transaction output is replayed without rerunning the transaction', async () => {
     const workflowID = randomUUID();
+    await plantCompletion(workflowID, 'output', 42);
 
-    const id = await DBOS.withNextWorkflowID(workflowID, () => insertUserWorkflow('bob'));
-    await expect(DBOS.withNextWorkflowID(workflowID, () => insertUserWorkflow('bob'))).resolves.toBe(id);
-
-    expect(txState.calls).toBe(1);
-    await expect(countUsers('bob')).resolves.toBe(1);
+    await expect(DBOS.withNextWorkflowID(workflowID, () => insertUserWorkflow('bob'))).resolves.toBe(42);
+    expect(txState.calls).toBe(0);
+    await expect(countUsers('bob')).resolves.toBe(0);
   });
 
-  test('thrown error rolls back the transaction and replays on rerun', async () => {
+  test('a recorded transaction error is replayed without rerunning the transaction', async () => {
     const workflowID = randomUUID();
+    await plantCompletion(workflowID, 'error', new Error('recorded failure'));
 
-    await expect(DBOS.withNextWorkflowID(workflowID, () => failingWorkflow('carol'))).rejects.toThrow(
-      'failed after inserting carol',
+    await expect(DBOS.withNextWorkflowID(workflowID, () => insertUserWorkflow('bob'))).rejects.toThrow(
+      'recorded failure',
     );
-    await expect(countUsers('carol')).resolves.toBe(0);
+    expect(txState.calls).toBe(0);
+    await expect(countUsers('bob')).resolves.toBe(0);
+  });
 
-    await expect(DBOS.withNextWorkflowID(workflowID, () => failingWorkflow('carol'))).rejects.toThrow(
-      'failed after inserting carol',
-    );
+  test('a thrown error rolls back the transaction', async () => {
+    await expect(failingWorkflow('carol')).rejects.toThrow('failed after inserting carol');
     expect(txState.calls).toBe(1);
+    await expect(countUsers('carol')).resolves.toBe(0);
   });
 });

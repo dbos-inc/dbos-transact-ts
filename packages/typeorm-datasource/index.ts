@@ -107,8 +107,11 @@ class TypeOrmTransactionHandler implements DataSourceTransactionHandler {
       return;
     }
 
+    // Explicit, because TypeORM 1.x otherwise applies the DataSource's own isolationLevel option.
     try {
-      await this.dataSource.transaction((em) => migrateDataSourcePG(typeOrmExecutor(em), this.schemaName));
+      await this.dataSource.transaction('READ COMMITTED', (em) =>
+        migrateDataSourcePG(typeOrmExecutor(em), this.schemaName),
+      );
     } catch (err) {
       throw new Error(
         `In initialization of 'TypeOrmDataSource' ${this.name}: The '${this.schemaName}' transaction schema could not be migrated: ${(err as Error).message}. This should be added to your database migrations.
@@ -124,7 +127,7 @@ class TypeOrmTransactionHandler implements DataSourceTransactionHandler {
   }
 
   async deleteCheckpoints(workflowID: string, startStep: number, beforeCommit?: () => Promise<void>): Promise<void> {
-    await this.dataSource.transaction(async (entityManager: EntityManager) => {
+    await this.dataSource.transaction('READ COMMITTED', async (entityManager: EntityManager) => {
       await entityManager.query(
         `DELETE FROM "${this.schemaName}".transaction_completion
          WHERE workflow_id=$1 AND function_num>=$2;`,
