@@ -1,4 +1,4 @@
-import glob from 'fast-glob';
+import { glob } from 'tinyglobby';
 import path from 'path';
 import fs from 'fs';
 import { execSync } from 'child_process';
@@ -22,7 +22,7 @@ export const copy = async (src: string, targets: string[], dest: string, { renam
     cwd: src,
     dot: true,
     absolute: false,
-    stats: false,
+    expandDirectories: false,
     ignore: ['package-lock.json', '**/node_modules/**', '**/dist/**'],
   });
 
