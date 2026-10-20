@@ -1066,16 +1066,25 @@ export class SystemDatabase {
    * ones, so a named peer's deploy does not demote this one.
    */
   async #latestApplicationVersionName(client: PoolClient | Pool): Promise<string | undefined> {
-    const params: unknown[] = [];
-    const scope = this.appNameFilter('application_name', this.appName, params);
-    const { rows } = await client.query<{ version_name: string }>(
-      `SELECT version_name
-         FROM "${this.schemaName}".application_versions
-        WHERE ${scope}
-        ORDER BY version_timestamp DESC LIMIT 1`,
-      params,
-    );
-    return rows[0]?.version_name;
+    return (await this.#latestApplicationVersion(client, this.appName))?.version_name;
+  }
+
+  async #latestApplicationVersion(
+    client: PoolClient | Pool,
+    applicationName?: string,
+  ): Promise<application_versions | undefined> {
+    const columns = 'version_id, version_name, version_timestamp, created_at, application_name';
+    const table = `"${this.schemaName}".application_versions`;
+    // Probe each eligible owner separately; an OR filter can scan an unbounded history of newer peer versions.
+    // Keep the constant owner in the ordering so the IS NULL probe uses the composite index too.
+    const query = applicationName
+      ? `(SELECT ${columns} FROM ${table} WHERE application_name = $1 ORDER BY application_name, version_timestamp DESC LIMIT 1)
+         UNION ALL
+         (SELECT ${columns} FROM ${table} WHERE application_name IS NULL ORDER BY application_name, version_timestamp DESC LIMIT 1)
+         ORDER BY version_timestamp DESC LIMIT 1`
+      : `SELECT ${columns} FROM ${table} ORDER BY version_timestamp DESC LIMIT 1`;
+    const { rows } = await client.query<application_versions>(query, applicationName ? [applicationName] : []);
+    return rows[0];
   }
 
   /**
@@ -4589,21 +4598,11 @@ export class SystemDatabase {
    */
   @dbRetry()
   async getLatestApplicationVersion(applicationName?: string): Promise<VersionInfo> {
-    const owner = applicationName ?? this.appName;
-    const params: unknown[] = [];
-    const scope = this.appNameFilter('application_name', owner, params);
-    const { rows } = await this.pool.query<application_versions>(
-      `SELECT version_id, version_name, version_timestamp, created_at, application_name
-       FROM "${this.schemaName}".application_versions
-       WHERE ${scope}
-       ORDER BY version_timestamp DESC
-       LIMIT 1`,
-      params,
-    );
-    if (rows.length === 0) {
+    const latest = await this.#latestApplicationVersion(this.pool, applicationName ?? this.appName);
+    if (latest === undefined) {
       throw new DBOSInitializationError('No application versions found');
     }
-    return mapVersionInfo(rows[0]);
+    return mapVersionInfo(latest);
   }
 
   // ==================== Queues ====================

@@ -1152,5 +1152,21 @@ $$ LANGUAGE plpgsql;`,
       name: '123_workflow_status_creator_xid',
       pg: [`ALTER TABLE "${schemaName}"."workflow_status" ADD COLUMN IF NOT EXISTS "creator_xid" TEXT DEFAULT NULL`],
     },
+    // Bound global latest-version selection independently of deployment history.
+    {
+      name: '124_application_versions_timestamp_index',
+      online: true,
+      pg: [
+        `CREATE INDEX ${isCockroach ? '' : 'CONCURRENTLY'} IF NOT EXISTS "idx_application_versions_timestamp" ON "${schemaName}"."application_versions" ("version_timestamp" DESC)`,
+      ],
+    },
+    // Supports separate newest-owned and newest-unclaimed probes during dequeue.
+    {
+      name: '125_application_versions_owner_timestamp_index',
+      online: true,
+      pg: [
+        `CREATE INDEX ${isCockroach ? '' : 'CONCURRENTLY'} IF NOT EXISTS "idx_application_versions_owner_timestamp" ON "${schemaName}"."application_versions" ("application_name", "version_timestamp" DESC)`,
+      ],
+    },
   ];
 }
