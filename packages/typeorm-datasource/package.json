@@ -16,18 +16,19 @@
     "test": "npm run build && jest --detectOpenHandles"
   },
   "dependencies": {
-    "typeorm": "^0.3.24",
     "pg": "^8.11.3",
     "superjson": "^1.13"
   },
   "peerDependencies": {
-    "@dbos-inc/dbos-sdk": "*"
+    "@dbos-inc/dbos-sdk": "*",
+    "typeorm": "^0.3.24 || ^1.0.0"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",
     "@types/node": "^20.11.25",
     "jest": "^30.5.2",
     "ts-jest": "^29.4.15",
+    "typeorm": "^1.1.2",
     "typescript": "^5.4.5"
   }
 }

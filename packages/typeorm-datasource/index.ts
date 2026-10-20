@@ -19,14 +19,16 @@ import {
   migrateDataSourcePG,
   verifyDataSourcePG,
 } from '@dbos-inc/dbos-sdk/datasource';
-import { DataSource, EntityManager } from 'typeorm';
-import type { PostgresConnectionOptions } from 'typeorm/driver/postgres/PostgresConnectionOptions';
+import { DataSource, type DataSourceOptions, EntityManager } from 'typeorm';
 import { AsyncLocalStorage } from 'async_hooks';
 import { SuperJSON } from 'superjson';
 
 export interface TypeORMTransactionConfig extends PGTransactionConfig {
   name?: string;
 }
+
+// TypeORM 1.x renamed the module defining this type, so derive it from the public union instead.
+type PostgresOptions = Extract<DataSourceOptions, { type: 'postgres' }>;
 
 interface DBOSTypeOrmLocalCtx {
   entityManager: EntityManager;
@@ -75,9 +77,9 @@ class TypeOrmTransactionHandler implements DataSourceTransactionHandler {
       port: config.port,
       username: config.user,
       // TypeORM passes password and ssl to pg unchanged but types them more narrowly than pg does.
-      password: config.password as PostgresConnectionOptions['password'],
+      password: config.password as PostgresOptions['password'],
       database: config.database,
-      ssl: config.ssl as PostgresConnectionOptions['ssl'],
+      ssl: config.ssl as PostgresOptions['ssl'],
       connectTimeoutMS: config.connectionTimeoutMillis,
       poolSize: config.max,
     });

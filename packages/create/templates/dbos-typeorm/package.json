@@ -23,6 +23,6 @@
     "@dbos-inc/dbos-sdk": "file:../../../..",
     "@dbos-inc/typeorm-datasource": "file:../../../typeorm-datasource",
     "express": "^4.21.2",
-    "typeorm": "^0.3.25"
+    "typeorm": "^1.1.2"
   }
 }

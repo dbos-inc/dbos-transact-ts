@@ -8,9 +8,10 @@ import { TypeOrmDataSource } from '..';
 
 import { DBOS } from '@dbos-inc/dbos-sdk';
 import { Client } from 'pg';
+import { randomUUID } from 'crypto';
 import { ensurePGDatabase } from '../../../dist/src/database_utils';
 
-const config = { user: process.env.PGUSER || 'postgres', database: 'typeorm_ds_test_datasource' };
+const config = { user: process.env.PGUSER || 'postgres', database: 'typeorm_demo_ds' };
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -40,7 +41,7 @@ const workflow = DBOS.registerWorkflow(
     const nusers = await dataSource.runTransaction(
       async () => {
         const users = await AppDataSource.getRepository(User).find({
-          relations: ['photos'],
+          relations: { photos: true },
         });
         return users.length;
       },
@@ -51,6 +52,31 @@ const workflow = DBOS.registerWorkflow(
   },
   { name: 'testTypeOrm' },
 );
+
+const txState = { calls: 0 };
+
+async function insertUser(name: string) {
+  txState.calls += 1;
+  const user = await dataSource.entityManager.save(dataSource.entityManager.create(User, { name }));
+  return user.id;
+}
+
+async function insertUserThenFail(name: string) {
+  txState.calls += 1;
+  await dataSource.entityManager.save(dataSource.entityManager.create(User, { name }));
+  throw new Error(`failed after inserting ${name}`);
+}
+
+const regInsertUser = dataSource.registerTransaction(insertUser);
+const regInsertUserThenFail = dataSource.registerTransaction(insertUserThenFail);
+const insertUserWorkflow = DBOS.registerWorkflow((name: string) => regInsertUser(name), { name: 'insertUserWorkflow' });
+const failingWorkflow = DBOS.registerWorkflow((name: string) => regInsertUserThenFail(name), {
+  name: 'failingWorkflow',
+});
+
+function countUsers(name: string) {
+  return AppDataSource.getRepository(User).countBy({ name });
+}
 
 // ensurePGDatabase swallows every failure, so verify the postcondition and fail with the reason.
 async function ensureTestDatabase(databaseUrl: string) {
@@ -73,12 +99,21 @@ async function ensureTestDatabase(databaseUrl: string) {
 }
 
 describe('TypeOrmDataSourceDemo', () => {
-  beforeEach(async () => {
+  beforeAll(async () => {
     await ensureTestDatabase(
-      `postgresql://${config.user}:${process.env['PGPASSWORD'] || 'dbos'}@${process.env['PGHOST'] || 'localhost'}:${process.env['PGPORT'] || '5432'}/typeorm_demo_ds`,
+      `postgresql://${config.user}:${process.env['PGPASSWORD'] || 'dbos'}@${process.env['PGHOST'] || 'localhost'}:${process.env['PGPORT'] || '5432'}/${config.database}`,
     );
     await TypeOrmDataSource.initializeDBOSSchema(config);
     await AppDataSource.initialize();
+  });
+
+  afterAll(async () => {
+    await AppDataSource.destroy();
+  });
+
+  beforeEach(async () => {
+    await AppDataSource.query('TRUNCATE "photo", "user" RESTART IDENTITY');
+    txState.calls = 0;
 
     DBOS.setConfig({ name: 'typeorm-demo-ds' });
     await DBOS.launch();
@@ -91,5 +126,29 @@ describe('TypeOrmDataSourceDemo', () => {
   test('insert dataSource.register function', async () => {
     const nusers = await workflow();
     expect(nusers).toBe(1);
+  });
+
+  test('rerun replays the recorded transaction output', async () => {
+    const workflowID = randomUUID();
+
+    const id = await DBOS.withNextWorkflowID(workflowID, () => insertUserWorkflow('bob'));
+    await expect(DBOS.withNextWorkflowID(workflowID, () => insertUserWorkflow('bob'))).resolves.toBe(id);
+
+    expect(txState.calls).toBe(1);
+    await expect(countUsers('bob')).resolves.toBe(1);
+  });
+
+  test('thrown error rolls back the transaction and replays on rerun', async () => {
+    const workflowID = randomUUID();
+
+    await expect(DBOS.withNextWorkflowID(workflowID, () => failingWorkflow('carol'))).rejects.toThrow(
+      'failed after inserting carol',
+    );
+    await expect(countUsers('carol')).resolves.toBe(0);
+
+    await expect(DBOS.withNextWorkflowID(workflowID, () => failingWorkflow('carol'))).rejects.toThrow(
+      'failed after inserting carol',
+    );
+    expect(txState.calls).toBe(1);
   });
 });
