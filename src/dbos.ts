@@ -732,14 +732,14 @@ export class DBOS {
       // Conductor stays connected for the drain, so it can still observe and cancel those workflows.
       if (executor) {
         await executor.deactivateEventReceivers();
+        // The upgrader stops before the drain: it holds the application's lease, which other
+        // executors on the latest version wait on, and nothing below depends on it.
+        if (executor.autoUpgrader) {
+          await executor.autoUpgrader.stop();
+          executor.autoUpgrader = undefined;
+        }
         await executor.awaitRunningWorkflows(drainTimeoutMS);
         await executor.stopWorkflowTimeoutSweep();
-      }
-
-      // The upgrader lets go of its per-application lease before the system database is destroyed.
-      if (executor?.autoUpgrader) {
-        await executor.autoUpgrader.stop();
-        executor.autoUpgrader = undefined;
       }
 
       // Stop the conductor
