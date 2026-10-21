@@ -32,12 +32,7 @@ import { TelemetryCollector } from './telemetry/collector';
 import { getActiveSpan, runWithTrace, SpanStatusCode, Tracer } from './telemetry/traces';
 import { DBOSContextualLogger, DLogger, GlobalLogger } from './telemetry/logs';
 import { TelemetryExporter } from './telemetry/exporters';
-import {
-  SystemDatabase,
-  type RunningWorkflowEntry,
-  type WorkflowStatusInternal,
-  type SystemDatabaseStoredResult,
-} from './system_database';
+import { SystemDatabase, type WorkflowStatusInternal, type SystemDatabaseStoredResult } from './system_database';
 import { randomUUID } from 'node:crypto';
 import {
   getConfiguredInstance,
@@ -543,16 +538,6 @@ export class DBOSExecutor {
       ? wConfig.maxRecoveryAttempts
       : DEFAULT_MAX_RECOVERY_ATTEMPTS;
 
-    const span = this.tracer.startSpan(wfname, {
-      status: StatusString.PENDING,
-      operationUUID: workflowID,
-      operationType: OperationType.WORKFLOW,
-      operationName: wInfo?.name ?? wf.name,
-      authenticatedUser,
-      authenticatedRoles,
-      assumedRole: pctx?.assumedRole ?? '',
-    });
-
     let serializationType = wInfo?.workflowConfig?.serialization;
     const funcArgs = await serializeFunctionInputOutput(
       serializationType === 'portable' ? ({ positionalArgs: args } as JsonWorkflowArgs) : args,
@@ -618,8 +603,6 @@ export class DBOSExecutor {
       applicationName: ownerAppName,
     };
 
-    let shouldExecute: boolean | undefined = undefined;
-
     // Record the workflow's status and inputs before it runs, unless a replayed child start already recorded its outcome.
     if (callerFunctionID !== undefined && callerID !== undefined) {
       const result = await this.systemDatabase.getOperationResultAndThrowIfCancelled(callerID, callerFunctionID);
@@ -650,12 +633,10 @@ export class DBOSExecutor {
         claimedAttempts > maxRecoveryAttempts + 1
       ) {
         await this.systemDatabase.deadLetterWorkflows([workflowID], claimedAttempts);
-        this.tracer.endSpan(span);
         throw new DBOSMaxRecoveryAttemptsExceededError(workflowID, maxRecoveryAttempts);
       }
       // Only a PENDING row owns its outcome, so a row moved on since the claim would run for nothing.
       if (claimed.status !== StatusString.PENDING) {
-        this.tracer.endSpan(span);
         return new RetrievedHandle(workflowID);
       }
       ires = {
@@ -707,14 +688,30 @@ export class DBOSExecutor {
             { error: sererr.serializedValue, serialization: sererr.serialization },
           );
         }
-        this.tracer.endSpan(span);
         throw e;
       }
     }
 
-    shouldExecute = ires.shouldExecuteOnThisExecutor;
+    if (!ires.shouldExecuteOnThisExecutor || (params.queueName !== undefined && !params.executeWorkflow)) {
+      return new RetrievedHandle(workflowID);
+    }
 
-    let runningEntry: RunningWorkflowEntry | undefined;
+    // Only a run gets a span, as nothing but runWorkflow ends it.
+    const span = this.tracer.startSpan(wfname, {
+      status: StatusString.PENDING,
+      operationUUID: workflowID,
+      operationType: OperationType.WORKFLOW,
+      operationName: wInfo?.name ?? wf.name,
+      authenticatedUser,
+      authenticatedRoles,
+      assumedRole: pctx?.assumedRole ?? '',
+    });
+    const runningEntry = this.systemDatabase.registerRunningWorkflow(
+      workflowID,
+      params.queueName,
+      params.enqueueOptions?.queuePartitionKey,
+    );
+
     const usedDataSources = new Set<DataSourceTransactionHandler>();
 
     const eserializer = this.serializer;
@@ -749,7 +746,7 @@ export class DBOSExecutor {
     // final status overrides anything a caller stamped before parking.
     const adoptRecordedOutcome = async (warning: string): Promise<R> => {
       // Released first, so a parked run stops counting toward the local concurrency a re-dispatch needs.
-      runningEntry?.release();
+      runningEntry.release();
       this.logger.warn(warning);
       try {
         // The workflow's row is known to have existed (this run was dispatched
@@ -870,21 +867,12 @@ export class DBOSExecutor {
       }
     };
 
-    if (shouldExecute && (params.queueName === undefined || params.executeWorkflow)) {
-      runningEntry = this.systemDatabase.registerRunningWorkflow(
-        workflowID,
-        params.queueName,
-        params.enqueueOptions?.queuePartitionKey,
-      );
-      // A run retries through outages even when launched from a background loop that has since stopped.
-      const workflowPromise: Promise<R> = runWithoutAbortableDbRetries(runWorkflow);
-      this.systemDatabase.trackRunningWorkflow(workflowID, runningEntry, workflowPromise);
+    // A run retries through outages even when launched from a background loop that has since stopped.
+    const workflowPromise: Promise<R> = runWithoutAbortableDbRetries(runWorkflow);
+    this.systemDatabase.trackRunningWorkflow(workflowID, runningEntry, workflowPromise);
 
-      // Return the normal handle that doesn't capture errors.
-      return new InvokedHandle(workflowPromise, workflowID);
-    } else {
-      return new RetrievedHandle(workflowID);
-    }
+    // Return the normal handle that doesn't capture errors.
+    return new InvokedHandle(workflowPromise, workflowID);
   }
 
   /**
