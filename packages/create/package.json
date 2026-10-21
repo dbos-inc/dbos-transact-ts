@@ -12,7 +12,7 @@
   "homepage": "https://docs.dbos.dev/",
   "scripts": {
     "build": "tsc --project tsconfig.json",
-    "test": "echo \"No tests\""
+    "test": "tsx --test tests/*.test.ts"
   },
   "bin": {
     "create": "./dist/cli.js"
@@ -20,6 +20,7 @@
   "devDependencies": {
     "@types/node": "^20.6.3",
     "@types/validator": "^13.11.9",
+    "tsx": "^4.20.3",
     "typescript": "^5.4.5"
   },
   "dependencies": {
