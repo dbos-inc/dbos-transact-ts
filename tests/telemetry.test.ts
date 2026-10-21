@@ -6,6 +6,8 @@ import { isTraceContextWorking } from '../src/telemetry/traces';
 import { AddressInfo } from 'net';
 import http from 'http';
 import { globalParams } from '../src/utils';
+import { randomUUID } from 'node:crypto';
+import { generateDBOSTestConfig, reexecuteWorkflowById, setUpDBOSTestSysDb } from './helpers';
 
 async function tracedStep() {
   return Promise.resolve();
@@ -241,5 +243,62 @@ describe('dbos-standalone-tracing', () => {
   test('workflows-produce-real-spans', async () => {
     const result = await doSomethingTraced();
     expect(result).toBe('Done');
+  });
+});
+
+const spanChild = DBOS.registerWorkflow(async () => Promise.resolve(), { name: 'spanChild' });
+const spanParent = DBOS.registerWorkflow(
+  async (childID: string) => {
+    await (await DBOS.startWorkflow(spanChild, { workflowID: childID })()).getResult();
+  },
+  { name: 'spanParent' },
+);
+
+// A span that never ends is never exported, and tracers that export whole traces then drop the caller's trace too.
+describe('workflow-span-ends-without-execution', () => {
+  const memoryExporter = new InMemorySpanExporter();
+
+  beforeAll(async () => {
+    const provider = new NodeTracerProvider({
+      spanProcessors: [new SimpleSpanProcessor(memoryExporter)],
+    });
+    provider.register();
+    const config = { ...generateDBOSTestConfig(), tracingEnabled: true };
+    await setUpDBOSTestSysDb(config);
+    DBOS.setConfig(config);
+    await DBOS.launch();
+  });
+
+  afterAll(async () => {
+    await DBOS.shutdown();
+    trace.disable();
+    context.disable();
+  });
+
+  function endedSpanCount(workflowID: string) {
+    return memoryExporter.getFinishedSpans().filter((s) => s.attributes['operationUUID'] === workflowID).length;
+  }
+
+  test('enqueue', async () => {
+    // Nothing dequeues from this queue, so the workflow does not run here.
+    const handle = await DBOS.startWorkflow(spanChild, { queueName: 'span-test-unserved' })();
+    expect(endedSpanCount(handle.workflowID)).toBe(1);
+  });
+
+  test('start-of-an-existing-workflow', async () => {
+    const workflowID = randomUUID();
+    await (await DBOS.startWorkflow(spanChild, { workflowID })()).getResult();
+    await DBOS.startWorkflow(spanChild, { workflowID })();
+    expect(endedSpanCount(workflowID)).toBe(2);
+  });
+
+  test('replayed-child-start', async () => {
+    const parentID = randomUUID();
+    const childID = randomUUID();
+    await (await DBOS.startWorkflow(spanParent, { workflowID: parentID })(childID)).getResult();
+    expect(endedSpanCount(childID)).toBe(1);
+
+    await (await reexecuteWorkflowById(parentID)).getResult();
+    expect(endedSpanCount(childID)).toBe(2);
   });
 });

@@ -553,13 +553,20 @@ export class DBOSExecutor {
       assumedRole: pctx?.assumedRole ?? '',
     });
 
+    // runWorkflow ends the span if this call runs the workflow; every other exit must end it here.
+    const endSpanAndRethrow = (e: unknown): never => {
+      span.setStatus({ code: SpanStatusCode.ERROR, message: (e as Error).message });
+      this.tracer.endSpan(span);
+      throw e;
+    };
+
     let serializationType = wInfo?.workflowConfig?.serialization;
     const funcArgs = await serializeFunctionInputOutput(
       serializationType === 'portable' ? ({ positionalArgs: args } as JsonWorkflowArgs) : args,
       [wfname, '<arguments>'],
       this.serializer,
       serializationType,
-    );
+    ).catch(endSpanAndRethrow);
     args =
       serializationType === 'portable'
         ? ((funcArgs.deserialized as JsonWorkflowArgs).positionalArgs! as T)
@@ -622,8 +629,11 @@ export class DBOSExecutor {
 
     // Record the workflow's status and inputs before it runs, unless a replayed child start already recorded its outcome.
     if (callerFunctionID !== undefined && callerID !== undefined) {
-      const result = await this.systemDatabase.getOperationResultAndThrowIfCancelled(callerID, callerFunctionID);
+      const result = await this.systemDatabase
+        .getOperationResultAndThrowIfCancelled(callerID, callerFunctionID)
+        .catch(endSpanAndRethrow);
       if (result) {
+        this.tracer.endSpan(span);
         if (result.functionName !== wfname) {
           throw new DBOSUnexpectedStepError(callerID, callerFunctionID, wfname, result.functionName ?? '?');
         }
@@ -639,6 +649,7 @@ export class DBOSExecutor {
     const claimed = params.dequeuedStatus;
     if (claimed) {
       if (params.ownerXid === undefined) {
+        this.tracer.endSpan(span);
         throw new DBOSError(`Dispatch of workflow ${workflowID} is missing its ownership token`);
       }
       ownerXid = params.ownerXid;
@@ -649,7 +660,7 @@ export class DBOSExecutor {
         claimed.status !== StatusString.ERROR &&
         claimedAttempts > maxRecoveryAttempts + 1
       ) {
-        await this.systemDatabase.deadLetterWorkflows([workflowID], claimedAttempts);
+        await this.systemDatabase.deadLetterWorkflows([workflowID], claimedAttempts).catch(endSpanAndRethrow);
         this.tracer.endSpan(span);
         throw new DBOSMaxRecoveryAttemptsExceededError(workflowID, maxRecoveryAttempts);
       }
@@ -688,6 +699,7 @@ export class DBOSExecutor {
         }
         serializationType = ires.serialization === DBOSPortableJSON.name() ? 'portable' : undefined;
       } catch (e) {
+        this.tracer.endSpan(span);
         // For 'return-existing' enqueues we don't pre-record the dedup error: the wrapper will
         // catch it, attach to the existing workflow, and record the child mapping itself.
         if (
@@ -707,7 +719,6 @@ export class DBOSExecutor {
             { error: sererr.serializedValue, serialization: sererr.serialization },
           );
         }
-        this.tracer.endSpan(span);
         throw e;
       }
     }
@@ -883,6 +894,7 @@ export class DBOSExecutor {
       // Return the normal handle that doesn't capture errors.
       return new InvokedHandle(workflowPromise, workflowID);
     } else {
+      this.tracer.endSpan(span);
       return new RetrievedHandle(workflowID);
     }
   }
