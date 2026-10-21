@@ -1,4 +1,4 @@
-import { InMemorySpanExporter, ReadableSpan, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base';
+import { InMemorySpanExporter, ReadableSpan, SimpleSpanProcessor, SpanProcessor } from '@opentelemetry/sdk-trace-base';
 import { NodeTracerProvider } from './nodetraceprovider';
 import { DBOS } from '../src';
 import { context, trace, SpanStatusCode } from '@opentelemetry/api';
@@ -255,12 +255,19 @@ const spanParent = DBOS.registerWorkflow(
 );
 
 // A span that never ends is never exported, and tracers that export whole traces then drop the caller's trace too.
-describe('workflow-span-ends-without-execution', () => {
+describe('workflow-span-only-for-runs', () => {
   const memoryExporter = new InMemorySpanExporter();
+  const startedSpans: ReadableSpan[] = [];
+  const startTracker: SpanProcessor = {
+    onStart: (span) => void startedSpans.push(span),
+    onEnd: () => {},
+    forceFlush: () => Promise.resolve(),
+    shutdown: () => Promise.resolve(),
+  };
 
   beforeAll(async () => {
     const provider = new NodeTracerProvider({
-      spanProcessors: [new SimpleSpanProcessor(memoryExporter)],
+      spanProcessors: [startTracker, new SimpleSpanProcessor(memoryExporter)],
     });
     provider.register();
     const config = { ...generateDBOSTestConfig(), tracingEnabled: true };
@@ -275,30 +282,32 @@ describe('workflow-span-ends-without-execution', () => {
     context.disable();
   });
 
-  function endedSpanCount(workflowID: string) {
-    return memoryExporter.getFinishedSpans().filter((s) => s.attributes['operationUUID'] === workflowID).length;
+  // [started, ended] workflow spans for this workflow ID.
+  function spanCounts(workflowID: string) {
+    const matches = (s: ReadableSpan) => s.attributes['operationUUID'] === workflowID;
+    return [startedSpans.filter(matches).length, memoryExporter.getFinishedSpans().filter(matches).length];
   }
 
   test('enqueue', async () => {
     // Nothing dequeues from this queue, so the workflow does not run here.
     const handle = await DBOS.startWorkflow(spanChild, { queueName: 'span-test-unserved' })();
-    expect(endedSpanCount(handle.workflowID)).toBe(1);
+    expect(spanCounts(handle.workflowID)).toEqual([0, 0]);
   });
 
   test('start-of-an-existing-workflow', async () => {
     const workflowID = randomUUID();
     await (await DBOS.startWorkflow(spanChild, { workflowID })()).getResult();
     await DBOS.startWorkflow(spanChild, { workflowID })();
-    expect(endedSpanCount(workflowID)).toBe(2);
+    expect(spanCounts(workflowID)).toEqual([1, 1]);
   });
 
   test('replayed-child-start', async () => {
     const parentID = randomUUID();
     const childID = randomUUID();
     await (await DBOS.startWorkflow(spanParent, { workflowID: parentID })(childID)).getResult();
-    expect(endedSpanCount(childID)).toBe(1);
+    expect(spanCounts(childID)).toEqual([1, 1]);
 
     await (await reexecuteWorkflowById(parentID)).getResult();
-    expect(endedSpanCount(childID)).toBe(2);
+    expect(spanCounts(childID)).toEqual([1, 1]);
   });
 });
