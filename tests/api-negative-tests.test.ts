@@ -139,8 +139,9 @@ class TransitionTests {
     return await TransitionTests.oopsCallStartWFFromStep();
   }
 
+  // Patching needs no flag: a workflow started on this version simply takes the patched branch.
   @DBOS.workflow()
-  static async oopsPatchDisabled() {
+  static async patchWithoutFlag() {
     return await DBOS.patch('nope');
   }
 }
@@ -184,9 +185,7 @@ async function main9() {
     await expect(() => TransitionTests.oopsCallStartWFFromStepWF()).rejects.toThrow(
       'Invalid call to a `workflow` function from within a `step` or `transaction`',
     );
-    await expect(() => TransitionTests.oopsPatchDisabled()).rejects.toThrow(
-      'Patching is not enabled.  See `enablePatching` in `DBOSConfig`',
-    );
+    await expect(TransitionTests.patchWithoutFlag()).resolves.toBe(true);
   } finally {
     await DBOS.shutdown();
   }

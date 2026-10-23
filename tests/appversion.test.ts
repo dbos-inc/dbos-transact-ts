@@ -3,11 +3,20 @@ import { DBOS, DBOSClient, StatusString } from '../src';
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import { globalParams } from '../src/utils';
 import * as enterprise from '../src/enterprise';
-import type { ConductorConnection } from '../src/enterprise';
+import type { AutoUpgradePass, ConductorConnection } from '../src/enterprise';
 
 class FakeConductor implements ConductorConnection {
   start() {}
   stop() {
+    return Promise.resolve();
+  }
+}
+
+class FakePass implements AutoUpgradePass {
+  run() {
+    return Promise.resolve(0);
+  }
+  close() {
     return Promise.resolve();
   }
 }
@@ -149,7 +158,9 @@ describe('test-app-version', () => {
     const originalCloud = globalParams.dbosCloud;
     const originalSysDbUrl = process.env.DBOS_SYSTEM_DATABASE_URL;
     // The executor ID is core's to assign; the Conductor client itself is not under test here.
-    const load = jest.spyOn(enterprise, 'load').mockReturnValue({ ConductorWebsocket: FakeConductor });
+    const load = jest
+      .spyOn(enterprise, 'load')
+      .mockReturnValue({ ConductorWebsocket: FakeConductor, AutoUpgradePass: FakePass });
     try {
       // An empty DBOS__VMID is an unset one
       process.env.DBOS__VMID = '';

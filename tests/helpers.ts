@@ -7,6 +7,8 @@ import { GlobalLogger } from '../src/telemetry/logs';
 import { deriveDatabaseUrl, dropPGDatabase, ensurePGDatabase, maskDatabaseUrl } from '../src/database_utils';
 import { Client } from 'pg';
 import { randomUUID } from 'node:crypto';
+import http from 'node:http';
+import type { AddressInfo } from 'node:net';
 
 const silentDropLogger = { warn: () => {} };
 
@@ -241,5 +243,66 @@ export async function causeChaos(db: string): Promise<void> {
     try {
       await client.end();
     } catch (err) {}
+  }
+}
+
+/* Entitlements */
+
+// Every entitlement Conductor reports today.
+export const ALL_ENTITLED: Record<string, boolean> = { sharding: true, autoUpgrade: true, suspendWorkflows: true };
+
+/**
+ * A local stand-in for Conductor's entitlements route. Tests name it as their conductorURL,
+ * and the SDK finds /v2/entitlements beside it.
+ */
+export class FakeConductor {
+  status = 200;
+  body: unknown = { entitlements: { ...ALL_ENTITLED } };
+  headers: Record<string, string> = {};
+  readonly requests: Array<{ path: string; authorization: string | undefined }> = [];
+  readonly #server: http.Server;
+  #url = '';
+
+  private constructor() {
+    this.#server = http.createServer((req, res) => {
+      this.requests.push({ path: req.url ?? '', authorization: req.headers.authorization });
+      const payload = typeof this.body === 'string' ? this.body : JSON.stringify(this.body);
+      res.writeHead(this.status, { 'Content-Type': 'application/json', ...this.headers });
+      res.end(payload);
+    });
+  }
+
+  static async start(): Promise<FakeConductor> {
+    const fake = new FakeConductor();
+    await new Promise<void>((resolve) => fake.#server.listen(0, '127.0.0.1', resolve));
+    const address = fake.#server.address() as AddressInfo;
+    fake.#url = `ws://127.0.0.1:${address.port}`;
+    return fake;
+  }
+
+  /** The Conductor URL to configure, which the SDK derives the entitlement route from. */
+  get url(): string {
+    return this.#url;
+  }
+
+  /** Answer every request with a problem detail. */
+  reject(status: number, detail: string, headers: Record<string, string> = {}): void {
+    this.status = status;
+    this.body = { title: 'Rejected', status, detail };
+    this.headers = headers;
+  }
+
+  /** Grant exactly these entitlements. */
+  entitle(entitlements: Record<string, unknown>): void {
+    this.status = 200;
+    this.body = { entitlements };
+    this.headers = {};
+  }
+
+  stop(): Promise<void> {
+    return new Promise((resolve) => {
+      this.#server.closeAllConnections();
+      this.#server.close(() => resolve());
+    });
   }
 }

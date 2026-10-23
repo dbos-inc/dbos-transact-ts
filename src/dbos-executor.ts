@@ -28,6 +28,7 @@ import {
 
 import { type StepConfig, validateStepConfig } from './step';
 import type { ConductorConnection } from './enterprise';
+import { type AutoUpgradeLoop, autoUpgradableWorkflows, type EnrolledWorkflow } from './auto_upgrade';
 import { TelemetryCollector } from './telemetry/collector';
 import { getActiveSpan, runWithTrace, SpanStatusCode, Tracer } from './telemetry/traces';
 import { DBOSContextualLogger, DLogger, GlobalLogger } from './telemetry/logs';
@@ -154,7 +155,27 @@ export interface DBOSConfig {
   executorID?: string;
 
   serializer?: DBOSSerializer;
+  /**
+   * @deprecated Pins the application version to "PATCHING_ENABLED" so every deployment shares one version.
+   * DBOS.patch and DBOS.deprecatePatch no longer require it; set `applicationVersion` explicitly instead.
+   */
   enablePatching?: boolean;
+  /** The key that entitles this application to Transact Enterprise features. */
+  transactEnterpriseKey?: string;
+  /**
+   * If true, workflows registered by this application are auto-upgraded to the latest application
+   * version: work left ENQUEUED, DELAYED, or PENDING on an older version is moved to the latest one.
+   * Individual workflows can opt in or out at registration.
+   * Requires Transact Enterprise. Defaults to false.
+   */
+  autoUpgrade?: boolean;
+  /** Milliseconds between two auto-upgrade passes. Defaults to 30000. */
+  autoUpgradeIntervalMs?: number;
+  /**
+   * Milliseconds the latest application version must have been the latest before auto-upgrade
+   * re-enqueues PENDING workflows left on older versions.
+   */
+  autoUpgradeGraceMs?: number;
   /**
    * Restrict this process to only dequeue from the named queues. A name that
    * matches nothing at launch is deferred — a queue registered later under that
@@ -252,6 +273,9 @@ export type DBOSConfigInternal = {
   observabilityQueryTimeoutMs?: number;
   systemDatabaseIdleTransactionTimeoutMs?: number;
   runMigrations: boolean;
+  autoUpgrade: boolean;
+  autoUpgradeIntervalMs?: number;
+  autoUpgradeGraceMs?: number;
 };
 
 export interface InternalWorkflowParams extends WorkflowParams {
@@ -284,6 +308,7 @@ export const OperationType = {
 export class DBOSExecutor {
   initialized: boolean;
   conductor: ConductorConnection | undefined = undefined;
+  autoUpgrader: AutoUpgradeLoop | undefined = undefined;
   // System Database
   readonly systemDatabase: SystemDatabase;
 
@@ -334,6 +359,10 @@ export class DBOSExecutor {
 
   get appName(): string | undefined {
     return this.config.name;
+  }
+
+  autoUpgradableWorkflows(): EnrolledWorkflow[] {
+    return autoUpgradableWorkflows(this.config.autoUpgrade);
   }
 
   async init(): Promise<void> {
