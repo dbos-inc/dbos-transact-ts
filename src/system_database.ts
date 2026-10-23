@@ -3823,8 +3823,12 @@ export class SystemDatabase {
                recovery_attempts = recovery_attempts + 1,
                updated_at = (EXTRACT(epoch FROM now()) * 1000)::bigint,
                workflow_deadline_epoch_ms = CASE
-                 WHEN workflow_timeout_ms IS NOT NULL AND workflow_deadline_epoch_ms IS NULL
-                 THEN (EXTRACT(epoch FROM now()) * 1000)::bigint + workflow_timeout_ms
+                 WHEN workflow_timeout_ms IS NOT NULL AND workflow_deadline_epoch_ms IS NULL THEN
+                   CASE
+                     WHEN workflow_timeout_ms > 9223372036854775807 - (EXTRACT(epoch FROM now()) * 1000)::bigint
+                     THEN 9223372036854775807
+                     ELSE (EXTRACT(epoch FROM now()) * 1000)::bigint + workflow_timeout_ms
+                   END
                  ELSE workflow_deadline_epoch_ms
                END
            WHERE workflow_uuid = ANY($5::text[]) AND status = $6 AND ${claimScope}
@@ -4000,8 +4004,12 @@ export class SystemDatabase {
              recovery_attempts = recovery_attempts + 1,
              updated_at = (EXTRACT(epoch FROM now()) * 1000)::bigint,
              workflow_deadline_epoch_ms = CASE
-               WHEN workflow_timeout_ms IS NOT NULL AND workflow_deadline_epoch_ms IS NULL
-               THEN (EXTRACT(epoch FROM now()) * 1000)::bigint + workflow_timeout_ms
+               WHEN workflow_timeout_ms IS NOT NULL AND workflow_deadline_epoch_ms IS NULL THEN
+                 CASE
+                   WHEN workflow_timeout_ms > 9223372036854775807 - (EXTRACT(epoch FROM now()) * 1000)::bigint
+                   THEN 9223372036854775807
+                   ELSE (EXTRACT(epoch FROM now()) * 1000)::bigint + workflow_timeout_ms
+                 END
                ELSE workflow_deadline_epoch_ms
              END
          WHERE ${claimGuard(3, 4, 5, 6, flipScope)}
