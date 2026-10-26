@@ -216,7 +216,7 @@ export const workflowTimeoutConfig = {
   batchSize: 1000,
 };
 
-function waitOrAbort(ms: number, signal: AbortSignal): Promise<void> {
+export function waitOrAbort(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
     if (signal.aborted) return resolve();
     const onAbort = () => {

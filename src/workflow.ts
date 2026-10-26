@@ -91,6 +91,13 @@ export interface WorkflowConfig {
    *  the validated/transformed array. Runs before the workflow function on
    *  every invocation (direct call, queue dispatch, and recovery). */
   inputSchema?: InputSchema;
+  /**
+   * Whether auto-upgrade moves pending instances of this workflow to the latest application version.
+   * Unset, the workflow follows the `autoUpgrade` flag in DBOSConfig.
+   * Set to `true` to enroll it independently of DBOSConfig.autoUpgrade, and set to `false` to opt it out when DBOSConfig.autoUpgrade is true.
+   * Requires Transact Enterprise.
+   */
+  autoUpgrade?: boolean;
 }
 
 export interface WorkflowStatus {
