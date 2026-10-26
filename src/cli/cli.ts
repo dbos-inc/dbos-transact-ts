@@ -147,6 +147,13 @@ program
       const databaseURLs = await getDatabaseURLs(systemDatabaseUrl, { allowSharded: true });
       systemDatabaseUrl = databaseURLs.systemDatabaseURL;
 
+      if (!options.sharding && (await holdsShardedSchema(systemDatabaseUrl, schemaName))) {
+        console.error(
+          `Error: the system schema ${schemaName} is sharded; create or migrate it with \`dbos schema --sharding\`.`,
+        );
+        process.exit(1);
+      }
+
       try {
         // Load the DBOS system schema.
         logger.info(`Creating DBOS system database and schema: ${schemaName}`);

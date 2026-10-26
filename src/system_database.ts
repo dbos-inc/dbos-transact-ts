@@ -577,8 +577,8 @@ async function refuseShardedSchema(client: ClientBase, schemaName: string): Prom
   }
 }
 
-/** Whether this database holds a sharded DBOS system schema; false if it can't be reached, for the caller to report. */
-export async function holdsShardedSchema(databaseUrl: string): Promise<boolean> {
+/** Whether this database holds a sharded DBOS system schema (this one, if named); false if it can't be reached. */
+export async function holdsShardedSchema(databaseUrl: string, schemaName?: string): Promise<boolean> {
   // Bounded, so an unreachable host fails as fast as the caller's own connection would.
   const client = new Client({ ...getClientConfig(databaseUrl), connectionTimeoutMillis: 10_000 });
   client.on('error', () => {});
@@ -586,7 +586,8 @@ export async function holdsShardedSchema(databaseUrl: string): Promise<boolean> 
     await client.connect();
     const { rows } = await client.query(
       `SELECT 1 FROM information_schema.columns
-       WHERE table_name = 'workflow_status' AND column_name = 'shard_key' LIMIT 1`,
+       WHERE table_name = 'workflow_status' AND column_name = 'shard_key'${schemaName !== undefined ? ' AND table_schema = $1' : ''} LIMIT 1`,
+      schemaName !== undefined ? [schemaName] : [],
     );
     return rows.length > 0;
   } catch {
