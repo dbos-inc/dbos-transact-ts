@@ -9,6 +9,7 @@ import assert from 'node:assert';
 import { DBOSClient } from '../dist/src';
 import { deriveDatabaseUrl, dropPGDatabase, ensurePGDatabase, getDatabaseNameFromUrl } from '../src/database_utils';
 import { sleepConfig, sleepms } from '../src/utils';
+import { DBOS_FUNCNAME_GETSTATUS } from '../src/system_database';
 
 const silentDropLogger = { warn: () => {} };
 
@@ -1560,7 +1561,23 @@ describe('custom-pool-getstatus', () => {
       }
       // Release every parent at once so their getStatus calls all contend for the pool.
       gate.set();
-      expect(await Promise.all(handles.map((h) => h.getResult()))).toEqual(handles.map(() => true));
+      // Bounded well inside the test timeout, so a deadlock fails here instead of hanging jest.
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const deadlocked = new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error('getStatus calls deadlocked the pool')), 15000);
+      });
+      try {
+        const results = await Promise.race([Promise.all(handles.map((h) => h.getResult())), deadlocked]);
+        expect(results).toEqual(handles.map(() => true));
+      } finally {
+        clearTimeout(timer);
+      }
+
+      // getStatus follows startWorkflow (function 0), so it is checkpointed in the transaction this test is about.
+      for (const handle of handles) {
+        const steps = await DBOS.listWorkflowSteps(handle.workflowID);
+        expect(steps?.find((s) => s.functionID === 1)?.name).toBe(DBOS_FUNCNAME_GETSTATUS);
+      }
     } finally {
       await DBOS.shutdown();
       await pool.end();
