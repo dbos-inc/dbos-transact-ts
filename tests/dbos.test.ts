@@ -9,6 +9,7 @@ import assert from 'node:assert';
 import { DBOSClient } from '../dist/src';
 import { deriveDatabaseUrl, dropPGDatabase, ensurePGDatabase, getDatabaseNameFromUrl } from '../src/database_utils';
 import { sleepConfig, sleepms } from '../src/utils';
+import { DBOS_FUNCNAME_GETSTATUS } from '../src/system_database';
 
 const silentDropLogger = { warn: () => {} };
 
@@ -1517,5 +1518,108 @@ describe('long-sleep-tests', () => {
       sleepConfig.maxTimeoutMS = saved;
       await DBOS.shutdown();
     }
+  });
+});
+
+describe('custom-pool-getstatus', () => {
+  let systemDatabaseUrl: string;
+  let name: string;
+
+  beforeAll(async () => {
+    const config = generateDBOSTestConfig();
+    systemDatabaseUrl = config.systemDatabaseUrl!;
+    name = config.name!;
+    await setUpDBOSTestSysDb(config);
+  });
+
+  afterEach(async () => {
+    await DBOS.shutdown();
+  });
+
+  test('concurrent getStatus inside workflows does not exhaust a small pool', async () => {
+    // Fewer connections than workflows: getStatus used to hold one in a transaction while waiting on a
+    // second, so once every connection was held this way nothing could progress.
+    const pool = new Pool({ connectionString: systemDatabaseUrl, max: 4, connectionTimeoutMillis: 2000 });
+    pool.on('error', () => {});
+    try {
+      DBOS.setConfig({ name, systemDatabasePool: pool, useListenNotify: false });
+      const child = DBOS.registerWorkflow(async () => Promise.resolve('done'), { name: 'getstatus-child' });
+      const gate = new Event();
+      const parent = DBOS.registerWorkflow(
+        async () => {
+          const handle = await DBOS.startWorkflow(child)();
+          await gate.wait();
+          return (await handle.getStatus())?.workflowID === handle.workflowID;
+        },
+        { name: 'getstatus-parent' },
+      );
+      await DBOS.launch();
+
+      const handles = [];
+      for (let i = 0; i < 12; i++) {
+        handles.push(await DBOS.startWorkflow(parent)());
+      }
+      // Release every parent at once so their getStatus calls all contend for the pool.
+      gate.set();
+      // Bounded well inside the test timeout, so a deadlock fails here instead of hanging jest.
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const deadlocked = new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error('getStatus calls deadlocked the pool')), 15000);
+      });
+      try {
+        const results = await Promise.race([Promise.all(handles.map((h) => h.getResult())), deadlocked]);
+        expect(results).toEqual(handles.map(() => true));
+      } finally {
+        clearTimeout(timer);
+      }
+
+      // getStatus follows startWorkflow (function 0), so it is checkpointed in the transaction this test is about.
+      for (const handle of handles) {
+        const steps = await DBOS.listWorkflowSteps(handle.workflowID);
+        expect(steps?.find((s) => s.functionID === 1)?.name).toBe(DBOS_FUNCNAME_GETSTATUS);
+      }
+    } finally {
+      await DBOS.shutdown();
+      await pool.end();
+    }
+  }, 30000);
+});
+
+describe('getstatus-checkpoint', () => {
+  let config: DBOSConfig;
+
+  beforeAll(async () => {
+    config = generateDBOSTestConfig();
+    await setUpDBOSTestSysDb(config);
+  });
+
+  afterEach(async () => {
+    await DBOS.shutdown();
+  });
+
+  test('getStatus as the first call in a workflow is checkpointed', async () => {
+    DBOS.setConfig(config);
+    const gate = new Event();
+    const target = DBOS.registerWorkflow(async () => gate.wait(), { name: 'getstatus-first-target' });
+    // getStatus is this workflow's first call, so it runs as function 0.
+    const observer = DBOS.registerWorkflow(
+      async (targetID: string) => (await DBOS.getWorkflowStatus(targetID))?.status,
+      { name: 'getstatus-first-observer' },
+    );
+    await DBOS.launch();
+
+    const targetHandle = await DBOS.startWorkflow(target)();
+    const observerID = randomUUID();
+    await expect(DBOS.withNextWorkflowID(observerID, () => observer(targetHandle.workflowID))).resolves.toBe(
+      StatusString.PENDING,
+    );
+    const steps = await DBOS.listWorkflowSteps(observerID);
+    expect(steps?.find((s) => s.functionID === 0)?.name).toBe(DBOS_FUNCNAME_GETSTATUS);
+
+    // The target finishes, but a re-execution must replay the recorded status rather than read it again.
+    gate.set();
+    await targetHandle.getResult();
+    const reexecuted = await reexecuteWorkflowById(observerID);
+    await expect(reexecuted.getResult()).resolves.toBe(StatusString.PENDING);
   });
 });
