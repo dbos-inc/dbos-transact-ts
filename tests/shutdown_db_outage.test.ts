@@ -26,20 +26,26 @@ function connectionRefused(): Error {
   return Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:5432'), { code: 'ECONNREFUSED' });
 }
 
-/** Make status reads of matching workflows fail as if the database refused connections, beneath dbRetry. */
+/**
+ * Make status reads of matching workflows fail as if the database refused connections, beneath dbRetry.
+ * Injected at the system pool, not a SystemDatabase method: getWorkflowStatus reads through a private
+ * helper, and only the pool sits beneath both its retry and listWorkflows'.
+ */
 function failStatusReads(matches: (workflowID: string) => boolean) {
   const failing = new Event();
-  // eslint-disable-next-line @typescript-eslint/unbound-method -- always called with the instance as `this`
-  const original = SystemDatabase.prototype.listWorkflows;
-  const spy = jest.spyOn(SystemDatabase.prototype, 'listWorkflows').mockImplementation(async function (
-    this: SystemDatabase,
-    input,
-  ) {
-    if (input.workflowIDs?.some(matches)) {
+  type Query = (...args: unknown[]) => Promise<unknown>;
+  const pool = DBOSExecutor.globalInstance!.systemDatabase.pool as unknown as { query: Query };
+  const original = pool.query;
+  const spy = jest.spyOn(pool, 'query').mockImplementation(async function (this: unknown, ...args: unknown[]) {
+    const [text, params] = args;
+    // A status read lists its IDs either inline or as one array parameter, as a batch read by known IDs does.
+    const isStatusRead = typeof text === 'string' && /workflow_status\.workflow_uuid (IN \(|= ANY\()/.test(text);
+    const ids: unknown[] = Array.isArray(params) ? params.flat() : [];
+    if (isStatusRead && ids.some((p) => typeof p === 'string' && matches(p))) {
       failing.set();
       throw connectionRefused();
     }
-    return original.call(this, input);
+    return original.apply(this, args);
   });
   return { failing, spy };
 }
