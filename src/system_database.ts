@@ -639,7 +639,10 @@ function mapWorkflowStatus(row: workflow_status): WorkflowStatusInternal {
     recoveryAttempts: Number(row.recovery_attempts),
     input: row.inputs ? row.inputs : null,
     timeoutMS: row.workflow_timeout_ms ? Number(row.workflow_timeout_ms) : undefined,
-    deadlineEpochMS: row.workflow_deadline_epoch_ms ? Number(row.workflow_deadline_epoch_ms) : undefined,
+    // Cap at the largest exact JS integer: a saturated bigint deadline would otherwise round past the bigint maximum and be rejected when a child workflow inherits it.
+    deadlineEpochMS: row.workflow_deadline_epoch_ms
+      ? Math.min(Number(row.workflow_deadline_epoch_ms), Number.MAX_SAFE_INTEGER)
+      : undefined,
     deduplicationID: row.deduplication_id ?? undefined,
     priority: row.priority ?? 0,
     queuePartitionKey: row.queue_partition_key ?? undefined,

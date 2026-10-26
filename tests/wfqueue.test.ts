@@ -1629,6 +1629,12 @@ describe('queue-time-outs', () => {
     }
 
     @DBOS.workflow()
+    static async parentStartsChild() {
+      const handle = await DBOS.startWorkflow(DBOSTimeoutTestClass).sleepingWorkflow(1);
+      return await handle.getResult();
+    }
+
+    @DBOS.workflow()
     static async timeoutParentStartDetachedChild(duration: number) {
       await DBOS.startWorkflow(DBOSTimeoutTestClass, { timeoutMS: null })
         .sleepingWorkflow(duration * 2)
@@ -1700,6 +1706,23 @@ describe('queue-time-outs', () => {
     const childHandle = DBOS.retrieveWorkflow(childID);
     await expect(childHandle.getStatus()).resolves.toMatchObject({
       status: StatusString.CANCELLED,
+    });
+  });
+
+  // A near-maximum timeout saturates the deadline on dequeue; a child inheriting it must still insert (#1421)
+  test('enqueue-workflow-saturatedDeadlineChild', async () => {
+    const workflowID: string = randomUUID();
+    const childID: string = `${workflowID}-0`;
+    const handle = await DBOS.startWorkflow(DBOSTimeoutTestClass, {
+      workflowID,
+      queueName: timeoutQueue.name,
+      timeoutMS: 9223372036854774807,
+    }).parentStartsChild();
+    await expect(handle.getResult()).resolves.toBe(42);
+    await expect(handle.getStatus()).resolves.toMatchObject({ deadlineEpochMS: Number.MAX_SAFE_INTEGER });
+    await expect(DBOS.retrieveWorkflow(childID).getStatus()).resolves.toMatchObject({
+      status: StatusString.SUCCESS,
+      deadlineEpochMS: Number.MAX_SAFE_INTEGER,
     });
   });
 
