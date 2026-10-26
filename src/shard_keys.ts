@@ -1,6 +1,7 @@
 // Shard keys a caller supplies for the workflows it addresses, read only by a sharded system database.
 
 import { AsyncLocalStorage } from 'async_hooks';
+import { inspect } from 'util';
 import { DBOSError } from './error';
 
 interface ShardKeyState {
@@ -15,7 +16,7 @@ const shardKeyState = new AsyncLocalStorage<ShardKeyState>();
 /** Throw unless `shardKey` is undefined, null, or a non-empty string. */
 export function validateShardKey(shardKey: unknown): void {
   if (shardKey !== undefined && shardKey !== null && (typeof shardKey !== 'string' || shardKey === '')) {
-    throw new DBOSError(`Invalid shard key ${JSON.stringify(shardKey)}: a shard key must be a non-empty string`);
+    throw new DBOSError(`Invalid shard key ${inspect(shardKey)}: a shard key must be a non-empty string`);
   }
 }
 

@@ -223,7 +223,7 @@ export interface StepInfo {
   readonly output: unknown;
   readonly error: Error | null;
   readonly childWorkflowID: string | null;
-  // That workflow's shard key; undefined on an unsharded database
+  // The child workflow's shard key; undefined on an unsharded database
   readonly childShardKey?: string;
   readonly startedAtEpochMs?: number;
   readonly completedAtEpochMs?: number;

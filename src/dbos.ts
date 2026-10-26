@@ -1296,7 +1296,7 @@ export class DBOS {
       }, 'DBOS.forkWorkflow');
       // A fork lives under its original's shard key, however the caller supplied it.
       const forkKey = DBOS.#executor.systemDatabase.keyHint(workflowID);
-      return this.retrieveWorkflow<T>(forkedID, { shardKey: forkKey });
+      return new RetrievedHandle<Awaited<T>>(forkedID, forkKey);
     });
   }
 
@@ -1336,7 +1336,7 @@ export class DBOS {
         return await DBOS.#executor.rewindWorkflow(workflowID, startStep, options ?? {});
       }, 'DBOS.rewindWorkflow');
       // The resolved key, so the handle also works outside this binding.
-      return this.retrieveWorkflow<T>(workflowID);
+      return new RetrievedHandle<Awaited<T>>(workflowID, DBOS.#executor.systemDatabase.keyHint(workflowID));
     });
   }
 

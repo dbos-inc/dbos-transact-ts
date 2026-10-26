@@ -433,7 +433,7 @@ export class DBOSExecutor {
     await this.systemDatabase.awaitRunningWorkflows(timeoutMS);
   }
 
-  /** Stop the workflow timeout sweep. Called after the shutdown drain, so timeouts still fire while workflows finish. */
+  /** Stop the background jobs. Called after the shutdown drain, so timeouts still fire while workflows finish. */
   async stopBackgroundJobs() {
     this.#backgroundJobsAbort?.abort();
     await this.#backgroundJobsEnded;
@@ -852,7 +852,7 @@ export class DBOSExecutor {
                 authenticatedUser,
                 authenticatedRoles,
                 shardKey,
-                // Nor the shard key set for the caller's next workflow.
+                // A child never inherits the shard key its caller set for its next workflow.
                 shardKeyForNextWorkflow: undefined,
               },
               // The body starts with no caller's shard keys; its own lives on the context.

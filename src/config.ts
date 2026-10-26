@@ -14,7 +14,7 @@ export interface ConfigFile {
   language?: string;
   system_database_url?: string;
   system_database_schema_name?: string;
-  // Whether the system database is sharded, which only the migration commands support.
+  // Whether the system database is sharded; CLI commands other than `dbos schema --sharding` then refuse to run.
   sharding?: boolean;
   database?: {
     migrate?: string[];

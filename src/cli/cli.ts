@@ -67,7 +67,7 @@ program
     const configFile = await readConfigFile();
     const config = getDbosConfig(configFile);
     const schemaName = configFile.system_database_schema_name ?? 'dbos';
-    if (await isSharded(config.systemDatabaseUrl)) {
+    if (await isSharded(config.systemDatabaseUrl, schemaName)) {
       console.error(SHARDED_REFUSAL);
       exit(1);
     }
@@ -147,6 +147,12 @@ program
       const databaseURLs = await getDatabaseURLs(systemDatabaseUrl, { allowSharded: true });
       systemDatabaseUrl = databaseURLs.systemDatabaseURL;
 
+      if (!options.sharding && (await configEnablesSharding())) {
+        console.error(
+          'Error: dbos-config.yaml enables sharding; create or migrate the system schema with `dbos schema --sharding`.',
+        );
+        process.exit(1);
+      }
       if (!options.sharding && (await holdsShardedSchema(systemDatabaseUrl, schemaName))) {
         console.error(
           `Error: the system schema ${schemaName} is sharded; create or migrate it with \`dbos schema --sharding\`.`,
@@ -561,13 +567,17 @@ async function resolveDatabaseURL(systemDatabaseURL: string | undefined): Promis
 }
 
 // Whether the configuration enables sharding or the database holds a sharded schema.
-async function isSharded(systemDatabaseURL: string): Promise<boolean> {
+async function isSharded(systemDatabaseURL: string, schemaName?: string): Promise<boolean> {
+  return (await configEnablesSharding()) || (await holdsShardedSchema(systemDatabaseURL, schemaName));
+}
+
+// Whether dbos-config.yaml enables sharding; a missing or unreadable file doesn't.
+async function configEnablesSharding(): Promise<boolean> {
   try {
-    if (existsSync(dbosConfigFilePath) && (await readConfigFile()).sharding) {
-      return true;
-    }
-  } catch (e) {}
-  return await holdsShardedSchema(systemDatabaseURL);
+    return existsSync(dbosConfigFilePath) && (await readConfigFile()).sharding === true;
+  } catch (e) {
+    return false;
+  }
 }
 
 //Runs action(migrationCommands, systemDatabaseUrl, logger), which returns a numeric exit code.

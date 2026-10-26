@@ -7,12 +7,18 @@ import {
   reexecuteWorkflowById,
   describeUnlessSharded,
   testUnlessSharded,
+  expectError,
 } from './helpers';
 import { randomUUID } from 'node:crypto';
 import { StatusString } from '../src/workflow';
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import { Client, Pool, PoolClient } from 'pg';
-import { DBOSWorkflowCancelledError, DBOSAwaitedWorkflowCancelledError, DBOSInitializationError } from '../src/error';
+import {
+  DBOSError,
+  DBOSWorkflowCancelledError,
+  DBOSAwaitedWorkflowCancelledError,
+  DBOSInitializationError,
+} from '../src/error';
 import assert from 'node:assert';
 import { deriveDatabaseUrl, dropPGDatabase, ensurePGDatabase, getDatabaseNameFromUrl } from '../src/database_utils';
 import { sleepConfig, sleepms } from '../src/utils';
@@ -1579,12 +1585,18 @@ describe('shard-keys', () => {
   test('shard-keys-must-be-non-empty-strings', async () => {
     // Every way a shard key enters refuses an empty or non-string one.
     for (const bad of ['', 1] as unknown as string[]) {
-      expect(() => bindShardKeys({ w: bad }, () => {})).toThrow('non-empty string');
-      expect(() => shardKeyScope(bad, () => {})).toThrow('non-empty string');
-      await expect(
+      await expectError(() => bindShardKeys({ w: bad }, () => {}), DBOSError, 'non-empty string');
+      await expectError(() => shardKeyScope(bad, () => {}), DBOSError, 'non-empty string');
+      await expectError(
         buildEnqueueStatus({ queueName: 'q', workflowName: 'w', shardKey: bad }, DBOSJSON, []),
-      ).rejects.toThrow('non-empty string');
-      await expect(DBOS.withShardKey(bad, () => Promise.resolve())).rejects.toThrow('non-empty string');
+        DBOSError,
+        'non-empty string',
+      );
+      await expectError(
+        DBOS.withShardKey(bad, () => Promise.resolve()),
+        DBOSError,
+        'non-empty string',
+      );
     }
     // Null and undefined leave the key unset rather than invalid.
     expect(bindShardKeys({ w: null, v: undefined }, () => shardKeyScope(null, () => 'ok'))).toBe('ok');
@@ -1614,7 +1626,7 @@ describe('shard-keys', () => {
         () => client.send(wfid, 'm', undefined, undefined, { shardKey }),
       ];
       for (const call of calls) {
-        await expect(Promise.resolve().then(call)).rejects.toThrow('not sharded');
+        await expectError(Promise.resolve().then(call), DBOSError, 'not sharded');
       }
       const listings: Array<() => Promise<unknown>> = [
         () => DBOS.listWorkflows({ shardKey }),
@@ -1624,16 +1636,18 @@ describe('shard-keys', () => {
         () => DBOS.listWorkflows({ shardKey: [] }),
       ];
       for (const listing of listings) {
-        await expect(listing()).rejects.toThrow('requires a sharded system database');
+        await expectError(listing(), DBOSError, 'requires a sharded system database');
       }
-      await expect(
+      await expectError(
         DBOS.createSchedule({
           scheduleName: 'keyed',
           workflowFn: nightlyWorkflow,
           schedule: '0 0 * * *',
           options: { shardKey },
         }),
-      ).rejects.toThrow('requires a sharded system database');
+        DBOSError,
+        'requires a sharded system database',
+      );
       // Nothing ran, moved or arrived under the key.
       expect((await DBOS.getWorkflowStatus(wfid))?.status).toBe(StatusString.SUCCESS);
       expect(await DBOS.getSchedule('keyed')).toBeNull();

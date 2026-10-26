@@ -4,7 +4,14 @@ import * as enterprise from '../src/enterprise';
 import { DBOSInitializationError } from '../src/error';
 import { globalParams } from '../src/utils';
 import { GlobalLogger } from '../src/telemetry/logs';
-import { ALL_ENTITLED, FakeConductor, generateDBOSTestConfig, setUpDBOSTestSysDb, testUnlessSharded } from './helpers';
+import {
+  ALL_ENTITLED,
+  expectError,
+  FakeConductor,
+  generateDBOSTestConfig,
+  setUpDBOSTestSysDb,
+  testUnlessSharded,
+} from './helpers';
 
 // The real check, taken before a sharded run's harness stubs it for every launch.
 const requireEnterprise = enterprise.requireEnterprise;
@@ -445,11 +452,19 @@ describe('entitlements', () => {
     try {
       // Refused before the package is even loaded, so this holds without dbos-enterprise.
       DBOS.setConfig({ ...config, sharding: true });
-      await expect(DBOS.launch()).rejects.toThrow(`${enterprise.SHARDING.description} requires a DBOS key`);
+      await expectError(
+        DBOS.launch(),
+        DBOSInitializationError,
+        `${enterprise.SHARDING.description} requires a DBOS key`,
+      );
       await DBOS.shutdown();
       DBOS.setConfig({ ...config, sharding: true, transactEnterpriseKey: 'enterprise-key' });
       conductor.entitle({ ...ALL_ENTITLED, sharding: false });
-      await expect(DBOS.launch({ conductorURL: conductor.url })).rejects.toThrow('not entitled to sharding');
+      await expectError(
+        DBOS.launch({ conductorURL: conductor.url }),
+        DBOSInitializationError,
+        'not entitled to sharding',
+      );
       expect(conductor.requests).toEqual([{ path: '/v2/entitlements', authorization: 'Bearer enterprise-key' }]);
       expect(DBOS.isInitialized()).toBe(false);
     } finally {

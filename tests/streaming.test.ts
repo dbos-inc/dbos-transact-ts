@@ -1415,8 +1415,7 @@ describe('dbos-streaming-tests', () => {
     }
   });
 
-  // Times a re-execution, which a sharded queue picks up only after its empty-queue discovery interval.
-  testUnlessSharded('workflow-read-stream-timeout-is-checkpointed', async () => {
+  test('workflow-read-stream-timeout-is-checkpointed', async () => {
     // A timeout is an outcome, not a failure of the read, so it is recorded: a replayed reader
     // raises it again straight from its checkpoint instead of waiting out the timeout a second time.
     const streamKey = 'timeout_checkpoint_stream';

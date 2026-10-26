@@ -244,7 +244,7 @@ export async function runBackgroundJobs(
   jobs: Record<string, () => Promise<void>>,
 ): Promise<void> {
   while (!signal.aborted) {
-    const started = Date.now();
+    const started = performance.now();
     let held = false;
     try {
       await sysdb.backgroundJobLock(lockName, async (acquired) => {
@@ -256,7 +256,7 @@ export async function runBackgroundJobs(
             logger.warn(`Exception in background job ${jobName}: ${(e as Error).message}`);
           }
         }
-        await waitOrAbort(Math.max(0, intervalMs - (Date.now() - started)), signal);
+        await waitOrAbort(Math.max(0, intervalMs - (performance.now() - started)), signal);
         held = true;
       });
     } catch (e) {

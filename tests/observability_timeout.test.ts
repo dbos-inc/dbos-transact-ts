@@ -8,7 +8,7 @@ import { DBOSJSON, DBOSSerializer } from '../src/serialization';
 import { retriablePostgresException, SystemDatabase } from '../src/system_database';
 import { GlobalLogger } from '../src/telemetry/logs';
 import { getClientConfig, sleepms } from '../src/utils';
-import { Event, describeUnlessSharded, generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
+import { Event, generateDBOSTestConfig, setUpDBOSTestSysDb, testUnlessSharded } from './helpers';
 
 describe('observability-query-timeout', () => {
   let config: DBOSConfig;
@@ -286,8 +286,7 @@ class Stranded {
   }
 }
 
-// A router does not carry a connection's session settings to the shards.
-describeUnlessSharded('system-database-idle-transaction-timeout', () => {
+describe('system-database-idle-transaction-timeout', () => {
   let config: DBOSConfig;
   let systemDatabaseUrl: string;
 
@@ -372,7 +371,8 @@ describeUnlessSharded('system-database-idle-transaction-timeout', () => {
     }
   });
 
-  test('the timeout persists on a reused connection', async () => {
+  // A router may serve each of a client session's transactions from a different server backend.
+  testUnlessSharded('the timeout persists on a reused connection', async () => {
     // A pool of one, so the second checkout is the same session after a return and a rollback.
     const sysdb = makeSysDb(12345, systemDatabaseUrl, undefined, 1);
     try {
@@ -433,7 +433,8 @@ describeUnlessSharded('system-database-idle-transaction-timeout', () => {
     }
   });
 
-  test('the server ends a transaction left idle past the timeout', async () => {
+  // The router, not the client, sees the server end the idle backend.
+  testUnlessSharded('the server ends a transaction left idle past the timeout', async () => {
     const sysdb = makeSysDb(200);
     try {
       const client = await sysdb.pool.connect();

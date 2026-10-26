@@ -2976,39 +2976,34 @@ describe('concurrent-queue-dispatches', () => {
     return { slow, releaseSlowPoll };
   }
 
-  // A sharded database reads an empty queue's keys again only after an interval longer than this test waits.
-  testUnlessSharded(
-    'a slow partitioned poll does not block another queue dispatch when a lane is free',
-    async () => {
-      await launchWith(2);
-      const { slow, releaseSlowPoll } = await pauseSlowPoll();
+  test('a slow partitioned poll does not block another queue dispatch when a lane is free', async () => {
+    await launchWith(2);
+    const { slow, releaseSlowPoll } = await pauseSlowPoll();
+    try {
+      const fast = await DBOS.startWorkflow(ConcurrentDispatchWFs, { queueName: fastQueueName }).run('fast');
+      // Cancellable timeout so the timer is cleared once the race settles, leaving no dangling handle.
+      let dispatchTimer: ReturnType<typeof setTimeout> | undefined;
+      const dispatchTimeout = new Promise<never>((_resolve, reject) => {
+        dispatchTimer = setTimeout(
+          () => reject(new Error('fast queue did not dispatch while the slow queue poll was in flight')),
+          3000,
+        );
+      });
       try {
-        const fast = await DBOS.startWorkflow(ConcurrentDispatchWFs, { queueName: fastQueueName }).run('fast');
-        // Cancellable timeout so the timer is cleared once the race settles, leaving no dangling handle.
-        let dispatchTimer: ReturnType<typeof setTimeout> | undefined;
-        const dispatchTimeout = new Promise<never>((_resolve, reject) => {
-          dispatchTimer = setTimeout(
-            () => reject(new Error('fast queue did not dispatch while the slow queue poll was in flight')),
-            3000,
-          );
-        });
-        try {
-          await expect(Promise.race([fast.getResult(), dispatchTimeout])).resolves.toBe('fast');
-        } finally {
-          clearTimeout(dispatchTimer);
-        }
-
-        releaseSlowPoll.set();
-        await expect(slow.getResult()).resolves.toBe('slow');
+        await expect(Promise.race([fast.getResult(), dispatchTimeout])).resolves.toBe('fast');
       } finally {
-        releaseSlowPoll.set();
-        await DBOS.deleteQueue(slowQueueName);
-        await DBOS.deleteQueue(fastQueueName);
+        clearTimeout(dispatchTimer);
       }
-      // Launch plus the 1s discovery tick already cost seconds before the 3s race below starts.
-    },
-    30000,
-  );
+
+      releaseSlowPoll.set();
+      await expect(slow.getResult()).resolves.toBe('slow');
+    } finally {
+      releaseSlowPoll.set();
+      await DBOS.deleteQueue(slowQueueName);
+      await DBOS.deleteQueue(fastQueueName);
+    }
+    // Launch plus the 1s discovery tick already cost seconds before the 3s race below starts.
+  }, 30000);
 
   test('a slow partitioned poll blocks another queue dispatch at serialized (1) concurrency', async () => {
     await launchWith(1);
@@ -3488,8 +3483,7 @@ describe('partitioned-batch-dequeue', () => {
     );
   }
 
-  // Calls the partitioned claim directly, without the shard-key scope a sharded claim runs under.
-  testUnlessSharded('admits at most the sweep cap per call, rotating onward on the next sweep', async () => {
+  test('admits at most the sweep cap per call, rotating onward on the next sweep', async () => {
     const queueName = `unpolled-sweep-${randomUUID()}`;
     const queue = await registerBatchQueue(queueName);
     const partitions = Array.from({ length: 8 }, (_, i) => `p${i}`);
@@ -3507,8 +3501,7 @@ describe('partitioned-batch-dequeue', () => {
     }
   });
 
-  // Calls the partitioned claim directly, without the shard-key scope a sharded claim runs under.
-  testUnlessSharded('claims each partition head and admits nothing more until that head finishes', async () => {
+  test('claims each partition head and admits nothing more until that head finishes', async () => {
     const queueName = `unpolled-excl-${randomUUID()}`;
     const queue = await registerBatchQueue(queueName);
     const partitions = ['p0', 'p1', 'p2'];
@@ -3539,8 +3532,7 @@ describe('partitioned-batch-dequeue', () => {
     expect(await sweep(queue)).toEqual([ids['p0'][1]]);
   });
 
-  // Calls the partitioned claim directly, without the shard-key scope a sharded claim runs under.
-  testUnlessSharded('drops a candidate that is moved to another queue mid-sweep', async () => {
+  test('drops a candidate that is moved to another queue mid-sweep', async () => {
     const queueName = `unpolled-requeue-${randomUUID()}`;
     const queue = await registerBatchQueue(queueName);
     const ids = await enqueuePartitionRows(queueName, 'requeue', ['p0'], 2);
@@ -3570,8 +3562,7 @@ describe('partitioned-batch-dequeue', () => {
     expect(await sweep(queue)).toEqual([ids['p0'][1]]);
   });
 
-  // Calls the partitioned claim directly, without the shard-key scope a sharded claim runs under.
-  testUnlessSharded('never co-admits into a partition when two workers sweep concurrently', async () => {
+  test('never co-admits into a partition when two workers sweep concurrently', async () => {
     const queueName = `unpolled-race-${randomUUID()}`;
     const queue = await registerBatchQueue(queueName);
     const partitions = ['p0', 'p1', 'p2', 'p3'];
@@ -3597,8 +3588,7 @@ describe('partitioned-batch-dequeue', () => {
     });
   });
 
-  // Calls the partitioned claim directly, without the shard-key scope a sharded claim runs under.
-  testUnlessSharded('dequeues only rows eligible for this worker app version', async () => {
+  test('dequeues only rows eligible for this worker app version', async () => {
     const queueName = `unpolled-ver-${randomUUID()}`;
     const queue = await registerBatchQueue(queueName);
     const ids = await enqueuePartitionRows(queueName, 'ver', ['p0', 'p1'], 3);

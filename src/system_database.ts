@@ -1046,7 +1046,7 @@ export class SystemDatabase {
   /**
    * Caps how many DB-backed polling reads (from wait operations) may run
    * concurrently against the pool, so a polling storm cannot check out every
-   * client and starve control-plane operations. See {@link pollWithLimiter}.
+   * client and starve control-plane operations. See {@link #pollWithLimiter}.
    */
   readonly pollLimiter: Semaphore;
 
@@ -1218,7 +1218,7 @@ export class SystemDatabase {
   }
 
   #rejectShardKey(workflowID: string, shardKey: string | undefined): void {
-    if (shardKey !== undefined || boundShardKey(workflowID) !== undefined) {
+    if ((shardKey !== undefined && shardKey !== null) || boundShardKey(workflowID) !== undefined) {
       throw new DBOSError('A shard key was given, but this system database is not sharded');
     }
   }
@@ -1331,7 +1331,7 @@ export class SystemDatabase {
 
   /** Extra column values storing the shard key a schedule's workflows run under. */
   scheduleValues(schedule: WorkflowScheduleInternal): Record<string, unknown> {
-    if (schedule.shardKey !== undefined) {
+    if (schedule.shardKey !== undefined && schedule.shardKey !== null) {
       throw new DBOSError('Scheduling under a shard key requires a sharded system database');
     }
     return {};
@@ -1453,10 +1453,10 @@ export class SystemDatabase {
    * ones, so a named peer's deploy does not demote this one.
    */
   async #latestApplicationVersionName(client: PoolClient | Pool): Promise<string | undefined> {
-    return (await this.latestApplicationVersion(client, this.appName))?.version_name;
+    return (await this.#latestApplicationVersion(client, this.appName))?.version_name;
   }
 
-  protected async latestApplicationVersion(
+  async #latestApplicationVersion(
     client: PoolClient | Pool,
     applicationName?: string,
   ): Promise<application_versions | undefined> {
@@ -1480,7 +1480,7 @@ export class SystemDatabase {
    * The owner to persist when writing a row that may already exist. A nameless writer
    * leaves the owner intact; a named one collides only with a different name.
    */
-  protected async resolveRowOwner(
+  async #resolveRowOwner(
     client: PoolClient | Pool,
     table: string,
     keyColumn: string,
@@ -2125,7 +2125,7 @@ export class SystemDatabase {
         try {
           // Check if the operation has been done before for OAOO (only do this inside a workflow).
           return await this.inTransaction(client, () =>
-            this.runAndRecordResult(client, DBOS_FUNCNAME_GETSTATUS, callerID, callerFN, funcGetStatus),
+            this.#runAndRecordResult(client, DBOS_FUNCNAME_GETSTATUS, callerID, callerFN, funcGetStatus),
           );
         } finally {
           client.release();
@@ -2202,7 +2202,7 @@ export class SystemDatabase {
     return await this.ownKey(workflowID, ownerKey, async () => {
       const client = await this.connect();
       try {
-        return await this.operationResultAndThrowIfCancelled(client, workflowID, functionID);
+        return await this.#getOperationResultAndThrowIfCancelled(client, workflowID, functionID);
       } finally {
         client.release();
       }
@@ -2318,7 +2318,7 @@ export class SystemDatabase {
       const client = await this.connect();
       try {
         await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
-        const existing = await this.operationResultAndThrowIfCancelled(client, workflowID, functionID);
+        const existing = await this.#getOperationResultAndThrowIfCancelled(client, workflowID, functionID);
         if (existing !== undefined) {
           await client.query('ROLLBACK');
           return existing;
@@ -2418,7 +2418,7 @@ export class SystemDatabase {
   @dbRetry()
   async cancelWorkflows(workflowIDs: string[], cancelChildren: boolean = false): Promise<void> {
     if (!cancelChildren) {
-      await this.cancelWorkflowsInternal(workflowIDs);
+      await this.#cancelWorkflows(workflowIDs);
       return;
     }
 
@@ -2426,7 +2426,7 @@ export class SystemDatabase {
     const visited = new Set<string>(workflowIDs);
     let frontier = workflowIDs;
     while (frontier.length > 0) {
-      await this.cancelWorkflowsInternal(frontier);
+      await this.#cancelWorkflows(frontier);
       const children = await this.getDirectChildren(frontier);
       frontier = children.filter((id) => !visited.has(id));
       for (const id of frontier) {
@@ -2435,7 +2435,7 @@ export class SystemDatabase {
     }
   }
 
-  protected async cancelWorkflowsInternal(workflowIDs: string[]): Promise<void> {
+  async #cancelWorkflows(workflowIDs: string[]): Promise<void> {
     const params: unknown[] = [StatusString.CANCELLED, StatusString.SUCCESS, StatusString.ERROR];
     await this.pool.query(
       `UPDATE "${this.schemaName}".workflow_status
@@ -2451,7 +2451,7 @@ export class SystemDatabase {
   @dbRetry()
   async checkIfCanceled(workflowID: string): Promise<void> {
     // The caller's own workflow, even where a same-ID workflow is bound as a target.
-    await this.ownKey(workflowID, undefined, () => this.checkIfCanceledInternal(this.pool, workflowID));
+    await this.ownKey(workflowID, undefined, () => this.#checkIfCanceled(this.pool, workflowID));
   }
 
   @dbRetry()
@@ -3226,7 +3226,7 @@ export class SystemDatabase {
    * control-plane operations. Only polling reads should go through here;
    * control-plane work hits the pool directly and bypasses the limiter.
    */
-  protected pollWithLimiter<T>(query: () => Promise<T>): Promise<T> {
+  #pollWithLimiter<T>(query: () => Promise<T>): Promise<T> {
     // Closing our own pool used to end these waits; a caller's pool stays open, so end them here.
     if (this.#destroyed) {
       return Promise.reject(new DBOSError('The system database has been shut down'));
@@ -3239,7 +3239,7 @@ export class SystemDatabase {
     // The caller's own workflow, even where a same-ID workflow is bound as a target.
     const params: unknown[] = [];
     const target = this.ownKey(workflowID, undefined, () => this.wf(undefined, workflowID, params));
-    const { rows } = await this.pollWithLimiter(() =>
+    const { rows } = await this.#pollWithLimiter(() =>
       this.pool.query<{ status: string }>(
         `SELECT status FROM "${this.schemaName}".workflow_status WHERE ${target}`,
         params,
@@ -3324,7 +3324,7 @@ export class SystemDatabase {
           () => {
             const params: unknown[] = [StatusString.CANCELLED];
             const ids = this.wfIn(undefined, workflowIDs, params);
-            return this.pollWithLimiter(() =>
+            return this.#pollWithLimiter(() =>
               this.pool.query<{ workflow_uuid: string }>(
                 `SELECT workflow_uuid FROM "${this.schemaName}".workflow_status WHERE ${ids} AND status = $1`,
                 params,
@@ -3376,7 +3376,7 @@ export class SystemDatabase {
       try {
         const params: unknown[] = [];
         const target = this.wf('ws', workflowID, params);
-        ({ rows } = await this.pollWithLimiter(() =>
+        ({ rows } = await this.#pollWithLimiter(() =>
           this.pool.query<workflow_status>(
             `SELECT ws.status, COALESCE(wo.output, ws.output) AS output,
                     COALESCE(wo.error, ws.error) AS error, ws.serialization
@@ -3437,7 +3437,7 @@ export class SystemDatabase {
   async checkFirstWorkflowId(workflowIds: string[]): Promise<string | undefined> {
     const params: unknown[] = [];
     const ids = this.wfIn(undefined, workflowIds, params);
-    const { rows } = await this.pollWithLimiter(() =>
+    const { rows } = await this.#pollWithLimiter(() =>
       this.pool.query<workflow_status>(
         `SELECT workflow_uuid FROM "${this.schemaName}".workflow_status
          WHERE ${ids}
@@ -3474,7 +3474,7 @@ export class SystemDatabase {
   async checkCompletedWorkflowIds(workflowIds: string[]): Promise<string[]> {
     const params: unknown[] = [];
     const ids = this.wfIn(undefined, workflowIds, params);
-    const { rows } = await this.pollWithLimiter(() =>
+    const { rows } = await this.#pollWithLimiter(() =>
       this.pool.query<{ workflow_uuid: string }>(
         `SELECT workflow_uuid FROM "${this.schemaName}".workflow_status
          WHERE ${ids}
@@ -3518,7 +3518,7 @@ export class SystemDatabase {
 
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
-      await this.runAndRecordResult(client, DBOS_FUNCNAME_SEND, workflowID, functionID, async () => {
+      await this.#runAndRecordResult(client, DBOS_FUNCNAME_SEND, workflowID, functionID, async () => {
         await this.sendDirectInternal(client, destinationID, message, topic, serialization, idempotencyKey, shardKey);
         return undefined;
       });
@@ -3694,7 +3694,7 @@ export class SystemDatabase {
         const params: unknown[] = [topic];
         const target = this.wf(undefined, workflowID, params, 'destination_uuid');
         const initRecvRows = (
-          await this.pollWithLimiter(() =>
+          await this.#pollWithLimiter(() =>
             this.pool.query<notifications>(
               `SELECT topic FROM "${this.schemaName}".notifications WHERE ${target} AND topic=$1 AND consumed = false;`,
               params,
@@ -3793,7 +3793,7 @@ export class SystemDatabase {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
       // Only a real write (not a replay) should wake readers.
       let didWrite = false;
-      await this.runAndRecordResult(client, DBOS_FUNCNAME_SETEVENT, workflowID, functionID, async () => {
+      await this.#runAndRecordResult(client, DBOS_FUNCNAME_SETEVENT, workflowID, functionID, async () => {
         const keys = this.wfValues(workflowID);
         const keyColumns = Object.keys(keys).map((c) => `${c}, `);
         const keyPlaceholders = (from: number) => Object.keys(keys).map((_, i) => `$${from + i}, `);
@@ -3819,7 +3819,7 @@ export class SystemDatabase {
       await client.query('COMMIT');
       // Notify only after commit, so a woken getEvent sees the value.
       if (didWrite) {
-        this.signalNotification(DBOS_WORKFLOW_EVENTS_CHANNEL, `${workflowID}::${key}`);
+        this.#signalNotification(DBOS_WORKFLOW_EVENTS_CHANNEL, `${workflowID}::${key}`);
       }
     } catch (e) {
       this.logger.error(e);
@@ -3896,7 +3896,7 @@ export class SystemDatabase {
         const params: unknown[] = [key];
         const target = this.wf(undefined, workflowID, params);
         const initRecvRows = (
-          await this.pollWithLimiter(() =>
+          await this.#pollWithLimiter(() =>
             this.pool.query<workflow_events>(
               `SELECT key, value, serialization
              FROM "${this.schemaName}".workflow_events
@@ -3980,7 +3980,7 @@ export class SystemDatabase {
           throw e;
         }
         // Notify only after commit, so a woken reader sees the value.
-        this.signalNotification(DBOS_STREAMS_CHANNEL, `${workflowID}::${key}`);
+        this.#signalNotification(DBOS_STREAMS_CHANNEL, `${workflowID}::${key}`);
         return;
       }
     } finally {
@@ -4004,7 +4004,7 @@ export class SystemDatabase {
         let didWrite = false;
         try {
           await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
-          await this.runAndRecordResult(client, functionName, workflowID, functionID, async () => {
+          await this.#runAndRecordResult(client, functionName, workflowID, functionID, async () => {
             // Derives the first unused offset inside the insert; two writers can still pick the same one.
             await this.#insertStreamValue(client, workflowID, functionID, key, serializedValue, serialization);
             didWrite = true;
@@ -4027,7 +4027,7 @@ export class SystemDatabase {
         }
         // Notify only after commit, so a woken reader sees the value.
         if (didWrite) {
-          this.signalNotification(DBOS_STREAMS_CHANNEL, `${workflowID}::${key}`);
+          this.#signalNotification(DBOS_STREAMS_CHANNEL, `${workflowID}::${key}`);
         }
         return;
       }
@@ -4087,7 +4087,7 @@ export class SystemDatabase {
     // LEFT JOIN so a workflow with nothing at offset still reports its status (single PK lookup); under the poll limiter, inside @dbRetry so the permit frees across backoff.
     const params: unknown[] = [key, offset];
     const target = this.wf('ws', workflowID, params);
-    const result = await this.pollWithLimiter(() =>
+    const result = await this.#pollWithLimiter(() =>
       this.pool.query<{
         status: string;
         value: string | null;
@@ -4115,7 +4115,7 @@ export class SystemDatabase {
     return { status: row.status, value: { serializedValue: row.value as string, serialization: row.serialization } };
   }
 
-  protected signalNotification(channel: string, payload: string): void {
+  #signalNotification(channel: string, payload: string): void {
     // Coalesce a wakeup on `channel` for `payload`; no-op without LISTEN/NOTIFY (clients, CockroachDB), which poll.
     if (!this.shouldUseDBNotifications) {
       return;
@@ -4422,6 +4422,10 @@ export class SystemDatabase {
           );
         }
         limit(Math.max(0, queue.concurrency - totalRunningTasks), 'concurrency');
+        if (maxTasks <= 0) {
+          await client.query('COMMIT');
+          return { claimedIDs, stopReason };
+        }
       }
       if (queue.partitionConcurrency !== undefined) {
         const partitionRunningTasks = await pendingCount(true);
@@ -4978,7 +4982,7 @@ export class SystemDatabase {
 
   async createSchedule(schedule: WorkflowScheduleInternal, client?: PoolClient): Promise<void> {
     const q = client ?? this.pool;
-    const owner = await this.resolveRowOwner(
+    const owner = await this.#resolveRowOwner(
       q,
       'workflow_schedules',
       'schedule_name',
@@ -5162,7 +5166,7 @@ export class SystemDatabase {
     try {
       await client.query('BEGIN');
       for (const sched of schedules) {
-        const owner = await this.resolveRowOwner(
+        const owner = await this.#resolveRowOwner(
           client,
           'workflow_schedules',
           'schedule_name',
@@ -5197,7 +5201,7 @@ export class SystemDatabase {
           Object.values(values),
         );
         // Read back, since the guard above is silent about why it declined to claim.
-        await this.resolveRowOwner(
+        await this.#resolveRowOwner(
           client,
           'workflow_schedules',
           'schedule_name',
@@ -5251,7 +5255,7 @@ export class SystemDatabase {
         );
       }
       // Read back, since the writes above are silent about why they declined to claim.
-      await this.resolveRowOwner(
+      await this.#resolveRowOwner(
         client,
         'application_versions',
         'version_name',
@@ -5281,7 +5285,7 @@ export class SystemDatabase {
     const client = await this.connect();
     try {
       await client.query('BEGIN');
-      const resolved = await this.resolveRowOwner(
+      const resolved = await this.#resolveRowOwner(
         client,
         'application_versions',
         'version_name',
@@ -5330,7 +5334,7 @@ export class SystemDatabase {
    */
   @dbRetry()
   async getLatestApplicationVersion(applicationName?: string): Promise<VersionInfo> {
-    const latest = await this.latestApplicationVersion(this.pool, applicationName ?? this.appName);
+    const latest = await this.#latestApplicationVersion(this.pool, applicationName ?? this.appName);
     if (latest === undefined) {
       throw new DBOSInitializationError('No application versions found');
     }
@@ -5425,7 +5429,7 @@ export class SystemDatabase {
         existedParams,
       );
       // A name collision is a conflict in every mode: the name is the queue's address.
-      const resolvedOwner = await this.resolveRowOwner(client, 'queues', 'name', record.name, owner, 'Queue');
+      const resolvedOwner = await this.#resolveRowOwner(client, 'queues', 'name', record.name, owner, 'Queue');
       const keys = this.globalValues();
       await client.query(
         `INSERT INTO "${this.schemaName}".queues
@@ -5458,7 +5462,7 @@ export class SystemDatabase {
         ],
       );
       // Read back, since the guard above is silent about why it declined to claim.
-      await this.resolveRowOwner(client, 'queues', 'name', record.name, owner, 'Queue');
+      await this.#resolveRowOwner(client, 'queues', 'name', record.name, owner, 'Queue');
       await client.query('COMMIT');
       return existed.rowCount === 0;
     } catch (e) {
@@ -5936,12 +5940,12 @@ export class SystemDatabase {
     return rows[0]?.owner_xid ?? null;
   }
 
-  protected async operationResultAndThrowIfCancelled(
+  async #getOperationResultAndThrowIfCancelled(
     client: PoolClient,
     workflowID: string,
     functionID: number,
   ): Promise<SystemDatabaseStoredResult | undefined> {
-    await this.checkIfCanceledInternal(client, workflowID);
+    await this.#checkIfCanceled(client, workflowID);
 
     const childKey = this.keyColumn(undefined, 'child_shard_key');
     const params: unknown[] = [functionID];
@@ -5966,7 +5970,7 @@ export class SystemDatabase {
     }
   }
 
-  protected async runAndRecordResult(
+  async #runAndRecordResult(
     client: PoolClient,
     functionName: string,
     workflowID: string,
@@ -5974,7 +5978,7 @@ export class SystemDatabase {
     func: () => Promise<string | null | undefined>,
   ): Promise<string | null | undefined> {
     const startTime = Date.now();
-    const result = await this.operationResultAndThrowIfCancelled(client, workflowID, functionID);
+    const result = await this.#getOperationResultAndThrowIfCancelled(client, workflowID, functionID);
     if (result !== undefined) {
       if (result.functionName !== functionName) {
         throw new DBOSUnexpectedStepError(workflowID, functionID, functionName, result.functionName!);
@@ -6001,7 +6005,7 @@ export class SystemDatabase {
     return output;
   }
 
-  protected async checkIfCanceledInternal(client: PoolClient | Pool, workflowID: string): Promise<void> {
+  async #checkIfCanceled(client: PoolClient | Pool, workflowID: string): Promise<void> {
     const statusValue = await this.getWorkflowStatusValue(client, workflowID);
     if (statusValue === StatusString.CANCELLED) {
       throw new DBOSWorkflowCancelledError(workflowID);
@@ -6038,7 +6042,7 @@ export class SystemDatabase {
 
     const client = await this.connect();
     try {
-      const res = await this.operationResultAndThrowIfCancelled(client, workflowID, functionID);
+      const res = await this.#getOperationResultAndThrowIfCancelled(client, workflowID, functionID);
       if (res) {
         if (res.functionName !== DBOS_FUNCNAME_SLEEP) {
           throw new DBOSUnexpectedStepError(workflowID, functionID, DBOS_FUNCNAME_SLEEP, res.functionName!);
