@@ -3879,10 +3879,10 @@ describe('dequeue-dispatch-cost', () => {
     const originalList = sysdb.listWorkflows.bind(sysdb);
     sysdb.statusFetchChunkSize = 2;
     let calls = 0;
-    jest.spyOn(sysdb, 'listWorkflows').mockImplementation(async (input) => {
+    jest.spyOn(sysdb, 'listWorkflows').mockImplementation(async (input, options) => {
       calls++;
       if (calls === 2) throw new Error('Connection terminated unexpectedly');
-      return await originalList(input);
+      return await originalList(input, options);
     });
 
     try {
