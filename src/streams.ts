@@ -19,6 +19,7 @@ import {
   SystemDatabase,
 } from './system_database';
 import { cancellableSleep } from './utils';
+import { bindShardKeys } from './shard_keys';
 import { isWorkflowActive } from './workflow';
 
 /** Everything a stream read needs, once its caller has resolved its options. */
@@ -30,6 +31,8 @@ export interface StreamReadParams {
   functionName: string;
   /** Whether a read from a workflow is recorded as a step. Client reads never are. */
   checkpoint: boolean;
+  /** The shard key of the workflow whose stream is read; required on a sharded system database. */
+  shardKey?: string;
 }
 
 // Returned by StreamReadCheckpointer.replay when a step has no recorded result and must be read live.
@@ -187,7 +190,9 @@ export async function* readStreamCore<T>(
   const { pollingIntervalMs, timeoutMS, functionName } = params;
   let offset = params.offset;
   const checkpointer = params.checkpoint ? new StreamReadCheckpointer(sysdb, serializer, key, functionName) : undefined;
-  const payload = `${workflowID}::${key}`;
+  // Bound per call, never across a yield, which would leak into the consumer's context.
+  const targetKey = [[workflowID, params.shardKey]] as const;
+  const payload = bindShardKeys(targetKey, () => sysdb.waiter(workflowID, key));
   let finalRead = false;
 
   try {
@@ -221,7 +226,7 @@ export async function* readStreamCore<T>(
         const cbr = sysdb.streamsMap.registerCallback(payload, resolveNotification!);
         try {
           // One round trip for both the value and the workflow's status.
-          const read = await sysdb.readStreamValue(workflowID, key, offset);
+          const read = await bindShardKeys(targetKey, () => sysdb.readStreamValue(workflowID, key, offset));
           if (read.status === null) {
             throw new DBOSNonExistentWorkflowError(`Workflow ${workflowID} does not exist`);
           }

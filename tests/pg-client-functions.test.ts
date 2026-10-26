@@ -1,6 +1,6 @@
 import { workflow_status } from '../schemas/system_db_schema';
 import { DBOS } from '../src';
-import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
+import { generateDBOSTestConfig, setUpDBOSTestSysDb, describeUnlessSharded } from './helpers';
 import { Client, PoolConfig } from 'pg';
 import { DBOSConfig } from '../src/dbos-executor';
 
@@ -22,7 +22,8 @@ class ClientTest {
   }
 }
 
-describe('PostgreSQL Client Functions', () => {
+// Calls the unsharded schema's Postgres functions, which the sharded schema does not define.
+describeUnlessSharded('PostgreSQL Client Functions', () => {
   let config: DBOSConfig;
   let poolConfig: PoolConfig;
 

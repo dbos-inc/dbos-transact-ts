@@ -9,6 +9,7 @@ import type { GlobalLogger } from './telemetry/logs';
 import { globalParams, RESERVED_QUEUE_NAME_PREFIX } from './utils';
 import { runWithAbortableDbRetries } from './context';
 import { randomUUID } from 'node:crypto';
+import { shardKeyScope } from './shard_keys';
 
 /**
  * Log a single queue's name and its set parameters. Unset parameters are
@@ -130,12 +131,6 @@ function workerBudget(queue: WorkflowQueue, running: number): number {
     return Infinity;
   }
   return Math.max(0, queue.workerConcurrency - running);
-}
-
-/** 40001 serialization_failure or 55P03 lock_not_available: a peer is claiming the same rows. */
-function isContentionError(e: unknown): boolean {
-  const code = (e as NodeJS.ErrnoException).code;
-  return code === '40001' || code === '55P03';
 }
 
 /** Fisher-Yates copy, so a sweep visits partitions in a different order each poll. */
@@ -597,7 +592,6 @@ class WFQueueRunner {
   private static readonly defaultMinPollingIntervalMs: number = 1000;
   private static readonly defaultMaxPollingIntervalMs: number = 120000;
   private static readonly reconcileIntervalMs: number = 1000;
-  private static readonly transitionIntervalMs: number = 1000;
   private readonly backoffFactor: number = 2.0;
   private readonly scalebackFactor: number = 0.9;
   private readonly jitterMin: number = 0.95;
@@ -752,8 +746,6 @@ class WFQueueRunner {
 
     // Discovery already ran during setup; defer the next reconcile a full interval.
     let lastReconcileAt = startNow;
-    // Global op: run on a fixed cadence, not once per wake (destaggered wakeups would push it to ~N/sec).
-    let lastTransitionAt = 0;
 
     while (this.isRunning) {
       const now = Date.now();
@@ -764,25 +756,12 @@ class WFQueueRunner {
         lastReconcileAt = now;
       }
 
-      // Transition delayed workflows at most once per interval — it is global, so one call covers every queue.
-      if (now - lastTransitionAt >= WFQueueRunner.transitionIntervalMs) {
-        try {
-          await exec.systemDatabase.transitionDelayedWorkflows();
-        } catch (e) {
-          exec.logger.warn(`Error transitioning delayed workflows: ${(e as Error).message}`);
-        }
-        lastTransitionAt = now;
-      }
-
       this.scheduleDueQueues(exec, now, maxConcurrentQueueDispatches, inFlightPolls, wake);
 
       if (!this.isRunning) break;
 
       // Sleep until global maintenance or an idle queue's next poll.
-      let nextWakeAt = Math.min(
-        lastReconcileAt + WFQueueRunner.reconcileIntervalMs,
-        lastTransitionAt + WFQueueRunner.transitionIntervalMs,
-      );
+      let nextWakeAt = lastReconcileAt + WFQueueRunner.reconcileIntervalMs;
       // Skip queue times while all lanes are busy: a completing poll wakes us, so folding a due-but-unlaned queue in would spin at 0ms.
       if (inFlightPolls.size < maxConcurrentQueueDispatches) {
         for (const state of this.states.values()) {
@@ -839,6 +818,7 @@ class WFQueueRunner {
 
   /** Poll one queue once, starting ready workflows; returns true if DB contention was detected. */
   private async pollQueue(exec: DBOSExecutor, queue: WorkflowQueue): Promise<boolean> {
+    // Whether any scope hit contention during this poll; backed off once, however many scopes did.
     let contentionDetected = false;
     // Helper function that starts dequeued workflows
     const dispatch = async (wfids: string[], ownerXid: string) => {
@@ -848,78 +828,117 @@ class WFQueueRunner {
       await exec.dispatchDequeuedWorkflows(wfids, ownerXid);
     };
     const sysdb = exec.systemDatabase;
+    const isContentionError = (e: unknown) => sysdb.isLockConflict(e) || sysdb.isSerializationConflict(e);
+
+    // This worker's load for the whole poll: running workflows, snapshotted at first use, plus
+    // every claim since, which dispatch registers asynchronously.
+    let running: number | undefined = undefined;
+    let polled = 0;
+    const workerLoad = () => {
+      running ??= sysdb.countRunningWorkflowsForQueue(queue.name);
+      return running + polled;
+    };
+
     // Dequeue workflows for this queue, either in one batched sweep across partitions or one partition at a time.
-    try {
-      if (!isPartitionedQueue(queue)) {
-        const ownerXid = randomUUID();
-        const wfids = await sysdb.findAndMarkStartableWorkflows(
-          queue,
-          exec.executorID,
-          globalParams.appVersion,
-          undefined,
-          sysdb.countRunningWorkflowsForQueue(queue.name),
-          0,
-          ownerXid,
-        );
-        await dispatch(wfids, ownerXid);
-      } else if (
-        queue.partitionConcurrency === 1 &&
-        queue.concurrency === undefined &&
-        queue.rateLimit === undefined &&
-        queue.partitionRateLimit === undefined
-      ) {
-        // Batched path: one transaction claims every partition's head (see findAndMarkStartablePartitionedWorkflows).
-        const maxTasks = workerBudget(queue, sysdb.countRunningWorkflowsForQueue(queue.name));
-        if (maxTasks > 0) {
+    const dequeue = async (isLatestVersion: boolean | undefined) => {
+      try {
+        if (!isPartitionedQueue(queue)) {
           const ownerXid = randomUUID();
-          const wfids = await sysdb.findAndMarkStartablePartitionedWorkflows(
+          const wfids = await sysdb.findAndMarkStartableWorkflows(
             queue,
             exec.executorID,
             globalParams.appVersion,
-            maxTasks,
+            undefined,
+            workerLoad(),
+            0,
             ownerXid,
+            isLatestVersion,
           );
+          polled += wfids.length;
           await dispatch(wfids, ownerXid);
-        }
-      } else {
-        // Every other partitioned config sweeps one partition at a time, in random order to prevent starvation.
-        const partitionKeys = shuffled(await sysdb.getQueuePartitions(queue.name));
-        // Snapshot once: dispatch is asynchronous, so re-reading would count this sweep's own claims twice.
-        const running = sysdb.countRunningWorkflowsForQueue(queue.name);
-        let claimed = 0;
-        for (const partitionKey of partitionKeys) {
-          if (workerBudget(queue, running + claimed) <= 0) break;
-          let partitionWfids: string[];
-          const ownerXid = randomUUID();
-          try {
-            partitionWfids = await sysdb.findAndMarkStartableWorkflows(
+        } else if (
+          queue.partitionConcurrency === 1 &&
+          queue.concurrency === undefined &&
+          queue.rateLimit === undefined &&
+          queue.partitionRateLimit === undefined
+        ) {
+          // Batched path: one transaction claims every partition's head (see findAndMarkStartablePartitionedWorkflows).
+          const maxTasks = workerBudget(queue, workerLoad());
+          if (maxTasks > 0) {
+            const ownerXid = randomUUID();
+            const wfids = await sysdb.findAndMarkStartablePartitionedWorkflows(
               queue,
               exec.executorID,
               globalParams.appVersion,
-              partitionKey,
-              running + claimed,
-              sysdb.countRunningWorkflowsForPartition(queue.name, partitionKey),
+              maxTasks,
               ownerXid,
+              isLatestVersion,
             );
-          } catch (e) {
-            // Lock held or claim raced by another worker: skip just this partition, no queue-wide backoff.
-            if (isContentionError(e)) continue;
-            throw e;
+            polled += wfids.length;
+            await dispatch(wfids, ownerXid);
           }
-          claimed += partitionWfids.length;
-          await dispatch(partitionWfids, ownerXid);
-          await debugTriggerPoint(DEBUG_TRIGGER_BETWEEN_PARTITION_DISPATCHES);
+        } else {
+          // Every other partitioned config sweeps one partition at a time, in random order to prevent starvation.
+          const partitionKeys = shuffled(await sysdb.getQueuePartitions(queue.name));
+          for (const partitionKey of partitionKeys) {
+            if (workerBudget(queue, workerLoad()) <= 0) break;
+            let partitionWfids: string[];
+            const ownerXid = randomUUID();
+            try {
+              partitionWfids = await sysdb.findAndMarkStartableWorkflows(
+                queue,
+                exec.executorID,
+                globalParams.appVersion,
+                partitionKey,
+                workerLoad(),
+                sysdb.countRunningWorkflowsForPartition(queue.name, partitionKey),
+                ownerXid,
+                isLatestVersion,
+              );
+            } catch (e) {
+              // Lock held or claim raced by another worker: skip just this partition, no queue-wide backoff.
+              if (isContentionError(e)) continue;
+              throw e;
+            }
+            polled += partitionWfids.length;
+            await dispatch(partitionWfids, ownerXid);
+            await debugTriggerPoint(DEBUG_TRIGGER_BETWEEN_PARTITION_DISPATCHES);
+          }
+        }
+      } catch (e) {
+        const err = e as Error;
+        if (sysdb.isLockConflict(err)) {
+          // Another worker is dequeueing this queue right now; retry next poll without backing off.
+          exec.logger.debug(`Queue ${queue.name} is locked by another worker; retrying next poll.`);
+        } else if (sysdb.isSerializationConflict(err)) {
+          // Backed off once per poll, however many scopes conflicted.
+          contentionDetected = true;
+        } else if (this.isRunning) {
+          // Only log the error if the runner is not stopping
+          exec.logger.warn(`Error getting startable workflows for queue ${queue.name}: ${err.message}`);
         }
       }
-    } catch (e) {
-      const err = e as Error;
-      // Handle serialization errors and lock contention with backoff
-      if (isContentionError(err)) {
-        contentionDetected = true;
-        exec.logger.warn(`Contention detected in queue ${queue.name}.`);
-      } else {
-        exec.logger.warn(`Error getting startable workflows for queue ${queue.name}: ${err.message}`);
+    };
+
+    // Each scope dequeues independently; a sharded system database has one per shard key with work.
+    let scopes: (string | undefined)[];
+    let isLatestVersion: boolean | undefined = undefined;
+    try {
+      scopes = await sysdb.dequeueScopes(queue.name);
+      // A sharded database keeps the version row under another key, so read it once per poll outside the claims.
+      if (scopes.length > 0 && sysdb.sharded) {
+        isLatestVersion = await sysdb.isLatestVersion(globalParams.appVersion);
       }
+    } catch (e) {
+      if (this.isRunning) {
+        exec.logger.warn(`Exception finding work for queue ${queue.name}: ${(e as Error).message}`);
+      }
+      scopes = [];
+    }
+    for (const scope of shuffled(scopes)) {
+      // The shuffle gives the keys skipped once the worker is full their turn on later polls.
+      if (!this.isRunning || workerBudget(queue, workerLoad()) <= 0) break;
+      await shardKeyScope(scope, () => dequeue(isLatestVersion));
     }
     return contentionDetected;
   }

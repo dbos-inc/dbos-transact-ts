@@ -9,6 +9,7 @@ import {
   DBOSStepAlreadyRecordedError,
   DBOSWorkflowConflictError,
   assertStillOwnsWorkflow,
+  checkpointWorkflowID,
   replayRecordedStep,
   registerTransaction,
   runTransaction,
@@ -95,7 +96,7 @@ class PostgresTransactionHandler implements DataSourceTransactionHandler {
     await this.#db.begin(async (client) => {
       await client/*sql*/ `
         DELETE FROM ${client(this.schemaName)}.transaction_completion
-        WHERE workflow_id = ${workflowID} AND function_num >= ${startStep}`;
+        WHERE workflow_id = ${checkpointWorkflowID(workflowID)} AND function_num >= ${startStep}`;
       await beforeCommit?.();
     });
   }
@@ -107,7 +108,7 @@ class PostgresTransactionHandler implements DataSourceTransactionHandler {
     type Result = { output: string | null; error: string | null };
     const result = await this.#db<Result[]>/*sql*/ `
       SELECT output, error FROM ${this.#db(this.schemaName)}.transaction_completion
-      WHERE workflow_id = ${workflowID} AND function_num = ${stepID}`;
+      WHERE workflow_id = ${checkpointWorkflowID(workflowID)} AND function_num = ${stepID}`;
     if (result.length === 0) {
       return undefined;
     }
@@ -124,7 +125,7 @@ class PostgresTransactionHandler implements DataSourceTransactionHandler {
   ): Promise<void> {
     const rows = await client/*sql*/ `
       INSERT INTO ${client(schemaName)}.transaction_completion (workflow_id, function_num, output)
-      VALUES (${workflowID}, ${stepID}, ${output})
+      VALUES (${checkpointWorkflowID(workflowID)}, ${stepID}, ${output})
       ON CONFLICT (workflow_id, function_num) DO NOTHING
       RETURNING workflow_id`;
     if (rows.length === 0) {
@@ -137,7 +138,7 @@ class PostgresTransactionHandler implements DataSourceTransactionHandler {
   async #recordError(workflowID: string, stepID: number, error: string): Promise<void> {
     const rows = await this.#db/*sql*/ `
       INSERT INTO ${this.#db(this.schemaName)}.transaction_completion (workflow_id, function_num, error)
-      VALUES (${workflowID}, ${stepID}, ${error})
+      VALUES (${checkpointWorkflowID(workflowID)}, ${stepID}, ${error})
       ON CONFLICT (workflow_id, function_num) DO NOTHING
       RETURNING workflow_id`;
     if (rows.length === 0) {

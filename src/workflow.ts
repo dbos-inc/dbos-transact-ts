@@ -3,6 +3,7 @@ import { registerSerializationRecipe } from './serialization';
 import { DBOS, getResultInternal, resolvePollingIntervalMs, runInternalStep, type PollingOptions } from './dbos';
 import { DuplicationPolicy, InternalEnqueueOptions } from './system_database';
 import { DBOSError } from './error';
+import { bindShardKeys } from './shard_keys';
 
 /**
  * Validate that custom workflow attributes, if provided, are a plain key-value object that
@@ -58,6 +59,8 @@ export interface WorkflowParams {
   // Authentication to record on the workflow, overriding the ambient context.
   authenticatedUser?: string;
   authenticatedRoles?: string[];
+  // The shard key the workflow lives under; required on a sharded system database.
+  shardKey?: string;
 }
 
 export const DEFAULT_MAX_RECOVERY_ATTEMPTS = 100;
@@ -171,6 +174,11 @@ export interface WorkflowStatus {
   // If this workflow was enqueued by a named schedule, that schedule's name.
   readonly scheduleName?: string;
 
+  // The shard key the workflow lives under; undefined on an unsharded database.
+  readonly shardKey?: string;
+  // The parent workflow's shard key; undefined on an unsharded database.
+  readonly parentShardKey?: string;
+
   // INTERNAL
   // The number of times this workflow has been started.
   readonly recoveryAttempts?: number;
@@ -200,6 +208,8 @@ export interface GetWorkflowsInput {
   attributes?: Record<string, unknown>; // Retrieve workflows whose custom attributes contain all of these key-value pairs.
   scheduleName?: string | string[]; // Retrieve workflows enqueued by this named schedule (or any of these schedules).
   applicationName?: string | string[]; // Retrieve workflows owned by these applications, plus unclaimed ones. Unset retrieves this application's.
+  shardKey?: string | string[]; // Retrieve workflows living under this shard key (or any of these keys). Requires a sharded system database.
+  parentShardKey?: string | string[]; // Retrieve workflows whose parent lives under this shard key (or any of these keys). Requires a sharded system database.
   limit?: number; // Return up to this many workflows IDs. IDs are ordered by workflow creation time.
   offset?: number; // Skip this many workflows IDs. IDs are ordered by workflow creation time.
   sortDesc?: boolean; // Sort the workflows in descending order by creation time (default ascending order).
@@ -213,6 +223,8 @@ export interface StepInfo {
   readonly output: unknown;
   readonly error: Error | null;
   readonly childWorkflowID: string | null;
+  // That workflow's shard key; undefined on an unsharded database
+  readonly childShardKey?: string;
   readonly startedAtEpochMs?: number;
   readonly completedAtEpochMs?: number;
 }
@@ -271,6 +283,10 @@ export interface WorkflowHandle<R> {
    * Return the workflow's ID
    */
   get workflowID(): string;
+  /**
+   * The shard key the workflow lives under; undefined on an unsharded database.
+   */
+  readonly shardKey?: string;
 }
 
 export interface InternalWFHandle<R> extends WorkflowHandle<R> {
@@ -284,22 +300,25 @@ export class InvokedHandle<R> implements InternalWFHandle<R> {
   constructor(
     readonly workflowPromise: Promise<R>,
     readonly workflowID: string,
+    readonly shardKey?: string,
   ) {}
 
   async getStatus(): Promise<WorkflowStatus | null> {
-    return await DBOS.getWorkflowStatus(this.workflowID);
+    return await DBOS.getWorkflowStatus(this.workflowID, { shardKey: this.shardKey });
   }
 
   async getResult(optionsOrFuncIdForGet?: PollingOptions | number): Promise<R> {
     const funcIdForGet = typeof optionsOrFuncIdForGet === 'number' ? optionsOrFuncIdForGet : undefined;
     resolvePollingIntervalMs(optionsOrFuncIdForGet);
-    return await runInternalStep(
-      async () => {
-        return await this.workflowPromise;
-      },
-      'DBOS.getResult',
-      this.workflowID,
-      funcIdForGet,
+    return await bindShardKeys([[this.workflowID, this.shardKey]], () =>
+      runInternalStep(
+        async () => {
+          return await this.workflowPromise;
+        },
+        'DBOS.getResult',
+        this.workflowID,
+        funcIdForGet,
+      ),
     );
   }
 }
@@ -308,32 +327,31 @@ export class InvokedHandle<R> implements InternalWFHandle<R> {
  * The handle returned when retrieving a workflow with DBOSExecutor.retrieve
  */
 export class RetrievedHandle<R> implements InternalWFHandle<R> {
-  constructor(readonly workflowID: string) {}
+  constructor(
+    readonly workflowID: string,
+    readonly shardKey?: string,
+  ) {}
 
   async getStatus(): Promise<WorkflowStatus | null> {
-    return await DBOS.getWorkflowStatus(this.workflowID);
+    return await DBOS.getWorkflowStatus(this.workflowID, { shardKey: this.shardKey });
   }
 
   async getResult(optionsOrFuncIdForGet?: PollingOptions | number): Promise<R> {
     const funcIdForGet = typeof optionsOrFuncIdForGet === 'number' ? optionsOrFuncIdForGet : undefined;
     const pollingIntervalMs = resolvePollingIntervalMs(optionsOrFuncIdForGet);
-    return (await getResultInternal<R>(
-      this.workflowID,
-      undefined,
-      undefined,
-      funcIdForGet,
-      pollingIntervalMs,
+    return (await bindShardKeys([[this.workflowID, this.shardKey]], () =>
+      getResultInternal<R>(this.workflowID, undefined, undefined, funcIdForGet, pollingIntervalMs),
     )) as Promise<R>;
   }
 }
 
-registerSerializationRecipe<WorkflowHandle<unknown>, { wfid: string }>({
+registerSerializationRecipe<WorkflowHandle<unknown>, { wfid: string; shardKey?: string }>({
   name: 'DBOS.WorkflowHandle',
   isApplicable: (v: unknown): v is WorkflowHandle<unknown> => {
     return v instanceof RetrievedHandle || v instanceof InvokedHandle;
   },
   serialize: (v: WorkflowHandle<unknown>) => {
-    return { wfid: v.workflowID };
+    return v.shardKey === undefined ? { wfid: v.workflowID } : { wfid: v.workflowID, shardKey: v.shardKey };
   },
-  deserialize: (s: { wfid: string }) => new RetrievedHandle(s.wfid),
+  deserialize: (s: { wfid: string; shardKey?: string }) => new RetrievedHandle(s.wfid, s.shardKey),
 });

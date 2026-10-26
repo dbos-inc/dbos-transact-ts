@@ -8,6 +8,7 @@ import {
   prepareEnqueuedWorkflow,
   PreparedWorkflow,
   registerPollerQueue,
+  isShardedSystemDatabase,
 } from '@dbos-inc/dbos-sdk/eventreceiver';
 
 import { KafkaJS } from '@confluentinc/kafka-javascript';
@@ -320,6 +321,13 @@ export class ConfluentKafkaReceiver implements DBOSLifecycleCallback {
         throw new Error(
           `Kafka consumer ${qualifiedName(className, name)} is an instance method, which cannot be enqueued in a ` +
             `batch. Make it static, or register a free function with registerConsumer.`,
+        );
+      }
+      // Batch enqueue, which every consumer uses, is refused by a sharded system database.
+      if (isShardedSystemDatabase()) {
+        throw new Error(
+          `Kafka consumer ${qualifiedName(className, name)} cannot be registered: Kafka consumers are not ` +
+            `supported on a sharded system database.`,
         );
       }
       const groupId =

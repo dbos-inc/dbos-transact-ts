@@ -3,7 +3,11 @@ import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import * as enterprise from '../src/enterprise';
 import { DBOSInitializationError } from '../src/error';
 import { globalParams } from '../src/utils';
-import { ALL_ENTITLED, FakeConductor, generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
+import { GlobalLogger } from '../src/telemetry/logs';
+import { ALL_ENTITLED, FakeConductor, generateDBOSTestConfig, setUpDBOSTestSysDb, testUnlessSharded } from './helpers';
+
+// The real check, taken before a sharded run's harness stubs it for every launch.
+const requireEnterprise = enterprise.requireEnterprise;
 
 // The package is an optional peer that core's own install never pulls in, so it is really absent here.
 describe('enterprise-loader', () => {
@@ -11,7 +15,8 @@ describe('enterprise-loader', () => {
     jest.restoreAllMocks();
   });
 
-  test('absent package gets the install hint', () => {
+  // A sharded run always has the package.
+  testUnlessSharded('absent package gets the install hint', () => {
     expect(() => enterprise.load()).toThrow(DBOSInitializationError);
     expect(() => enterprise.load()).toThrow('npm install @dbos-inc/dbos-enterprise');
     expect(() => enterprise.load()).toThrow("Cannot find module '@dbos-inc/dbos-enterprise'");
@@ -56,7 +61,7 @@ describe('enterprise-launch', () => {
     jest.restoreAllMocks();
   });
 
-  test('refused launch leaves nothing behind', async () => {
+  testUnlessSharded('refused launch leaves nothing behind', async () => {
     await expect(DBOS.launch({ conductorKey: 'test-key' })).rejects.toThrow(DBOSInitializationError);
     expect(DBOS.isInitialized()).toBe(false);
 
@@ -66,7 +71,7 @@ describe('enterprise-launch', () => {
     expect(DBOS.executorID).toBe('local');
   });
 
-  test('DBOS Cloud always requires the package', async () => {
+  testUnlessSharded('DBOS Cloud always requires the package', async () => {
     const originalCloud = globalParams.dbosCloud;
     const originalSysDbUrl = process.env.DBOS_SYSTEM_DATABASE_URL;
     process.env.DBOS_SYSTEM_DATABASE_URL = config.systemDatabaseUrl;
@@ -85,7 +90,8 @@ describe('enterprise-launch', () => {
     }
   });
 
-  test('skips self recovery when Conductor is enabled', async () => {
+  // The stand-in package has no sharded system database.
+  testUnlessSharded('skips self recovery when Conductor is enabled', async () => {
     class FakeConductor implements enterprise.ConductorConnection {
       start() {}
       stop() {
@@ -104,6 +110,7 @@ describe('enterprise-launch', () => {
     jest.replaceProperty(enterprise.enterpriseLoader, 'override', () => ({
       ConductorWebsocket: FakeConductor,
       AutoUpgradePass: FakePass,
+      ShardedSystemDatabase: class {},
     }));
 
     await DBOS.launch({ conductorKey: 'test-key', conductorURL: 'ws://127.0.0.1:1' });
@@ -153,7 +160,7 @@ describe('entitlements', () => {
   });
 
   function check(options: { enterpriseKey?: string; conductorKey?: string; features?: enterprise.Feature[] } = {}) {
-    return enterprise.requireEnterprise(options.features ?? [SOME_FEATURE], {
+    return requireEnterprise(options.features ?? [SOME_FEATURE], {
       enterpriseKey: options.enterpriseKey,
       conductorKey: options.conductorKey,
       conductorURL: conductor.url,
@@ -232,7 +239,7 @@ describe('entitlements', () => {
   test('enterprise features require a key', async () => {
     // DBOS's hosted Conductor, implicit or named, is never asked without a key.
     for (const conductorURL of [undefined, enterprise.HOSTED_CONDUCTOR_URL]) {
-      await expect(enterprise.requireEnterprise([SOME_FEATURE], { conductorURL })).rejects.toThrow(
+      await expect(requireEnterprise([SOME_FEATURE], { conductorURL })).rejects.toThrow(
         'Some feature requires a DBOS key. Set transactEnterpriseKey',
       );
     }
@@ -256,9 +263,9 @@ describe('entitlements', () => {
     conductor.reject(401, 'invalid API key');
     const withCredentials = conductor.url.replace('ws://', 'ws://user:secret@');
     let message = '';
-    await enterprise
-      .requireEnterprise([SOME_FEATURE], { enterpriseKey: 'enterprise-key', conductorURL: withCredentials })
-      .catch((e: Error) => (message = e.message));
+    await requireEnterprise([SOME_FEATURE], { enterpriseKey: 'enterprise-key', conductorURL: withCredentials }).catch(
+      (e: Error) => (message = e.message),
+    );
     expect(message).toContain('rejected the key (HTTP 401)');
     expect(message).not.toContain('secret');
     expect(message).not.toContain('user');
@@ -281,8 +288,6 @@ describe('entitlements', () => {
     [403, 'forbidden'],
     [404, 'organization not found'],
     [409, 'conflict'],
-    // Throttling is a refusal too: the check is not retried, and never skipped.
-    [429, 'slow down'],
   ])('any other refusal quotes Conductor (%s)', async (status, detail) => {
     conductor.reject(status, detail);
     let message = '';
@@ -315,12 +320,10 @@ describe('entitlements', () => {
   });
 
   test.each([[[]], [{ entitlements: null }], [{ entitled: true }], ['not json']])(
-    'a malformed answer blocks startup (%j)',
+    'a malformed answer counts as an outage (%j)',
     async (body) => {
       conductor.body = body;
-      await expect(check({ enterpriseKey: 'enterprise-key' })).rejects.toThrow(
-        'unable to process the entitlements answer',
-      );
+      await expect(check({ enterpriseKey: 'enterprise-key' })).rejects.toThrow('Retry once Conductor');
     },
   );
 
@@ -336,22 +339,60 @@ describe('entitlements', () => {
     await expect(check({ enterpriseKey: 'enterprise-key' })).rejects.toThrow('failed (HTTP 502).');
     // A port nothing listens on.
     let message = '';
-    await enterprise
-      .requireEnterprise([SOME_FEATURE], { enterpriseKey: 'enterprise-key', conductorURL: 'ws://127.0.0.1:1' })
-      .catch((e: Error) => (message = e.message));
+    await requireEnterprise([SOME_FEATURE], {
+      enterpriseKey: 'enterprise-key',
+      conductorURL: 'ws://127.0.0.1:1',
+    }).catch((e: Error) => (message = e.message));
     expect(message).toContain('checking it with Conductor');
     expect(message).toContain('failed');
     expect(message).not.toContain('enterprise-key');
   });
 
-  test('a hosted Conductor outage blocks startup too', async () => {
-    // Whether to start anyway when DBOS's hosted Conductor is down is still being decided;
-    // until then every Conductor fails closed, the hosted one included.
+  test('a hosted Conductor outage does not block startup', async () => {
     const fetchSpy = jest.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('connection refused'));
-    await expect(enterprise.requireEnterprise([SOME_FEATURE], { enterpriseKey: 'enterprise-key' })).rejects.toThrow(
-      'Please retry later',
-    );
+    const warnSpy = jest.spyOn(GlobalLogger.prototype, 'warn').mockImplementation(() => {});
+    // No Conductor URL means DBOS's hosted one, whose outage only warns.
+    await requireEnterprise([SOME_FEATURE], { enterpriseKey: 'enterprise-key' });
     expect(fetchSpy.mock.calls.map(([url]) => url)).toEqual(['https://cloud.dbos.dev/conductor/v2/entitlements']);
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(String(warnSpy.mock.calls[0][0])).toContain('Could not verify the DBOS key');
+    expect(String(warnSpy.mock.calls[0][0])).not.toContain('enterprise-key');
+    // Another domain is not DBOS's hosted Conductor, so its outage still refuses.
+    process.env.DBOS_DOMAIN = 'unreachable.example.com';
+    await expect(requireEnterprise([SOME_FEATURE], { enterpriseKey: 'enterprise-key' })).rejects.toThrow(
+      'Retry once Conductor is reachable',
+    );
+  });
+
+  // Make the hosted Conductor answer with this error.
+  function hostedAnswers(status: number, headers: Record<string, string> = {}) {
+    jest.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('', { status, headers }));
+    return jest.spyOn(GlobalLogger.prototype, 'warn').mockImplementation(() => {});
+  }
+
+  function checkHosted() {
+    return requireEnterprise([SOME_FEATURE], { enterpriseKey: 'enterprise-key' });
+  }
+
+  test.each([403, 407, 408, 425, 429])('hosted throttling and proxies count as outages (%s)', async (status) => {
+    // From the hosted Conductor these mean it couldn't answer, not that it refused the key.
+    const warnSpy = hostedAnswers(status);
+    await checkHosted();
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(String(warnSpy.mock.calls[0][0])).toContain(`(HTTP ${status})`);
+  });
+
+  test('hosted refusals still refuse', async () => {
+    hostedAnswers(403, { 'X-DBOS-Error': 'past_limit' });
+    await expect(checkHosted()).rejects.toThrow('past its plan limit');
+    jest.restoreAllMocks();
+    hostedAnswers(401);
+    await expect(checkHosted()).rejects.toThrow('rejected the key (HTTP 401)');
+  });
+
+  test("another Conductor's throttling still refuses", async () => {
+    conductor.reject(429, 'slow down');
+    await expect(check({ enterpriseKey: 'enterprise-key' })).rejects.toThrow('refused the check (HTTP 429)');
   });
 
   test('DBOS Cloud passes without a check', async () => {
@@ -364,12 +405,14 @@ describe('entitlements', () => {
     expect(enterprise.enabledFeatures({})).toEqual([]);
     expect(enterprise.enabledFeatures({ autoUpgrade: false })).toEqual([]);
     expect(enterprise.enabledFeatures({ autoUpgrade: true })).toEqual([enterprise.AUTO_UPGRADE]);
+    expect(enterprise.enabledFeatures({ sharding: false })).toEqual([]);
+    expect(enterprise.enabledFeatures({ sharding: true })).toEqual([enterprise.SHARDING]);
     // Every registered feature has a distinct entitlement name.
     const names = enterprise.FEATURES.map((f) => f.entitlement);
     expect(new Set(names).size).toBe(names.length);
   });
 
-  test('an auto-upgrading executor checks its entitlement', async () => {
+  testUnlessSharded('an auto-upgrading executor checks its entitlement', async () => {
     const config = generateDBOSTestConfig();
     await setUpDBOSTestSysDb(config);
     try {
@@ -386,6 +429,24 @@ describe('entitlements', () => {
       await expect(DBOS.launch({ conductorURL: conductor.url })).rejects.toThrow(
         'Auto-upgrading workflows requires @dbos-inc/dbos-enterprise',
       );
+      expect(DBOS.isInitialized()).toBe(false);
+    } finally {
+      await DBOS.shutdown();
+    }
+  });
+
+  testUnlessSharded('a sharded executor checks its entitlement', async () => {
+    const config = generateDBOSTestConfig();
+    await setUpDBOSTestSysDb(config);
+    try {
+      // Refused before the package is even loaded, so this holds without dbos-enterprise.
+      DBOS.setConfig({ ...config, sharding: true });
+      await expect(DBOS.launch()).rejects.toThrow(`${enterprise.SHARDING.description} requires a DBOS key`);
+      await DBOS.shutdown();
+      DBOS.setConfig({ ...config, sharding: true, transactEnterpriseKey: 'enterprise-key' });
+      conductor.entitle({ ...ALL_ENTITLED, sharding: false });
+      await expect(DBOS.launch({ conductorURL: conductor.url })).rejects.toThrow('not entitled to sharding');
+      expect(conductor.requests).toEqual([{ path: '/v2/entitlements', authorization: 'Bearer enterprise-key' }]);
       expect(DBOS.isInitialized()).toBe(false);
     } finally {
       await DBOS.shutdown();

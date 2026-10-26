@@ -8,7 +8,7 @@ import { DBOSJSON, DBOSSerializer } from '../src/serialization';
 import { retriablePostgresException, SystemDatabase } from '../src/system_database';
 import { GlobalLogger } from '../src/telemetry/logs';
 import { getClientConfig, sleepms } from '../src/utils';
-import { Event, generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
+import { Event, describeUnlessSharded, generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
 
 describe('observability-query-timeout', () => {
   let config: DBOSConfig;
@@ -286,7 +286,8 @@ class Stranded {
   }
 }
 
-describe('system-database-idle-transaction-timeout', () => {
+// A router does not carry a connection's session settings to the shards.
+describeUnlessSharded('system-database-idle-transaction-timeout', () => {
   let config: DBOSConfig;
   let systemDatabaseUrl: string;
 

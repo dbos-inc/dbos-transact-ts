@@ -1,5 +1,5 @@
 import { DBOS, StatusString } from '../src';
-import { DBOSConfig } from '../src/dbos-executor';
+import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import { SystemDatabase } from '../src/system_database';
 import { runWithAbortableDbRetries } from '../src/context';
 import { generateDBOSTestConfig, setUpDBOSTestSysDb, Event } from './helpers';
@@ -88,7 +88,19 @@ function failOutputWrites(workflowID: string) {
     }
     return original.call(this, client, id, status, ...rest);
   });
-  return { state, failed, spy };
+  // The outcome's one-statement write, which every backend but Citus takes.
+  const pool = DBOSExecutor.globalInstance!.systemDatabase.pool;
+  const query = pool.query.bind(pool) as (text: unknown, values?: unknown[]) => Promise<unknown>;
+  const poolSpy = jest.spyOn(pool, 'query').mockImplementation((async (text: unknown, values?: unknown[]) => {
+    const outcome = typeof text === 'string' && text.includes('WITH updated AS');
+    if (state.failing && outcome && values?.[0] === StatusString.SUCCESS && values.includes(workflowID)) {
+      state.attempts++;
+      failed.set();
+      throw connectionRefused();
+    }
+    return query(text, values);
+  }) as never);
+  return { state, failed, spy, poolSpy };
 }
 
 async function scheduledWorkflow(_scheduledDate: Date, _context: unknown) {}

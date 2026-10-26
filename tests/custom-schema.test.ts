@@ -1,5 +1,5 @@
 import { DBOS, DBOSClient } from '../src';
-import { generateDBOSTestConfig } from './helpers';
+import { describeUnlessSharded, generateDBOSTestConfig } from './helpers';
 import { Client } from 'pg';
 
 interface ExistenceCheck {
@@ -26,7 +26,8 @@ const patchedWorkflow = DBOS.registerWorkflow(
   { name: 'patchedWorkflow' },
 );
 
-describe('custom-schema-tests', () => {
+// Makes databases of its own, which a router does not serve.
+describeUnlessSharded('custom-schema-tests', () => {
   beforeAll(async () => {
     // Clean up any existing test database
     const config = generateDBOSTestConfig();

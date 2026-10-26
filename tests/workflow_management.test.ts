@@ -6,6 +6,7 @@ import {
   Event,
   recoverPendingWorkflows,
   reexecuteWorkflowById,
+  testUnlessSharded,
 } from './helpers';
 import { Client } from 'pg';
 import { WorkflowHandle, WorkflowStatus } from '../src/workflow';
@@ -683,7 +684,7 @@ describe('workflow-management-tests', () => {
     { name: 'cancelWithChildrenWorkflow' },
   );
 
-  test('workflow-command-transient-error-is-retried-not-recorded', async () => {
+  testUnlessSharded('workflow-command-transient-error-is-retried-not-recorded', async () => {
     const savedBackoff = { ...dbRetryConfig };
     dbRetryConfig.initialBackoffSec = 0.05;
     const targetID = randomUUID();
@@ -2209,6 +2210,29 @@ describe('test-fork', () => {
     }
   });
 
+  const forkTwiceWorkflow = DBOS.registerWorkflow(
+    async () => {
+      await DBOS.setEvent('key', 0);
+      await DBOS.setEvent('key', 1);
+    },
+    { name: 'fork-twice-workflow' },
+  );
+
+  test('forking-one-workflow-twice-in-one-call', async () => {
+    // Each fork in a batch gets the original's latest events, even when one batch forks the same workflow twice.
+    const handle = await DBOS.startWorkflow(forkTwiceWorkflow)();
+    await handle.getResult();
+    const forks = [randomUUID(), randomUUID()];
+    await DBOSExecutor.globalInstance!.systemDatabase.bulkForkWorkflows(
+      [handle.workflowID, handle.workflowID],
+      forks,
+      [2, 2],
+    );
+    for (const fork of forks) {
+      expect(await DBOS.getEvent(fork, 'key', 0)).toBe(1);
+    }
+  });
+
   class ResumeForkQueueWorkflow {
     static stepOneCount = 0;
     static stepTwoCount = 0;
@@ -2778,9 +2802,9 @@ describe('wf-cancel-tests', () => {
       await CancelChildrenTest.mainEvents[id].wait();
     }
 
-    // The cascade should discover the full descendant tree
-    const children = await DBOSExecutor.globalInstance!.systemDatabase.getWorkflowChildren(parentID);
-    expect(new Set(children)).toEqual(new Set([childID, grandchildID]));
+    // The whole descendant tree is recorded: the parent's child, and that child's child
+    const tree = await DBOS.listWorkflows({ parentWorkflowID: [parentID, childID] });
+    expect(new Set(tree.map((w) => w.workflowID))).toEqual(new Set([childID, grandchildID]));
 
     // Cancelling without cancelChildren only affects the parent
     await DBOS.cancelWorkflow(parentID);

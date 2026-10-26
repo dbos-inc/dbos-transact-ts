@@ -165,13 +165,17 @@ async function plantForeignCheckpoint(
   stepID: number,
   name: string,
 ) {
+  // Key columns a sharded system database also needs; none on an unsharded one.
+  const keys = DBOSExecutor.globalInstance!.systemDatabase.wfValues(workflowID);
   const client = new Client({ connectionString: systemDatabaseUrl });
   await client.connect();
   try {
+    const keyColumns = Object.keys(keys).map((column) => `, ${column}`);
+    const keyParams = Object.keys(keys).map((_, i) => `, $${i + 4}`);
     await client.query(
-      `INSERT INTO dbos.operation_outputs (workflow_uuid, function_id, function_name, started_at_epoch_ms, completed_at_epoch_ms)
-       VALUES ($1, $2, $3, 1, 1)`,
-      [workflowID, stepID, name],
+      `INSERT INTO dbos.operation_outputs (workflow_uuid, function_id, function_name, started_at_epoch_ms, completed_at_epoch_ms${keyColumns.join('')})
+       VALUES ($1, $2, $3, 1, 1${keyParams.join('')})`,
+      [workflowID, stepID, name, ...Object.values(keys)],
     );
   } finally {
     await client.end();
@@ -504,7 +508,7 @@ describe('run-workflow-once-tests', () => {
           globalParams.appVersion,
           INTERNAL_QUEUE_NAME,
         );
-        expect(recovered).toContain(workflowID);
+        expect(recovered.map((r) => r.workflowID)).toContain(workflowID);
       }
 
       // The new owner starts without waiting for the stale execution to let go.
@@ -781,7 +785,7 @@ describe('run-workflow-once-tests', () => {
         const realRelease = client.release.bind(client);
         client.query = (async (text: unknown, values?: unknown[]) => {
           const result = await realQuery(text, values);
-          if (typeof text === 'string' && text.startsWith('SELECT owner_xid') && values?.[0] === workflowID) {
+          if (typeof text === 'string' && text.startsWith('SELECT owner_xid') && values?.includes(workflowID)) {
             checkHeld.set();
             await releaseCheck.wait();
           }

@@ -11,7 +11,10 @@ import {
   functionIDGetIncrement,
   isInWorkflowCtx,
   isWithinWorkflowCtx,
+  childWorkflowID,
+  nextWorkflowShardKey,
 } from './context';
+import { bindShardKeys } from './shard_keys';
 import { buildEnqueueStatus, type EnqueueWorkflowOptions } from './enqueue_options';
 import { RetrievedHandle } from './workflow';
 import type { WorkflowHandle } from './workflow';
@@ -36,10 +39,15 @@ function resolveOptions(
   callerFunctionID: number | undefined,
 ): EnqueueWorkflowOptions {
   const pctx = getCurrentContextStore();
+  const shardKey = options.shardKey ?? nextWorkflowShardKey(pctx);
+  // A derived default ID is made for the key the workflow lives under.
   const derivedID =
-    callerID !== undefined && callerFunctionID !== undefined ? `${callerID}-${callerFunctionID}` : undefined;
+    callerID !== undefined && callerFunctionID !== undefined
+      ? childWorkflowID(callerID, callerFunctionID, pctx?.shardKey, shardKey)
+      : undefined;
   return {
     ...options,
+    shardKey,
     workflowID: assignedID ?? derivedID,
     authenticatedUser: options.authenticatedUser ?? pctx?.authenticatedUser,
     authenticatedRoles: options.authenticatedRoles ?? pctx?.authenticatedRoles,
@@ -86,7 +94,10 @@ export async function enqueueWorkflowWithOptions<T = unknown>(
       if (recorded.error) {
         throw await deserializeResError(recorded.error, recorded.serialization ?? null, exec.serializer);
       }
-      return new RetrievedHandle<T>(recorded.childWorkflowID!);
+      return new RetrievedHandle<T>(
+        recorded.childWorkflowID!,
+        recorded.childShardKey ?? options.shardKey ?? nextWorkflowShardKey(pctx),
+      );
     }
   }
 
@@ -113,14 +124,16 @@ export async function enqueueWorkflowWithOptions<T = unknown>(
   const childStartTime = Date.now();
   try {
     if (callerID !== undefined && callerFunctionID !== undefined) {
-      await sysdb.initChildWorkflowStatus(
-        internalStatus,
-        randomUUID(),
-        callerID,
-        callerFunctionID,
-        childStartTime,
-        Date.now(),
-        options.workflowIDReusePolicy,
+      await bindShardKeys([[callerID, pctx?.shardKey]], () =>
+        sysdb.initChildWorkflowStatus(
+          internalStatus,
+          randomUUID(),
+          callerID,
+          callerFunctionID,
+          childStartTime,
+          Date.now(),
+          options.workflowIDReusePolicy,
+        ),
       );
     } else {
       await sysdb.initWorkflowStatus(internalStatus, randomUUID(), undefined, options.workflowIDReusePolicy);
@@ -139,11 +152,11 @@ export async function enqueueWorkflowWithOptions<T = unknown>(
         true,
         childStartTime,
         Date.now(),
-        { error: sererr.serializedValue, serialization: sererr.serialization },
+        { error: sererr.serializedValue, serialization: sererr.serialization, ownerKey: pctx?.shardKey },
       );
     }
     throw e;
   }
 
-  return new RetrievedHandle<T>(internalStatus.workflowUUID);
+  return new RetrievedHandle<T>(internalStatus.workflowUUID, internalStatus.shardKey);
 }

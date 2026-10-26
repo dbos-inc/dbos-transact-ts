@@ -19,6 +19,8 @@ export interface ScheduleOptions {
   automaticBackfill?: boolean;
   cronTimezone?: string;
   queueName?: string;
+  // Shard key the schedule's workflows run under; required on a sharded system database.
+  shardKey?: string;
 }
 
 export interface WorkflowSchedule {
@@ -35,6 +37,8 @@ export interface WorkflowSchedule {
   queueName: string | null;
   // The application that owns this schedule and runs its workflows; undefined if unclaimed.
   applicationName?: string;
+  // Shard key the schedule's workflows run under; undefined on an unsharded database.
+  shardKey?: string;
 }
 
 export async function toWorkflowSchedule(
@@ -56,6 +60,7 @@ export async function toWorkflowSchedule(
     cronTimezone: internal.cronTimezone,
     queueName: internal.queueName,
     applicationName: internal.applicationName,
+    shardKey: internal.shardKey,
   };
 }
 
@@ -70,7 +75,7 @@ interface ScheduleLoopEntry {
 }
 
 // Definition fields a running loop captures at start; a change requires restarting it. Runtime state (schedule_id, status, last_fired_at) is excluded so an unchanged re-apply doesn't restart the loop.
-function scheduleSignature(sched: WorkflowScheduleInternal): string {
+export function scheduleSignature(sched: WorkflowScheduleInternal): string {
   return JSON.stringify([
     sched.workflowName,
     sched.workflowClassName,
@@ -78,6 +83,7 @@ function scheduleSignature(sched: WorkflowScheduleInternal): string {
     sched.context,
     sched.cronTimezone ?? null,
     sched.queueName ?? null,
+    sched.shardKey ?? null,
   ]);
 }
 
@@ -213,6 +219,7 @@ export class DynamicSchedulerLoop implements DBOSLifecycleCallback {
                 sched.cronTimezone ?? undefined,
                 sched.queueName ?? undefined,
                 sched.applicationName,
+                sched.shardKey,
               ),
             );
             this.#scheduleLoops.set(sched.scheduleName, { controller, promise, signature });
@@ -235,6 +242,7 @@ export class DynamicSchedulerLoop implements DBOSLifecycleCallback {
     cronTimezone?: string,
     queueName?: string,
     applicationName?: string,
+    shardKey?: string,
   ): Promise<void> {
     let timeMatcher: TimeMatcher;
     try {
@@ -259,6 +267,7 @@ export class DynamicSchedulerLoop implements DBOSLifecycleCallback {
       cronTimezone: cronTimezone ?? null,
       queueName: queueName ?? null,
       applicationName,
+      shardKey,
     };
 
     let lastExec = new Date().setMilliseconds(0);
@@ -290,7 +299,7 @@ export class DynamicSchedulerLoop implements DBOSLifecycleCallback {
 
       try {
         // Idempotency check -- for performance only, not needed for correctness
-        const existing = await DBOS.getWorkflowStatus(workflowID);
+        const existing = await DBOS.getWorkflowStatus(workflowID, { shardKey });
         if (existing) {
           lastExec = nextExec;
           continue;
@@ -346,6 +355,7 @@ async function enqueueScheduledWorkflow(
     scheduleName: sched.scheduleName,
     // Owned where possible: the internal queue's shared name cannot route an unclaimed row.
     applicationName: owner,
+    shardKey: sched.shardKey,
   };
   await systemDatabase.initWorkflowStatus(internalStatus, null);
   return;
@@ -402,4 +412,9 @@ export async function backfillSchedule(
   }
 
   return workflowIDs;
+}
+
+/** The shard key a schedule's workflows run under. */
+export async function scheduleShardKey(systemDatabase: SystemDatabase, name: string): Promise<string | undefined> {
+  return (await systemDatabase.getSchedule(name))?.shardKey;
 }

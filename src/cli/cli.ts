@@ -10,7 +10,8 @@ import { TelemetryExporter } from '../telemetry/exporters';
 import * as readline from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 import { DBOSClient, GetWorkflowsInput, StatusString } from '..';
-import { DEFAULT_RENAME_BATCH_SIZE, migrateSystemDatabase } from '../system_database';
+import { DEFAULT_RENAME_BATCH_SIZE, holdsShardedSchema, migrateSystemDatabase } from '../system_database';
+import { DBOS } from '../dbos';
 import { exit } from 'node:process';
 import { inspect } from 'node:util';
 import { runCommand } from './commands';
@@ -62,13 +63,14 @@ program
 program
   .command('migrate')
   .description('Perform a database migration')
-  .action(async () => {
+  .option('--sharding', 'Create or migrate a sharded system database (requires @dbos-inc/dbos-enterprise)', false)
+  .action(async (options: { sharding: boolean }) => {
     const configFile = await readConfigFile();
     const config = getDbosConfig(configFile);
     const schemaName = configFile.system_database_schema_name ?? 'dbos';
 
     await runAndLog(configFile.database?.migrate ?? [], config, (cmds, url, logger) =>
-      migrate(cmds, url, logger, schemaName),
+      migrate(cmds, url, logger, schemaName, options.sharding),
     );
   });
 
@@ -86,12 +88,27 @@ program
     '--print-user-role',
     'Print the SQL granting the application role (--app-role) access to DBOS system tables instead of executing it',
   )
+  .option('--sharding', 'Create or migrate a sharded system database (requires @dbos-inc/dbos-enterprise)', false)
   .action(
     async (
       systemDatabaseUrl: string | undefined,
-      options: { appRole?: string; schema?: string; printMigrations?: string; printUserRole?: boolean },
+      options: {
+        appRole?: string;
+        schema?: string;
+        printMigrations?: string;
+        printUserRole?: boolean;
+        sharding: boolean;
+      },
     ) => {
       const logger = new GlobalLogger();
+
+      if (options.printMigrations !== undefined && options.sharding) {
+        // Sharded migrations also distribute tables (on Citus), which only a live run does.
+        console.error(
+          '--print-migrations is not supported with --sharding; run `dbos schema --sharding` against the database instead',
+        );
+        process.exit(1);
+      }
 
       // Get schema name from CLI option first, then config, then default
       let schemaName = options.schema ?? 'dbos';
@@ -110,7 +127,7 @@ program
         // Print modes never connect, so a missing database URL is fine.
         if (!systemDatabaseUrl) {
           try {
-            systemDatabaseUrl = (await getDatabaseURLs(undefined)).systemDatabaseURL;
+            systemDatabaseUrl = (await getDatabaseURLs(undefined, { allowSharded: true })).systemDatabaseURL;
           } catch (e) {}
         }
         process.exit(
@@ -124,13 +141,17 @@ program
       }
 
       // Determine system database URL from argument or config
-      const databaseURLs = await getDatabaseURLs(systemDatabaseUrl);
+      const databaseURLs = await getDatabaseURLs(systemDatabaseUrl, { allowSharded: true });
       systemDatabaseUrl = databaseURLs.systemDatabaseURL;
 
       try {
         // Load the DBOS system schema.
         logger.info(`Creating DBOS system database and schema: ${schemaName}`);
-        await migrateSystemDatabase(systemDatabaseUrl, logger, schemaName, options.appRole);
+        if (options.sharding) {
+          await DBOS.migrate(systemDatabaseUrl, { schemaName, applicationRole: options.appRole, sharding: true });
+        } else {
+          await migrateSystemDatabase(systemDatabaseUrl, logger, schemaName, options.appRole);
+        }
       } catch (e) {
         logger.error(e);
         process.exit(1);
@@ -159,6 +180,7 @@ program
   .option('-y, --yes', 'Skip confirmation prompt', false)
   .option('-s, --sys-db-url <string>', 'Your DBOS system database URL')
   .action(async (options: { yes: boolean; sysDbUrl?: string }) => {
+    const urls = await getDatabaseURLs(options.sysDbUrl);
     if (!options.yes) {
       const rl = readline.createInterface({ input, output });
       try {
@@ -175,7 +197,6 @@ program
         rl.close();
       }
     }
-    const urls = await getDatabaseURLs(options.sysDbUrl);
 
     const sysDbName = getDatabaseNameFromUrl(urls.systemDatabaseURL);
     try {
@@ -220,6 +241,7 @@ program
         exit(1);
       }
 
+      const urls = await getDatabaseURLs(options.sysDbUrl);
       if (!options.yes) {
         const rl = readline.createInterface({ input, output });
         try {
@@ -236,7 +258,6 @@ program
         }
       }
 
-      const urls = await getDatabaseURLs(options.sysDbUrl);
       const client = await DBOSClient.create({
         systemDatabaseUrl: urls.systemDatabaseURL,
         systemDatabaseSchemaName: options.schema,
@@ -496,25 +517,46 @@ if (!process.argv.slice(2).length) {
   program.outputHelp();
 }
 
-async function getDatabaseURLs(systemDatabaseURL: string | undefined): Promise<{
+// Resolves the system database URL, and exits when it names a sharded system database the command doesn't support.
+async function getDatabaseURLs(
+  systemDatabaseURL: string | undefined,
+  options: { allowSharded?: boolean } = {},
+): Promise<{
   systemDatabaseURL: string;
 }> {
+  const url = await resolveDatabaseURL(systemDatabaseURL);
+  if (!options.allowSharded && (await isSharded(url))) {
+    console.error(
+      'Error: this command does not support a sharded system database; only `dbos schema` and `dbos migrate` do.',
+    );
+    exit(1);
+  }
+  return { systemDatabaseURL: url };
+}
+
+async function resolveDatabaseURL(systemDatabaseURL: string | undefined): Promise<string> {
   if (globalParams.dbosCloud) {
-    return {
-      systemDatabaseURL: process.env.DBOS_SYSTEM_DATABASE_URL!,
-    };
+    return process.env.DBOS_SYSTEM_DATABASE_URL!;
   }
   if (systemDatabaseURL) {
-    return { systemDatabaseURL: systemDatabaseURL };
+    return systemDatabaseURL;
   }
   if (existsSync(dbosConfigFilePath)) {
     const config = await readConfigFile();
-    return {
-      systemDatabaseURL: getSystemDatabaseUrl(config),
-    };
+    return getSystemDatabaseUrl(config);
   } else {
     throw new Error('Error: Missing database URL: please set it using CLI flags or your dbos-config.yaml file.');
   }
+}
+
+// Whether the configuration enables sharding or the database holds a sharded schema.
+async function isSharded(systemDatabaseURL: string): Promise<boolean> {
+  try {
+    if (existsSync(dbosConfigFilePath) && (await readConfigFile()).sharding) {
+      return true;
+    }
+  } catch (e) {}
+  return await holdsShardedSchema(systemDatabaseURL);
 }
 
 //Runs action(migrationCommands, systemDatabaseUrl, logger), which returns a numeric exit code.

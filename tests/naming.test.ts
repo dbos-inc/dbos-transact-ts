@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { ConfiguredInstance, DBOS, DBOSClient, DBOSConfig } from '../src';
 import { getAllRegisteredClassNames, getAllRegisteredFunctions } from '../src/decorators';
-import { generateDBOSTestConfig, reexecuteWorkflowById, setUpDBOSTestSysDb } from './helpers';
+import { generateDBOSTestConfig, reexecuteWorkflowById, setUpDBOSTestSysDb, testUnlessSharded } from './helpers';
 
 @DBOS.className('ClassA')
 class TestClass {
@@ -69,7 +69,8 @@ describe('rename_tests', () => {
     await DBOS.shutdown();
   });
 
-  test('class-names-decorator', async () => {
+  // Its scripts run in processes outside the sharded run's harness.
+  testUnlessSharded('class-names-decorator', async () => {
     const rvs = await TestClass.decoratedWorkflow(10);
     const rvis = await TestClassInst.decoratedWorkflow(10);
     const rvia = await instA.decoratedWorkflowInst(10);

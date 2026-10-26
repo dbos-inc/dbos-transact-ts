@@ -24,8 +24,9 @@ import {
   initializeDataSourceSchemaPG,
   migrateDataSourcePG,
   verifyDataSourcePG,
+  checkpointWorkflowID,
 } from '../src/datasource';
-import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
+import { generateDBOSTestConfig, setUpDBOSTestSysDb, localTestDatabaseUrl, testUnlessSharded } from './helpers';
 import { AsyncLocalStorage } from 'async_hooks';
 import { DBOSInitializationError, DBOSInvalidWorkflowTransitionError } from '../src/error';
 import { deriveDatabaseUrl, dropPGDatabase, ensurePGDatabase } from '../src/database_utils';
@@ -226,7 +227,7 @@ class KnexDSTH implements DataSourceTransactionHandler {
       `SELECT output
           FROM dbos.transaction_completion
           WHERE workflow_id=? AND function_num=?;`,
-      [workflowID, funcNum],
+      [checkpointWorkflowID(workflowID), funcNum],
     );
 
     if (rows.length !== 1) {
@@ -243,7 +244,7 @@ class KnexDSTH implements DataSourceTransactionHandler {
         output,
         created_at
       ) VALUES (?, ?, ?, ?)`,
-      [workflowID, funcNum, serialOutput, Date.now()],
+      [checkpointWorkflowID(workflowID), funcNum, serialOutput, Date.now()],
     );
   }
 
@@ -366,7 +367,7 @@ async function wfFunctionGuts() {
 const wfFunction = DBOS.registerWorkflow(wfFunctionGuts, { name: 'workflow' });
 
 // Intentionally initialize DS after we've already tried to register a transaction to it
-const dsa = new DBOSKnexDS('knexA', { connectionString: config.systemDatabaseUrl });
+const dsa = new DBOSKnexDS('knexA', { connectionString: localTestDatabaseUrl() });
 
 // Decoratory example
 class DBWFI {
@@ -488,7 +489,7 @@ class ProbeTransactionHandler implements DataSourceTransactionHandler {
   #poolField: Pool | undefined;
 
   async initialize(): Promise<void> {
-    this.#poolField = new Pool({ connectionString: config.systemDatabaseUrl });
+    this.#poolField = new Pool({ connectionString: localTestDatabaseUrl() });
     const client = await this.#poolField.connect();
     try {
       await inPGTransaction(client, () => initializeDataSourceSchemaPG(pgExecutor(client)));
@@ -514,7 +515,7 @@ class ProbeTransactionHandler implements DataSourceTransactionHandler {
   async #checkExecution(workflowID: string, stepID: number): Promise<CompletionRow | undefined> {
     const { rows } = await this.pool.query<CompletionRow>(
       `SELECT output, error FROM dbos.transaction_completion WHERE workflow_id = $1 AND function_num = $2`,
-      [workflowID, stepID],
+      [checkpointWorkflowID(workflowID), stepID],
     );
     return rows[0];
   }
@@ -542,7 +543,7 @@ class ProbeTransactionHandler implements DataSourceTransactionHandler {
          VALUES ($1, $2, $3)
          ON CONFLICT (workflow_id, function_num) DO NOTHING
          RETURNING workflow_id`,
-        [workflowID, stepID, SuperJSON.stringify(result)],
+        [checkpointWorkflowID(workflowID), stepID, SuperJSON.stringify(result)],
       );
       if (rows.length === 0) {
         throw new DBOSStepAlreadyRecordedError(workflowID, stepID);
@@ -580,12 +581,12 @@ async function raceTransaction(): Promise<string> {
   const workflowID = DBOS.workflowID!;
   const stepID = DBOS.stepID!;
 
-  const winner = new Client({ connectionString: config.systemDatabaseUrl });
+  const winner = new Client({ connectionString: localTestDatabaseUrl() });
   try {
     await winner.connect();
     await winner.query(
       `INSERT INTO dbos.transaction_completion (workflow_id, function_num, output) VALUES ($1, $2, $3)`,
-      [workflowID, stepID, SuperJSON.stringify(WINNER_TX_OUTPUT)],
+      [checkpointWorkflowID(workflowID), stepID, SuperJSON.stringify(WINNER_TX_OUTPUT)],
     );
 
     if (probeState.claimSysdb) {
@@ -654,7 +655,7 @@ describe('datasource-duplicate-execution', () => {
     expect((await DBOS.getWorkflowStatus(wfid))?.status).toBe('SUCCESS');
   });
 
-  test('a losing duplicate execution parks when the winner also owns the checkpoint', async () => {
+  testUnlessSharded('a losing duplicate execution parks when the winner also owns the checkpoint', async () => {
     const wfid = randomUUID();
     probeState.claimSysdb = true;
 
@@ -670,7 +671,7 @@ describe('datasource-duplicate-execution', () => {
     // The winner's completion row still stands, and the refused checkpoint left no step.
     const { rows: completions } = await probeHandler.pool.query<CompletionRow>(
       `SELECT output, error FROM dbos.transaction_completion WHERE workflow_id = $1`,
-      [wfid],
+      [checkpointWorkflowID(wfid)],
     );
     expect(completions).toHaveLength(1);
     expect(completions[0].error).toBeNull();
@@ -701,7 +702,7 @@ async function inPGTransaction<T>(client: ClientBase, fn: () => Promise<T>): Pro
 }
 
 describe('data source schema migrations', () => {
-  const adminUrl = deriveDatabaseUrl(generateDBOSTestConfig().systemDatabaseUrl!, 'dbostest_ds_migrations');
+  const adminUrl = deriveDatabaseUrl(localTestDatabaseUrl(), 'dbostest_ds_migrations');
   let admin: Client;
   let schemaName: string;
 

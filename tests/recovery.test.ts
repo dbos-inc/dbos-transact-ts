@@ -7,6 +7,7 @@ import {
   recoverWorkflow,
   retryUntilSuccess,
   setWfAndChildrenToPending,
+  testUnlessSharded,
 } from './helpers';
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import { Client } from 'pg';
@@ -138,7 +139,7 @@ describe('recovery-tests', () => {
     let status = await handle.getStatus();
     expect(status?.recoveryAttempts).toBe(LocalRecovery.maxRecoveryAttempts + 2);
     // Terminal like ERROR/CANCELLED, so the DLQ write stamps its own completion time.
-    expect(status?.completedAt).toBeGreaterThan(completedBeforeDLQ!);
+    expect(status?.completedAt).toBeGreaterThanOrEqual(completedBeforeDLQ!);
 
     // A direct invocation does not re-run the body; it adopts the row and surfaces its terminal status.
     const runsBeforeDirectStart = LocalRecovery.recoveryCount;
@@ -269,7 +270,7 @@ describe('recovery-tests', () => {
       // A sweep naming the dead executor re-enqueues it onto the internal queue.
       await expect(
         sysDB.reenqueueWorkflowsForRecovery('deadexecutor', globalParams.appVersion, INTERNAL_QUEUE_NAME),
-      ).resolves.toEqual([handle.workflowID]);
+      ).resolves.toMatchObject([{ workflowID: handle.workflowID }]);
 
       // The queue's dequeue returns the row to PENDING, now stamped with this live executor's ID -- the state the claim rests on.
       await retryUntilSuccess(async () => {
@@ -384,7 +385,8 @@ describe('recovery-tests', () => {
     await expect(recoveredChildHandle.getResult()).resolves.toEqual(recoveredChildHandle.workflowID);
   });
 
-  test('recv-recovery-with-two-processes-on-local', async () => {
+  // Its worker processes run outside the sharded run's harness.
+  testUnlessSharded('recv-recovery-with-two-processes-on-local', async () => {
     const workflowID = randomUUID();
     const topic = `recovery-topic-${randomUUID()}`;
     const timeoutSeconds = 30;

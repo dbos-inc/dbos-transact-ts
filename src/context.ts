@@ -31,10 +31,13 @@ export interface DBOSContextOptions {
   assumedRole?: string;
   workflowTimeoutMS?: number | null;
   serializationType?: WorkflowSerializationFormat;
+  // Shard key for the workflows started from this context, set by DBOS.withShardKey.
+  shardKeyForNextWorkflow?: string;
 }
 
 export interface DBOSLocalCtx extends DBOSContextOptions {
   workflowId?: string;
+  shardKey?: string; // Shard key of the running workflow; undefined on an unsharded database
   curWFFunctionId?: number; // If currently in a WF, the current call number / ID
   activeStreamReads?: number; // Checkpointed stream reads that have reserved a step but not yet recorded it
   deadlineEpochMS?: number;
@@ -54,6 +57,28 @@ export function currentOwnerXid(workflowID: string): string | undefined {
     throw new DBOSError(`Workflow ${workflowID} is writing without an ownership token`);
   }
   return ctx.ownerXid;
+}
+
+/**
+ * A child's default ID: its parent's, suffixed with the call number. A parent ID is unique
+ * only within its shard key, so a child under another key carries the parent's.
+ */
+export function childWorkflowID(
+  parentID: string,
+  functionID: number,
+  parentKey: string | undefined,
+  childKey: string | undefined,
+): string {
+  const base = `${parentID}-${functionID}`;
+  if (parentKey === undefined || childKey === undefined || childKey === parentKey) {
+    return base;
+  }
+  return `${[...parentKey].length}:${parentKey}:${base}`;
+}
+
+/** The shard key the next workflow started from this context runs under, as set by DBOS.withShardKey. */
+export function nextWorkflowShardKey(ctx: DBOSLocalCtx | undefined): string | undefined {
+  return ctx?.shardKeyForNextWorkflow;
 }
 
 export function isWithinWorkflowCtx(ctx: DBOSLocalCtx) {

@@ -1,5 +1,5 @@
 import { DBOS } from '../src/';
-import { generateDBOSTestConfig, reexecuteWorkflowById, setUpDBOSTestSysDb } from './helpers';
+import { generateDBOSTestConfig, reexecuteWorkflowById, setUpDBOSTestSysDb, testUnlessSharded } from './helpers';
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import { PortableWorkflowError } from '../schemas/system_db_schema';
 import { randomUUID } from 'node:crypto';
@@ -455,7 +455,8 @@ describe('dbos-streaming-tests', () => {
     expect(elapsed).toBeLessThan(10000);
   });
 
-  test('stream-low-latency-delivery', async () => {
+  // A sharded database polls rather than listens, so its latency is the polling interval.
+  testUnlessSharded('stream-low-latency-delivery', async () => {
     // Values should reach a blocked reader promptly via LISTEN/NOTIFY rather than
     // after a fixed polling interval. Each value carries the wall-clock time it was
     // written; the reader asserts it received the value shortly after.
@@ -730,7 +731,7 @@ describe('dbos-streaming-tests', () => {
     await expect(gen.next()).rejects.toThrow(DBOSNonExistentWorkflowError);
   });
 
-  test('stream-trigger-dropped-notifier-delivers', async () => {
+  testUnlessSharded('stream-trigger-dropped-notifier-delivers', async () => {
     // The per-row NOTIFY trigger is dropped; assert it's gone and that the coalescing notifier still wakes a blocked reader well under the 1s poll.
     const streamKey = 'notifier_stream';
     const numValues = 3;
@@ -822,7 +823,7 @@ describe('dbos-streaming-tests', () => {
     expect(joined.length).toBe(n + 1);
   });
 
-  test('stream-notifier-drops-unsendable-payload', async () => {
+  testUnlessSharded('stream-notifier-drops-unsendable-payload', async () => {
     // A rejected batch (e.g. a payload over the 8000-byte limit) is dropped, not requeued, so a poison payload can't permanently stall the notifier.
     await DBOS.launch();
     const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
@@ -867,7 +868,7 @@ describe('dbos-streaming-tests', () => {
     }
   });
 
-  test('stream-notifier-survives-flush-error', async () => {
+  testUnlessSharded('stream-notifier-survives-flush-error', async () => {
     // An exception escaping a flush must not kill the notifier loop; it logs, backs off, and resumes delivering.
     await DBOS.launch();
     const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
@@ -919,7 +920,8 @@ describe('dbos-streaming-tests', () => {
     }
   });
 
-  test('event-notifier-delivers-without-workflow-events-trigger', async () => {
+  // Times delivery through LISTEN/NOTIFY, which a sharded database does not use.
+  testUnlessSharded('event-notifier-delivers-without-workflow-events-trigger', async () => {
     // The per-row workflow_events trigger is dropped; assert it's gone and that the coalescing notifier still wakes a blocked getEvent well under the 10s event poll.
     const key = 'notifier_event';
 
@@ -959,7 +961,7 @@ describe('dbos-streaming-tests', () => {
     expect(latency).toBeLessThan(3000);
   });
 
-  test('message-notifications-trigger-is-kept', async () => {
+  testUnlessSharded('message-notifications-trigger-is-kept', async () => {
     // Messages keep their in-transaction NOTIFY trigger (they can be sent from processes with no notifier to buffer them); assert it exists and that send still wakes a blocked recv.
     const recvWorkflow = DBOS.registerWorkflow(
       async () => {
@@ -1411,7 +1413,8 @@ describe('dbos-streaming-tests', () => {
     }
   });
 
-  test('workflow-read-stream-timeout-is-checkpointed', async () => {
+  // Times the read against LISTEN/NOTIFY wakeups, which a sharded database does not use.
+  testUnlessSharded('workflow-read-stream-timeout-is-checkpointed', async () => {
     // A timeout is an outcome, not a failure of the read, so it is recorded: a replayed reader
     // raises it again straight from its checkpoint instead of waiting out the timeout a second time.
     const streamKey = 'timeout_checkpoint_stream';

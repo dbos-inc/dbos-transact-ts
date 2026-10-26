@@ -33,8 +33,14 @@ import { TelemetryCollector } from './telemetry/collector';
 import { getActiveSpan, runWithTrace, SpanStatusCode, Tracer } from './telemetry/traces';
 import { DBOSContextualLogger, DLogger, GlobalLogger } from './telemetry/logs';
 import { TelemetryExporter } from './telemetry/exporters';
-import { SystemDatabase, type WorkflowStatusInternal, type SystemDatabaseStoredResult } from './system_database';
+import {
+  createSystemDatabase,
+  type SystemDatabase,
+  type WorkflowStatusInternal,
+  type SystemDatabaseStoredResult,
+} from './system_database';
 import { randomUUID } from 'node:crypto';
+import { bindShardKeys, withClearedShardKeyState } from './shard_keys';
 import {
   getConfiguredInstance,
   getLifecycleListeners,
@@ -84,7 +90,7 @@ import {
   listWorkflowSteps,
   rewindWorkflow,
   toWorkflowStatus,
-  workflowTimeoutLoop,
+  backgroundJobsLoop,
 } from './workflow_management';
 import { maskDatabaseUrl } from './database_utils';
 import type { DataSourceTransactionHandler } from './datasource';
@@ -171,6 +177,11 @@ export interface DBOSConfig {
   autoUpgrade?: boolean;
   /** Milliseconds between two auto-upgrade passes. Defaults to 30000. */
   autoUpgradeIntervalMs?: number;
+  /**
+   * Use a sharded system database from Transact Enterprise; every workflow then lives under an
+   * explicit shard key. Requires Transact Enterprise. Defaults to false.
+   */
+  sharding?: boolean;
   /**
    * Milliseconds the latest application version must have been the latest before auto-upgrade
    * re-enqueues PENDING workflows left on older versions.
@@ -276,6 +287,7 @@ export type DBOSConfigInternal = {
   autoUpgrade: boolean;
   autoUpgradeIntervalMs?: number;
   autoUpgradeGraceMs?: number;
+  sharding: boolean;
 };
 
 export interface InternalWorkflowParams extends WorkflowParams {
@@ -320,8 +332,8 @@ export class DBOSExecutor {
   readonly serializer: DBOSSerializer;
 
   #wfqEnded?: Promise<void> = undefined;
-  #timeoutSweepAbort?: AbortController = undefined;
-  #timeoutSweepEnded?: Promise<void> = undefined;
+  #backgroundJobsAbort?: AbortController = undefined;
+  #backgroundJobsEnded?: Promise<void> = undefined;
 
   readonly executorID: string = globalParams.executorID;
 
@@ -335,21 +347,22 @@ export class DBOSExecutor {
     this.tracer = new Tracer(telemetryCollector, config.telemetry.otelAttributeFormat);
     this.serializer = config.serializer;
 
-    this.logger.debug('Using Postgres system database');
-    this.systemDatabase = new SystemDatabase(
-      this.config.systemDatabaseUrl,
-      this.logger,
-      this.serializer,
-      this.config.sysDbPoolSize,
-      this.config.systemDatabasePool,
-      this.config.systemDatabaseSchemaName,
-      this.config.useListenNotify,
-      this.config.systemDatabasePollingConcurrency,
-      this.config.notificationCoalesceMs,
-      this.appName,
-      this.config.observabilityQueryTimeoutMs,
-      this.config.systemDatabaseIdleTransactionTimeoutMs,
-    );
+    this.logger.debug(`Using ${this.config.sharding ? 'sharded ' : ''}Postgres system database`);
+    this.systemDatabase = createSystemDatabase({
+      systemDatabaseUrl: this.config.systemDatabaseUrl,
+      logger: this.logger,
+      serializer: this.serializer,
+      sysDbPoolSize: this.config.sysDbPoolSize,
+      systemDatabasePool: this.config.systemDatabasePool,
+      schemaName: this.config.systemDatabaseSchemaName,
+      useListenNotify: this.config.useListenNotify,
+      pollingConcurrency: this.config.systemDatabasePollingConcurrency,
+      notificationCoalesceMs: this.config.notificationCoalesceMs,
+      appName: this.appName,
+      observabilityQueryTimeoutMs: this.config.observabilityQueryTimeoutMs,
+      idleTransactionTimeoutMs: this.config.systemDatabaseIdleTransactionTimeoutMs,
+      sharding: this.config.sharding,
+    });
 
     new DynamicSchedulerLoop(config.schedulerPollingIntervalMs); // Create the dynamic scheduler, which registers itself.
 
@@ -424,16 +437,16 @@ export class DBOSExecutor {
   }
 
   /** Stop the workflow timeout sweep. Called after the shutdown drain, so timeouts still fire while workflows finish. */
-  async stopWorkflowTimeoutSweep() {
-    this.#timeoutSweepAbort?.abort();
-    await this.#timeoutSweepEnded;
-    this.#timeoutSweepAbort = undefined;
-    this.#timeoutSweepEnded = undefined;
+  async stopBackgroundJobs() {
+    this.#backgroundJobsAbort?.abort();
+    await this.#backgroundJobsEnded;
+    this.#backgroundJobsAbort = undefined;
+    this.#backgroundJobsEnded = undefined;
   }
 
   async destroy() {
     try {
-      await this.stopWorkflowTimeoutSweep();
+      await this.stopBackgroundJobs();
       await this.systemDatabase.destroy();
       await this.logger.destroy();
     } catch (err) {
@@ -630,7 +643,9 @@ export class DBOSExecutor {
       debounceDeadlineEpochMS,
       isDebounced: params.enqueueOptions?.isDebounced ?? false,
       applicationName: ownerAppName,
+      shardKey: params.shardKey,
     };
+    const shardKey = params.shardKey;
 
     // Record the workflow's status and inputs before it runs, unless a replayed child start already recorded its outcome.
     if (callerFunctionID !== undefined && callerID !== undefined) {
@@ -642,7 +657,7 @@ export class DBOSExecutor {
         if (result.error) {
           throw await deserializeResError(result.error, result.serialization ?? null, this.serializer);
         }
-        return new RetrievedHandle(result.childWorkflowID!);
+        return new RetrievedHandle(result.childWorkflowID!, result.childShardKey ?? shardKey);
       }
     }
     let ires: Awaited<ReturnType<SystemDatabase['initWorkflowStatus']>>;
@@ -661,12 +676,14 @@ export class DBOSExecutor {
         claimed.status !== StatusString.ERROR &&
         claimedAttempts > maxRecoveryAttempts + 1
       ) {
-        await this.systemDatabase.deadLetterWorkflows([workflowID], claimedAttempts);
+        await bindShardKeys([[workflowID, shardKey]], () =>
+          this.systemDatabase.deadLetterWorkflows([workflowID], claimedAttempts),
+        );
         throw new DBOSMaxRecoveryAttemptsExceededError(workflowID, maxRecoveryAttempts);
       }
       // Only a PENDING row owns its outcome, so a row moved on since the claim would run for nothing.
       if (claimed.status !== StatusString.PENDING) {
-        return new RetrievedHandle(workflowID);
+        return new RetrievedHandle(workflowID, shardKey);
       }
       ires = {
         status: claimed.status,
@@ -679,14 +696,17 @@ export class DBOSExecutor {
       try {
         if (callerID !== undefined && callerFunctionID !== undefined) {
           const now = Date.now();
-          ires = await this.systemDatabase.initChildWorkflowStatus(
-            internalStatus,
-            ownerXid,
-            callerID,
-            callerFunctionID,
-            now,
-            now,
-            params.workflowIDReusePolicy,
+          // The parent's key, like its token, is read from its context.
+          ires = await bindShardKeys([[callerID, pctx.shardKey]], () =>
+            this.systemDatabase.initChildWorkflowStatus(
+              internalStatus,
+              ownerXid,
+              callerID,
+              callerFunctionID,
+              now,
+              now,
+              params.workflowIDReusePolicy,
+            ),
           );
         } else {
           ires = await this.systemDatabase.initWorkflowStatus(
@@ -714,7 +734,7 @@ export class DBOSExecutor {
             true,
             Date.now(),
             Date.now(),
-            { error: sererr.serializedValue, serialization: sererr.serialization },
+            { error: sererr.serializedValue, serialization: sererr.serialization, ownerKey: pctx.shardKey },
           );
         }
         throw e;
@@ -722,7 +742,7 @@ export class DBOSExecutor {
     }
 
     if (!ires.shouldExecuteOnThisExecutor || (params.queueName !== undefined && !params.executeWorkflow)) {
-      return new RetrievedHandle(workflowID);
+      return new RetrievedHandle(workflowID, shardKey);
     }
 
     // Only a run gets a span, as nothing but runWorkflow ends it.
@@ -834,8 +854,12 @@ export class DBOSExecutor {
                 serializationType,
                 authenticatedUser,
                 authenticatedRoles,
+                shardKey,
+                // Nor the shard key set for the caller's next workflow.
+                shardKeyForNextWorkflow: undefined,
               },
-              () => wf.call(params.configuredInstance, ...args),
+              // The body starts with no caller's shard keys; its own lives on the context.
+              () => withClearedShardKeyState(() => wf.call(params.configuredInstance, ...args)),
             );
           });
 
@@ -897,11 +921,14 @@ export class DBOSExecutor {
     };
 
     // A run retries through outages even when launched from a background loop that has since stopped.
-    const workflowPromise: Promise<R> = runWithoutAbortableDbRetries(runWorkflow);
+    // Its outcome writes run outside the body, so they bind the workflow's key themselves.
+    const workflowPromise: Promise<R> = runWithoutAbortableDbRetries(() =>
+      withClearedShardKeyState(() => bindShardKeys([[workflowID, shardKey]], runWorkflow)),
+    );
     this.systemDatabase.trackRunningWorkflow(workflowID, runningEntry, workflowPromise);
 
     // Return the normal handle that doesn't capture errors.
-    return new InvokedHandle(workflowPromise, workflowID);
+    return new InvokedHandle(workflowPromise, workflowID, shardKey);
   }
 
   /**
@@ -1198,8 +1225,8 @@ export class DBOSExecutor {
   /**
    * Retrieve a handle for a workflow UUID.
    */
-  retrieveWorkflow<R>(workflowID: string): WorkflowHandle<R> {
-    return new RetrievedHandle(workflowID);
+  retrieveWorkflow<R>(workflowID: string, shardKey?: string): WorkflowHandle<R> {
+    return new RetrievedHandle(workflowID, shardKey);
   }
 
   async runInternalStep<T>(
@@ -1275,20 +1302,20 @@ export class DBOSExecutor {
     const handlerArray: WorkflowHandle<unknown>[] = [];
     for (const execID of executorIDs) {
       this.logger.debug(`Recovering workflows assigned to executor: ${execID}`);
-      const recoveredWorkflowIDs = await this.systemDatabase.reenqueueWorkflowsForRecovery(
+      const recovered = await this.systemDatabase.reenqueueWorkflowsForRecovery(
         execID,
         globalParams.appVersion,
         INTERNAL_QUEUE_NAME,
       );
-      if (recoveredWorkflowIDs.length > 0) {
+      if (recovered.length > 0) {
         this.logger.info(
-          `Recovering ${recoveredWorkflowIDs.length} workflows from application version ${globalParams.appVersion}`,
+          `Recovering ${recovered.length} workflows from application version ${globalParams.appVersion}`,
         );
       } else {
         this.logger.info(`No workflows to recover from application version ${globalParams.appVersion}`);
       }
-      for (const workflowID of recoveredWorkflowIDs) {
-        handlerArray.push(this.retrieveWorkflow(workflowID));
+      for (const { workflowID, shardKey } of recovered) {
+        handlerArray.push(this.retrieveWorkflow(workflowID, shardKey));
       }
     }
     return handlerArray;
@@ -1296,8 +1323,8 @@ export class DBOSExecutor {
 
   async initEventReceivers(listenQueues: string[] | null) {
     this.#wfqEnded = wfQueueRunner.dispatchLoop(this, listenQueues, this.config.maxConcurrentQueueDispatches);
-    this.#timeoutSweepAbort = new AbortController();
-    this.#timeoutSweepEnded = workflowTimeoutLoop(this.systemDatabase, this.logger, this.#timeoutSweepAbort.signal);
+    this.#backgroundJobsAbort = new AbortController();
+    this.#backgroundJobsEnded = backgroundJobsLoop(this.systemDatabase, this.logger, this.#backgroundJobsAbort.signal);
 
     for (const lcl of getLifecycleListeners()) {
       await lcl.initialize?.();
@@ -1371,10 +1398,8 @@ export class DBOSExecutor {
       // so it transitions to ERROR instead of being stuck in PENDING.
       this.logger.error(`Failed to deserialize inputs for workflow ${workflowID}: ${(err as Error).message}`);
       const sererr = await serializeResErrorWithSerializer(err as Error, this.serializer, wfStatus.serialization);
-      await this.systemDatabase.recordWorkflowError(
-        workflowID,
-        { ...wfStatus, error: sererr.serializedValue },
-        ownerXid,
+      await bindShardKeys([[workflowID, wfStatus.shardKey]], () =>
+        this.systemDatabase.recordWorkflowError(workflowID, { ...wfStatus, error: sererr.serializedValue }, ownerXid),
       );
       throw err;
     }
@@ -1409,6 +1434,7 @@ export class DBOSExecutor {
             deadlineEpochMS: wfStatus.deadlineEpochMS,
             dequeuedStatus: wfStatus,
             ownerXid,
+            shardKey: wfStatus.shardKey,
           },
           ...inputs,
         );

@@ -6,6 +6,7 @@ import { Client } from 'pg';
 import { dropDB } from './test-helpers';
 import { Kafka, KafkaConfig, KafkaMessage, logLevel } from 'kafkajs';
 import { KafkaReceiver } from '..';
+import { SystemDatabase } from '@dbos-inc/dbos-sdk/internal/system_database';
 
 // Validation that can only run once every queue is registered, so it lands at launch. The rejection
 // cases need only a database: they throw before any consumer connects. The acceptance case does
@@ -147,6 +148,18 @@ suite('kafkajs-receive-launch-validation', async () => {
       await assert.rejects(DBOS.launch(), /is not a registered DBOS workflow/);
     },
   );
+
+  await test('consumers are refused on a sharded system database', { timeout: 30000 }, async (t) => {
+    const receiver = new KafkaReceiver(kafkaConfig);
+    receiver.registerConsumer(makeWorkflow('shardedWf'), `t-${rand()}`, {
+      name: 'shardedWf',
+      config: { groupId: `sharded-grp-${rand()}` },
+    });
+    t.mock.getter(SystemDatabase.prototype, 'sharded', () => true);
+
+    DBOS.setConfig({ name: 'kafka-launchval-test' });
+    await assert.rejects(DBOS.launch(), /not supported on a sharded system database/);
+  });
 
   // Unlike its siblings, this one launches successfully, so the consumer really connects.
   await test(

@@ -9,6 +9,7 @@ export {
   SetWorkflowDelayOptions,
   ReadStreamOptions,
   ReadStreamOffsetOptions,
+  ShardKeyOptions,
 } from './dbos';
 
 export { DBOSClient } from './client';

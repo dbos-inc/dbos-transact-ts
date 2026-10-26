@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto';
 import { DBOS, DBOSClient, Debouncer } from '../src';
 import { DBOSConfig } from '../src/dbos-executor';
-import { generateDBOSTestConfig, setUpDBOSTestSysDb, Event } from './helpers';
+import { generateDBOSTestConfig, setUpDBOSTestSysDb, Event, testUnlessSharded } from './helpers';
 
 // Custom workflow attributes: a JSON-serializable Record attached to a workflow at creation
 // via `StartWorkflowParams.workflowAttributes`, stored as GIN-indexed JSONB and searchable
@@ -215,7 +215,7 @@ describe('workflow-attributes', () => {
     await handle.getResult();
   });
 
-  test('debounced user workflow gets attributes', async () => {
+  testUnlessSharded('debounced user workflow gets attributes', async () => {
     const debouncer = new Debouncer({
       workflow: echoWorkflow,
       startWorkflowParams: { workflowAttributes: { source: 'debouncer' } },

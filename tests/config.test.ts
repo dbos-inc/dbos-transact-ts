@@ -289,6 +289,7 @@ describe('dbos-config', () => {
         useListenNotify: true,
         runMigrations: true,
         autoUpgrade: false,
+        sharding: false,
         telemetry: {
           logs: {
             logLevel: 'info',
@@ -408,6 +409,7 @@ describe('dbos-config', () => {
         useListenNotify: true,
         runMigrations: true,
         autoUpgrade: false,
+        sharding: false,
         telemetry: {
           logs: {
             logLevel: 'info',
@@ -437,6 +439,7 @@ describe('dbos-config', () => {
         useListenNotify: true,
         runMigrations: true,
         autoUpgrade: false,
+        sharding: false,
         telemetry: {
           logs: {
             logLevel: 'info',

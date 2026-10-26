@@ -5,7 +5,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { execSync } from 'child_process';
 import { Client } from 'pg';
-import { generateDBOSTestConfig } from './helpers';
+import { generateDBOSTestConfig, describeUnlessSharded } from './helpers';
 import { DBOS } from '../src';
 import { DBOSConfig } from '../dist/src';
 
@@ -13,7 +13,8 @@ interface ExistenceCheck {
   exists: boolean;
 }
 
-describe('schema-command-tests', () => {
+// Runs the CLI against unsharded databases it creates and resets itself.
+describeUnlessSharded('schema-command-tests', () => {
   test('test schema command with system database URL argument', async () => {
     const config = generateDBOSTestConfig();
     const systemDatabaseUrl = config.systemDatabaseUrl;
@@ -129,7 +130,8 @@ describe('schema-command-tests', () => {
   });
 });
 
-describe('workflow-management-cli-tests', () => {
+// Runs the CLI against unsharded databases it creates and resets itself.
+describeUnlessSharded('workflow-management-cli-tests', () => {
   let config: DBOSConfig;
   let systemDbUrl: string;
 

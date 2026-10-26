@@ -1,6 +1,8 @@
 import { spawnSync } from 'child_process';
+import { describeUnlessSharded } from './helpers';
 
-describe('dbos-logger', () => {
+// Its script runs in a process outside the sharded run's harness.
+describeUnlessSharded('dbos-logger', () => {
   test('logFromWf', async () => {
     // Run the TypeScript test script under ts-node
     const result = spawnSync('npx', ['ts-node', './tests/logtodboslogger.ts'], {

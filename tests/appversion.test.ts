@@ -20,7 +20,7 @@ class FakePass implements AutoUpgradePass {
     return Promise.resolve();
   }
 }
-import { generateDBOSTestConfig, recoverPendingWorkflows, setUpDBOSTestSysDb } from './helpers';
+import { generateDBOSTestConfig, recoverPendingWorkflows, setUpDBOSTestSysDb, testUnlessSharded } from './helpers';
 
 describe('test-app-version', () => {
   let config: DBOSConfig;
@@ -153,14 +153,17 @@ describe('test-app-version', () => {
     expect(status?.executorId).toBe(testExecutorID);
   });
 
-  test('test-setting-executor-id', async () => {
+  // The stand-in package has no sharded system database.
+  testUnlessSharded('test-setting-executor-id', async () => {
     const originalVMID = process.env.DBOS__VMID;
     const originalCloud = globalParams.dbosCloud;
     const originalSysDbUrl = process.env.DBOS_SYSTEM_DATABASE_URL;
     // The executor ID is core's to assign; the Conductor client itself is not under test here.
-    const load = jest
-      .spyOn(enterprise, 'load')
-      .mockReturnValue({ ConductorWebsocket: FakeConductor, AutoUpgradePass: FakePass });
+    const load = jest.spyOn(enterprise, 'load').mockReturnValue({
+      ConductorWebsocket: FakeConductor,
+      AutoUpgradePass: FakePass,
+      ShardedSystemDatabase: class {} as unknown as enterprise.ShardedSystemDatabaseFactory,
+    });
     try {
       // An empty DBOS__VMID is an unset one
       process.env.DBOS__VMID = '';

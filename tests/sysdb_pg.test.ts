@@ -6,7 +6,7 @@ import { DBOS, DBOSClient, DBOSConfig } from '../src';
 import { DBOSExecutor } from '../src/dbos-executor';
 import { DBOSWorkflowCancelledError } from '../src/error';
 import { sleepms } from '../src/utils';
-import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
+import { generateDBOSTestConfig, setUpDBOSTestSysDb, describeUnlessSharded } from './helpers';
 
 import { randomUUID } from 'node:crypto';
 import { Client, Pool } from 'pg';
@@ -583,7 +583,7 @@ describe('sysdb-no-listen-notify', () => {
   });
 });
 
-describe('sysdb-notifications-lifecycle', () => {
+describeUnlessSharded('sysdb-notifications-lifecycle', () => {
   let config: DBOSConfig;
 
   beforeAll(async () => {

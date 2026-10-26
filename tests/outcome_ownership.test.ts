@@ -14,7 +14,7 @@ import {
 } from '../src/error';
 import { serializeResError, serializeValue } from '../src/serialization';
 import { sleepms } from '../src/utils';
-import { Event, generateDBOSTestConfig, retryUntilSuccess, setUpDBOSTestSysDb } from './helpers';
+import { Event, generateDBOSTestConfig, retryUntilSuccess, setUpDBOSTestSysDb, describeUnlessSharded } from './helpers';
 import { NodeTracerProvider } from './nodetraceprovider';
 
 // Each run blocks until the test has rewritten its row, then returns a
@@ -184,7 +184,7 @@ async function stealOwnership(client: Client, workflowID: string) {
 // re-enqueued it, a recovery raced it, it was cancelled or dead-lettered) and
 // the recorded outcome, not the one the run computed, is the workflow's
 // outcome.
-describe('workflow-outcome-ownership', () => {
+describeUnlessSharded('workflow-outcome-ownership', () => {
   let config: DBOSConfig;
   let systemDBClient: Client;
 
@@ -471,7 +471,8 @@ describe('workflow-outcome-ownership', () => {
 // served from the store rather than computed by this run, and the final span
 // status follows the adopted result, overriding anything stamped before
 // parking.
-describe('workflow-outcome-ownership-spans', () => {
+// Writes core's unkeyed tables directly.
+describeUnlessSharded('workflow-outcome-ownership-spans', () => {
   let config: DBOSConfig;
   let systemDBClient: Client;
   const memoryExporter = new InMemorySpanExporter();

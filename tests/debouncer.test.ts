@@ -6,10 +6,17 @@ import { INTERNAL_QUEUE_NAME } from '../src/utils';
 import { clearDebugTriggers, DebugAction, DEBUG_TRIGGER_STEP_COMMIT, setDebugTrigger } from '../src/debugpoint';
 import { PortableWorkflowError } from '../schemas/system_db_schema';
 import { DBOSJSON, DBOSPortableJSON, deserializeResError, serializeResError } from '../src/serialization';
-import { generateDBOSTestConfig, reexecuteWorkflowById, setUpDBOSTestSysDb, Event } from './helpers';
+import {
+  generateDBOSTestConfig,
+  reexecuteWorkflowById,
+  setUpDBOSTestSysDb,
+  Event,
+  describeUnlessSharded,
+} from './helpers';
 import assert from 'node:assert';
 
-describe('debouncer-tests', () => {
+// Debouncing is not supported on a sharded system database.
+describeUnlessSharded('debouncer-tests', () => {
   let config: DBOSConfig;
 
   beforeAll(() => {

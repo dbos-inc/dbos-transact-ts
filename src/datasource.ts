@@ -327,6 +327,12 @@ export async function assertStillOwnsWorkflow(workflowID: string): Promise<void>
   }
 }
 
+/** The checkpoint row's ID: the workflow ID, prefixed by its shard key on a sharded system database. */
+export function checkpointWorkflowID(workflowID: string): string {
+  const key = DBOSExecutor.globalInstance!.systemDatabase.keyHint(workflowID);
+  return key === undefined ? workflowID : `${[...key].length}:${key}:${workflowID}`;
+}
+
 /**
  * Internal signal that a concurrent duplicate execution recorded this step's outcome first.
  * Data sources throw this from their completion insert so the user transaction rolls back

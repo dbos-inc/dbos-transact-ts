@@ -1,6 +1,8 @@
 import { spawnSync } from 'child_process';
+import { describeUnlessSharded } from './helpers';
 
-describe('bad-code-loads', () => {
+// Its scripts run in processes outside the sharded run's harness.
+describeUnlessSharded('bad-code-loads', () => {
   test('loadCodeTwice', async () => {
     // Run the TypeScript test script under ts-node
     const result = spawnSync('npx', ['ts-node', './tests/codereloader.ts'], {

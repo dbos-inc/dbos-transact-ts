@@ -8,6 +8,7 @@ import {
   DBOSStepAlreadyRecordedError,
   DBOSWorkflowConflictError,
   assertStillOwnsWorkflow,
+  checkpointWorkflowID,
   replayRecordedStep,
   registerTransaction,
   runTransaction,
@@ -128,7 +129,7 @@ class KyselyTransactionHandler implements DataSourceTransactionHandler {
     await this.#kyselyDB.transaction().execute(async (client) => {
       await client
         .deleteFrom('dbos.transaction_completion')
-        .where('workflow_id', '=', workflowID)
+        .where('workflow_id', '=', checkpointWorkflowID(workflowID))
         .where('function_num', '>=', startStep)
         .execute();
       await beforeCommit?.();
@@ -142,7 +143,7 @@ class KyselyTransactionHandler implements DataSourceTransactionHandler {
     const result = await this.#kyselyDB
       .selectFrom('dbos.transaction_completion')
       .select(['output', 'error'])
-      .where('workflow_id', '=', workflowID)
+      .where('workflow_id', '=', checkpointWorkflowID(workflowID))
       .where('function_num', '=', stepID)
       .executeTakeFirst();
     if (result === undefined) {
@@ -156,7 +157,7 @@ class KyselyTransactionHandler implements DataSourceTransactionHandler {
     const inserted = await this.#kyselyDB
       .insertInto('dbos.transaction_completion')
       .values({
-        workflow_id: workflowID,
+        workflow_id: checkpointWorkflowID(workflowID),
         function_num: stepID,
         error,
         output: null,
@@ -189,7 +190,7 @@ class KyselyTransactionHandler implements DataSourceTransactionHandler {
     const inserted = await client
       .insertInto('dbos.transaction_completion')
       .values({
-        workflow_id: workflowID,
+        workflow_id: checkpointWorkflowID(workflowID),
         function_num: stepID,
         output,
         error: null,

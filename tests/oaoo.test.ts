@@ -3,7 +3,14 @@ import { DBOS, DBOSClient, Debouncer, DebouncerClient, StatusString } from '../s
 import { DBOSConfig } from '../src/dbos-executor';
 import { DBOSQueueDuplicatedError, DBOSWorkflowIDInUseError, isWorkflowIDInUseError } from '../src/error';
 import { clearDebugTriggers, DEBUG_TRIGGER_INITWF_COMMIT, setDebugTrigger } from '../src/debugpoint';
-import { dropDatabase, generateDBOSTestConfig, reexecuteWorkflowById, setUpDBOSTestSysDb } from './helpers';
+import {
+  dropDatabase,
+  generateDBOSTestConfig,
+  reexecuteWorkflowById,
+  setUpDBOSTestSysDb,
+  usingSharding,
+  testUnlessSharded,
+} from './helpers';
 import { randomUUID } from 'node:crypto';
 
 describe('oaoo-tests', () => {
@@ -21,7 +28,12 @@ describe('oaoo-tests', () => {
 
   beforeEach(async () => {
     expect(config.systemDatabaseUrl).toBeDefined();
-    await dropDatabase(config.systemDatabaseUrl!);
+    // A sharded system database is reset through its router, which serves no DROP DATABASE.
+    if (usingSharding()) {
+      await setUpDBOSTestSysDb(config);
+    } else {
+      await dropDatabase(config.systemDatabaseUrl!);
+    }
     await DBOS.launch();
   });
 
@@ -578,7 +590,7 @@ describe('oaoo-tests', () => {
       expect(failures).toBeLessThan(0);
     });
 
-    test('reject-dedup-interplay', async () => {
+    testUnlessSharded('reject-dedup-interplay', async () => {
       const id = `reuse-dedup-${randomUUID()}`;
       const dedupID = `dedup-${randomUUID()}`;
       const enqueue = (workflowID: string) =>
@@ -624,7 +636,7 @@ describe('oaoo-tests', () => {
       await expect(fresh.getResult()).resolves.toBe('fresh');
     });
 
-    test('reject-client-enqueue', async () => {
+    testUnlessSharded('reject-client-enqueue', async () => {
       const id = `reuse-client-${randomUUID()}`;
       await (await DBOS.startWorkflow(ReuseTest, { workflowID: id }).echo('original')).getResult();
 
@@ -675,7 +687,7 @@ describe('oaoo-tests', () => {
       }
     });
 
-    test('reject-child-is-recorded-for-replay', async () => {
+    testUnlessSharded('reject-child-is-recorded-for-replay', async () => {
       for (const via of vias) {
         const childID = `reuse-child-${via}-${randomUUID()}`;
         await (await DBOS.startWorkflow(ReuseTest, { workflowID: childID }).echo('original')).getResult();
@@ -695,7 +707,7 @@ describe('oaoo-tests', () => {
       }
     });
 
-    test('reject-same-parent-reuse', async () => {
+    testUnlessSharded('reject-same-parent-reuse', async () => {
       for (const via of vias) {
         const childID = `reuse-same-parent-${via}-${randomUUID()}`;
         const parentID = `reuse-same-parent-p-${via}-${randomUUID()}`;

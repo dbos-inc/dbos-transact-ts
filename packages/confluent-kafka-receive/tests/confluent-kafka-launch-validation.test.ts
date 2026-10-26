@@ -6,6 +6,7 @@ import { Client } from 'pg';
 import { dropDB } from './test-helpers';
 import { KafkaJS as ConfluentKafkaJS } from '@confluentinc/kafka-javascript';
 import { ConfluentKafkaReceiver } from '..';
+import { SystemDatabase } from '@dbos-inc/dbos-sdk/internal/system_database';
 
 // Validation that can only run once every queue is registered, so it lands at launch. It happens
 // before any consumer connects, so these tests need a database but no broker.
@@ -133,5 +134,17 @@ suite('confluent-kafka-receive-launch-validation', async () => {
 
     DBOS.setConfig({ name: 'conf-kafka-launchval-test' });
     await assert.rejects(DBOS.launch(), /is an instance method/);
+  });
+
+  await test('consumers are refused on a sharded system database', { timeout: 30000 }, async (t) => {
+    const receiver = new ConfluentKafkaReceiver(kafkaConfig);
+    receiver.registerConsumer(makeWorkflow('confShardedWf'), `conf-t-${rand()}`, {
+      name: 'confShardedWf',
+      config: { 'group.id': `conf-sharded-grp-${rand()}` },
+    });
+    t.mock.getter(SystemDatabase.prototype, 'sharded', () => true);
+
+    DBOS.setConfig({ name: 'conf-kafka-launchval-test' });
+    await assert.rejects(DBOS.launch(), /not supported on a sharded system database/);
   });
 }).catch(assert.fail);
