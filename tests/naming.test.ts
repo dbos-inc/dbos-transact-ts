@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { ConfiguredInstance, DBOS, DBOSClient, DBOSConfig } from '../src';
 import { getAllRegisteredClassNames, getAllRegisteredFunctions } from '../src/decorators';
-import { generateDBOSTestConfig, reexecuteWorkflowById, setUpDBOSTestSysDb, testUnlessSharded } from './helpers';
+import { generateDBOSTestConfig, reexecuteWorkflowById, setUpDBOSTestSysDb, usingSharding } from './helpers';
 
 @DBOS.className('ClassA')
 class TestClass {
@@ -69,8 +69,7 @@ describe('rename_tests', () => {
     await DBOS.shutdown();
   });
 
-  // Its scripts run in processes outside the sharded run's harness.
-  testUnlessSharded('class-names-decorator', async () => {
+  test('class-names-decorator', async () => {
     const rvs = await TestClass.decoratedWorkflow(10);
     const rvis = await TestClassInst.decoratedWorkflow(10);
     const rvia = await instA.decoratedWorkflowInst(10);
@@ -156,6 +155,9 @@ describe('rename_tests', () => {
     expect(DBOS.getAssociatedInfo('test2', TestClassInst, 'tibs').length).toBe(1);
     expect(DBOS.getAssociatedInfo('test2', 'ClassB', 'tibs').length).toBe(1);
     expect(DBOS.getAssociatedInfo('test2', TestClassInst, 'tibs')[0].methodConfig).toStrictEqual({ key: 'b' });
+
+    // The scripts below run in processes outside the sharded run's harness.
+    if (usingSharding()) return;
 
     // Negative test - conflicting class names (decorator)
     const result1 = spawnSync('npx', ['ts-node', './tests/dupclassreg.ts'], {

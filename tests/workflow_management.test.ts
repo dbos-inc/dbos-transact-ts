@@ -7,13 +7,14 @@ import {
   recoverPendingWorkflows,
   reexecuteWorkflowById,
   testUnlessSharded,
+  usingSharding,
 } from './helpers';
 import { Client } from 'pg';
 import { WorkflowHandle, WorkflowStatus } from '../src/workflow';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as abortableSleep } from 'node:timers/promises';
 import { dbRetryConfig, globalParams, sleepms } from '../src/utils';
-import { SystemDatabase } from '../src/system_database';
+import { createSystemDatabase, SystemDatabase } from '../src/system_database';
 import { GlobalLogger } from '../src/telemetry/logs';
 import { getWorkflow, listQueuedWorkflows, listWorkflows } from '../src/workflow_management';
 import {
@@ -256,7 +257,12 @@ describe('workflow-management-tests', () => {
 
     const logger = new GlobalLogger();
     expect(config.systemDatabaseUrl).toBeDefined();
-    const sysdb = new SystemDatabase(config.systemDatabaseUrl!, logger, DBOSJSON);
+    const sysdb = createSystemDatabase({
+      systemDatabaseUrl: config.systemDatabaseUrl!,
+      logger,
+      serializer: DBOSJSON,
+      sharding: usingSharding(),
+    });
     try {
       const input: GetWorkflowsInput = {};
       const infos = await listWorkflows(sysdb, input);
@@ -855,7 +861,12 @@ describe('test-list-queues', () => {
 
     const logger = new GlobalLogger();
     expect(config.systemDatabaseUrl).toBeDefined();
-    const sysdb = new SystemDatabase(config.systemDatabaseUrl!, logger, DBOSJSON);
+    const sysdb = createSystemDatabase({
+      systemDatabaseUrl: config.systemDatabaseUrl!,
+      logger,
+      serializer: DBOSJSON,
+      sharding: usingSharding(),
+    });
     try {
       let input: GetWorkflowsInput = {};
       let output: WorkflowStatus[] = [];
@@ -1641,7 +1652,12 @@ describe('test-list-steps', () => {
     expect(result1).toEqual(result2);
 
     expect(config.systemDatabaseUrl).toBeDefined();
-    const sysdb = new SystemDatabase(config.systemDatabaseUrl!, new GlobalLogger(), DBOSJSON);
+    const sysdb = createSystemDatabase({
+      systemDatabaseUrl: config.systemDatabaseUrl!,
+      logger: new GlobalLogger(),
+      serializer: DBOSJSON,
+      sharding: usingSharding(),
+    });
     try {
       const wfs = await listWorkflows(sysdb, {});
       expect(wfs.length).toBe(2);

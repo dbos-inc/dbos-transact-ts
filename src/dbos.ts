@@ -516,6 +516,7 @@ export class DBOS {
    * @param systemDatabaseUrl - The system database to create or migrate
    * @param options.schemaName - The schema holding the DBOS system tables (default: `dbos`)
    * @param options.applicationRole - A role to grant access to the system schema once migrated
+   * @param options.sharding - Create or migrate a sharded system database (requires @dbos-inc/dbos-enterprise)
    */
   static async migrate(
     systemDatabaseUrl: string,

@@ -184,7 +184,6 @@ export async function queueEntriesAreCleanedUp() {
   return success;
 }
 
-// Poll `check` until it stops throwing, rethrowing its last failure if the deadline passes.
 /** Expect `call` to fail with an error of this class whose message matches. */
 export async function expectError(
   call: Promise<unknown> | (() => unknown),
@@ -201,6 +200,7 @@ export async function expectError(
   expect((error as Error).message).toMatch(message);
 }
 
+// Poll `check` until it stops throwing, rethrowing its last failure if the deadline passes.
 export async function retryUntilSuccess(check: () => void | Promise<void>, timeoutMs: number = 15000) {
   const deadline = Date.now() + timeoutMs;
   for (;;) {

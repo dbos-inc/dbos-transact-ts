@@ -579,8 +579,14 @@ async function refuseShardedSchema(client: ClientBase, schemaName: string): Prom
 
 /** Whether this database holds a sharded DBOS system schema (this one, if named); false if it can't be reached. */
 export async function holdsShardedSchema(databaseUrl: string, schemaName?: string): Promise<boolean> {
-  // Bounded, so an unreachable host fails as fast as the caller's own connection would.
-  const client = new Client({ ...getClientConfig(databaseUrl), connectionTimeoutMillis: 10_000 });
+  let client: Client;
+  try {
+    // Bounded, so an unreachable host fails as fast as the caller's own connection would.
+    client = new Client({ ...getClientConfig(databaseUrl), connectionTimeoutMillis: 10_000 });
+  } catch {
+    // A malformed URL, for the caller's own connection to report.
+    return false;
+  }
   client.on('error', () => {});
   try {
     await client.connect();
@@ -4404,6 +4410,10 @@ export class SystemDatabase {
       if (queue.rateLimit !== undefined) {
         // Bound the claim by the limiter's remaining slots so a backlogged queue locks only what it can start.
         limit(await rateLimitRemaining(queue.rateLimit, false), 'limiter');
+        if (maxTasks <= 0) {
+          await client.query('COMMIT');
+          return { claimedIDs, stopReason };
+        }
       }
       if (queue.partitionRateLimit !== undefined) {
         limit(await rateLimitRemaining(queue.partitionRateLimit, true), 'partition_limiter');
@@ -5727,7 +5737,7 @@ export class SystemDatabase {
     }
   }
 
-  protected async getWorkflowStatusValue(client: PoolClient | Pool, workflowID: string): Promise<string | undefined> {
+  private async getWorkflowStatusValue(client: PoolClient | Pool, workflowID: string): Promise<string | undefined> {
     const params: unknown[] = [];
     const { rows } = await client.query<{ status: string }>(
       `SELECT status FROM "${this.schemaName}".workflow_status WHERE ${this.wf(undefined, workflowID, params)}`,
@@ -5736,7 +5746,7 @@ export class SystemDatabase {
     return rows.length === 0 ? undefined : rows[0].status;
   }
 
-  protected async updateWorkflowStatus(
+  private async updateWorkflowStatus(
     client: PoolClient,
     workflowID: string,
     status: (typeof StatusString)[keyof typeof StatusString],
@@ -5837,7 +5847,7 @@ export class SystemDatabase {
     return result.rowCount ?? 0;
   }
 
-  protected async recordOperationResultInternal(
+  private async recordOperationResultInternal(
     client: PoolClient,
     workflowID: string,
     functionID: number,
@@ -6018,7 +6028,7 @@ export class SystemDatabase {
   // been cancelled.
   // For an actual sleep, completed_at is the wake deadline so the step's duration reflects the
   // sleep; a timeout marker records zero duration since its deadline may never be reached.
-  protected async durableSleepInternal(
+  private async durableSleepInternal(
     workflowID: string,
     functionID: number,
     durationMS: number,
