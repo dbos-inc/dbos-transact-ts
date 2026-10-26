@@ -1,6 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { ConfiguredInstance, DBOS, DBOSConfig } from '../src';
-import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
+import { Client } from 'pg';
+import { ConfiguredInstance, DBOS, DBOSConfig, StepConfig, StepReservation } from '../src';
+import { DBOSExecutor } from '../src/dbos-executor';
+import { DBOSStepTimeoutError, DBOSWorkflowCancelledError } from '../src/error';
+import { Event, generateDBOSTestConfig, reexecuteWorkflowById, retryUntilSuccess, setUpDBOSTestSysDb } from './helpers';
 
 // Step variant 1: Let DBOS provide the step wrapper making
 //  a reusable function that can be called from multiple places
@@ -456,5 +459,403 @@ describe('start-workflow-function', () => {
 
     expect(t1).toBeGreaterThanOrEqual(st);
     expect(t1).toBeLessThanOrEqual(et);
+  });
+});
+
+// Step reservations: DBOS.reserveStep draws a step ID now, and StepReservation.run runs a step at it later
+
+// An unbounded FIFO whose `get` waits for the next item.
+class AsyncQueue<T> {
+  private items: T[] = [];
+  private waiters: ((item: T) => void)[] = [];
+
+  put(item: T) {
+    const waiter = this.waiters.shift();
+    if (waiter) waiter(item);
+    else this.items.push(item);
+  }
+
+  get(): Promise<T> {
+    if (this.items.length > 0) return Promise.resolve(this.items.shift()!);
+    return new Promise((resolve) => this.waiters.push(resolve));
+  }
+}
+
+async function journal(workflowID: string): Promise<[number, string][]> {
+  const steps = await DBOS.listWorkflowSteps(workflowID);
+  return steps!.map((s) => [s.functionID, s.name]);
+}
+
+// Models an agent's event dispatch: emitting an event reserves a handler step that a consumer task runs later.
+const handlerConfig: StepConfig = {
+  name: 'event_stream_handler',
+  retriesAllowed: true,
+  maxAttempts: 3,
+  intervalSeconds: 0.01,
+};
+const attempts: Record<string, number> = {};
+let storeReads = 0;
+
+const getItem = DBOS.registerStep(
+  async (item: string) => {
+    storeReads++;
+    // Live-only latency, so replay timing differs from the live run.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    return `item-${item}`;
+  },
+  { name: 'getItem' },
+);
+
+async function handleEvent(event: string): Promise<string> {
+  attempts[event] = (attempts[event] ?? 0) + 1;
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  // Fails the first attempt of every live execution, so forks retry it too.
+  if (event === 'flaky' && DBOS.stepStatus!.currentAttempt === 1) {
+    throw new Error('transient handler failure');
+  }
+  if (event === 'bad') {
+    throw new Error('handler rejected event');
+  }
+  return `handled-${event}`;
+}
+
+const agentRun = DBOS.registerWorkflow(
+  async () => {
+    const queue = new AsyncQueue<[string, boolean] | null>();
+    // One FIFO of reservations per event, since the same event can be emitted twice.
+    const reservations: Record<string, StepReservation[]> = {};
+    const handled: string[] = [];
+
+    const emit = (event: string, deliver: boolean = true) => {
+      (reservations[event] ??= []).push(DBOS.reserveStep());
+      queue.put([event, deliver]);
+    };
+
+    const consume = async () => {
+      for (let item = await queue.get(); item !== null; item = await queue.get()) {
+        const [event, deliver] = item;
+        const reservation = reservations[event].shift()!;
+        if (!deliver) continue; // The handler never starts, leaving a gap at its step.
+        try {
+          handled.push(await reservation.run(() => handleEvent(event), handlerConfig));
+        } catch (e) {
+          // Only the message survives replay, not the error's class.
+          handled.push((e as Error).message.split('.')[0]);
+        }
+      }
+    };
+
+    const consumer = consume();
+    // A plan tool: emit a burst of events, then make durable store reads while the handlers run.
+    for (const event of ['plan', 'plan', 'flaky', 'bad', 'dropped']) {
+      emit(event, event !== 'dropped');
+    }
+    const reads = [await getItem('a'), await getItem('b')];
+    emit('progress');
+    reads.push(await getItem('c'));
+    queue.put(null);
+    await consumer;
+    return [...reads, ...handled];
+  },
+  { name: 'agentRun' },
+);
+
+const misuseLeaked: StepReservation[] = [];
+
+const reservingWorkflow = DBOS.registerWorkflow(
+  async () => {
+    const reservation = DBOS.reserveStep();
+    const stepID = await reservation.run(async () => Promise.resolve(DBOS.stepID), { name: 'first' });
+    expect(stepID).toBe(0);
+    expect(reservation.stepID).toBe(0);
+    await expect(reservation.run(async () => Promise.resolve())).rejects.toThrow('only be run once');
+
+    // A run claims the reservation before it awaits anything.
+    const concurrent = DBOS.reserveStep();
+    const winner = concurrent.run(async () => Promise.resolve('won'), { name: 'concurrent' });
+    await expect(concurrent.run(async () => Promise.resolve('lost'))).rejects.toThrow('only be run once');
+    expect(await winner).toBe('won');
+
+    const failing = DBOS.reserveStep();
+    await expect(failing.run(async () => Promise.reject(new Error('step failed')), { name: 'fail' })).rejects.toThrow(
+      'step failed',
+    );
+    await expect(failing.run(async () => Promise.resolve())).rejects.toThrow('only be run once');
+
+    // An invalid configuration is rejected without using up the reservation.
+    const configured = DBOS.reserveStep();
+    await expect(configured.run(async () => Promise.resolve(), { timeoutMS: -1 })).rejects.toThrow('Invalid timeoutMS');
+    await configured.run(async () => Promise.resolve(), { name: 'configured' });
+
+    misuseLeaked.push(DBOS.reserveStep());
+  },
+  { name: 'reservingWorkflow' },
+);
+
+const otherWorkflow = DBOS.registerWorkflow(
+  async () => {
+    await expect(misuseLeaked[0].run(async () => Promise.resolve())).rejects.toThrow('must be run from that workflow');
+  },
+  { name: 'otherWorkflow' },
+);
+
+const stepRunningReservation = DBOS.registerStep(
+  async (reservation: StepReservation) => {
+    await reservation.run(async () => Promise.resolve());
+  },
+  { name: 'stepRunningReservation' },
+);
+
+const stepWorkflow = DBOS.registerWorkflow(
+  async () => {
+    await expect(stepRunningReservation(DBOS.reserveStep())).rejects.toThrow('must be run from that workflow');
+  },
+  { name: 'stepWorkflow' },
+);
+
+const reservingStep = DBOS.registerStep(
+  async () => {
+    DBOS.reserveStep();
+    return Promise.resolve();
+  },
+  { name: 'reservingStep' },
+);
+
+const nestedWorkflow = DBOS.registerWorkflow(
+  async () => {
+    await expect(reservingStep()).rejects.toThrow('outside any step or transaction');
+  },
+  { name: 'nestedWorkflow' },
+);
+
+const optionsWorkflow = DBOS.registerWorkflow(
+  async () => {
+    const timed = DBOS.reserveStep();
+    const plain = DBOS.reserveStep();
+    const out = await plain.run(async () => Promise.resolve(DBOS.stepID), { name: 'plain' });
+    await expect(
+      timed.run(
+        async () => {
+          // Waits until the timeout aborts it, so no timer outlives the test.
+          const signal = DBOS.stepStatus!.timeoutSignal!;
+          await new Promise((_, reject) => signal.addEventListener('abort', () => reject(signal.reason as Error)));
+        },
+        { name: 'timed', timeoutMS: 200 },
+      ),
+    ).rejects.toThrow(DBOSStepTimeoutError);
+    return out;
+  },
+  { name: 'optionsWorkflow' },
+);
+
+let blockedStarted = new Event();
+let blockedRelease = new Event();
+let blockedCalls = 0;
+
+const cancelledWorkflow = DBOS.registerWorkflow(
+  async () => {
+    DBOS.reserveStep(); // Never run, so the blocked step is not step 0.
+    return await DBOS.reserveStep().run(
+      async () => {
+        blockedCalls++;
+        blockedStarted.set();
+        await blockedRelease.wait();
+        return DBOS.stepID;
+      },
+      { name: 'blocked' },
+    );
+  },
+  { name: 'cancelledWorkflow' },
+);
+
+let numberedCalls = 0;
+
+const outOfOrderWorkflow = DBOS.registerWorkflow(
+  async () => {
+    const numbered = (name: string) => async () => {
+      numberedCalls++;
+      return Promise.resolve(`${name}-${DBOS.stepID}`);
+    };
+    const first = DBOS.reserveStep();
+    const second = DBOS.reserveStep();
+    const b = await second.run(numbered('b'), { name: 'second' });
+    const a = await first.run(numbered('a'), { name: 'first' });
+    return a + b;
+  },
+  { name: 'outOfOrderWorkflow' },
+);
+
+describe('reserve-step', () => {
+  let config: DBOSConfig;
+  let systemDBClient: Client;
+  let schema: string;
+
+  beforeAll(async () => {
+    config = generateDBOSTestConfig();
+    await setUpDBOSTestSysDb(config);
+    DBOS.setConfig(config);
+    schema = config.systemDatabaseSchemaName ?? 'dbos';
+  });
+
+  beforeEach(async () => {
+    for (const key of Object.keys(attempts)) delete attempts[key];
+    storeReads = 0;
+    misuseLeaked.length = 0;
+    await DBOS.launch();
+    systemDBClient = new Client({ connectionString: config.systemDatabaseUrl });
+    await systemDBClient.connect();
+  });
+
+  afterEach(async () => {
+    await systemDBClient.end();
+    await DBOS.shutdown();
+  });
+
+  test('reserve-step-event-stream', async () => {
+    const expected = [
+      'item-a',
+      'item-b',
+      'item-c',
+      'handled-plan',
+      'handled-plan',
+      'handled-flaky',
+      'Step event_stream_handler has exceeded its maximum of 3 retries',
+      'handled-progress',
+    ];
+    const expectedJournal: [number, string][] = [
+      [0, 'event_stream_handler'],
+      [1, 'event_stream_handler'],
+      [2, 'event_stream_handler'],
+      [3, 'event_stream_handler'],
+      [5, 'getItem'],
+      [6, 'getItem'],
+      [7, 'event_stream_handler'],
+      [8, 'getItem'],
+    ];
+    const wfid = randomUUID();
+    await DBOS.withNextWorkflowID(wfid, async () => {
+      expect(await agentRun()).toEqual(expected);
+    });
+    expect(attempts).toEqual({ plan: 2, flaky: 2, bad: 3, progress: 1 });
+    expect(await journal(wfid)).toEqual(expectedJournal);
+
+    // Live attempts of the handler at each step ID, and the step IDs of the store reads.
+    const handlerAttempts: Record<number, [string, number]> = {
+      0: ['plan', 1],
+      1: ['plan', 1],
+      2: ['flaky', 2],
+      3: ['bad', 3],
+      7: ['progress', 1],
+    };
+    const readIDs = [5, 6, 8];
+    const afterRerun = (before: Record<string, number>, rerun: number[]) => {
+      const expectedAttempts = { ...before };
+      for (const fid of rerun) {
+        if (fid in handlerAttempts) {
+          const [event, n] = handlerAttempts[fid];
+          expectedAttempts[event] += n;
+        }
+      }
+      return expectedAttempts;
+    };
+
+    // Recovery replays every step, at its reserved ID, without running it again.
+    const liveAttempts = { ...attempts };
+    const liveReads = storeReads;
+    expect(await (await reexecuteWorkflowById(wfid)).getResult()).toEqual(expected);
+    expect(attempts).toEqual(liveAttempts);
+    expect(storeReads).toBe(liveReads);
+
+    // A crash can leave reserved handlers unrecorded below recorded steps; recovery reruns only those.
+    await systemDBClient.query(
+      `DELETE FROM "${schema}".operation_outputs WHERE workflow_uuid = $1 AND function_id = ANY($2)`,
+      [wfid, [1, 3]],
+    );
+    let before = { ...attempts };
+    expect(await (await reexecuteWorkflowById(wfid)).getResult()).toEqual(expected);
+    expect(attempts).toEqual(afterRerun(before, [1, 3]));
+    expect(storeReads).toBe(liveReads);
+    expect(await journal(wfid)).toEqual(expectedJournal);
+
+    // Forking at every step replays a prefix and runs the rest live, under different timing.
+    for (const startStep of [...expectedJournal.map(([fid]) => fid), 1000]) {
+      before = { ...attempts };
+      const readsBefore = storeReads;
+      const handle = await DBOS.forkWorkflow<string[]>(wfid, startStep);
+      expect(await handle.getResult()).toEqual(expected);
+      const rerun = expectedJournal.map(([fid]) => fid).filter((fid) => fid >= startStep);
+      expect(attempts).toEqual(afterRerun(before, rerun));
+      expect(storeReads).toBe(readsBefore + readIDs.filter((fid) => rerun.includes(fid)).length);
+      expect(await journal(handle.workflowID)).toEqual(expectedJournal);
+    }
+  }, 60000);
+
+  test('reserve-step-misuse', async () => {
+    expect(() => DBOS.reserveStep()).toThrow('outside any step or transaction');
+
+    const wfid = randomUUID();
+    await DBOS.withNextWorkflowID(wfid, async () => {
+      await reservingWorkflow();
+    });
+    expect(await journal(wfid)).toEqual([
+      [0, 'first'],
+      [1, 'concurrent'],
+      [2, 'fail'],
+      [3, 'configured'],
+    ]);
+    expect(misuseLeaked[0].stepID).toBe(4);
+
+    await otherWorkflow();
+    await stepWorkflow();
+    await nestedWorkflow();
+    await expect(misuseLeaked[0].run(async () => Promise.resolve())).rejects.toThrow('must be run from that workflow');
+  });
+
+  test('reserve-step-timeout', async () => {
+    const wfid = randomUUID();
+    await DBOS.withNextWorkflowID(wfid, async () => {
+      expect(await optionsWorkflow()).toBe(1);
+    });
+    expect(await journal(wfid)).toEqual([
+      [0, 'timed'],
+      [1, 'plain'],
+    ]);
+  });
+
+  test('reserve-step-cancel-and-resume', async () => {
+    // Cancelling mid-step leaves the reserved step unrecorded; resuming runs it again at the same ID.
+    blockedStarted = new Event();
+    blockedRelease = new Event();
+    blockedCalls = 0;
+    const handle = await DBOS.startWorkflow(cancelledWorkflow)();
+    const wfid = handle.workflowID;
+    await blockedStarted.wait();
+    await DBOS.cancelWorkflow(wfid);
+    blockedRelease.set();
+    await expect(handle.getResult()).rejects.toThrow(DBOSWorkflowCancelledError);
+    await retryUntilSuccess(() =>
+      expect(DBOSExecutor.globalInstance!.systemDatabase.checkForRunningWorkflow(wfid)).toBe(false),
+    );
+    expect(await journal(wfid)).toEqual([]);
+
+    const resumed = await DBOS.resumeWorkflow<number>(wfid);
+    expect(await resumed.getResult()).toBe(1);
+    expect(blockedCalls).toBe(2);
+    expect(await journal(wfid)).toEqual([[1, 'blocked']]);
+  });
+
+  test('reserve-step-out-of-order', async () => {
+    numberedCalls = 0;
+    const wfid = randomUUID();
+    await DBOS.withNextWorkflowID(wfid, async () => {
+      expect(await outOfOrderWorkflow()).toBe('a-0b-1');
+    });
+    expect(await journal(wfid)).toEqual([
+      [0, 'first'],
+      [1, 'second'],
+    ]);
+    expect(await (await reexecuteWorkflowById(wfid)).getResult()).toBe('a-0b-1');
+    expect(await (await DBOS.forkWorkflow<string>(wfid, 1000)).getResult()).toBe('a-0b-1');
+    expect(numberedCalls).toBe(2);
   });
 });
