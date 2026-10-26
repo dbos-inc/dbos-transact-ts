@@ -4137,6 +4137,7 @@ export class SystemDatabase {
     // application, as on every other observability query.
     // Falsy, not just undefined: a Conductor request carries an omitted list as JSON null.
     const idKeyed = (input.workflowIDs?.length ?? 0) > 0;
+    if (client && !idKeyed) throw new TypeError('listWorkflows takes a client only for an ID-keyed read');
     whereClauses.push(
       idKeyed
         ? this.appNameFilter('application_name', input.applicationName, params)
