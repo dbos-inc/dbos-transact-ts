@@ -1643,8 +1643,10 @@ export class SystemDatabase {
     callerID?: string,
     callerFN?: number,
   ): Promise<WorkflowStatusInternal | null> {
-    const funcGetStatus = async () => {
-      const statuses = await this.listWorkflows({ workflowIDs: [workflowID] });
+    // Inside a workflow this runs on the transaction's client: taking a second pool connection while
+    // holding the first deadlocks the pool once every connection is held by a waiting caller.
+    const funcGetStatus = async (client?: PoolClient) => {
+      const statuses = await this.#listWorkflows({ workflowIDs: [workflowID] }, client);
       const status = statuses.find((s) => s.workflowUUID === workflowID);
       return status ? JSON.stringify(status) : null;
     };
@@ -1654,7 +1656,7 @@ export class SystemDatabase {
       try {
         // Check if the operation has been done before for OAOO (only do this inside a workflow).
         const json = await this.#inTransaction(client, () =>
-          this.#runAndRecordResult(client, DBOS_FUNCNAME_GETSTATUS, callerID, callerFN, funcGetStatus),
+          this.#runAndRecordResult(client, DBOS_FUNCNAME_GETSTATUS, callerID, callerFN, () => funcGetStatus(client)),
         );
         return parseStatus(json);
       } finally {
@@ -4028,6 +4030,14 @@ export class SystemDatabase {
   // ==================== Queries & Maintenance ====================
   @dbRetry()
   async listWorkflows(input: GetWorkflowsInput): Promise<WorkflowStatusInternal[]> {
+    return await this.#listWorkflows(input);
+  }
+
+  /**
+   * Unretried body of {@link listWorkflows}. An ID-keyed read runs on `client` when given, so a caller
+   * holding a transaction never waits on a second pool connection; the caller owns the retry.
+   */
+  async #listWorkflows(input: GetWorkflowsInput, client?: PoolClient): Promise<WorkflowStatusInternal[]> {
     const schemaName = this.schemaName;
     const selectColumns = [
       'workflow_uuid',
@@ -4251,8 +4261,8 @@ export class SystemDatabase {
 
     // An ID-keyed read is bounded by its ID list, so it takes no cap: a status lookup must not fail its own caller.
     const result = idKeyed
-      ? await this.pool.query<workflow_status>(query, params)
-      : await this.observabilityQuery((client) => client.query<workflow_status>(query, params));
+      ? await (client ?? this.pool).query<workflow_status>(query, params)
+      : await this.observabilityQuery((c) => c.query<workflow_status>(query, params));
     return result.rows.map(mapWorkflowStatus);
   }
 

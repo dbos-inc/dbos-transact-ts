@@ -1519,3 +1519,51 @@ describe('long-sleep-tests', () => {
     }
   });
 });
+
+describe('custom-pool-getstatus', () => {
+  let systemDatabaseUrl: string;
+  let name: string;
+
+  beforeAll(async () => {
+    const config = generateDBOSTestConfig();
+    systemDatabaseUrl = config.systemDatabaseUrl!;
+    name = config.name!;
+    await setUpDBOSTestSysDb(config);
+  });
+
+  afterEach(async () => {
+    await DBOS.shutdown();
+  });
+
+  test('concurrent getStatus inside workflows does not exhaust a small pool', async () => {
+    // Fewer connections than workflows: getStatus used to hold one in a transaction while waiting on a
+    // second, so once every connection was held this way nothing could progress.
+    const pool = new Pool({ connectionString: systemDatabaseUrl, max: 4, connectionTimeoutMillis: 2000 });
+    pool.on('error', () => {});
+    try {
+      DBOS.setConfig({ name, systemDatabasePool: pool, useListenNotify: false });
+      const child = DBOS.registerWorkflow(async () => Promise.resolve('done'), { name: 'getstatus-child' });
+      const gate = new Event();
+      const parent = DBOS.registerWorkflow(
+        async () => {
+          const handle = await DBOS.startWorkflow(child)();
+          await gate.wait();
+          return (await handle.getStatus())?.workflowID === handle.workflowID;
+        },
+        { name: 'getstatus-parent' },
+      );
+      await DBOS.launch();
+
+      const handles = [];
+      for (let i = 0; i < 12; i++) {
+        handles.push(await DBOS.startWorkflow(parent)());
+      }
+      // Release every parent at once so their getStatus calls all contend for the pool.
+      gate.set();
+      expect(await Promise.all(handles.map((h) => h.getResult()))).toEqual(handles.map(() => true));
+    } finally {
+      await DBOS.shutdown();
+      await pool.end();
+    }
+  }, 30000);
+});
