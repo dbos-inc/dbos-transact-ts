@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { Client } from 'pg';
 import { ConfiguredInstance, DBOS, DBOSConfig, StepConfig, StepReservation } from '../src';
 import { DBOSExecutor } from '../src/dbos-executor';
-import { DBOSStepTimeoutError, DBOSWorkflowCancelledError } from '../src/error';
+import { DBOSInvalidWorkflowTransitionError, DBOSStepTimeoutError, DBOSWorkflowCancelledError } from '../src/error';
 import { Event, generateDBOSTestConfig, reexecuteWorkflowById, retryUntilSuccess, setUpDBOSTestSysDb } from './helpers';
 
 // Step variant 1: Let DBOS provide the step wrapper making
@@ -481,6 +481,37 @@ class AsyncQueue<T> {
   }
 }
 
+// The error `promise` rejects with; fails the test if it resolves.
+async function rejection(promise: Promise<unknown>): Promise<unknown> {
+  return promise.then(
+    () => {
+      throw new Error('Expected a rejection');
+    },
+    (e: unknown) => e,
+  );
+}
+
+// Like Python's pytest.raises(DBOSException, match=...), check the error's class as well as its message.
+function expectMisuse(err: unknown, message: string) {
+  expect(err).toBeInstanceOf(DBOSInvalidWorkflowTransitionError);
+  expect((err as Error).message).toContain(message);
+}
+
+// Like Python's asyncio.wait_for: fail with a clear message instead of hanging until the test timeout.
+async function waitFor(promise: Promise<void>, ms: number, what: string) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`Timed out after ${ms}ms waiting for ${what}`)), ms);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function journal(workflowID: string): Promise<[number, string][]> {
   const steps = await DBOS.listWorkflowSteps(workflowID);
   return steps!.map((s) => [s.functionID, s.name]);
@@ -546,6 +577,8 @@ const agentRun = DBOS.registerWorkflow(
     };
 
     const consumer = consume();
+    // Rethrown by `await consumer` below; this only keeps an early rejection from being reported as unhandled.
+    consumer.catch(() => {});
     // A plan tool: emit a burst of events, then make durable store reads while the handlers run.
     for (const event of ['plan', 'plan', 'flaky', 'bad', 'dropped']) {
       emit(event, event !== 'dropped');
@@ -568,19 +601,23 @@ const reservingWorkflow = DBOS.registerWorkflow(
     const stepID = await reservation.run(async () => Promise.resolve(DBOS.stepID), { name: 'first' });
     expect(stepID).toBe(0);
     expect(reservation.stepID).toBe(0);
-    await expect(reservation.run(async () => Promise.resolve())).rejects.toThrow('only be run once');
+    expectMisuse(await rejection(reservation.run(async () => Promise.resolve())), 'only be run once');
 
     // A run claims the reservation before it awaits anything.
     const concurrent = DBOS.reserveStep();
-    const winner = concurrent.run(async () => Promise.resolve('won'), { name: 'concurrent' });
-    await expect(concurrent.run(async () => Promise.resolve('lost'))).rejects.toThrow('only be run once');
-    expect(await winner).toBe('won');
+    const [won, lost] = await Promise.allSettled([
+      concurrent.run(async () => Promise.resolve('won'), { name: 'concurrent' }),
+      concurrent.run(async () => Promise.resolve('lost')),
+    ]);
+    expect(won).toEqual({ status: 'fulfilled', value: 'won' });
+    expect(lost.status).toBe('rejected');
+    expectMisuse((lost as PromiseRejectedResult).reason, 'only be run once');
 
     const failing = DBOS.reserveStep();
     await expect(failing.run(async () => Promise.reject(new Error('step failed')), { name: 'fail' })).rejects.toThrow(
       'step failed',
     );
-    await expect(failing.run(async () => Promise.resolve())).rejects.toThrow('only be run once');
+    expectMisuse(await rejection(failing.run(async () => Promise.resolve())), 'only be run once');
 
     // An invalid configuration is rejected without using up the reservation.
     const configured = DBOS.reserveStep();
@@ -594,7 +631,7 @@ const reservingWorkflow = DBOS.registerWorkflow(
 
 const otherWorkflow = DBOS.registerWorkflow(
   async () => {
-    await expect(misuseLeaked[0].run(async () => Promise.resolve())).rejects.toThrow('must be run from that workflow');
+    expectMisuse(await rejection(misuseLeaked[0].run(async () => Promise.resolve())), 'must be run from that workflow');
   },
   { name: 'otherWorkflow' },
 );
@@ -608,7 +645,7 @@ const stepRunningReservation = DBOS.registerStep(
 
 const stepWorkflow = DBOS.registerWorkflow(
   async () => {
-    await expect(stepRunningReservation(DBOS.reserveStep())).rejects.toThrow('must be run from that workflow');
+    expectMisuse(await rejection(stepRunningReservation(DBOS.reserveStep())), 'must be run from that workflow');
   },
   { name: 'stepWorkflow' },
 );
@@ -623,7 +660,7 @@ const reservingStep = DBOS.registerStep(
 
 const nestedWorkflow = DBOS.registerWorkflow(
   async () => {
-    await expect(reservingStep()).rejects.toThrow('outside any step or transaction');
+    expectMisuse(await rejection(reservingStep()), 'outside any step or transaction');
   },
   { name: 'nestedWorkflow' },
 );
@@ -777,8 +814,9 @@ describe('reserve-step', () => {
     expect(storeReads).toBe(liveReads);
     expect(await journal(wfid)).toEqual(expectedJournal);
 
-    // Forking at every step replays a prefix and runs the rest live, under different timing.
-    for (const startStep of [...expectedJournal.map(([fid]) => fid), 1000]) {
+    // Forking at every step, including the gap the dropped event left at 4, replays a prefix and runs the rest live,
+    // under different timing.
+    for (const startStep of [0, 1, 2, 3, 4, 5, 6, 7, 8, 1000]) {
       before = { ...attempts };
       const readsBefore = storeReads;
       const handle = await DBOS.forkWorkflow<string[]>(wfid, startStep);
@@ -791,7 +829,13 @@ describe('reserve-step', () => {
   }, 60000);
 
   test('reserve-step-misuse', async () => {
-    expect(() => DBOS.reserveStep()).toThrow('outside any step or transaction');
+    let outside: unknown;
+    try {
+      DBOS.reserveStep();
+    } catch (e) {
+      outside = e;
+    }
+    expectMisuse(outside, 'outside any step or transaction');
 
     const wfid = randomUUID();
     await DBOS.withNextWorkflowID(wfid, async () => {
@@ -808,7 +852,7 @@ describe('reserve-step', () => {
     await otherWorkflow();
     await stepWorkflow();
     await nestedWorkflow();
-    await expect(misuseLeaked[0].run(async () => Promise.resolve())).rejects.toThrow('must be run from that workflow');
+    expectMisuse(await rejection(misuseLeaked[0].run(async () => Promise.resolve())), 'must be run from that workflow');
   });
 
   test('reserve-step-timeout', async () => {
@@ -829,7 +873,7 @@ describe('reserve-step', () => {
     blockedCalls = 0;
     const handle = await DBOS.startWorkflow(cancelledWorkflow)();
     const wfid = handle.workflowID;
-    await blockedStarted.wait();
+    await waitFor(blockedStarted.wait(), 10000, 'the blocked step to start');
     await DBOS.cancelWorkflow(wfid);
     blockedRelease.set();
     await expect(handle.getResult()).rejects.toThrow(DBOSWorkflowCancelledError);
