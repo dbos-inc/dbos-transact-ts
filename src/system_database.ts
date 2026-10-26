@@ -639,7 +639,10 @@ function mapWorkflowStatus(row: workflow_status): WorkflowStatusInternal {
     recoveryAttempts: Number(row.recovery_attempts),
     input: row.inputs ? row.inputs : null,
     timeoutMS: row.workflow_timeout_ms ? Number(row.workflow_timeout_ms) : undefined,
-    deadlineEpochMS: row.workflow_deadline_epoch_ms ? Number(row.workflow_deadline_epoch_ms) : undefined,
+    // Cap at the largest exact JS integer: a saturated bigint deadline would otherwise round past the bigint maximum and be rejected when a child workflow inherits it.
+    deadlineEpochMS: row.workflow_deadline_epoch_ms
+      ? Math.min(Number(row.workflow_deadline_epoch_ms), Number.MAX_SAFE_INTEGER)
+      : undefined,
     deduplicationID: row.deduplication_id ?? undefined,
     priority: row.priority ?? 0,
     queuePartitionKey: row.queue_partition_key ?? undefined,
@@ -3825,8 +3828,12 @@ export class SystemDatabase {
                recovery_attempts = recovery_attempts + 1,
                updated_at = (EXTRACT(epoch FROM now()) * 1000)::bigint,
                workflow_deadline_epoch_ms = CASE
-                 WHEN workflow_timeout_ms IS NOT NULL AND workflow_deadline_epoch_ms IS NULL
-                 THEN (EXTRACT(epoch FROM now()) * 1000)::bigint + workflow_timeout_ms
+                 WHEN workflow_timeout_ms IS NOT NULL AND workflow_deadline_epoch_ms IS NULL THEN
+                   CASE
+                     WHEN workflow_timeout_ms > 9223372036854775807 - (EXTRACT(epoch FROM now()) * 1000)::bigint
+                     THEN 9223372036854775807
+                     ELSE (EXTRACT(epoch FROM now()) * 1000)::bigint + workflow_timeout_ms
+                   END
                  ELSE workflow_deadline_epoch_ms
                END
            WHERE workflow_uuid = ANY($5::text[]) AND status = $6 AND ${claimScope}
@@ -4002,8 +4009,12 @@ export class SystemDatabase {
              recovery_attempts = recovery_attempts + 1,
              updated_at = (EXTRACT(epoch FROM now()) * 1000)::bigint,
              workflow_deadline_epoch_ms = CASE
-               WHEN workflow_timeout_ms IS NOT NULL AND workflow_deadline_epoch_ms IS NULL
-               THEN (EXTRACT(epoch FROM now()) * 1000)::bigint + workflow_timeout_ms
+               WHEN workflow_timeout_ms IS NOT NULL AND workflow_deadline_epoch_ms IS NULL THEN
+                 CASE
+                   WHEN workflow_timeout_ms > 9223372036854775807 - (EXTRACT(epoch FROM now()) * 1000)::bigint
+                   THEN 9223372036854775807
+                   ELSE (EXTRACT(epoch FROM now()) * 1000)::bigint + workflow_timeout_ms
+                 END
                ELSE workflow_deadline_epoch_ms
              END
          WHERE ${claimGuard(3, 4, 5, 6, flipScope)}
