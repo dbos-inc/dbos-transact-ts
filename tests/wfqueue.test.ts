@@ -1637,6 +1637,12 @@ describe('queue-time-outs', () => {
     }
 
     @DBOS.workflow()
+    static async parentStartsChild() {
+      const handle = await DBOS.startWorkflow(DBOSTimeoutTestClass).sleepingWorkflow(1);
+      return await handle.getResult();
+    }
+
+    @DBOS.workflow()
     static async timeoutParentStartDetachedChild(duration: number) {
       await DBOS.startWorkflow(DBOSTimeoutTestClass, { timeoutMS: null })
         .sleepingWorkflow(duration * 2)
@@ -1708,6 +1714,23 @@ describe('queue-time-outs', () => {
     const childHandle = DBOS.retrieveWorkflow(childID);
     await expect(childHandle.getStatus()).resolves.toMatchObject({
       status: StatusString.CANCELLED,
+    });
+  });
+
+  // A near-maximum timeout saturates the deadline on dequeue; a child inheriting it must still insert (#1421)
+  test('enqueue-workflow-saturatedDeadlineChild', async () => {
+    const workflowID: string = randomUUID();
+    const childID: string = `${workflowID}-0`;
+    const handle = await DBOS.startWorkflow(DBOSTimeoutTestClass, {
+      workflowID,
+      queueName: timeoutQueue.name,
+      timeoutMS: 9223372036854774807,
+    }).parentStartsChild();
+    await expect(handle.getResult()).resolves.toBe(42);
+    await expect(handle.getStatus()).resolves.toMatchObject({ deadlineEpochMS: Number.MAX_SAFE_INTEGER });
+    await expect(DBOS.retrieveWorkflow(childID).getStatus()).resolves.toMatchObject({
+      status: StatusString.SUCCESS,
+      deadlineEpochMS: Number.MAX_SAFE_INTEGER,
     });
   });
 
@@ -4048,6 +4071,54 @@ describe('limiter-dequeue-locking', () => {
     },
     30000,
   );
+
+  test('saturates deadline on near-maximum timeout to prevent bigint overflow (#1421)', async () => {
+    const queueName = `overflow_timeout_queue_${randomUUID()}`;
+    const queue = await DBOS.registerQueue(queueName, { onConflict: 'always_update' });
+
+    const handle = await DBOS.startWorkflow(parkedWorkflow, {
+      queueName,
+      enqueueOptions: { applicationVersion: parkedVersion },
+    })();
+
+    await sysdb.pool.query(
+      `UPDATE "${sysdb.schemaName}".workflow_status SET workflow_timeout_ms = '9223372036854774807' WHERE workflow_uuid = $1`,
+      [handle.workflowID],
+    );
+
+    const claimed = await sysdb.findAndMarkStartableWorkflows(queue, 'test-executor', parkedVersion);
+    expect(claimed).toContain(handle.workflowID);
+
+    const { rows } = await sysdb.pool.query<{ workflow_deadline_epoch_ms: string }>(
+      `SELECT workflow_deadline_epoch_ms FROM "${sysdb.schemaName}".workflow_status WHERE workflow_uuid = $1`,
+      [handle.workflowID],
+    );
+    expect(rows[0].workflow_deadline_epoch_ms).toBe('9223372036854775807');
+  }, 30000);
+
+  test('saturates deadline on near-maximum timeout in partitioned dequeue (#1421)', async () => {
+    const queueName = `overflow_partitioned_queue_${randomUUID()}`;
+    const queue = await DBOS.registerQueue(queueName, { partitionConcurrency: 1, onConflict: 'always_update' });
+
+    const handle = await DBOS.startWorkflow(parkedWorkflow, {
+      queueName,
+      enqueueOptions: { applicationVersion: parkedVersion, queuePartitionKey: 'p1' },
+    })();
+
+    await sysdb.pool.query(
+      `UPDATE "${sysdb.schemaName}".workflow_status SET workflow_timeout_ms = '9223372036854774807' WHERE workflow_uuid = $1`,
+      [handle.workflowID],
+    );
+
+    const claimed = await sysdb.findAndMarkStartablePartitionedWorkflows(queue, 'test-executor', parkedVersion);
+    expect(claimed).toContain(handle.workflowID);
+
+    const { rows } = await sysdb.pool.query<{ workflow_deadline_epoch_ms: string }>(
+      `SELECT workflow_deadline_epoch_ms FROM "${sysdb.schemaName}".workflow_status WHERE workflow_uuid = $1`,
+      [handle.workflowID],
+    );
+    expect(rows[0].workflow_deadline_epoch_ms).toBe('9223372036854775807');
+  }, 30000);
 });
 
 describe('partition-queue-limits', () => {
