@@ -59,10 +59,7 @@ export function currentOwnerXid(workflowID: string): string | undefined {
   return ctx.ownerXid;
 }
 
-/**
- * A child's default ID: its parent's, suffixed with the call number. A parent ID is unique
- * only within its shard key, so a child under another key carries the parent's.
- */
+/** A child's default ID: its parent's plus the call number, and the parent's key when the child's differs. */
 export function childWorkflowID(
   parentID: string,
   functionID: number,

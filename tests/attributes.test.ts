@@ -215,6 +215,7 @@ describe('workflow-attributes', () => {
     await handle.getResult();
   });
 
+  // Debouncing is not supported on a sharded system database.
   testUnlessSharded('debounced user workflow gets attributes', async () => {
     const debouncer = new Debouncer({
       workflow: echoWorkflow,

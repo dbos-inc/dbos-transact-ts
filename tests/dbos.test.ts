@@ -1177,6 +1177,7 @@ describe('timeout-options-tests', () => {
   });
 });
 
+// Drops the system database and passes its own pool, which a router does not serve.
 describeUnlessSharded('custom-pool-test', () => {
   afterEach(async () => {
     await DBOS.shutdown();
@@ -1378,6 +1379,7 @@ describe('custom-pool-lifecycle', () => {
   });
 });
 
+// Makes a throwaway database of its own, which a router does not serve.
 describeUnlessSharded('run-migrations-flag', () => {
   let config: DBOSConfig;
   // A throwaway system database, so a failed verification never touches the shared test one.
@@ -1588,6 +1590,7 @@ describe('shard-keys', () => {
     expect(bindShardKeys({ w: null, v: undefined }, () => shardKeyScope(null, () => 'ok'))).toBe('ok');
   });
 
+  // Needs an unsharded system database, which refuses every shard key.
   testUnlessSharded('shard-keys-are-rejected-without-sharding', async () => {
     // Without sharding, a shard key passed to any API is an error, never silently ignored.
     const handle = await DBOS.startWorkflow(keylessWorkflow)();

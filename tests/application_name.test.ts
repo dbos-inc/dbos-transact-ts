@@ -481,6 +481,7 @@ describe('application-name', () => {
     }
   });
 
+  // Renaming an application is not supported on a sharded system database.
   testUnlessSharded('rename moves every owned table and validates its arguments', async () => {
     class RenameTest {
       @DBOS.workflow()
@@ -524,6 +525,7 @@ describe('application-name', () => {
     }
   });
 
+  // Renaming an application is not supported on a sharded system database.
   testUnlessSharded('rename moves only the sources it is given', async () => {
     await DBOS.launch();
     await DBOS.shutdown();
@@ -547,6 +549,7 @@ describe('application-name', () => {
     }
   });
 
+  // Renaming an application is not supported on a sharded system database.
   testUnlessSharded('rename batches terminal rows and resumes', async () => {
     await DBOS.launch();
     await DBOS.shutdown();

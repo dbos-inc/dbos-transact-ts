@@ -145,6 +145,7 @@ describeUnlessSharded('runtime-tests-knex', () => {
   });
 });
 
+// The apps manage their own databases, which a router does not serve.
 describeUnlessSharded('runtime-tests-typeorm', () => {
   beforeAll(async () => {
     await resetTemplateDatabases();
@@ -168,6 +169,7 @@ describeUnlessSharded('runtime-tests-typeorm', () => {
   });
 });
 
+// The apps manage their own databases, which a router does not serve.
 describeUnlessSharded('runtime-tests-prisma', () => {
   beforeAll(async () => {
     await resetTemplateDatabases();
@@ -191,6 +193,7 @@ describeUnlessSharded('runtime-tests-prisma', () => {
   });
 });
 
+// The apps manage their own databases, which a router does not serve.
 describeUnlessSharded('runtime-tests-drizzle', () => {
   beforeAll(async () => {
     await resetTemplateDatabases();

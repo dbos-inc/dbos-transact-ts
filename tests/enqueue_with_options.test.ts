@@ -84,6 +84,7 @@ describe('enqueue-workflow-with-options', () => {
     expect(JSON.parse(rows[0].inputs)).toEqual({ positionalArgs: ['positional'], namedArgs: { keyword: 42 } });
   });
 
+  // Deduplication is not supported on a sharded system database.
   testUnlessSharded('honours explicit options over the ambient defaults', async () => {
     await DBOS.launch();
     await DBOS.registerQueue(QUEUE);

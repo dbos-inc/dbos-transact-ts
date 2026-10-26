@@ -590,6 +590,7 @@ describe('oaoo-tests', () => {
       expect(failures).toBeLessThan(0);
     });
 
+    // Deduplication is not supported on a sharded system database.
     testUnlessSharded('reject-dedup-interplay', async () => {
       const id = `reuse-dedup-${randomUUID()}`;
       const dedupID = `dedup-${randomUUID()}`;
@@ -636,6 +637,7 @@ describe('oaoo-tests', () => {
       await expect(fresh.getResult()).resolves.toBe('fresh');
     });
 
+    // Deduplication is not supported on a sharded system database.
     testUnlessSharded('reject-client-enqueue', async () => {
       const id = `reuse-client-${randomUUID()}`;
       await (await DBOS.startWorkflow(ReuseTest, { workflowID: id }).echo('original')).getResult();
@@ -687,6 +689,7 @@ describe('oaoo-tests', () => {
       }
     });
 
+    // A sharded system database refuses the reject policy inside workflows.
     testUnlessSharded('reject-child-is-recorded-for-replay', async () => {
       for (const via of vias) {
         const childID = `reuse-child-${via}-${randomUUID()}`;
@@ -707,6 +710,7 @@ describe('oaoo-tests', () => {
       }
     });
 
+    // A sharded system database refuses the reject policy inside workflows.
     testUnlessSharded('reject-same-parent-reuse', async () => {
       for (const via of vias) {
         const childID = `reuse-same-parent-${via}-${randomUUID()}`;

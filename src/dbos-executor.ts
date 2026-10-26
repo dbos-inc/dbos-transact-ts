@@ -177,10 +177,7 @@ export interface DBOSConfig {
   autoUpgrade?: boolean;
   /** Milliseconds between two auto-upgrade passes. Defaults to 30000. */
   autoUpgradeIntervalMs?: number;
-  /**
-   * Use a sharded system database from Transact Enterprise; every workflow then lives under an
-   * explicit shard key. Requires Transact Enterprise. Defaults to false.
-   */
+  /** Use Transact Enterprise's sharded system database, where every workflow names a shard key. Defaults to false. */
   sharding?: boolean;
   /**
    * Milliseconds the latest application version must have been the latest before auto-upgrade
@@ -921,8 +918,8 @@ export class DBOSExecutor {
     };
 
     // A run retries through outages even when launched from a background loop that has since stopped.
-    // Its outcome writes run outside the body, so they bind the workflow's key themselves.
     const workflowPromise: Promise<R> = runWithoutAbortableDbRetries(() =>
+      // The outcome writes run outside the body, so the workflow's key is bound here for them.
       withClearedShardKeyState(() => bindShardKeys([[workflowID, shardKey]], runWorkflow)),
     );
     this.systemDatabase.trackRunningWorkflow(workflowID, runningEntry, workflowPromise);

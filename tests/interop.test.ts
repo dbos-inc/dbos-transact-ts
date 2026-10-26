@@ -227,6 +227,7 @@ describe('interop-tests', () => {
   // Test: Direct-insert replay (proves cross-language compatibility)
   // --------------------------------------------------------------------------
 
+  // Writes core's unkeyed tables directly.
   testUnlessSharded('test-interop-direct-insert', async () => {
     const id = `interop-di-${Date.now()}`;
 

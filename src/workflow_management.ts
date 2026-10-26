@@ -234,10 +234,7 @@ export function waitOrAbort(ms: number, signal: AbortSignal): Promise<void> {
   });
 }
 
-/**
- * Run `jobs` once per interval across all of this application's processes, until `signal` aborts:
- * whichever takes their lock runs them, holding the lock for the rest of the interval.
- */
+/** Run `jobs` once per interval in whichever of this application's processes holds their lock, until aborted. */
 export async function runBackgroundJobs(
   sysdb: SystemDatabase,
   logger: GlobalLogger,
@@ -271,10 +268,7 @@ export async function runBackgroundJobs(
   }
 }
 
-/**
- * Enqueue DELAYED workflows whose delay has expired, and cancel this application's active
- * workflows once their deadline passes, until `signal` aborts.
- */
+/** Enqueue DELAYED workflows whose delay expired and cancel those past their deadline, until `signal` aborts. */
 export async function backgroundJobsLoop(
   sysdb: SystemDatabase,
   logger: GlobalLogger,

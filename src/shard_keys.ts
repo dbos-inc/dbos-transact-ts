@@ -1,6 +1,4 @@
-// Shard keys a caller supplies for the workflows it addresses.
-// Core only records them; a sharded system database reads them to route each statement.
-// On an unsharded database nothing here is consulted.
+// Shard keys a caller supplies for the workflows it addresses, read only by a sharded system database.
 
 import { AsyncLocalStorage } from 'async_hooks';
 import { DBOSError } from './error';

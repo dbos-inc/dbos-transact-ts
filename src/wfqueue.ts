@@ -4,7 +4,7 @@ import {
   DEBUG_TRIGGER_BETWEEN_PARTITION_DISPATCHES,
   debugTriggerPoint,
 } from './debugpoint';
-import type { QueueRecord, SystemDatabase } from './system_database';
+import { retriablePostgresException, type QueueRecord, type SystemDatabase } from './system_database';
 import type { GlobalLogger } from './telemetry/logs';
 import { globalParams, RESERVED_QUEUE_NAME_PREFIX } from './utils';
 import { runWithAbortableDbRetries } from './context';
@@ -830,8 +830,7 @@ class WFQueueRunner {
     const sysdb = exec.systemDatabase;
     const isContentionError = (e: unknown) => sysdb.isLockConflict(e) || sysdb.isSerializationConflict(e);
 
-    // This worker's load for the whole poll: running workflows, snapshotted at first use, plus
-    // every claim since, which dispatch registers asynchronously.
+    // Running workflows, snapshotted at first use, plus this poll's claims, which dispatch registers asynchronously.
     let running: number | undefined = undefined;
     let polled = 0;
     const workerLoad = () => {
@@ -913,8 +912,8 @@ class WFQueueRunner {
         } else if (sysdb.isSerializationConflict(err)) {
           // Backed off once per poll, however many scopes conflicted.
           contentionDetected = true;
-        } else if (this.isRunning) {
-          // Only log the error if the runner is not stopping
+        } else if (this.isRunning || retriablePostgresException(err)) {
+          // Other errors stay quiet while stopping; a lost connection is still worth reporting.
           exec.logger.warn(`Error getting startable workflows for queue ${queue.name}: ${err.message}`);
         }
       }

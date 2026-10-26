@@ -109,7 +109,7 @@ const ERROR_CODE_HEADER = 'X-DBOS-Error';
 const PAST_LIMIT = 'past_limit';
 // From the hosted Conductor, these mean it could not answer, not that it refused the key.
 const HOSTED_UNAVAILABLE = new Set([403, 407, 408, 425, 429]);
-export const LICENSE_URL = 'https://www.dbos.dev/conductor-license';
+const LICENSE_URL = 'https://www.dbos.dev/conductor-license';
 const LICENSE_NOTICE =
   `Transact Enterprise is licensed under the DBOS Conductor Software License (${LICENSE_URL}), ` +
   'which makes disabling or circumventing this check a material breach.';

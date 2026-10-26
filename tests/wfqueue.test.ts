@@ -309,6 +309,7 @@ describe('queued-wf-tests-simple', () => {
     expect(await wfh2b.getResult()).toBe('cd');
   });
 
+  // Its side process runs outside the sharded run's harness.
   testUnlessSharded(
     'queue workflow in recovered workflow',
     async () => {
@@ -1117,6 +1118,7 @@ class InterProcessWorkflow {
   }
 }
 
+// Its worker processes run outside the sharded run's harness.
 describeUnlessSharded('queued-wf-tests-concurrent-workers', () => {
   let config: DBOSConfig;
 
@@ -1357,6 +1359,7 @@ describe('enqueue-options', () => {
     expect(pinned?.applicationVersion).toBe('some_other_version');
   });
 
+  // Deduplication is not supported on a sharded system database.
   testUnlessSharded('test_deduplication', async () => {
     const wfid = randomUUID();
     const dedupID = 'my_dedup_id';
@@ -1899,6 +1902,7 @@ describe('queue-time-outs', () => {
     { name: 'dedupRecoveryChildWorkflow' },
   );
 
+  // Deduplication is not supported on a sharded system database.
   testUnlessSharded('dedup-recovery', async () => {
     const handle = await DBOS.startWorkflow(dedupRecoveryParentWorkflow)();
     const childID = await handle.getResult();
@@ -2020,6 +2024,7 @@ describe('queue-time-outs', () => {
     { name: 'partitionDedupBlockedWorkflow' },
   );
 
+  // Deduplication is not supported on a sharded system database.
   testUnlessSharded('partitioned-queue-deduplication', async () => {
     // A deduplication ID spans every partition of its queue; per-partition dedup means prefixing the partition key.
     const dedupID = 'partition-dedup-key';
@@ -2265,6 +2270,7 @@ describe('delay-tests', () => {
     expect(completed.workflowID).toBe(waitHandle.workflowID);
     expect((await completed.getStatus())?.status).toBe(StatusString.SUCCESS);
 
+    // Deduplication is not supported on a sharded system database.
     if (usingSharding()) return;
     // Deduplication: a second enqueue with the same dedup ID should fail while DELAYED
     const dedupID = randomUUID();
@@ -3482,6 +3488,7 @@ describe('partitioned-batch-dequeue', () => {
     );
   }
 
+  // Calls the partitioned claim directly, without the shard-key scope a sharded claim runs under.
   testUnlessSharded('admits at most the sweep cap per call, rotating onward on the next sweep', async () => {
     const queueName = `unpolled-sweep-${randomUUID()}`;
     const queue = await registerBatchQueue(queueName);
@@ -3500,6 +3507,7 @@ describe('partitioned-batch-dequeue', () => {
     }
   });
 
+  // Calls the partitioned claim directly, without the shard-key scope a sharded claim runs under.
   testUnlessSharded('claims each partition head and admits nothing more until that head finishes', async () => {
     const queueName = `unpolled-excl-${randomUUID()}`;
     const queue = await registerBatchQueue(queueName);
@@ -3531,6 +3539,7 @@ describe('partitioned-batch-dequeue', () => {
     expect(await sweep(queue)).toEqual([ids['p0'][1]]);
   });
 
+  // Calls the partitioned claim directly, without the shard-key scope a sharded claim runs under.
   testUnlessSharded('drops a candidate that is moved to another queue mid-sweep', async () => {
     const queueName = `unpolled-requeue-${randomUUID()}`;
     const queue = await registerBatchQueue(queueName);
@@ -3561,6 +3570,7 @@ describe('partitioned-batch-dequeue', () => {
     expect(await sweep(queue)).toEqual([ids['p0'][1]]);
   });
 
+  // Calls the partitioned claim directly, without the shard-key scope a sharded claim runs under.
   testUnlessSharded('never co-admits into a partition when two workers sweep concurrently', async () => {
     const queueName = `unpolled-race-${randomUUID()}`;
     const queue = await registerBatchQueue(queueName);
@@ -3587,6 +3597,7 @@ describe('partitioned-batch-dequeue', () => {
     });
   });
 
+  // Calls the partitioned claim directly, without the shard-key scope a sharded claim runs under.
   testUnlessSharded('dequeues only rows eligible for this worker app version', async () => {
     const queueName = `unpolled-ver-${randomUUID()}`;
     const queue = await registerBatchQueue(queueName);

@@ -655,6 +655,7 @@ describe('datasource-duplicate-execution', () => {
     expect((await DBOS.getWorkflowStatus(wfid))?.status).toBe('SUCCESS');
   });
 
+  // Writes core's unkeyed tables directly.
   testUnlessSharded('a losing duplicate execution parks when the winner also owns the checkpoint', async () => {
     const wfid = randomUUID();
     probeState.claimSysdb = true;

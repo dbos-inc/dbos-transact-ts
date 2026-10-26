@@ -283,9 +283,7 @@ export interface WorkflowHandle<R> {
    * Return the workflow's ID
    */
   get workflowID(): string;
-  /**
-   * The shard key the workflow lives under; undefined on an unsharded database.
-   */
+  /** The shard key the workflow lives under; undefined on an unsharded database. */
   readonly shardKey?: string;
 }
 

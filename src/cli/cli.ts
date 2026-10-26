@@ -63,14 +63,17 @@ program
 program
   .command('migrate')
   .description('Perform a database migration')
-  .option('--sharding', 'Create or migrate a sharded system database (requires @dbos-inc/dbos-enterprise)', false)
-  .action(async (options: { sharding: boolean }) => {
+  .action(async () => {
     const configFile = await readConfigFile();
     const config = getDbosConfig(configFile);
     const schemaName = configFile.system_database_schema_name ?? 'dbos';
+    if (await isSharded(config.systemDatabaseUrl)) {
+      console.error(SHARDED_REFUSAL);
+      exit(1);
+    }
 
     await runAndLog(configFile.database?.migrate ?? [], config, (cmds, url, logger) =>
-      migrate(cmds, url, logger, schemaName, options.sharding),
+      migrate(cmds, url, logger, schemaName),
     );
   });
 
@@ -517,6 +520,9 @@ if (!process.argv.slice(2).length) {
   program.outputHelp();
 }
 
+const SHARDED_REFUSAL =
+  'Error: this command does not support a sharded system database; only `dbos schema --sharding` does.';
+
 // Resolves the system database URL, and exits when it names a sharded system database the command doesn't support.
 async function getDatabaseURLs(
   systemDatabaseURL: string | undefined,
@@ -526,9 +532,7 @@ async function getDatabaseURLs(
 }> {
   const url = await resolveDatabaseURL(systemDatabaseURL);
   if (!options.allowSharded && (await isSharded(url))) {
-    console.error(
-      'Error: this command does not support a sharded system database; only `dbos schema` and `dbos migrate` do.',
-    );
+    console.error(SHARDED_REFUSAL);
     exit(1);
   }
   return { systemDatabaseURL: url };

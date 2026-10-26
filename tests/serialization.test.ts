@@ -605,6 +605,7 @@ describe('portable-serialization-tests', () => {
   });
 
   // Reproduces https://github.com/dbos-inc/dbos-transact-ts/issues/1208
+  // Writes core's unkeyed tables directly.
   testUnlessSharded('test-portable-void-workflow', async () => {
     // A portable workflow that returns undefined should succeed, not throw
     // "undefined" is not valid JSON
@@ -642,6 +643,7 @@ describe('portable-serialization-tests', () => {
   });
 
   // Related to issue #1208 — null should also round-trip correctly
+  // Writes core's unkeyed tables directly.
   testUnlessSharded('test-portable-null-workflow', async () => {
     // A portable workflow that returns null should succeed
     const wfh = await DBOS.startWorkflow(nullPortableWorkflow)();
@@ -677,6 +679,7 @@ describe('portable-serialization-tests', () => {
     expect(queuedResult).toBeNull();
   });
 
+  // Writes core's unkeyed tables directly.
   testUnlessSharded('test-direct-insert', async () => {
     const id = randomUUID();
     await systemDBClient.query(
@@ -724,6 +727,7 @@ describe('portable-serialization-tests', () => {
     expect(res).toBe('s-1-k:v@"M"');
   });
 
+  // Writes core's unkeyed tables directly.
   testUnlessSharded('test-invalid-json-input', async () => {
     // Insert a workflow with unparseable JSON in the inputs column
     const id = randomUUID();
@@ -751,6 +755,7 @@ describe('portable-serialization-tests', () => {
     expect(result.rows[0].error).toBeDefined();
   });
 
+  // Writes core's unkeyed tables directly.
   testUnlessSharded('test-mismatched-args-input', async () => {
     // Insert a workflow with valid JSON but wrong argument types.
     // simplePortWorkflow expects (s: string, x: number, o: {k: string, v: string[]})
@@ -788,6 +793,7 @@ describe('portable-serialization-tests', () => {
     expect(result.rows[0].error).toBeDefined();
   });
 
+  // Writes core's unkeyed tables directly.
   testUnlessSharded('test-input-schema-rejects-bad-input', async () => {
     // validatedWorkflow has inputSchema: z.tuple([z.string(), z.number(), z.object({...})])
     // Insert with wrong types — the Zod schema should reject them with a clear error.
@@ -824,6 +830,7 @@ describe('portable-serialization-tests', () => {
     expect(result.rows[0].error).toContain('expected string');
   });
 
+  // Writes core's unkeyed tables directly.
   testUnlessSharded('test-input-schema-valid-input', async () => {
     // validatedWorkflow with correct types — should pass validation and succeed.
     const id = randomUUID();
@@ -852,6 +859,7 @@ describe('portable-serialization-tests', () => {
     expect(res).toBe('hello-42-key:a,b');
   });
 
+  // Writes core's unkeyed tables directly.
   testUnlessSharded('test-input-schema-coercion', async () => {
     // dateWorkflow has inputSchema: z.tuple([z.coerce.date()])
     // Insert an ISO date string — Zod should coerce it to a Date object.
@@ -1103,6 +1111,7 @@ describe('custom-serializer-restart-tests', () => {
     process.env.DBOS__APPVERSION = undefined;
   });
 
+  // Writes core's unkeyed tables directly.
   testUnlessSharded('test-remove-custom-serializer-errors', async () => {
     // Phase 1: Launch with custom serializer, create data
     process.env.DBOS__APPVERSION = 'v0';

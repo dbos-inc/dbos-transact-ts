@@ -70,7 +70,7 @@ import {
   backfillSchedule,
   scheduleShardKey,
 } from './scheduler/scheduler';
-import { bindShardKeys } from './shard_keys';
+import { bindShardKeys, validateShardKey } from './shard_keys';
 import { validateCrontab, validateTimezone } from './scheduler/crontab';
 import { logQueue, RegisterQueueOptions, WorkflowQueue } from './wfqueue';
 
@@ -593,6 +593,7 @@ export class DBOSClient {
    * @returns a WorkflowHandle that represents the retrieved workflow.
    */
   retrieveWorkflow<T = unknown>(workflowID: string, options?: ShardKeyOptions): WorkflowHandle<Awaited<T>> {
+    validateShardKey(options?.shardKey);
     return new ClientHandle(this.systemDatabase, workflowID, options?.shardKey);
   }
 
@@ -644,14 +645,18 @@ export class DBOSClient {
     return this.deleteWorkflows([workflowID], deleteChildren, options);
   }
 
-  deleteWorkflows(workflowIDs: string[], deleteChildren: boolean = false, options?: ShardKeyOptions): Promise<void> {
-    return bindShardKeys(
+  async deleteWorkflows(
+    workflowIDs: string[],
+    deleteChildren: boolean = false,
+    options?: ShardKeyOptions,
+  ): Promise<void> {
+    return await bindShardKeys(
       workflowIDs.map((wid) => [wid, options?.shardKey] as const),
       () => this.systemDatabase.deleteWorkflows(workflowIDs, deleteChildren),
     );
   }
 
-  forkWorkflow(
+  async forkWorkflow(
     workflowID: string,
     startStep: number,
     options?: {
@@ -664,7 +669,7 @@ export class DBOSClient {
       shardKey?: string;
     },
   ): Promise<string> {
-    return bindShardKeys([[workflowID, options?.shardKey]], () =>
+    return await bindShardKeys([[workflowID, options?.shardKey]], () =>
       forkWorkflow(this.systemDatabase, workflowID, startStep, options),
     );
   }

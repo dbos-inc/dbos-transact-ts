@@ -184,6 +184,7 @@ async function stealOwnership(client: Client, workflowID: string) {
 // re-enqueued it, a recovery raced it, it was cancelled or dead-lettered) and
 // the recorded outcome, not the one the run computed, is the workflow's
 // outcome.
+// Writes core's unkeyed tables directly.
 describeUnlessSharded('workflow-outcome-ownership', () => {
   let config: DBOSConfig;
   let systemDBClient: Client;

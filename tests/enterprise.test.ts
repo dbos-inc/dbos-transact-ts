@@ -61,6 +61,7 @@ describe('enterprise-launch', () => {
     jest.restoreAllMocks();
   });
 
+  // A sharded run always has the package.
   testUnlessSharded('refused launch leaves nothing behind', async () => {
     await expect(DBOS.launch({ conductorKey: 'test-key' })).rejects.toThrow(DBOSInitializationError);
     expect(DBOS.isInitialized()).toBe(false);
@@ -71,6 +72,7 @@ describe('enterprise-launch', () => {
     expect(DBOS.executorID).toBe('local');
   });
 
+  // A sharded run always has the package.
   testUnlessSharded('DBOS Cloud always requires the package', async () => {
     const originalCloud = globalParams.dbosCloud;
     const originalSysDbUrl = process.env.DBOS_SYSTEM_DATABASE_URL;
@@ -412,6 +414,7 @@ describe('entitlements', () => {
     expect(new Set(names).size).toBe(names.length);
   });
 
+  // A sharded run's harness stubs the entitlement check this exercises.
   testUnlessSharded('an auto-upgrading executor checks its entitlement', async () => {
     const config = generateDBOSTestConfig();
     await setUpDBOSTestSysDb(config);
@@ -435,6 +438,7 @@ describe('entitlements', () => {
     }
   });
 
+  // A sharded run's harness stubs the entitlement check this exercises.
   testUnlessSharded('a sharded executor checks its entitlement', async () => {
     const config = generateDBOSTestConfig();
     await setUpDBOSTestSysDb(config);

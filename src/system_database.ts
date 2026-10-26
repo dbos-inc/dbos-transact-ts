@@ -562,10 +562,7 @@ export async function verifySystemDatabase(
   }
 }
 
-/**
- * Throw if this schema is sharded, for an unsharded handle: its statements name no shard key,
- * so they would read and write across every tenant's rows.
- */
+/** Throw if this schema is sharded: an unsharded handle's statements would span every tenant's rows. */
 async function refuseShardedSchema(client: ClientBase, schemaName: string): Promise<void> {
   const { rows } = await client.query(
     `SELECT 1 FROM information_schema.columns
@@ -580,10 +577,7 @@ async function refuseShardedSchema(client: ClientBase, schemaName: string): Prom
   }
 }
 
-/**
- * Whether this database holds a sharded DBOS system schema. False when it can't be reached or
- * doesn't exist yet, leaving the caller to report that.
- */
+/** Whether this database holds a sharded DBOS system schema; false if it can't be reached, for the caller to report. */
 export async function holdsShardedSchema(databaseUrl: string): Promise<boolean> {
   // Bounded, so an unreachable host fails as fast as the caller's own connection would.
   const client = new Client({ ...getClientConfig(databaseUrl), connectionTimeoutMillis: 10_000 });
@@ -1215,9 +1209,7 @@ export class SystemDatabase {
   }
 
   // ==================== Shard Keys ====================
-  // Key helpers: every statement locates a workflow's rows through these, so a sharded
-  // subclass can add the shard key without rewriting the statement. Each appends its
-  // bind parameters to `params` and returns SQL; `alias` qualifies the table's columns.
+  // Statements locate rows through these, so a sharded subclass adds its key; each appends to `params` and returns SQL.
 
   /** Whether this handle routes every statement by shard key. */
   get sharded(): boolean {
@@ -1283,10 +1275,7 @@ export class SystemDatabase {
     return columns.join(', ');
   }
 
-  /**
-   * Insert rows into `table`, returning the RETURNING rows. One statement here; a sharded
-   * subclass inserts row by row, since routers broadcast a multi-row VALUES.
-   */
+  /** Insert rows into `table` in one statement, returning the RETURNING rows; a sharded subclass inserts row by row. */
   async insertRows<T extends object = object>(
     client: ClientBase | Pool,
     table: string,
@@ -1304,10 +1293,7 @@ export class SystemDatabase {
     return returned;
   }
 
-  /**
-   * Predicate a queue claim must also meet, evaluated once before it scans; a sharded
-   * subclass caps the claimers per key at a time.
-   */
+  /** Predicate a queue claim must also meet, evaluated once before it scans; sharded, it caps claimers per key. */
   claimGate(_queueName: string, _partitionKey: string | undefined, _params: unknown[]): string {
     return 'TRUE';
   }
@@ -1361,20 +1347,14 @@ export class SystemDatabase {
     return undefined;
   }
 
-  /**
-   * The notification-map key for a workflow's topic or key. Keyed waiters are told apart,
-   * as one ID can live under several keys.
-   */
+  /** The notification-map key for a workflow's topic or key, distinct per shard key as IDs repeat across keys. */
   waiter(workflowID: string, name: string): string {
     const key = this.keyHint(workflowID);
     const payload = `${workflowID}::${name}`;
     return key === undefined ? payload : `${[...key].length}:${key}:${payload}`;
   }
 
-  /**
-   * Address a workflow's own rows by its own key: `key` when the caller knows it, else the
-   * running workflow's, even where a same-ID workflow is bound as a target.
-   */
+  /** Bind a workflow to `key`, else to the running workflow's own key even where a same-ID target is bound. */
   ownKey<R>(workflowID: string, key: string | undefined, callback: () => R): R {
     if (key === undefined) {
       const ctx = getCurrentContextStore();
@@ -1385,10 +1365,7 @@ export class SystemDatabase {
     return bindShardKeys([[workflowID, key]], callback);
   }
 
-  /**
-   * Run `callback` holding the lock that lets one of this application's processes run a
-   * background job at a time, passing whether it was taken; held until `callback` settles.
-   */
+  /** Run `callback` under this application's lock for a background job, passing whether it was taken. */
   async backgroundJobLock<T>(jobName: string, callback: (acquired: boolean) => Promise<T>): Promise<T> {
     // CockroachDB grants every advisory lock, so each process runs every job.
     if (await this.#isCockroach()) {
@@ -1558,10 +1535,7 @@ export class SystemDatabase {
     );
   }
 
-  /**
-   * Throw if this unsharded handle's schema is sharded. A database it can't reach is left for its
-   * first statement to report, so a client may still be created before its database is up.
-   */
+  /** Throw if this unsharded handle's schema is sharded; an unreachable database is left for its first statement. */
   async checkShardedSchema(): Promise<void> {
     if (this.sharded) return;
     let client: PoolClient;
@@ -2013,10 +1987,7 @@ export class SystemDatabase {
     if (!(await this.outcomeInOneStatement())) {
       return await this.#recordWorkflowOutcomeInTransaction(workflowID, status, outcome, ownerXid);
     }
-    // One statement, run in autocommit: a single round trip, where a transaction of the
-    // UPDATE and the output's upsert took four (BEGIN, two statements, COMMIT). The upsert
-    // reads only the UPDATE's returned rows, so the output is written exactly when the
-    // status write lands; when it does not, no orphan payload is left.
+    // One autocommit round trip; the upsert reads the UPDATE's rows, so the output lands only with the status.
     const params: unknown[] = [status, StatusString.PENDING, outcome.output ?? null, outcome.error ?? null];
     const target = this.wf(undefined, workflowID, params);
     const owned = ownerXid !== undefined ? `AND owner_xid = $${params.push(ownerXid)}` : '';
@@ -4588,6 +4559,7 @@ export class SystemDatabase {
       );
     }
     // partitionWorkerConcurrency needs no handling here: it cannot exceed partition concurrency 1, which the PENDING gate already enforces globally.
+
     // A sharded database keeps the version row under another key, which the claim's transaction cannot span.
     if (isLatestVersion === undefined && this.sharded) {
       isLatestVersion = await this.isLatestVersion(appVersion);
@@ -5985,7 +5957,7 @@ export class SystemDatabase {
         output: rows[0].output,
         error: rows[0].error,
         childWorkflowID: rows[0].child_workflow_id,
-        childShardKey: rows[0].child_shard_key ?? null,
+        childShardKey: rows[0].child_shard_key ?? undefined,
         functionName: rows[0].function_name,
         // Return serialization so recv/getEvent replay deserializes with the stored format, not the default.
         serialization: rows[0].serialization,

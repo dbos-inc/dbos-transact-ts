@@ -583,6 +583,7 @@ describe('sysdb-no-listen-notify', () => {
   });
 });
 
+// Tests the LISTEN/NOTIFY client, which a sharded system database replaces with polling.
 describeUnlessSharded('sysdb-notifications-lifecycle', () => {
   let config: DBOSConfig;
 

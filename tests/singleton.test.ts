@@ -71,6 +71,7 @@ describe('singleton workflows', () => {
     }
   }
 
+  // Deduplication is not supported on a sharded system database.
   testUnlessSharded('collision returns existing handle', async () => {
     const dedupID = 'collision_id';
 
@@ -96,6 +97,7 @@ describe('singleton workflows', () => {
     expect(result2).toBe('first-done');
   });
 
+  // Deduplication is not supported on a sharded system database.
   testUnlessSharded('fresh enqueue after completion starts a new workflow', async () => {
     const dedupID = 'fresh_id';
 
@@ -143,6 +145,7 @@ describe('singleton workflows', () => {
   // Exercises the loop: the dedup_id was cleared between our failed INSERT
   // and the lookup (i.e. the prior workflow completed mid-flight). We force
   // the lookup to return null on its first call so the loop must retry.
+  // Deduplication is not supported on a sharded system database.
   testUnlessSharded('retries when dedup lookup races with prior completion', async () => {
     const dedupID = 'race_id';
 
@@ -182,6 +185,7 @@ describe('singleton workflows', () => {
   // Regression test: when called from inside a parent workflow, the singleton retry
   // loop must consume exactly one parent funcID, not one per iteration. Otherwise
   // subsequent operations land at funcIDs that don't match what replay expects.
+  // Deduplication is not supported on a sharded system database.
   testUnlessSharded('singleton from within a parent workflow consumes one funcID across retries', async () => {
     const dedupID = 'parent_singleton_id';
 
@@ -288,6 +292,7 @@ describe('singleton workflows', () => {
   // Regression test: a withNextWorkflowID reservation must survive across the singleton
   // retry loop. Otherwise iter 1 consumes idAssignedForNextWorkflow, iter 2 falls back
   // to a random UUID, and an iter-2 win silently creates a workflow with the wrong ID.
+  // Deduplication is not supported on a sharded system database.
   testUnlessSharded('singleton honors withNextWorkflowID across retry iterations', async () => {
     const dedupID = 'reservation_dedup_id';
     const reservedChildID = 'my-reserved-child-id';
@@ -329,6 +334,7 @@ describe('singleton workflows', () => {
     }
   });
 
+  // Deduplication is not supported on a sharded system database.
   testUnlessSharded('client enqueue with duplicationPolicy: return-existing attaches', async () => {
     const dedupID = `client_return_existing_${Date.now()}`;
     const client = await DBOSClient.create({ systemDatabaseUrl });

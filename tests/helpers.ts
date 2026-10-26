@@ -52,10 +52,7 @@ export function shardedSystemUrl(): string {
 const jestTest = typeof test === 'undefined' ? undefined : test;
 const jestDescribe = typeof describe === 'undefined' ? undefined : describe;
 
-/**
- * For tests of features sharding refuses (deduplication, debouncing), that write core's unkeyed
- * tables directly, manage databases, or time batched inserts.
- */
+/** For tests a sharded run can't serve: refused features, writes to unkeyed tables, own databases, batch timing. */
 export const testUnlessSharded = (usingSharding() ? jestTest?.skip : jestTest) as jest.It;
 export const describeUnlessSharded = (usingSharding() ? jestDescribe?.skip : jestDescribe) as jest.Describe;
 

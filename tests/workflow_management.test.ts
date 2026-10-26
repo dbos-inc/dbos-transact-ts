@@ -684,6 +684,7 @@ describe('workflow-management-tests', () => {
     { name: 'cancelWithChildrenWorkflow' },
   );
 
+  // Fails core's child lookup by parent ID, which a sharded system database replaces.
   testUnlessSharded('workflow-command-transient-error-is-retried-not-recorded', async () => {
     const savedBackoff = { ...dbRetryConfig };
     dbRetryConfig.initialBackoffSec = 0.05;

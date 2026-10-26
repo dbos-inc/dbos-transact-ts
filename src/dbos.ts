@@ -195,9 +195,7 @@ export interface SendOptions {
   shardKey?: string;
 }
 
-/**
- * Options naming the shard key of the workflow an operation addresses.
- */
+/** Options naming the shard key of the workflow an operation addresses. */
 export interface ShardKeyOptions {
   /** The workflow's shard key; required on a sharded system database. */
   shardKey?: string;
@@ -1201,8 +1199,11 @@ export class DBOS {
     workflowID: string,
     options?: { queueName?: string; shardKey?: string },
   ): Promise<WorkflowHandle<Awaited<T>>> {
-    const handles = await this.resumeWorkflows<T>([workflowID], options);
-    return handles[0];
+    return await bindShardKeys([[workflowID, options?.shardKey]], async () => {
+      await this.resumeWorkflows<T>([workflowID], options);
+      // The resolved key, so the handle also works outside this binding.
+      return new RetrievedHandle<Awaited<T>>(workflowID, DBOS.#executor.systemDatabase.keyHint(workflowID));
+    });
   }
 
   /**
@@ -1463,13 +1464,7 @@ export class DBOS {
     return DBOS.#withTopContext({ workflowTimeoutMS: timeoutMS }, callback);
   }
 
-  /**
-   * Set the shard key of every workflow started, enqueued, or called within the `callback`.
-   * Required on a sharded system database; a workflow never inherits its caller's key.
-   * @param shardKey - The shard key the workflows live under
-   * @param callback - Function to run, which would call or start workflows
-   * @returns - Return value from `callback`
-   */
+  /** Set the shard key of each workflow started, enqueued, or called in `callback`; their children don't inherit it. */
   static async withShardKey<R>(shardKey: string, callback: () => Promise<R>): Promise<R> {
     if (typeof shardKey !== 'string' || shardKey === '') {
       throw new DBOSError('shardKey must be a non-empty string');
