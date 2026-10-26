@@ -1584,3 +1584,42 @@ describe('custom-pool-getstatus', () => {
     }
   }, 30000);
 });
+
+describe('getstatus-checkpoint', () => {
+  let config: DBOSConfig;
+
+  beforeAll(async () => {
+    config = generateDBOSTestConfig();
+    await setUpDBOSTestSysDb(config);
+  });
+
+  afterEach(async () => {
+    await DBOS.shutdown();
+  });
+
+  test('getStatus as the first call in a workflow is checkpointed', async () => {
+    DBOS.setConfig(config);
+    const gate = new Event();
+    const target = DBOS.registerWorkflow(async () => gate.wait(), { name: 'getstatus-first-target' });
+    // getStatus is this workflow's first call, so it runs as function 0.
+    const observer = DBOS.registerWorkflow(
+      async (targetID: string) => (await DBOS.getWorkflowStatus(targetID))?.status,
+      { name: 'getstatus-first-observer' },
+    );
+    await DBOS.launch();
+
+    const targetHandle = await DBOS.startWorkflow(target)();
+    const observerID = randomUUID();
+    await expect(DBOS.withNextWorkflowID(observerID, () => observer(targetHandle.workflowID))).resolves.toBe(
+      StatusString.PENDING,
+    );
+    const steps = await DBOS.listWorkflowSteps(observerID);
+    expect(steps?.find((s) => s.functionID === 0)?.name).toBe(DBOS_FUNCNAME_GETSTATUS);
+
+    // The target finishes, but a re-execution must replay the recorded status rather than read it again.
+    gate.set();
+    await targetHandle.getResult();
+    const reexecuted = await reexecuteWorkflowById(observerID);
+    await expect(reexecuted.getResult()).resolves.toBe(StatusString.PENDING);
+  });
+});

@@ -1651,7 +1651,7 @@ export class SystemDatabase {
       return status ? JSON.stringify(status) : null;
     };
 
-    if (callerID && callerFN) {
+    if (callerID && callerFN !== undefined) {
       const client = await this.connect();
       try {
         // Check if the operation has been done before for OAOO (only do this inside a workflow).
