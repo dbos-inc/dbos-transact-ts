@@ -639,7 +639,10 @@ function mapWorkflowStatus(row: workflow_status): WorkflowStatusInternal {
     recoveryAttempts: Number(row.recovery_attempts),
     input: row.inputs ? row.inputs : null,
     timeoutMS: row.workflow_timeout_ms ? Number(row.workflow_timeout_ms) : undefined,
-    deadlineEpochMS: row.workflow_deadline_epoch_ms ? Number(row.workflow_deadline_epoch_ms) : undefined,
+    // Cap at the largest exact JS integer: a saturated bigint deadline would otherwise round past the bigint maximum and be rejected when a child workflow inherits it.
+    deadlineEpochMS: row.workflow_deadline_epoch_ms
+      ? Math.min(Number(row.workflow_deadline_epoch_ms), Number.MAX_SAFE_INTEGER)
+      : undefined,
     deduplicationID: row.deduplication_id ?? undefined,
     priority: row.priority ?? 0,
     queuePartitionKey: row.queue_partition_key ?? undefined,
@@ -1066,16 +1069,25 @@ export class SystemDatabase {
    * ones, so a named peer's deploy does not demote this one.
    */
   async #latestApplicationVersionName(client: PoolClient | Pool): Promise<string | undefined> {
-    const params: unknown[] = [];
-    const scope = this.appNameFilter('application_name', this.appName, params);
-    const { rows } = await client.query<{ version_name: string }>(
-      `SELECT version_name
-         FROM "${this.schemaName}".application_versions
-        WHERE ${scope}
-        ORDER BY version_timestamp DESC LIMIT 1`,
-      params,
-    );
-    return rows[0]?.version_name;
+    return (await this.#latestApplicationVersion(client, this.appName))?.version_name;
+  }
+
+  async #latestApplicationVersion(
+    client: PoolClient | Pool,
+    applicationName?: string,
+  ): Promise<application_versions | undefined> {
+    const columns = 'version_id, version_name, version_timestamp, created_at, application_name';
+    const table = `"${this.schemaName}".application_versions`;
+    // Probe each eligible owner separately; an OR filter can scan an unbounded history of newer peer versions.
+    // Keep the constant owner in the ordering so the IS NULL probe uses the composite index too.
+    const query = applicationName
+      ? `(SELECT ${columns} FROM ${table} WHERE application_name = $1 ORDER BY application_name, version_timestamp DESC LIMIT 1)
+         UNION ALL
+         (SELECT ${columns} FROM ${table} WHERE application_name IS NULL ORDER BY application_name, version_timestamp DESC LIMIT 1)
+         ORDER BY version_timestamp DESC LIMIT 1`
+      : `SELECT ${columns} FROM ${table} ORDER BY version_timestamp DESC LIMIT 1`;
+    const { rows } = await client.query<application_versions>(query, applicationName ? [applicationName] : []);
+    return rows[0];
   }
 
   /**
@@ -3814,8 +3826,12 @@ export class SystemDatabase {
                recovery_attempts = recovery_attempts + 1,
                updated_at = (EXTRACT(epoch FROM now()) * 1000)::bigint,
                workflow_deadline_epoch_ms = CASE
-                 WHEN workflow_timeout_ms IS NOT NULL AND workflow_deadline_epoch_ms IS NULL
-                 THEN (EXTRACT(epoch FROM now()) * 1000)::bigint + workflow_timeout_ms
+                 WHEN workflow_timeout_ms IS NOT NULL AND workflow_deadline_epoch_ms IS NULL THEN
+                   CASE
+                     WHEN workflow_timeout_ms > 9223372036854775807 - (EXTRACT(epoch FROM now()) * 1000)::bigint
+                     THEN 9223372036854775807
+                     ELSE (EXTRACT(epoch FROM now()) * 1000)::bigint + workflow_timeout_ms
+                   END
                  ELSE workflow_deadline_epoch_ms
                END
            WHERE workflow_uuid = ANY($5::text[]) AND status = $6 AND ${claimScope}
@@ -3991,8 +4007,12 @@ export class SystemDatabase {
              recovery_attempts = recovery_attempts + 1,
              updated_at = (EXTRACT(epoch FROM now()) * 1000)::bigint,
              workflow_deadline_epoch_ms = CASE
-               WHEN workflow_timeout_ms IS NOT NULL AND workflow_deadline_epoch_ms IS NULL
-               THEN (EXTRACT(epoch FROM now()) * 1000)::bigint + workflow_timeout_ms
+               WHEN workflow_timeout_ms IS NOT NULL AND workflow_deadline_epoch_ms IS NULL THEN
+                 CASE
+                   WHEN workflow_timeout_ms > 9223372036854775807 - (EXTRACT(epoch FROM now()) * 1000)::bigint
+                   THEN 9223372036854775807
+                   ELSE (EXTRACT(epoch FROM now()) * 1000)::bigint + workflow_timeout_ms
+                 END
                ELSE workflow_deadline_epoch_ms
              END
          WHERE ${claimGuard(3, 4, 5, 6, flipScope)}
@@ -4589,21 +4609,11 @@ export class SystemDatabase {
    */
   @dbRetry()
   async getLatestApplicationVersion(applicationName?: string): Promise<VersionInfo> {
-    const owner = applicationName ?? this.appName;
-    const params: unknown[] = [];
-    const scope = this.appNameFilter('application_name', owner, params);
-    const { rows } = await this.pool.query<application_versions>(
-      `SELECT version_id, version_name, version_timestamp, created_at, application_name
-       FROM "${this.schemaName}".application_versions
-       WHERE ${scope}
-       ORDER BY version_timestamp DESC
-       LIMIT 1`,
-      params,
-    );
-    if (rows.length === 0) {
+    const latest = await this.#latestApplicationVersion(this.pool, applicationName ?? this.appName);
+    if (latest === undefined) {
       throw new DBOSInitializationError('No application versions found');
     }
-    return mapVersionInfo(rows[0]);
+    return mapVersionInfo(latest);
   }
 
   // ==================== Queues ====================

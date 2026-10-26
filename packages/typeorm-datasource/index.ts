@@ -19,14 +19,16 @@ import {
   migrateDataSourcePG,
   verifyDataSourcePG,
 } from '@dbos-inc/dbos-sdk/datasource';
-import { DataSource, EntityManager } from 'typeorm';
-import type { PostgresConnectionOptions } from 'typeorm/driver/postgres/PostgresConnectionOptions';
+import { DataSource, type DataSourceOptions, EntityManager } from 'typeorm';
 import { AsyncLocalStorage } from 'async_hooks';
 import { SuperJSON } from 'superjson';
 
 export interface TypeORMTransactionConfig extends PGTransactionConfig {
   name?: string;
 }
+
+// TypeORM 1.x renamed the module defining this type, so derive it from the public union instead.
+type PostgresOptions = Extract<DataSourceOptions, { type: 'postgres' }>;
 
 interface DBOSTypeOrmLocalCtx {
   entityManager: EntityManager;
@@ -75,9 +77,9 @@ class TypeOrmTransactionHandler implements DataSourceTransactionHandler {
       port: config.port,
       username: config.user,
       // TypeORM passes password and ssl to pg unchanged but types them more narrowly than pg does.
-      password: config.password as PostgresConnectionOptions['password'],
+      password: config.password as PostgresOptions['password'],
       database: config.database,
-      ssl: config.ssl as PostgresConnectionOptions['ssl'],
+      ssl: config.ssl as PostgresOptions['ssl'],
       connectTimeoutMS: config.connectionTimeoutMillis,
       poolSize: config.max,
     });
@@ -105,8 +107,11 @@ class TypeOrmTransactionHandler implements DataSourceTransactionHandler {
       return;
     }
 
+    // Explicit, because TypeORM 1.x otherwise applies the DataSource's own isolationLevel option.
     try {
-      await this.dataSource.transaction((em) => migrateDataSourcePG(typeOrmExecutor(em), this.schemaName));
+      await this.dataSource.transaction('READ COMMITTED', (em) =>
+        migrateDataSourcePG(typeOrmExecutor(em), this.schemaName),
+      );
     } catch (err) {
       throw new Error(
         `In initialization of 'TypeOrmDataSource' ${this.name}: The '${this.schemaName}' transaction schema could not be migrated: ${(err as Error).message}. This should be added to your database migrations.
@@ -122,7 +127,7 @@ class TypeOrmTransactionHandler implements DataSourceTransactionHandler {
   }
 
   async deleteCheckpoints(workflowID: string, startStep: number, beforeCommit?: () => Promise<void>): Promise<void> {
-    await this.dataSource.transaction(async (entityManager: EntityManager) => {
+    await this.dataSource.transaction('READ COMMITTED', async (entityManager: EntityManager) => {
       await entityManager.query(
         `DELETE FROM "${this.schemaName}".transaction_completion
          WHERE workflow_id=$1 AND function_num>=$2;`,

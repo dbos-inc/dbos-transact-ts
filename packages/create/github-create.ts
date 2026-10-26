@@ -47,8 +47,7 @@ export async function createTemplateFromGitHub(appName: string, templateName: st
     filesToDownload
       .filter((item) => !IGNORE_REGEX.test(item.path))
       .map(async (item) => {
-        const rawContent = await fetchGitHubItem(item.url);
-        const content = Buffer.from(rawContent, 'binary').toString('utf-8');
+        const content = await fetchGitHubItem(item.url);
         const filePath = item.path.replace(templatePath, '');
         const targetPath = `${appName}/${filePath}`;
         await fs.promises.mkdir(path.dirname(targetPath), { recursive: true });
@@ -88,8 +87,9 @@ async function fetchGitHubTree(tag: string) {
   return tree;
 }
 
-async function fetchGitHubItem(url: string) {
+async function fetchGitHubItem(url: string): Promise<Buffer> {
   const response = await fetchGitHub(url);
   const { content: contentBase64 } = (await response.json()) as GitHubItem;
-  return atob(contentBase64); // Decode base64
+  // Keep the raw bytes: decoding them as text would corrupt binary files such as images
+  return Buffer.from(contentBase64, 'base64');
 }

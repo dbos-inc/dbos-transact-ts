@@ -288,6 +288,7 @@ describe('dbos-config', () => {
         serializer: DBOSJSON,
         useListenNotify: true,
         runMigrations: true,
+        autoUpgrade: false,
         telemetry: {
           logs: {
             logLevel: 'info',
@@ -349,6 +350,39 @@ describe('dbos-config', () => {
       }
     });
 
+    test('translate validates autoUpgradeIntervalMs', () => {
+      // A valid value is threaded through.
+      expect(translateDbosConfig({ name: 'dbostest', autoUpgradeIntervalMs: 500 }).autoUpgradeIntervalMs).toBe(500);
+      // Unset leaves the default to the loop.
+      expect(translateDbosConfig({ name: 'dbostest' }).autoUpgradeIntervalMs).toBeUndefined();
+      // Invalid values are rejected, including NaN/inf which would otherwise break the loop's wait.
+      for (const bad of [0, -1, NaN, Infinity]) {
+        expect(() => translateDbosConfig({ name: 'dbostest', autoUpgradeIntervalMs: bad })).toThrow(
+          'autoUpgradeIntervalMs must be a finite positive number of milliseconds',
+        );
+      }
+    });
+
+    test('translate validates autoUpgradeGraceMs', () => {
+      // A valid value is threaded through; zero is valid and means no grace.
+      for (const ok of [60_000, 0]) {
+        expect(translateDbosConfig({ name: 'dbostest', autoUpgradeGraceMs: ok }).autoUpgradeGraceMs).toBe(ok);
+      }
+      // Unset leaves the default to the pass.
+      expect(translateDbosConfig({ name: 'dbostest' }).autoUpgradeGraceMs).toBeUndefined();
+      for (const bad of [-1, NaN, Infinity]) {
+        expect(() => translateDbosConfig({ name: 'dbostest', autoUpgradeGraceMs: bad })).toThrow(
+          'autoUpgradeGraceMs must be a finite non-negative number of milliseconds',
+        );
+      }
+    });
+
+    test('translate reads the autoUpgrade flag', () => {
+      expect(translateDbosConfig({ name: 'dbostest' }).autoUpgrade).toBe(false);
+      expect(translateDbosConfig({ name: 'dbostest', autoUpgrade: false }).autoUpgrade).toBe(false);
+      expect(translateDbosConfig({ name: 'dbostest', autoUpgrade: true }).autoUpgrade).toBe(true);
+    });
+
     test('translate passes through a custom logger', () => {
       const myLogger = { info: () => {}, debug: () => {}, warn: () => {}, error: () => {} };
       let internalConfig = translateDbosConfig({ name: 'dbostest', logger: myLogger });
@@ -373,6 +407,7 @@ describe('dbos-config', () => {
         serializer: DBOSJSON,
         useListenNotify: true,
         runMigrations: true,
+        autoUpgrade: false,
         telemetry: {
           logs: {
             logLevel: 'info',
@@ -401,6 +436,7 @@ describe('dbos-config', () => {
         serializer: DBOSJSON,
         useListenNotify: true,
         runMigrations: true,
+        autoUpgrade: false,
         telemetry: {
           logs: {
             logLevel: 'info',
