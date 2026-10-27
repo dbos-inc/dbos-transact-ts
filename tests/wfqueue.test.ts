@@ -17,10 +17,14 @@ import {
   reexecuteWorkflowById,
   retryUntilSuccess,
   setWfAndChildrenToPending,
+  describeUnlessSharded,
+  testUnlessSharded,
+  usingSharding,
 } from './helpers';
 import { EnqueueOptions, QueueRecord, SystemDatabase } from '../src/system_database';
 import { randomUUID } from 'node:crypto';
 import { globalParams, sleepms, INTERNAL_QUEUE_NAME } from '../src/utils';
+import { scopedShardKey } from '../src/shard_keys';
 
 import { WF } from './wfqtestprocess';
 
@@ -305,41 +309,46 @@ describe('queued-wf-tests-simple', () => {
     expect(await wfh2b.getResult()).toBe('cd');
   });
 
-  test('queue workflow in recovered workflow', async () => {
-    expect(WF.x).toBe(5);
-    console.log('shutdown');
-    const appVersion = globalParams.appVersion;
-    await DBOS.shutdown(); // DO not want to take queued jobs from here
+  // Its side process runs outside the sharded run's harness.
+  testUnlessSharded(
+    'queue workflow in recovered workflow',
+    async () => {
+      expect(WF.x).toBe(5);
+      console.log('shutdown');
+      const appVersion = globalParams.appVersion;
+      await DBOS.shutdown(); // DO not want to take queued jobs from here
 
-    console.log('run side process');
-    // We crash a workflow on purpose; this has queued some things up and awaited them...
-    const { stdout, stderr } = await execFileAsync('npx', ['ts-node', './tests/wfqtestprocess.ts'], {
-      cwd: process.cwd(),
-      env: {
-        ...process.env,
-        DIE_ON_PURPOSE: 'true',
-        DBOS__APPVERSION: appVersion,
-      },
-    });
+      console.log('run side process');
+      // We crash a workflow on purpose; this has queued some things up and awaited them...
+      const { stdout, stderr } = await execFileAsync('npx', ['ts-node', './tests/wfqtestprocess.ts'], {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          DIE_ON_PURPOSE: 'true',
+          DBOS__APPVERSION: appVersion,
+        },
+      });
 
-    expect(stderr).toBeDefined();
-    expect(stdout).toBeDefined();
-    console.log(stdout);
+      expect(stderr).toBeDefined();
+      expect(stdout).toBeDefined();
+      console.log(stdout);
 
-    console.log('start again');
-    await DBOS.launch();
-    const wfh = DBOS.retrieveWorkflow('testqueuedwfcrash');
-    // Launch recovery re-enqueued it; whether the queue has already dequeued it here is a race.
-    expect([StatusString.ENQUEUED, StatusString.PENDING]).toContain((await wfh.getStatus())?.status);
+      console.log('start again');
+      await DBOS.launch();
+      const wfh = DBOS.retrieveWorkflow('testqueuedwfcrash');
+      // Launch recovery re-enqueued it; whether the queue has already dequeued it here is a race.
+      expect([StatusString.ENQUEUED, StatusString.PENDING]).toContain((await wfh.getStatus())?.status);
 
-    // It should proceed.  And should not take too long, either...
-    //  We could also recover the workflow
-    console.log('Waiting for recovered WF to complete...');
-    expect(await wfh.getResult()).toBe(5);
+      // It should proceed.  And should not take too long, either...
+      //  We could also recover the workflow
+      console.log('Waiting for recovered WF to complete...');
+      expect(await wfh.getResult()).toBe(5);
 
-    expect((await wfh.getStatus())?.status).toBe('SUCCESS');
-    expect(await queueEntriesAreCleanedUp()).toBe(true);
-  }, 60000);
+      expect((await wfh.getStatus())?.status).toBe('SUCCESS');
+      expect(await queueEntriesAreCleanedUp()).toBe(true);
+    },
+    60000,
+  );
 
   class TestDuplicateID {
     @DBOS.workflow()
@@ -1109,7 +1118,8 @@ class InterProcessWorkflow {
   }
 }
 
-describe('queued-wf-tests-concurrent-workers', () => {
+// Its worker processes run outside the sharded run's harness.
+describeUnlessSharded('queued-wf-tests-concurrent-workers', () => {
   let config: DBOSConfig;
 
   beforeAll(async () => {
@@ -1349,7 +1359,8 @@ describe('enqueue-options', () => {
     expect(pinned?.applicationVersion).toBe('some_other_version');
   });
 
-  test('test_deduplication', async () => {
+  // Deduplication is not supported on a sharded system database.
+  testUnlessSharded('test_deduplication', async () => {
     const wfid = randomUUID();
     const dedupID = 'my_dedup_id';
 
@@ -1891,7 +1902,8 @@ describe('queue-time-outs', () => {
     { name: 'dedupRecoveryChildWorkflow' },
   );
 
-  test('dedup-recovery', async () => {
+  // Deduplication is not supported on a sharded system database.
+  testUnlessSharded('dedup-recovery', async () => {
     const handle = await DBOS.startWorkflow(dedupRecoveryParentWorkflow)();
     const childID = await handle.getResult();
     const steps = await DBOS.listWorkflowSteps(handle.workflowID);
@@ -2012,7 +2024,8 @@ describe('queue-time-outs', () => {
     { name: 'partitionDedupBlockedWorkflow' },
   );
 
-  test('partitioned-queue-deduplication', async () => {
+  // Deduplication is not supported on a sharded system database.
+  testUnlessSharded('partitioned-queue-deduplication', async () => {
     // A deduplication ID spans every partition of its queue; per-partition dedup means prefixing the partition key.
     const dedupID = 'partition-dedup-key';
     const partitionA = 'dedup-a';
@@ -2257,6 +2270,8 @@ describe('delay-tests', () => {
     expect(completed.workflowID).toBe(waitHandle.workflowID);
     expect((await completed.getStatus())?.status).toBe(StatusString.SUCCESS);
 
+    // Deduplication is not supported on a sharded system database.
+    if (usingSharding()) return;
     // Deduplication: a second enqueue with the same dedup ID should fail while DELAYED
     const dedupID = randomUUID();
     const dedupHandle = await DBOS.startWorkflow(TestDelayWFs, {
@@ -3036,8 +3051,8 @@ describe('bounded-lane dispatcher', () => {
   interface MockHooks {
     /** Runs inside findAndMarkStartableWorkflows, i.e. while the queue's lane is held. */
     onPoll?: (queueName: string) => Promise<void>;
-    /** Runs inside transitionDelayedWorkflows, i.e. while the scheduler loop is mid-body. */
-    onTransition?: () => Promise<void>;
+    /** Runs inside listQueues, i.e. while the scheduler loop is mid-body reconciling queues. */
+    onReconcile?: () => Promise<void>;
   }
 
   function mockExecutor(hooks: MockHooks): DBOSExecutor {
@@ -3047,13 +3062,18 @@ describe('bounded-lane dispatcher', () => {
       dispatchDequeuedWorkflows: () => Promise.resolve(),
       systemDatabase: {
         // The dispatcher discovers this test's queues through the queues table.
-        listQueues: () => Promise.resolve(laneRecords),
+        listQueues: async () => {
+          await hooks.onReconcile?.();
+          return laneRecords;
+        },
         getQueuePartitions: () => Promise.resolve([]),
         // pollQueue reads this worker's running count before every dequeue.
         countRunningWorkflowsForQueue: () => 0,
-        transitionDelayedWorkflows: async () => {
-          await hooks.onTransition?.();
-        },
+        // An unsharded database: one unkeyed scope per poll.
+        sharded: false,
+        dequeueScopes: () => Promise.resolve([undefined]),
+        isLockConflict: (e: { code?: string }) => e.code === '55P03',
+        isSerializationConflict: (e: { code?: string }) => e.code === '40001',
         findAndMarkStartableWorkflows: async (queue: WorkflowQueue) => {
           // An earlier DBOS.launch() registered the internal queue globally; skip it to keep counters clean.
           if (queue.name === INTERNAL_QUEUE_NAME) return [];
@@ -3273,18 +3293,18 @@ describe('bounded-lane dispatcher', () => {
     // stop() lands while the loop is awaiting a global maintenance op, so it resumes
     // mid-body with isRunning already false.
     let stopped = false;
-    let transitions = 0;
+    let reconciles = 0;
     let pollsAfterStop = 0;
-    let releaseTransition: (() => void) | undefined;
+    let releaseReconcile: (() => void) | undefined;
 
     // Five queues, two lanes: three stay un-laned and overdue, so the stale `now` cannot make dueness a coin flip.
     const queues = makeQueues(5);
     const exec = mockExecutor({
-      onTransition: async () => {
-        transitions++;
-        if (transitions < 2) return; // let the loop reach steady state first
+      onReconcile: async () => {
+        reconciles++;
+        if (reconciles < 2) return; // let the loop reach steady state first
         await new Promise<void>((resolve) => {
-          releaseTransition = resolve;
+          releaseReconcile = resolve;
         });
       },
       onPoll: () => {
@@ -3296,14 +3316,14 @@ describe('bounded-lane dispatcher', () => {
     const loop = wfQueueRunner.dispatchLoop(exec, queues, 2);
 
     const deadline = Date.now() + 5000;
-    while (!releaseTransition && Date.now() < deadline) {
+    while (!releaseReconcile && Date.now() < deadline) {
       await sleepms(10);
     }
-    expect(releaseTransition).toBeDefined();
+    expect(releaseReconcile).toBeDefined();
 
     stopped = true;
     wfQueueRunner.stop();
-    releaseTransition!();
+    releaseReconcile!();
     await loop;
 
     expect(pollsAfterStop).toBe(0);
@@ -3336,6 +3356,63 @@ describe('bounded-lane dispatcher', () => {
     order.push('loop-resolved');
 
     expect(order).toEqual(['poll-finished', 'loop-resolved']);
+  }, 15000);
+
+  /** A sharded mock whose one queue's first poll visits `scopes`; its next poll stops the runner. */
+  function scopedExecutor(
+    scopes: string[],
+    overrides: { claim: () => Promise<string[]>; warn?: (msg: string) => void },
+  ): DBOSExecutor {
+    const base = mockExecutor({});
+    let polls = 0;
+    return {
+      ...base,
+      logger: { ...base.logger, warn: overrides.warn ?? (() => {}) },
+      systemDatabase: {
+        ...base.systemDatabase,
+        sharded: true,
+        isLatestVersion: () => Promise.resolve(true),
+        dequeueScopes: (queueName: string) => {
+          if (queueName === INTERNAL_QUEUE_NAME) return Promise.resolve([]);
+          if (++polls > 1) {
+            wfQueueRunner.stop();
+            return Promise.resolve([]);
+          }
+          return Promise.resolve(scopes);
+        },
+        findAndMarkStartableWorkflows: overrides.claim,
+      },
+    } as unknown as DBOSExecutor;
+  }
+
+  test('backs off once per poll across scopes', async () => {
+    // Serialization conflicts in several scopes back off once, so one contended shard key cannot throttle the others.
+    const name = `lane-${seq++}-contended`;
+    laneRecords.push(WorkflowQueue.recordFromParams(name, { minPollingIntervalMs: 10 }));
+    const warnings: string[] = [];
+    const exec = scopedExecutor(['a', 'b', 'c'], {
+      claim: () => Promise.reject(Object.assign(new Error('could not serialize access'), { code: '40001' })),
+      warn: (msg) => warnings.push(msg),
+    });
+    await wfQueueRunner.dispatchLoop(exec, [name], 1);
+    expect(warnings).toEqual([`Increasing polling interval for queue ${name} to 0.02s due to contention.`]);
+  }, 15000);
+
+  test('stops visiting scopes once the worker is full', async () => {
+    // A poll stops claiming from further scopes once this worker's concurrency is used up.
+    const name = `lane-${seq++}-full`;
+    laneRecords.push(WorkflowQueue.recordFromParams(name, { minPollingIntervalMs: 10, workerConcurrency: 2 }));
+    const claimedScopes: (string | undefined)[] = [];
+    const exec = scopedExecutor(['a', 'b', 'c', 'd'], {
+      // Each scope yields one workflow.
+      claim: () => {
+        claimedScopes.push(scopedShardKey());
+        return Promise.resolve([`wf-${claimedScopes.length}`]);
+      },
+    });
+    await wfQueueRunner.dispatchLoop(exec, [name], 1);
+    expect(claimedScopes).toHaveLength(2);
+    expect(new Set(claimedScopes).size).toBe(2);
   }, 15000);
 });
 
@@ -3802,10 +3879,10 @@ describe('dequeue-dispatch-cost', () => {
     const originalList = sysdb.listWorkflows.bind(sysdb);
     sysdb.statusFetchChunkSize = 2;
     let calls = 0;
-    jest.spyOn(sysdb, 'listWorkflows').mockImplementation(async (input) => {
+    jest.spyOn(sysdb, 'listWorkflows').mockImplementation(async (input, options) => {
       calls++;
       if (calls === 2) throw new Error('Connection terminated unexpectedly');
-      return await originalList(input);
+      return await originalList(input, options);
     });
 
     try {

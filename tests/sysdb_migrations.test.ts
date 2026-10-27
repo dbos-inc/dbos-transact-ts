@@ -1,7 +1,7 @@
 import { Client } from 'pg';
 import { DBMigration, getCurrentSysDBVersion, runSysMigrationsPg } from '../src/sysdb_migrations/migration_runner';
 import { allMigrations, SHARED_MIGRATION_BASE } from '../src/sysdb_migrations/internal/migrations';
-import { generateDBOSTestConfig } from './helpers';
+import { generateDBOSTestConfig, describeUnlessSharded } from './helpers';
 
 const TEST_SCHEMA = 'dbos_migration_test';
 
@@ -60,7 +60,8 @@ async function indexDefinition(client: Client, name: string): Promise<string | u
   return res.rows[0]?.indexdef;
 }
 
-describe('sysdb migration runner', () => {
+// Tests core's unsharded schema migrations, which a sharded system database replaces.
+describeUnlessSharded('sysdb migration runner', () => {
   let client: Client;
 
   beforeAll(async () => {

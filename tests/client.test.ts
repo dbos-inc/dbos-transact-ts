@@ -8,6 +8,7 @@ import {
   retryUntilSuccess,
   setUpDBOSTestSysDb,
   setWfAndChildrenToPending,
+  testUnlessSharded,
 } from './helpers';
 import { Client, PoolConfig } from 'pg';
 import { spawnSync } from 'child_process';
@@ -544,7 +545,8 @@ describe('DBOSClient', () => {
     }
   });
 
-  test('DBOSClient-enqueue-dedupid', async () => {
+  // Deduplication is not supported on a sharded system database.
+  testUnlessSharded('DBOSClient-enqueue-dedupid', async () => {
     await DBOS.launch();
     await registerTestQueue();
 
@@ -787,7 +789,8 @@ describe('DBOSClient', () => {
     expect(result).toBe(message);
   });
 
-  test('DBOSClient-send-idempotent', async () => {
+  // Its worker process runs outside the sharded run's harness.
+  testUnlessSharded('DBOSClient-send-idempotent', async () => {
     const now = Date.now();
     const workflowID = `client-send-${now}`;
     const topic = `test-topic-${now}`;
@@ -957,7 +960,8 @@ describe('DBOSClient', () => {
     }
   });
 
-  test('DBOSClient-enqueueInTransaction-deduplication', async () => {
+  // Deduplication is not supported on a sharded system database.
+  testUnlessSharded('DBOSClient-enqueueInTransaction-deduplication', async () => {
     // DBOS is not launched, so the enqueued workflow keeps holding the deduplication slot.
     const client = await DBOSClient.create({ systemDatabaseUrl });
     const now = Date.now();

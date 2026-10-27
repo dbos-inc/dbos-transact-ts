@@ -12,7 +12,14 @@ import * as enterprise from '../src/enterprise';
 import { DBOSInitializationError } from '../src/error';
 import { GlobalLogger } from '../src/telemetry/logs';
 import { sleepms } from '../src/utils';
-import { ALL_ENTITLED, FakeConductor, generateDBOSTestConfig, retryUntilSuccess, setUpDBOSTestSysDb } from './helpers';
+import {
+  ALL_ENTITLED,
+  FakeConductor,
+  generateDBOSTestConfig,
+  retryUntilSuccess,
+  setUpDBOSTestSysDb,
+  describeUnlessSharded,
+} from './helpers';
 
 class NoopConductor implements enterprise.ConductorConnection {
   start() {}
@@ -69,7 +76,8 @@ async function waitForRuns(upgradePass: RecordingPass, count: number) {
 // A fresh function per registration: the registry is keyed by function.
 const noop = () => async () => {};
 
-describe('auto-upgrade-launch', () => {
+// The stand-in package has no sharded system database, and auto-upgrade isn't shard-aware.
+describeUnlessSharded('auto-upgrade-launch', () => {
   let config: DBOSConfig;
   let conductor: FakeConductor;
 
@@ -90,6 +98,7 @@ describe('auto-upgrade-launch', () => {
     jest.replaceProperty(enterprise.enterpriseLoader, 'override', () => ({
       ConductorWebsocket: NoopConductor,
       AutoUpgradePass: RecordingPass,
+      ShardedSystemDatabase: class {},
     }));
   });
 
@@ -258,7 +267,8 @@ describe('auto-upgrade-launch', () => {
 
 // --- Loop lifecycle in isolation ---
 
-describe('auto-upgrade-loop', () => {
+// The stand-in package has no sharded system database, and auto-upgrade isn't shard-aware.
+describeUnlessSharded('auto-upgrade-loop', () => {
   const logger = new GlobalLogger();
   const executor = undefined as unknown as DBOSExecutor;
 

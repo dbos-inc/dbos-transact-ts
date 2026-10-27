@@ -1,5 +1,6 @@
 import {
-  SystemDatabase,
+  createSystemDatabase,
+  type SystemDatabase,
   type DuplicationPolicy,
   type WorkflowStatusInternal,
   type WorkflowScheduleInternal,
@@ -30,6 +31,7 @@ import {
   type SetWorkflowDelayOptions,
   type CancelWorkflowsOptions,
   type ReadStreamOptions,
+  type ShardKeyOptions,
   resolvePollingIntervalMs,
   resolveTimeoutSeconds,
   resolveDelayEpochMS,
@@ -66,7 +68,9 @@ import {
   ScheduleOptions,
   triggerSchedule,
   backfillSchedule,
+  scheduleShardKey,
 } from './scheduler/scheduler';
+import { bindShardKeys, validateShardKey } from './shard_keys';
 import { validateCrontab, validateTimezone } from './scheduler/crontab';
 import { logQueue, RegisterQueueOptions, WorkflowQueue } from './wfqueue';
 
@@ -97,27 +101,28 @@ interface ClientSendOptions {
    *     allowing cross-language message sends
    */
   serializationType?: WorkflowSerializationFormat;
+  /** The destination's shard key; required on a sharded system database. */
+  shardKey?: string;
 }
 
 export class ClientHandle<R> implements WorkflowHandle<R> {
   constructor(
     readonly systemDatabase: SystemDatabase,
     readonly workflowID: string,
+    readonly shardKey?: string,
   ) {}
 
   async getStatus(): Promise<WorkflowStatus | null> {
-    const status = await this.systemDatabase.getWorkflowStatus(this.workflowID);
+    const status = await bindShardKeys([[this.workflowID, this.shardKey]], () =>
+      this.systemDatabase.getWorkflowStatus(this.workflowID),
+    );
     return status ? toWorkflowStatus(status, this.systemDatabase.serializer) : null;
   }
 
   async getResult(options?: PollingOptions): Promise<R> {
     const pollingIntervalMs = resolvePollingIntervalMs(options);
-    const res = await this.systemDatabase.awaitWorkflowResult(
-      this.workflowID,
-      undefined,
-      undefined,
-      undefined,
-      pollingIntervalMs,
+    const res = await bindShardKeys([[this.workflowID, this.shardKey]], () =>
+      this.systemDatabase.awaitWorkflowResult(this.workflowID, undefined, undefined, undefined, pollingIntervalMs),
     );
     if (res?.cancelled) {
       throw new DBOSAwaitedWorkflowCancelledError(this.workflowID);
@@ -147,23 +152,24 @@ export class DBOSClient {
     applicationName?: string,
     observabilityQueryTimeoutMs?: number,
     systemDatabaseIdleTransactionTimeoutMs?: number,
+    sharding?: boolean,
   ) {
     this.logger = new GlobalLogger(undefined, logger ? { logger } : undefined);
-    this.systemDatabase = new SystemDatabase(
+    this.systemDatabase = createSystemDatabase({
       systemDatabaseUrl,
-      this.logger,
+      logger: this.logger,
       serializer,
-      systemDatabasePoolSize ?? DEFAULT_POOL_SIZE,
+      sysDbPoolSize: systemDatabasePoolSize ?? DEFAULT_POOL_SIZE,
       systemDatabasePool,
-      systemDatabaseSchemaName,
+      schemaName: systemDatabaseSchemaName,
       // The client does not run a background notifications listener
-      false,
-      systemDatabasePollingConcurrency,
-      undefined,
-      applicationName,
+      useListenNotify: false,
+      pollingConcurrency: systemDatabasePollingConcurrency,
+      appName: applicationName,
       observabilityQueryTimeoutMs,
-      systemDatabaseIdleTransactionTimeoutMs,
-    );
+      idleTransactionTimeoutMs: systemDatabaseIdleTransactionTimeoutMs,
+      sharding,
+    });
   }
 
   /**
@@ -178,6 +184,7 @@ export class DBOSClient {
    * @param applicationName - The application this client acts on behalf of. Always set this when several applications share this system database, so workflows, schedules, and queues created by this client are owned by that application.
    * @param observabilityQueryTimeoutMs - An optional statement timeout, in milliseconds, for read-only observability queries against the system database. Defaults to 30000. Set to 0 or less to disable the cap.
    * @param systemDatabaseIdleTransactionTimeoutMs - An optional PostgreSQL `idle_in_transaction_session_timeout`, in milliseconds, for connections of the system database pool the client creates. Defaults to 60000. Set to 0 or less to leave the server's setting in place. Not applied to a custom `systemDatabasePool`.
+   * @param sharding - Whether the system database is sharded (requires @dbos-inc/dbos-enterprise). Defaults to false.
    * @returns A Promise that resolves with the DBOSClient instance.
    */
   static async create({
@@ -191,6 +198,7 @@ export class DBOSClient {
     applicationName,
     observabilityQueryTimeoutMs,
     systemDatabaseIdleTransactionTimeoutMs,
+    sharding,
   }: {
     systemDatabaseUrl: string;
     systemDatabasePool?: Pool;
@@ -202,6 +210,7 @@ export class DBOSClient {
     applicationName?: string;
     observabilityQueryTimeoutMs?: number;
     systemDatabaseIdleTransactionTimeoutMs?: number;
+    sharding?: boolean;
   }): Promise<DBOSClient> {
     const client = new DBOSClient(
       systemDatabaseUrl,
@@ -214,8 +223,16 @@ export class DBOSClient {
       applicationName,
       observabilityQueryTimeoutMs,
       systemDatabaseIdleTransactionTimeoutMs,
+      sharding,
     );
-    return Promise.resolve(client);
+    try {
+      // Unkeyed statements on a sharded schema would read and write across every tenant's rows.
+      await client.systemDatabase.checkShardedSchema();
+    } catch (e) {
+      await client.destroy();
+      throw e;
+    }
+    return client;
   }
 
   /** The application this client acts on behalf of; undefined if it writes unclaimed rows. */
@@ -258,7 +275,7 @@ export class DBOSClient {
       finalID = internalStatus.workflowUUID;
     }
 
-    return new ClientHandle<Awaited<ReturnType<T>>>(this.systemDatabase, finalID);
+    return new ClientHandle<Awaited<ReturnType<T>>>(this.systemDatabase, finalID, options.shardKey);
   }
 
   async #buildEnqueueStatus(
@@ -368,7 +385,7 @@ export class DBOSClient {
       finalID = internalStatus.workflowUUID;
     }
 
-    return new ClientHandle<T>(this.systemDatabase, finalID);
+    return new ClientHandle<T>(this.systemDatabase, finalID, options.shardKey);
   }
 
   /**
@@ -392,7 +409,7 @@ export class DBOSClient {
   ): Promise<WorkflowHandle<Awaited<ReturnType<T>>>> {
     const internalStatus = await this.#buildEnqueueStatus(options, args);
     const finalID = await this.#enqueueInTransaction(client, internalStatus, options);
-    return new ClientHandle<Awaited<ReturnType<T>>>(this.systemDatabase, finalID);
+    return new ClientHandle<Awaited<ReturnType<T>>>(this.systemDatabase, finalID, options.shardKey);
   }
 
   /**
@@ -413,7 +430,7 @@ export class DBOSClient {
   ): Promise<WorkflowHandle<T>> {
     const internalStatus = await this.#buildEnqueueStatus(options, positionalArgs, namedArgs, 'portable');
     const finalID = await this.#enqueueInTransaction(client, internalStatus, options);
-    return new ClientHandle<T>(this.systemDatabase, finalID);
+    return new ClientHandle<T>(this.systemDatabase, finalID, options.shardKey);
   }
 
   async #enqueueInTransaction(
@@ -514,6 +531,8 @@ export class DBOSClient {
       topic,
       sermsg.serialization,
       idempotencyKey,
+      undefined,
+      options?.shardKey,
     );
   }
 
@@ -547,6 +566,7 @@ export class DBOSClient {
       sermsg.serialization,
       idempotencyKey,
       client,
+      options?.shardKey,
     );
   }
 
@@ -560,7 +580,10 @@ export class DBOSClient {
   async getEvent<T>(workflowID: string, key: string, options?: number | GetEventOptions): Promise<T | null> {
     const timeoutSeconds = resolveTimeoutSeconds(options);
     const pollingIntervalMs = resolvePollingIntervalMs(options);
-    const evt = await this.systemDatabase.getEvent(workflowID, key, timeoutSeconds ?? 60, undefined, pollingIntervalMs);
+    const shardKey = typeof options === 'object' ? options.shardKey : undefined;
+    const evt = await bindShardKeys([[workflowID, shardKey]], () =>
+      this.systemDatabase.getEvent(workflowID, key, timeoutSeconds ?? 60, undefined, pollingIntervalMs),
+    );
     return (await deserializeValue(evt.serializedValue, evt.serialization, this.serializer)) as T;
   }
 
@@ -569,21 +592,25 @@ export class DBOSClient {
    * @param workflowID - The ID of the workflow to retrieve.
    * @returns a WorkflowHandle that represents the retrieved workflow.
    */
-  retrieveWorkflow<T = unknown>(workflowID: string): WorkflowHandle<Awaited<T>> {
-    return new ClientHandle(this.systemDatabase, workflowID);
+  retrieveWorkflow<T = unknown>(workflowID: string, options?: ShardKeyOptions): WorkflowHandle<Awaited<T>> {
+    validateShardKey(options?.shardKey);
+    return new ClientHandle(this.systemDatabase, workflowID, options?.shardKey);
   }
 
   cancelWorkflow(workflowID: string, options?: CancelWorkflowsOptions): Promise<void> {
-    return this.systemDatabase.cancelWorkflows([workflowID], options?.cancelChildren);
+    return this.cancelWorkflows([workflowID], options);
   }
 
-  cancelWorkflows(workflowIDs: string[], options?: CancelWorkflowsOptions): Promise<void> {
-    return this.systemDatabase.cancelWorkflows(workflowIDs, options?.cancelChildren);
+  async cancelWorkflows(workflowIDs: string[], options?: CancelWorkflowsOptions): Promise<void> {
+    return await bindShardKeys(
+      workflowIDs.map((wid) => [wid, options?.shardKey] as const),
+      () => this.systemDatabase.cancelWorkflows(workflowIDs, options?.cancelChildren),
+    );
   }
 
   async resumeWorkflow<T = unknown>(
     workflowID: string,
-    options?: { queueName?: string },
+    options?: { queueName?: string; shardKey?: string },
   ): Promise<WorkflowHandle<Awaited<T>>> {
     const handles = await this.resumeWorkflows<T>([workflowID], options);
     return handles[0];
@@ -591,30 +618,45 @@ export class DBOSClient {
 
   async resumeWorkflows<T = unknown>(
     workflowIDs: string[],
-    options?: { queueName?: string },
+    options?: { queueName?: string; shardKey?: string },
   ): Promise<WorkflowHandle<Awaited<T>>[]> {
-    await this.systemDatabase.resumeWorkflows(workflowIDs, options?.queueName);
-    return workflowIDs.map((wfid) => this.retrieveWorkflow<T>(wfid));
+    await bindShardKeys(
+      workflowIDs.map((wid) => [wid, options?.shardKey] as const),
+      () => this.systemDatabase.resumeWorkflows(workflowIDs, options?.queueName),
+    );
+    return workflowIDs.map((wfid) => this.retrieveWorkflow<T>(wfid, { shardKey: options?.shardKey }));
   }
 
-  setWorkflowPriority(workflowID: string, priority: number): Promise<void> {
-    return this.systemDatabase.setWorkflowPriority(workflowID, priority);
+  async setWorkflowPriority(workflowID: string, priority: number, options?: ShardKeyOptions): Promise<void> {
+    return await bindShardKeys([[workflowID, options?.shardKey]], () =>
+      this.systemDatabase.setWorkflowPriority(workflowID, priority),
+    );
   }
 
-  setWorkflowDelay(workflowID: string, options: number | SetWorkflowDelayOptions): Promise<void> {
+  async setWorkflowDelay(workflowID: string, options: number | SetWorkflowDelayOptions): Promise<void> {
     const delayUntilEpochMS = resolveDelayEpochMS(options);
-    return this.systemDatabase.setWorkflowDelay(workflowID, delayUntilEpochMS);
+    const shardKey = typeof options === 'object' ? options.shardKey : undefined;
+    return await bindShardKeys([[workflowID, shardKey]], () =>
+      this.systemDatabase.setWorkflowDelay(workflowID, delayUntilEpochMS),
+    );
   }
 
-  deleteWorkflow(workflowID: string, deleteChildren: boolean = false): Promise<void> {
-    return this.systemDatabase.deleteWorkflows([workflowID], deleteChildren);
+  deleteWorkflow(workflowID: string, deleteChildren: boolean = false, options?: ShardKeyOptions): Promise<void> {
+    return this.deleteWorkflows([workflowID], deleteChildren, options);
   }
 
-  deleteWorkflows(workflowIDs: string[], deleteChildren: boolean = false): Promise<void> {
-    return this.systemDatabase.deleteWorkflows(workflowIDs, deleteChildren);
+  async deleteWorkflows(
+    workflowIDs: string[],
+    deleteChildren: boolean = false,
+    options?: ShardKeyOptions,
+  ): Promise<void> {
+    return await bindShardKeys(
+      workflowIDs.map((wid) => [wid, options?.shardKey] as const),
+      () => this.systemDatabase.deleteWorkflows(workflowIDs, deleteChildren),
+    );
   }
 
-  forkWorkflow(
+  async forkWorkflow(
     workflowID: string,
     startStep: number,
     options?: {
@@ -624,9 +666,12 @@ export class DBOSClient {
       queueName?: string;
       queuePartitionKey?: string;
       replacementChildren?: Record<string, string>;
+      shardKey?: string;
     },
   ): Promise<string> {
-    return forkWorkflow(this.systemDatabase, workflowID, startStep, options);
+    return await bindShardKeys([[workflowID, options?.shardKey]], () =>
+      forkWorkflow(this.systemDatabase, workflowID, startStep, options),
+    );
   }
 
   /**
@@ -647,14 +692,17 @@ export class DBOSClient {
       applicationVersion?: string;
       queueName?: string;
       queuePartitionKey?: string;
+      shardKey?: string;
     },
   ): Promise<WorkflowHandle<Awaited<T>>> {
-    await rewindWorkflow(this.systemDatabase, [], workflowID, options?.startStep ?? 0, options ?? {});
-    return this.retrieveWorkflow<T>(workflowID);
+    await bindShardKeys([[workflowID, options?.shardKey]], () =>
+      rewindWorkflow(this.systemDatabase, [], workflowID, options?.startStep ?? 0, options ?? {}),
+    );
+    return this.retrieveWorkflow<T>(workflowID, { shardKey: options?.shardKey });
   }
 
-  getWorkflow(workflowID: string): Promise<WorkflowStatus | undefined> {
-    return getWorkflow(this.systemDatabase, workflowID);
+  async getWorkflow(workflowID: string, options?: ShardKeyOptions): Promise<WorkflowStatus | undefined> {
+    return await bindShardKeys([[workflowID, options?.shardKey]], () => getWorkflow(this.systemDatabase, workflowID));
   }
 
   listWorkflows(input: GetWorkflowsInput): Promise<WorkflowStatus[]> {
@@ -665,8 +713,13 @@ export class DBOSClient {
     return listQueuedWorkflows(this.systemDatabase, input);
   }
 
-  listWorkflowSteps(workflowID: string, options?: ListWorkflowStepsOptions): Promise<StepInfo[] | undefined> {
-    return listWorkflowSteps(this.systemDatabase, workflowID, true, options);
+  async listWorkflowSteps(
+    workflowID: string,
+    options?: ListWorkflowStepsOptions & ShardKeyOptions,
+  ): Promise<StepInfo[] | undefined> {
+    return await bindShardKeys([[workflowID, options?.shardKey]], () =>
+      listWorkflowSteps(this.systemDatabase, workflowID, true, options),
+    );
   }
 
   async waitFirst(handles: WorkflowHandle<unknown>[], options?: WaitFirstOptions): Promise<WorkflowHandle<unknown>> {
@@ -681,10 +734,9 @@ export class DBOSClient {
       }
       handleMap.set(handle.workflowID, handle);
     }
-    const completedId = await this.systemDatabase.awaitFirstWorkflowId(
-      [...handleMap.keys()],
-      undefined,
-      pollingIntervalMs,
+    const completedId = await bindShardKeys(
+      handles.map((h) => [h.workflowID, h.shardKey] as const),
+      () => this.systemDatabase.awaitFirstWorkflowId([...handleMap.keys()], undefined, pollingIntervalMs),
     );
     return handleMap.get(completedId)!;
   }
@@ -695,7 +747,10 @@ export class DBOSClient {
     }
     const pollingIntervalMs = resolvePollingIntervalMs(options);
     const workflowIds = [...new Set(handles.map((handle) => handle.workflowID))];
-    await this.systemDatabase.awaitWorkflowIds(workflowIds, undefined, pollingIntervalMs);
+    await bindShardKeys(
+      handles.map((h) => [h.workflowID, h.shardKey] as const),
+      () => this.systemDatabase.awaitWorkflowIds(workflowIds, undefined, pollingIntervalMs),
+    );
     return handles;
   }
 
@@ -720,6 +775,7 @@ export class DBOSClient {
       timeoutMS: resolveStreamTimeoutMS(options),
       functionName: DBOS_FUNCNAME_READSTREAM,
       checkpoint: false,
+      shardKey: options.shardKey,
     });
   }
 
@@ -745,6 +801,7 @@ export class DBOSClient {
       timeoutMS: resolveStreamTimeoutMS(options),
       functionName: DBOS_FUNCNAME_READSTREAM,
       checkpoint: false,
+      shardKey: options.shardKey,
     });
   }
 
@@ -783,6 +840,7 @@ export class DBOSClient {
       cronTimezone: options.options?.cronTimezone ?? null,
       queueName: options.options?.queueName ?? null,
       applicationName: options.applicationName ?? this.systemDatabase.appName,
+      shardKey: options.options?.shardKey,
     };
     await this.systemDatabase.createSchedule(schedInternal);
   }
@@ -856,6 +914,7 @@ export class DBOSClient {
       cronTimezone?: string;
       queueName?: string;
       applicationName?: string;
+      shardKey?: string;
     }>,
   ): Promise<void> {
     const internals: WorkflowScheduleInternal[] = [];
@@ -877,6 +936,7 @@ export class DBOSClient {
         cronTimezone: sched.cronTimezone ?? null,
         queueName: sched.queueName ?? null,
         applicationName: sched.applicationName ?? this.systemDatabase.appName,
+        shardKey: sched.shardKey,
       });
     }
     await this.systemDatabase.applySchedules(internals);
@@ -884,12 +944,13 @@ export class DBOSClient {
 
   async triggerSchedule(name: string): Promise<WorkflowHandle<unknown>> {
     const workflowID = await triggerSchedule(this.systemDatabase, this.serializer, name);
-    return new ClientHandle(this.systemDatabase, workflowID);
+    return new ClientHandle(this.systemDatabase, workflowID, await scheduleShardKey(this.systemDatabase, name));
   }
 
   async backfillSchedule(name: string, start: Date, end: Date): Promise<WorkflowHandle<unknown>[]> {
     const workflowIDs = await backfillSchedule(this.systemDatabase, this.serializer, name, start, end);
-    return workflowIDs.map((id) => new ClientHandle(this.systemDatabase, id));
+    const shardKey = await scheduleShardKey(this.systemDatabase, name);
+    return workflowIDs.map((id) => new ClientHandle(this.systemDatabase, id, shardKey));
   }
 
   // ==================== Application Versions ====================

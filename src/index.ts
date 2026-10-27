@@ -9,6 +9,7 @@ export {
   SetWorkflowDelayOptions,
   ReadStreamOptions,
   ReadStreamOffsetOptions,
+  ShardKeyOptions,
 } from './dbos';
 
 export type { StepReservation } from './dbos';

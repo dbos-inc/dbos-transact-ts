@@ -1,10 +1,11 @@
 import { Client } from 'pg';
 import { DBOS, DBOSClient, StatusString } from '../src';
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
-import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
+import { generateDBOSTestConfig, setUpDBOSTestSysDb, testUnlessSharded } from './helpers';
 import { globalParams } from '../src/utils';
 import type { GetWorkflowsInput } from '../src/workflow';
 import { DBOSJSON } from '../src/serialization';
+import type { WorkflowScheduleInternal } from '../src/system_database';
 
 type NoArgWorkflow = () => Promise<unknown>;
 
@@ -23,6 +24,32 @@ async function ownerOf(client: Client, table: string, keyColumn: string, key: st
     [key],
   );
   return rows[0]?.application_name ?? null;
+}
+
+/** Insert `row` into a system table. */
+async function insertRow(client: Client, table: string, row: Record<string, unknown>): Promise<void> {
+  const columns = Object.keys(row);
+  await client.query(
+    `INSERT INTO dbos.${table} (${columns.join(', ')}) VALUES (${columns.map((_, i) => `$${i + 1}`).join(', ')})`,
+    Object.values(row),
+  );
+}
+
+// Key columns for a workflow row; none on an unsharded system database, nor before launch.
+function wfValues(workflowID: string): Record<string, unknown> {
+  return DBOSExecutor.globalInstance?.systemDatabase.wfValues(workflowID) ?? {};
+}
+
+// Key columns for a global row; none on an unsharded system database.
+function globalValues(): Record<string, unknown> {
+  return DBOSExecutor.globalInstance!.systemDatabase.globalValues();
+}
+
+// Key columns for a schedule row: the global key, plus the key its workflows run under.
+function scheduleValues(): Record<string, unknown> {
+  const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+  const schedule = { shardKey: sysdb.keyHint('schedule') } as WorkflowScheduleInternal;
+  return { ...globalValues(), ...sysdb.scheduleValues(schedule) };
 }
 
 /** Insert a workflow row as though a peer application had enqueued it. */
@@ -44,13 +71,23 @@ async function insertPeerWorkflow(
   const completedAt = 'completedAt' in options ? options.completedAt : terminal ? now : null;
   // An explicit null means unclaimed, which `??` would otherwise swallow.
   const owner = 'applicationName' in options ? options.applicationName : PEER;
-  await client.query(
-    `INSERT INTO dbos.workflow_status
-       (workflow_uuid, status, name, queue_name, executor_id, application_id, created_at, updated_at,
-        completed_at, recovery_attempts, priority, inputs, serialization, application_name)
-     VALUES ($1, $2, 'peerWorkflow', $3, 'local', '', $4, $4, $5, 0, 0, '{"positionalArgs":[]}', 'portable_json', $6)`,
-    [id, status, options.queueName ?? null, now, completedAt, owner],
-  );
+  await insertRow(client, 'workflow_status', {
+    ...wfValues(id),
+    workflow_uuid: id,
+    status,
+    name: 'peerWorkflow',
+    queue_name: options.queueName ?? null,
+    executor_id: 'local',
+    application_id: '',
+    created_at: now,
+    updated_at: now,
+    completed_at: completedAt,
+    recovery_attempts: 0,
+    priority: 0,
+    inputs: '{"positionalArgs":[]}',
+    serialization: 'portable_json',
+    application_name: owner,
+  });
 }
 
 describe('application-name', () => {
@@ -274,17 +311,22 @@ describe('application-name', () => {
       ['appname-peer-schedule-id', 'appname-theirs', PEER],
       ['appname-legacy-schedule-id', 'appname-unclaimed', null],
     ] as const) {
-      await client.query(
-        `INSERT INTO dbos.workflow_schedules (schedule_id, schedule_name, workflow_name, schedule, status, context, application_name)
-         VALUES ($1, $2, 'scheduled', '0 0 1 1 *', 'ACTIVE', $4, $3)`,
-        [scheduleID, name, owner, DBOSJSON.stringify(null)],
-      );
+      await insertRow(client, 'workflow_schedules', {
+        ...scheduleValues(),
+        schedule_id: scheduleID,
+        schedule_name: name,
+        workflow_name: 'scheduled',
+        schedule: '0 0 1 1 *',
+        status: 'ACTIVE',
+        context: DBOSJSON.stringify(null),
+        application_name: owner,
+      });
     }
     for (const [name, owner] of [
       ['appname-theirs-queue', PEER],
       ['appname-unclaimed-queue', null],
     ] as const) {
-      await client.query(`INSERT INTO dbos.queues (name, application_name) VALUES ($1, $2)`, [name, owner]);
+      await insertRow(client, 'queues', { ...globalValues(), name, application_name: owner });
     }
 
     const scheduleNames = async (applicationName?: string) =>
@@ -384,11 +426,13 @@ describe('application-name', () => {
       applicationName: PEER,
     });
     try {
-      await client.query(
-        `INSERT INTO dbos.application_versions (version_id, version_name, version_timestamp, application_name)
-         VALUES ($1, 'peer-version', $2, $3)`,
-        ['peer-version-id', Date.now() + 100_000, PEER],
-      );
+      await insertRow(client, 'application_versions', {
+        ...globalValues(),
+        version_id: 'peer-version-id',
+        version_name: 'peer-version',
+        version_timestamp: Date.now() + 100_000,
+        application_name: PEER,
+      });
 
       const latest = await DBOS.getLatestApplicationVersion();
       expect(latest.versionName).toBe(ourVersion);
@@ -437,7 +481,8 @@ describe('application-name', () => {
     }
   });
 
-  test('rename moves every owned table and validates its arguments', async () => {
+  // Renaming an application is not supported on a sharded system database.
+  testUnlessSharded('rename moves every owned table and validates its arguments', async () => {
     class RenameTest {
       @DBOS.workflow()
       static async aWorkflow(): Promise<string> {
@@ -480,7 +525,8 @@ describe('application-name', () => {
     }
   });
 
-  test('rename moves only the sources it is given', async () => {
+  // Renaming an application is not supported on a sharded system database.
+  testUnlessSharded('rename moves only the sources it is given', async () => {
     await DBOS.launch();
     await DBOS.shutdown();
 
@@ -503,7 +549,8 @@ describe('application-name', () => {
     }
   });
 
-  test('rename batches terminal rows and resumes', async () => {
+  // Renaming an application is not supported on a sharded system database.
+  testUnlessSharded('rename batches terminal rows and resumes', async () => {
     await DBOS.launch();
     await DBOS.shutdown();
 

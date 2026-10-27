@@ -1,7 +1,7 @@
 import { Client } from 'pg';
 import { DBOS, StatusString } from '../src';
 import { DBOSConfig } from '../src/dbos-executor';
-import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
+import { generateDBOSTestConfig, setUpDBOSTestSysDb, testUnlessSharded } from './helpers';
 
 const QUEUE = 'enqueue-with-options-queue';
 
@@ -84,7 +84,8 @@ describe('enqueue-workflow-with-options', () => {
     expect(JSON.parse(rows[0].inputs)).toEqual({ positionalArgs: ['positional'], namedArgs: { keyword: 42 } });
   });
 
-  test('honours explicit options over the ambient defaults', async () => {
+  // Deduplication is not supported on a sharded system database.
+  testUnlessSharded('honours explicit options over the ambient defaults', async () => {
     await DBOS.launch();
     await DBOS.registerQueue(QUEUE);
 

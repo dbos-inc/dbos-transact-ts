@@ -10,7 +10,7 @@ import {
   PreparedWorkflow,
 } from '../src/eventreceiver';
 import { DBOSNotRegisteredError } from '../src/error';
-import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
+import { generateDBOSTestConfig, setUpDBOSTestSysDb, describeUnlessSharded } from './helpers';
 
 // Batch enqueue, as used by event receivers (e.g. the Kafka consumers). These tests exercise
 // prepareEnqueuedWorkflow + enqueueWorkflows directly; nothing here needs a broker.
@@ -63,7 +63,8 @@ async function createdAtByWorkflowID(prefix: string): Promise<Map<string, { crea
   return byID;
 }
 
-describe('batch-enqueue', () => {
+// Batch-inserting workflows, which Kafka consumers use, is not supported on a sharded system database.
+describeUnlessSharded('batch-enqueue', () => {
   let config: DBOSConfig;
 
   beforeAll(async () => {

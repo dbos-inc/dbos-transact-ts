@@ -14,6 +14,8 @@ export interface ConfigFile {
   language?: string;
   system_database_url?: string;
   system_database_schema_name?: string;
+  // Whether the system database is sharded; the CLI's database commands then refuse, except `dbos schema --sharding`.
+  sharding?: boolean;
   database?: {
     migrate?: string[];
   };
@@ -206,6 +208,7 @@ export function translateDbosConfig(options: Partial<DBOSConfig>): DBOSConfigInt
     autoUpgrade: options.autoUpgrade === true,
     autoUpgradeIntervalMs: options.autoUpgradeIntervalMs,
     autoUpgradeGraceMs: options.autoUpgradeGraceMs,
+    sharding: options.sharding === true,
   };
 }
 

@@ -38,8 +38,10 @@ function failStatusReads(matches: (workflowID: string) => boolean) {
   const original = pool.query;
   const spy = jest.spyOn(pool, 'query').mockImplementation(async function (this: unknown, ...args: unknown[]) {
     const [text, params] = args;
-    const isStatusRead = typeof text === 'string' && text.includes('workflow_status.workflow_uuid IN (');
-    if (isStatusRead && Array.isArray(params) && params.some((p) => typeof p === 'string' && matches(p))) {
+    // A status read lists its IDs either inline or as one array parameter, as a batch read by known IDs does.
+    const isStatusRead = typeof text === 'string' && /workflow_status\.workflow_uuid (IN \(|= ANY\()/.test(text);
+    const ids: unknown[] = Array.isArray(params) ? params.flat() : [];
+    if (isStatusRead && ids.some((p) => typeof p === 'string' && matches(p))) {
       failing.set();
       throw connectionRefused();
     }
@@ -92,7 +94,19 @@ function failOutputWrites(workflowID: string) {
     }
     return original.call(this, client, id, status, ...rest);
   });
-  return { state, failed, spy };
+  // The outcome's one-statement write, which every backend but Citus takes.
+  const pool = DBOSExecutor.globalInstance!.systemDatabase.pool;
+  const query = pool.query.bind(pool) as (text: unknown, values?: unknown[]) => Promise<unknown>;
+  const poolSpy = jest.spyOn(pool, 'query').mockImplementation((async (text: unknown, values?: unknown[]) => {
+    const outcome = typeof text === 'string' && text.includes('WITH updated AS');
+    if (state.failing && outcome && values?.[0] === StatusString.SUCCESS && values.includes(workflowID)) {
+      state.attempts++;
+      failed.set();
+      throw connectionRefused();
+    }
+    return query(text, values);
+  }) as never);
+  return { state, failed, spy, poolSpy };
 }
 
 async function scheduledWorkflow(_scheduledDate: Date, _context: unknown) {}

@@ -6,13 +6,15 @@ import {
   Event,
   recoverPendingWorkflows,
   reexecuteWorkflowById,
+  testUnlessSharded,
+  usingSharding,
 } from './helpers';
 import { Client } from 'pg';
 import { WorkflowHandle, WorkflowStatus } from '../src/workflow';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as abortableSleep } from 'node:timers/promises';
 import { dbRetryConfig, globalParams, sleepms } from '../src/utils';
-import { SystemDatabase } from '../src/system_database';
+import { createSystemDatabase, SystemDatabase } from '../src/system_database';
 import { GlobalLogger } from '../src/telemetry/logs';
 import { getWorkflow, listQueuedWorkflows, listWorkflows } from '../src/workflow_management';
 import {
@@ -255,7 +257,12 @@ describe('workflow-management-tests', () => {
 
     const logger = new GlobalLogger();
     expect(config.systemDatabaseUrl).toBeDefined();
-    const sysdb = new SystemDatabase(config.systemDatabaseUrl!, logger, DBOSJSON);
+    const sysdb = createSystemDatabase({
+      systemDatabaseUrl: config.systemDatabaseUrl!,
+      logger,
+      serializer: DBOSJSON,
+      sharding: usingSharding(),
+    });
     try {
       const input: GetWorkflowsInput = {};
       const infos = await listWorkflows(sysdb, input);
@@ -683,7 +690,8 @@ describe('workflow-management-tests', () => {
     { name: 'cancelWithChildrenWorkflow' },
   );
 
-  test('workflow-command-transient-error-is-retried-not-recorded', async () => {
+  // Fails core's child lookup by parent ID, which a sharded system database replaces.
+  testUnlessSharded('workflow-command-transient-error-is-retried-not-recorded', async () => {
     const savedBackoff = { ...dbRetryConfig };
     dbRetryConfig.initialBackoffSec = 0.05;
     const targetID = randomUUID();
@@ -853,7 +861,12 @@ describe('test-list-queues', () => {
 
     const logger = new GlobalLogger();
     expect(config.systemDatabaseUrl).toBeDefined();
-    const sysdb = new SystemDatabase(config.systemDatabaseUrl!, logger, DBOSJSON);
+    const sysdb = createSystemDatabase({
+      systemDatabaseUrl: config.systemDatabaseUrl!,
+      logger,
+      serializer: DBOSJSON,
+      sharding: usingSharding(),
+    });
     try {
       let input: GetWorkflowsInput = {};
       let output: WorkflowStatus[] = [];
@@ -1639,7 +1652,12 @@ describe('test-list-steps', () => {
     expect(result1).toEqual(result2);
 
     expect(config.systemDatabaseUrl).toBeDefined();
-    const sysdb = new SystemDatabase(config.systemDatabaseUrl!, new GlobalLogger(), DBOSJSON);
+    const sysdb = createSystemDatabase({
+      systemDatabaseUrl: config.systemDatabaseUrl!,
+      logger: new GlobalLogger(),
+      serializer: DBOSJSON,
+      sharding: usingSharding(),
+    });
     try {
       const wfs = await listWorkflows(sysdb, {});
       expect(wfs.length).toBe(2);
@@ -2206,6 +2224,29 @@ describe('test-fork', () => {
     for (const forkHandle of [forkOne, forkTwo, forkThree, forkFour, forkFive]) {
       expect(await forkHandle.getResult()).toBeTruthy();
       expect(await DBOS.getEvent(forkHandle.workflowID, testForkEventsKey)).toBe(2);
+    }
+  });
+
+  const forkTwiceWorkflow = DBOS.registerWorkflow(
+    async () => {
+      await DBOS.setEvent('key', 0);
+      await DBOS.setEvent('key', 1);
+    },
+    { name: 'fork-twice-workflow' },
+  );
+
+  test('forking-one-workflow-twice-in-one-call', async () => {
+    // Each fork in a batch gets the original's latest events, even when one batch forks the same workflow twice.
+    const handle = await DBOS.startWorkflow(forkTwiceWorkflow)();
+    await handle.getResult();
+    const forks = [randomUUID(), randomUUID()];
+    await DBOSExecutor.globalInstance!.systemDatabase.bulkForkWorkflows(
+      [handle.workflowID, handle.workflowID],
+      forks,
+      [2, 2],
+    );
+    for (const fork of forks) {
+      expect(await DBOS.getEvent(fork, 'key', 0)).toBe(1);
     }
   });
 
@@ -2778,9 +2819,9 @@ describe('wf-cancel-tests', () => {
       await CancelChildrenTest.mainEvents[id].wait();
     }
 
-    // The cascade should discover the full descendant tree
-    const children = await DBOSExecutor.globalInstance!.systemDatabase.getWorkflowChildren(parentID);
-    expect(new Set(children)).toEqual(new Set([childID, grandchildID]));
+    // The whole descendant tree is recorded: the parent's child, and that child's child
+    const tree = await DBOS.listWorkflows({ parentWorkflowID: [parentID, childID] });
+    expect(new Set(tree.map((w) => w.workflowID))).toEqual(new Set([childID, grandchildID]));
 
     // Cancelling without cancelChildren only affects the parent
     await DBOS.cancelWorkflow(parentID);

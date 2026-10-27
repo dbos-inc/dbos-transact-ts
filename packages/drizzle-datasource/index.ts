@@ -7,6 +7,7 @@ import {
   DBOSStepAlreadyRecordedError,
   DBOSWorkflowConflictError,
   assertStillOwnsWorkflow,
+  checkpointWorkflowID,
   replayRecordedStep,
   registerTransaction,
   runTransaction,
@@ -115,7 +116,7 @@ class DrizzleTransactionHandler implements DataSourceTransactionHandler {
     await this.#drizzle.transaction(async (client) => {
       await client.execute(sql`
         DELETE FROM ${sql.identifier(this.schemaName)}.transaction_completion
-        WHERE workflow_id = ${workflowID} AND function_num >= ${startStep}`);
+        WHERE workflow_id = ${checkpointWorkflowID(workflowID)} AND function_num >= ${startStep}`);
       await beforeCommit?.();
     });
   }
@@ -128,7 +129,7 @@ class DrizzleTransactionHandler implements DataSourceTransactionHandler {
 
     const statement = sql`
         SELECT output, error FROM ${sql.identifier(this.schemaName)}.transaction_completion
-        WHERE workflow_id = ${workflowID} AND function_num = ${stepID}`;
+        WHERE workflow_id = ${checkpointWorkflowID(workflowID)} AND function_num = ${stepID}`;
     const result = await this.#drizzle.execute<Result>(statement);
 
     if (result.rows.length !== 1) {
@@ -148,7 +149,7 @@ class DrizzleTransactionHandler implements DataSourceTransactionHandler {
   ): Promise<void> {
     const statement = sql`
       INSERT INTO ${sql.identifier(schemaName)}.transaction_completion (workflow_id, function_num, output)
-      VALUES (${workflowID}, ${stepID}, ${output})
+      VALUES (${checkpointWorkflowID(workflowID)}, ${stepID}, ${output})
       ON CONFLICT (workflow_id, function_num) DO NOTHING
       RETURNING workflow_id`;
     const { rows } = await client.execute(statement);
@@ -162,7 +163,7 @@ class DrizzleTransactionHandler implements DataSourceTransactionHandler {
   async #recordError(workflowID: string, stepID: number, error: string): Promise<void> {
     const statement = sql`
       INSERT INTO ${sql.identifier(this.schemaName)}.transaction_completion (workflow_id, function_num, error)
-      VALUES (${workflowID}, ${stepID}, ${error})
+      VALUES (${checkpointWorkflowID(workflowID)}, ${stepID}, ${error})
       ON CONFLICT (workflow_id, function_num) DO NOTHING
       RETURNING workflow_id`;
     const { rows } = await this.#drizzle.execute(statement);

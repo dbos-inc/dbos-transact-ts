@@ -14,7 +14,7 @@
 
 import { Client } from 'pg';
 import { DBOS, DBOSClient } from '../src';
-import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
+import { generateDBOSTestConfig, setUpDBOSTestSysDb, testUnlessSharded } from './helpers';
 import { workflow_events, workflow_events_history, workflow_status, streams } from '../schemas/system_db_schema';
 import { DBOSConfig } from '../src/dbos-executor';
 import { z } from 'zod';
@@ -227,7 +227,8 @@ describe('interop-tests', () => {
   // Test: Direct-insert replay (proves cross-language compatibility)
   // --------------------------------------------------------------------------
 
-  test('test-interop-direct-insert', async () => {
+  // Writes core's unkeyed tables directly.
+  testUnlessSharded('test-interop-direct-insert', async () => {
     const id = `interop-di-${Date.now()}`;
 
     // Insert golden workflow_status

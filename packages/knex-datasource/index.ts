@@ -8,6 +8,7 @@ import {
   DBOSStepAlreadyRecordedError,
   DBOSWorkflowConflictError,
   assertStillOwnsWorkflow,
+  checkpointWorkflowID,
   replayRecordedStep,
   registerTransaction,
   runTransaction,
@@ -95,7 +96,7 @@ class KnexTransactionHandler implements DataSourceTransactionHandler {
     await this.#knexDB.transaction(async (client) => {
       await client<transaction_completion>('transaction_completion')
         .withSchema('dbos')
-        .where('workflow_id', workflowID)
+        .where('workflow_id', checkpointWorkflowID(workflowID))
         .where('function_num', '>=', startStep)
         .delete();
       await beforeCommit?.();
@@ -110,7 +111,7 @@ class KnexTransactionHandler implements DataSourceTransactionHandler {
       .withSchema('dbos')
       .select('output', 'error')
       .where({
-        workflow_id: workflowID,
+        workflow_id: checkpointWorkflowID(workflowID),
         function_num: stepID,
       })
       .first();
@@ -125,7 +126,7 @@ class KnexTransactionHandler implements DataSourceTransactionHandler {
     const rows = await this.#knexDB<transaction_completion>('transaction_completion')
       .withSchema('dbos')
       .insert({
-        workflow_id: workflowID,
+        workflow_id: checkpointWorkflowID(workflowID),
         function_num: stepID,
         error,
       })
@@ -157,7 +158,7 @@ class KnexTransactionHandler implements DataSourceTransactionHandler {
     const rows = await client<transaction_completion>('transaction_completion')
       .withSchema('dbos')
       .insert({
-        workflow_id: workflowID,
+        workflow_id: checkpointWorkflowID(workflowID),
         function_num: stepID,
         output,
       })

@@ -1,8 +1,16 @@
 // What core uses from @dbos-inc/dbos-enterprise, which checks it satisfies these types; loaded only when needed.
 // Also the entitlement check every enterprise feature goes through before the package is loaded.
+//
+// Transact Enterprise (the @dbos-inc/dbos-enterprise package) is proprietary, not MIT-licensed like this
+// project. Its license (https://www.dbos.dev/conductor-license) forbids modifying it, and makes disabling
+// or circumventing the entitlement checks here a material breach.
 
+import type { Pool } from 'pg';
 import type { DBOSExecutor } from './dbos-executor';
 import { DBOSInitializationError } from './error';
+import type { DBOSSerializer } from './serialization';
+import type { SystemDatabase } from './system_database';
+import { GlobalLogger } from './telemetry/logs';
 import { globalParams } from './utils';
 
 export const ENTERPRISE_PACKAGE = '@dbos-inc/dbos-enterprise';
@@ -43,10 +51,27 @@ export interface AutoUpgradeOptions {
 
 export type AutoUpgradePassFactory = new (executor: DBOSExecutor, options: AutoUpgradeOptions) => AutoUpgradePass;
 
+/** What a sharded system database is built from, in place of core's Postgres one. */
+export interface ShardedSystemDatabaseOptions {
+  systemDatabaseUrl: string;
+  logger: GlobalLogger;
+  serializer: DBOSSerializer;
+  sysDbPoolSize?: number;
+  systemDatabasePool?: Pool;
+  schemaName?: string;
+  pollingConcurrency?: number;
+  appName?: string;
+  observabilityQueryTimeoutMs?: number;
+  idleTransactionTimeoutMs?: number;
+}
+
+export type ShardedSystemDatabaseFactory = new (options: ShardedSystemDatabaseOptions) => SystemDatabase;
+
 /** What the @dbos-inc/dbos-enterprise module must export. */
 export interface Enterprise {
   ConductorWebsocket: ConductorFactory;
   AutoUpgradePass: AutoUpgradePassFactory;
+  ShardedSystemDatabase: ShardedSystemDatabaseFactory;
 }
 
 export const CONDUCTOR = 'Connecting to DBOS Conductor';
@@ -55,7 +80,7 @@ export const CONDUCTOR = 'Connecting to DBOS Conductor';
 export interface Feature {
   readonly entitlement: string;
   readonly description: string;
-  readonly configKey?: 'autoUpgrade';
+  readonly configKey?: 'autoUpgrade' | 'sharding';
 }
 
 export const AUTO_UPGRADE: Feature = {
@@ -64,10 +89,17 @@ export const AUTO_UPGRADE: Feature = {
   configKey: 'autoUpgrade',
 };
 
-export const FEATURES: readonly Feature[] = [AUTO_UPGRADE];
+export const SHARDING: Feature = {
+  entitlement: 'sharding',
+  description: 'Using a sharded system database',
+  configKey: 'sharding',
+};
+
+// Every entitled feature; a new one is a Feature here, named by Conductor's camelCase key.
+export const FEATURES: readonly Feature[] = [AUTO_UPGRADE, SHARDING];
 
 /** The enterprise features a config turns on. */
-export function enabledFeatures(config: { autoUpgrade?: boolean }): Feature[] {
+export function enabledFeatures(config: { autoUpgrade?: boolean; sharding?: boolean }): Feature[] {
   return FEATURES.filter((f) => f.configKey !== undefined && config[f.configKey] === true);
 }
 
@@ -75,6 +107,16 @@ export const ENTITLEMENTS_PATH = '/v2/entitlements';
 export const ENTITLEMENT_TIMEOUT_MS = 10_000;
 const ERROR_CODE_HEADER = 'X-DBOS-Error';
 const PAST_LIMIT = 'past_limit';
+// From the hosted Conductor, these mean it could not answer, not that it refused the key.
+const HOSTED_UNAVAILABLE = new Set([403, 407, 408, 425, 429]);
+const LICENSE_URL = 'https://www.dbos.dev/conductor-license';
+const LICENSE_NOTICE =
+  `Transact Enterprise is licensed under the DBOS Conductor Software License (${LICENSE_URL}), ` +
+  'which makes disabling or circumventing this check a material breach.';
+
+function refusal(message: string): DBOSInitializationError {
+  return new DBOSInitializationError(`${message} ${LICENSE_NOTICE}`);
+}
 
 export const HOSTED_CONDUCTOR_URL = 'wss://cloud.dbos.dev/conductor/v1alpha1';
 
@@ -134,8 +176,7 @@ function parseEntitlements(body: string): Record<string, boolean> {
  * Enterprise features use Conductor to report the org entitled to each of them. A
  * self-hosted Conductor may answer without a key; DBOS Cloud passes without a check.
  *
- * Any failure to get an answer refuses to start: an unreachable Conductor cannot stand
- * in for an entitlement.
+ * A license control: the Transact Enterprise license makes disabling or circumventing it a material breach.
  */
 export async function requireEnterprise(
   features: readonly Feature[],
@@ -159,74 +200,84 @@ export async function requireEnterprise(
     headers.Authorization = `Bearer ${key}`;
   }
 
-  let response: Response;
-  let body: string;
+  let failure: string;
   try {
-    // Never follow a redirect: it would carry the key to whatever host it names.
-    response = await fetch(url, { headers, redirect: 'manual', signal: AbortSignal.timeout(ENTITLEMENT_TIMEOUT_MS) });
-    body = await response.text();
-  } catch (e) {
-    // Fail closed, so an unreachable URL cannot stand in for a key.
-    const cause = e instanceof Error ? (e.cause instanceof Error ? e.cause.message : e.message) : String(e);
-    throw new DBOSInitializationError(
-      `${names} requires an entitled DBOS key, but checking it with Conductor at ${url} failed (${cause}). Please retry later.`,
-    );
-  }
+    let response: Response;
+    let body: string;
+    try {
+      // Never follow a redirect: it would carry the key to whatever host it names.
+      response = await fetch(url, { headers, redirect: 'manual', signal: AbortSignal.timeout(ENTITLEMENT_TIMEOUT_MS) });
+      body = await response.text();
+    } catch (e) {
+      throw new EntitlementFailure(
+        e instanceof Error ? (e.cause instanceof Error ? e.cause.message : e.message) : String(e),
+      );
+    }
 
-  if (!response.ok) {
-    const status = response.status;
-    const detail = problemDetail(body);
-    if (status === 403 && response.headers.get(ERROR_CODE_HEADER) === PAST_LIMIT) {
-      throw new DBOSInitializationError(
-        `Your DBOS organization is past its plan limit, so it is not entitled to ${entitlements} (${names}). Upgrade its plan to continue.`,
-      );
+    if (!response.ok) {
+      const status = response.status;
+      const detail = problemDetail(body);
+      if (status === 403 && response.headers.get(ERROR_CODE_HEADER) === PAST_LIMIT) {
+        throw refusal(
+          `Your DBOS organization is past its plan limit, so it is not entitled to ${entitlements} (${names}). Upgrade its plan to continue.`,
+        );
+      }
+      const reason = detail ?? response.statusText;
+      if (target === HOSTED_CONDUCTOR_URL && HOSTED_UNAVAILABLE.has(status)) {
+        // An outage, handled below.
+      } else if (status === 404 && detail === undefined) {
+        // A bare 404 is a missing route: a Conductor predating per-feature entitlements.
+        throw refusal(
+          `${names} requires an entitled DBOS key, but Conductor at ${url} has no entitlements route (HTTP 404). Upgrade Conductor, or check its URL.`,
+        );
+      } else if (status === 401 && !key) {
+        throw new DBOSInitializationError(
+          `${names} requires a DBOS key: Conductor at ${url} refused to check without one (HTTP 401): ${reason}. ${keyHint}`,
+        );
+      } else if (status === 401) {
+        // An unknown key, or a user credential instead of an API key.
+        throw refusal(`${names} requires a valid DBOS key. Conductor at ${url} rejected the key (HTTP 401): ${reason}`);
+      } else if (status < 500) {
+        // Any other refusal, such as the key's organization being gone, or a redirect.
+        throw refusal(
+          `${names} requires an entitled DBOS key, but Conductor at ${url} refused the check (HTTP ${status}): ${reason}`,
+        );
+      }
+      throw new EntitlementFailure(detail ? `HTTP ${status}: ${detail}` : `HTTP ${status}`);
     }
-    const reason = detail ?? response.statusText;
-    if (status === 404 && detail === undefined) {
-      // A bare 404 is a missing route: a Conductor predating per-feature entitlements.
-      throw new DBOSInitializationError(
-        `${names} requires an entitled DBOS key, but Conductor at ${url} has no entitlements route (HTTP 404). Upgrade Conductor, or check its URL.`,
-      );
-    }
-    if (status === 401 && !key) {
-      throw new DBOSInitializationError(
-        `${names} requires a DBOS key: Conductor at ${url} refused to check without one (HTTP 401): ${reason}. ${keyHint}`,
-      );
-    }
-    if (status === 401) {
-      // An unknown key, or a user credential instead of an API key.
-      throw new DBOSInitializationError(
-        `${names} requires a valid DBOS key. Conductor at ${url} rejected the key (HTTP 401): ${reason}`,
-      );
-    }
-    if (status < 500) {
-      // Any other refusal, such as the key's organization being gone, or a redirect.
-      throw new DBOSInitializationError(
-        `${names} requires an entitled DBOS key, but Conductor at ${url} refused the check (HTTP ${status}): ${reason}`,
-      );
-    }
-    const failure = detail ? `HTTP ${status}: ${detail}` : `HTTP ${status}`;
-    throw new DBOSInitializationError(
-      `${names} requires an entitled DBOS key, but checking it with Conductor at ${url} failed (${failure}). Please retry later.`,
-    );
-  }
 
-  let granted: Record<string, boolean>;
-  try {
-    granted = parseEntitlements(body);
+    let granted: Record<string, boolean>;
+    try {
+      granted = parseEntitlements(body);
+    } catch (e) {
+      throw new EntitlementFailure((e as Error).message);
+    }
+    const missing = features.filter((f) => granted[f.entitlement] !== true);
+    if (missing.length > 0) {
+      throw refusal(
+        `Your DBOS organization is not entitled to ${missing.map((f) => f.entitlement).join(' and ')} ` +
+          `(${missing.map((f) => f.description).join(' and ')}): its plan does not include it. Contact DBOS to enable it.`,
+      );
+    }
+    return;
   } catch (e) {
-    throw new DBOSInitializationError(
-      `${names} requires an entitled DBOS key, but unable to process the entitlements answer from ${url} (${(e as Error).message}).`,
-    );
+    if (!(e instanceof EntitlementFailure)) throw e;
+    failure = e.message;
   }
-  const missing = features.filter((f) => granted[f.entitlement] !== true);
-  if (missing.length > 0) {
-    throw new DBOSInitializationError(
-      `Your DBOS organization is not entitled to ${missing.map((f) => f.entitlement).join(' and ')} ` +
-        `(${missing.map((f) => f.description).join(' and ')}): its plan does not include it. Contact DBOS to enable it.`,
+  if (target === HOSTED_CONDUCTOR_URL) {
+    new GlobalLogger().warn(
+      `Could not verify the DBOS key's entitlements with Conductor at ${url} (${failure}); starting anyway.`,
     );
+    return;
   }
+  // Any other Conductor fails closed, so an unreachable URL cannot stand in for a key.
+  throw refusal(
+    `${names} requires an entitled DBOS key, but checking it with Conductor at ${url} failed (${failure}). Retry once Conductor is reachable.`,
+  );
 }
+
+/** A check that got no answer from Conductor, as opposed to a refusal. */
+class EntitlementFailure extends Error {}
 
 function unavailable(feature: string, cause: string): DBOSInitializationError {
   return new DBOSInitializationError(
@@ -237,6 +288,7 @@ function unavailable(feature: string, cause: string): DBOSInitializationError {
 
 /** Load @dbos-inc/dbos-enterprise, for `feature`, which the error names when it cannot be loaded. */
 export function load(feature: string = CONDUCTOR): Enterprise {
+  // @dbos-inc/dbos-enterprise is proprietary: its license forbids modifying it or copying it beyond authorized use.
   let loaded: Partial<Enterprise> | undefined;
   try {
     // A literal specifier inside try: bundlers include the package when it is installed and tolerate its absence.
@@ -249,7 +301,7 @@ export function load(feature: string = CONDUCTOR): Enterprise {
   } catch (e) {
     throw unavailable(feature, e instanceof Error ? e.message.split('\n')[0] : String(e));
   }
-  for (const name of ['ConductorWebsocket', 'AutoUpgradePass'] as const) {
+  for (const name of ['ConductorWebsocket', 'AutoUpgradePass', 'ShardedSystemDatabase'] as const) {
     if (typeof loaded?.[name] !== 'function') {
       throw unavailable(feature, `it does not export ${name}`);
     }

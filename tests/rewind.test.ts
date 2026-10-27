@@ -1,6 +1,13 @@
 import { DBOS, DBOSClient, StatusString } from '../src';
 import { DBOSExecutor } from '../src/dbos-executor';
-import { generateDBOSTestConfig, setUpDBOSTestSysDb, Event, retryUntilSuccess, recoverWorkflow } from './helpers';
+import {
+  generateDBOSTestConfig,
+  setUpDBOSTestSysDb,
+  Event,
+  retryUntilSuccess,
+  recoverWorkflow,
+  localTestDatabaseUrl,
+} from './helpers';
 import { Client, Pool, PoolClient } from 'pg';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
@@ -13,6 +20,7 @@ import {
   registerTransaction,
   replayRecordedStep,
   type DataSourceTransactionHandler,
+  checkpointWorkflowID,
 } from '../src/datasource';
 import { SuperJSON } from 'superjson';
 
@@ -159,7 +167,7 @@ class CheckpointDataSource implements DataSourceTransactionHandler {
   ) {}
 
   async initialize(): Promise<void> {
-    this.#poolField = new Pool({ connectionString: config.systemDatabaseUrl });
+    this.#poolField = new Pool({ connectionString: localTestDatabaseUrl() });
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
@@ -193,7 +201,7 @@ class CheckpointDataSource implements DataSourceTransactionHandler {
       await client.query('BEGIN');
       await client.query(
         `DELETE FROM "${this.schema}".transaction_completion WHERE workflow_id = $1 AND function_num >= $2`,
-        [workflowID, startStep],
+        [checkpointWorkflowID(workflowID), startStep],
       );
       await beforeCommit?.();
       await client.query('COMMIT');
@@ -209,7 +217,7 @@ class CheckpointDataSource implements DataSourceTransactionHandler {
   async checkpoints(workflowID: string): Promise<number[]> {
     const { rows } = await this.pool.query<{ function_num: number }>(
       `SELECT function_num FROM "${this.schema}".transaction_completion WHERE workflow_id = $1 ORDER BY function_num`,
-      [workflowID],
+      [checkpointWorkflowID(workflowID)],
     );
     return rows.map((r) => r.function_num);
   }
@@ -231,7 +239,7 @@ class CheckpointDataSource implements DataSourceTransactionHandler {
 
     const { rows } = await this.pool.query<{ output: string | null; error: string | null }>(
       `SELECT output, error FROM "${this.schema}".transaction_completion WHERE workflow_id = $1 AND function_num = $2`,
-      [workflowID, stepID],
+      [checkpointWorkflowID(workflowID), stepID],
     );
     if (rows.length > 0) {
       return replayRecordedStep<Return>(rows[0]);
@@ -243,7 +251,7 @@ class CheckpointDataSource implements DataSourceTransactionHandler {
       const result = await dsContext.run({ client, schema: this.schema }, () => func.call(target, ...args));
       await client.query(
         `INSERT INTO "${this.schema}".transaction_completion (workflow_id, function_num, output) VALUES ($1, $2, $3)`,
-        [workflowID, stepID, SuperJSON.stringify(result)],
+        [checkpointWorkflowID(workflowID), stepID, SuperJSON.stringify(result)],
       );
       await client.query('COMMIT');
       return result;

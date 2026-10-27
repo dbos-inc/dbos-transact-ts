@@ -1,4 +1,4 @@
-import type { SystemDatabase, WorkflowStatusInternal } from './system_database';
+import type { ShardKeyColumns, SystemDatabase, WorkflowStatusInternal } from './system_database';
 import type { StepInfo, WorkflowStatus, GetWorkflowsInput, ListWorkflowStepsOptions } from './workflow';
 import { StatusString } from './workflow';
 import type { DataSourceTransactionHandler } from './datasource';
@@ -44,6 +44,7 @@ export async function listWorkflowSteps(
       output: loadOutput && step.output ? await safeParse(sysdb.serializer, step.output, step.serialization) : null,
       error: loadOutput && step.error ? await safeParseError(sysdb.serializer, step.error, step.serialization) : null,
       childWorkflowID: step.child_workflow_id,
+      childShardKey: (step as ShardKeyColumns).child_shard_key ?? undefined,
       startedAtEpochMs: step.started_at_epoch_ms ? Number(step.started_at_epoch_ms) : undefined,
       completedAtEpochMs: step.completed_at_epoch_ms ? Number(step.completed_at_epoch_ms) : undefined,
     })),
@@ -206,11 +207,13 @@ export async function toWorkflowStatus(
     attributes: internal.attributes,
     scheduleName: internal.scheduleName,
     applicationName: internal.applicationName,
+    shardKey: internal.shardKey,
+    parentShardKey: internal.parentShardKey,
   };
 }
 
 export const workflowTimeoutConfig = {
-  /** How often the sweep looks for workflows past their deadline. */
+  /** How often one of an application's processes runs its background jobs. */
   pollingIntervalMs: 1000,
   /** Most workflows one sweep transaction cancels; a full batch sweeps again at once. */
   batchSize: 1000,
@@ -231,24 +234,57 @@ export function waitOrAbort(ms: number, signal: AbortSignal): Promise<void> {
   });
 }
 
-/** Cancel this application's active workflows once their deadline passes, until `signal` aborts. */
-export async function workflowTimeoutLoop(
+/** Run `jobs` once per interval in whichever of this application's processes holds their lock, until aborted. */
+export async function runBackgroundJobs(
+  sysdb: SystemDatabase,
+  logger: GlobalLogger,
+  signal: AbortSignal,
+  lockName: string,
+  intervalMs: number,
+  jobs: Record<string, () => Promise<void>>,
+): Promise<void> {
+  while (!signal.aborted) {
+    const started = performance.now();
+    let held = false;
+    try {
+      await sysdb.backgroundJobLock(lockName, async (acquired) => {
+        if (!acquired) return;
+        for (const [jobName, job] of Object.entries(jobs)) {
+          try {
+            await job();
+          } catch (e) {
+            logger.warn(`Exception in background job ${jobName}: ${(e as Error).message}`);
+          }
+        }
+        await waitOrAbort(Math.max(0, intervalMs - (performance.now() - started)), signal);
+        held = true;
+      });
+    } catch (e) {
+      logger.warn(`Exception taking the ${lockName} lock: ${(e as Error).message}`);
+    }
+    // The holder tries again at once and so keeps the jobs; the rest poll for them.
+    const wait = held ? 0 : intervalMs * (0.9 + Math.random() * 0.2);
+    await waitOrAbort(wait, signal);
+  }
+}
+
+/** Enqueue DELAYED workflows whose delay expired and cancel those past their deadline, until `signal` aborts. */
+export async function backgroundJobsLoop(
   sysdb: SystemDatabase,
   logger: GlobalLogger,
   signal: AbortSignal,
 ): Promise<void> {
-  while (!signal.aborted) {
-    try {
-      while (!signal.aborted) {
-        const cancelled = await sysdb.cancelTimedOutWorkflows(workflowTimeoutConfig.batchSize);
-        for (const workflowID of cancelled) {
-          logger.debug(`Cancelled workflow ${workflowID}: timed out`);
-        }
-        if (cancelled.length < workflowTimeoutConfig.batchSize) break;
+  const sweep = async () => {
+    while (!signal.aborted) {
+      const cancelled = await sysdb.cancelTimedOutWorkflows(workflowTimeoutConfig.batchSize);
+      for (const workflowID of cancelled) {
+        logger.debug(`Cancelled workflow ${workflowID}: timed out`);
       }
-    } catch (e) {
-      logger.warn(`Exception cancelling timed-out workflows: ${(e as Error).message}`);
+      if (cancelled.length < workflowTimeoutConfig.batchSize) break;
     }
-    await waitOrAbort(workflowTimeoutConfig.pollingIntervalMs, signal);
-  }
+  };
+  await runBackgroundJobs(sysdb, logger, signal, 'background_jobs', workflowTimeoutConfig.pollingIntervalMs, {
+    delayed_workflows: () => sysdb.transitionDelayedWorkflows(),
+    workflow_timeout: sweep,
+  });
 }

@@ -5,10 +5,10 @@ import { translateDbosConfig } from '../src/config';
 import { DBOSExecutor } from '../src/dbos-executor';
 import { DBOSQueryTimeoutError, DBOSWorkflowCancelledError } from '../src/error';
 import { DBOSJSON, DBOSSerializer } from '../src/serialization';
-import { retriablePostgresException, SystemDatabase } from '../src/system_database';
+import { createSystemDatabase, retriablePostgresException, SystemDatabase } from '../src/system_database';
 import { GlobalLogger } from '../src/telemetry/logs';
 import { getClientConfig, sleepms } from '../src/utils';
-import { Event, generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
+import { Event, generateDBOSTestConfig, setUpDBOSTestSysDb, usingSharding } from './helpers';
 
 describe('observability-query-timeout', () => {
   let config: DBOSConfig;
@@ -26,19 +26,16 @@ describe('observability-query-timeout', () => {
     poolSize: number = 2,
     serializer: DBOSSerializer = DBOSJSON,
   ): SystemDatabase {
-    return new SystemDatabase(
+    return createSystemDatabase({
       systemDatabaseUrl,
-      new GlobalLogger(),
+      logger: new GlobalLogger(),
       serializer,
-      poolSize,
-      undefined,
-      'dbos',
-      false,
-      undefined,
-      undefined,
-      undefined,
+      sysDbPoolSize: poolSize,
+      schemaName: 'dbos',
+      useListenNotify: false,
       observabilityQueryTimeoutMs,
-    );
+      sharding: usingSharding(),
+    });
   }
 
   /** Every statement this handle issues, from the connect event on, so nothing predates the listener. */
@@ -302,20 +299,17 @@ describe('system-database-idle-transaction-timeout', () => {
     pool?: Pool,
     poolSize: number = 2,
   ): SystemDatabase {
-    return new SystemDatabase(
-      url,
-      new GlobalLogger(),
-      DBOSJSON,
-      poolSize,
-      pool,
-      'dbos',
-      false,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
+    return createSystemDatabase({
+      systemDatabaseUrl: url,
+      logger: new GlobalLogger(),
+      serializer: DBOSJSON,
+      sysDbPoolSize: poolSize,
+      systemDatabasePool: pool,
+      schemaName: 'dbos',
+      useListenNotify: false,
       idleTransactionTimeoutMs,
-    );
+      sharding: usingSharding(),
+    });
   }
 
   const SETTING_QUERY = `SELECT pg_backend_pid()::text AS pid, setting FROM pg_settings WHERE name = 'idle_in_transaction_session_timeout'`;
@@ -386,7 +380,8 @@ describe('system-database-idle-transaction-timeout', () => {
           client.release();
         }
       }
-      expect(seen[1].pid).toBe(seen[0].pid);
+      // A router may serve each of a session's transactions from a different server backend.
+      if (!usingSharding()) expect(seen[1].pid).toBe(seen[0].pid);
       expect(seen.map((row) => row.setting)).toEqual(['12345', '12345']);
     } finally {
       await sysdb.destroy();
@@ -439,7 +434,9 @@ describe('system-database-idle-transaction-timeout', () => {
       // The server's termination arrives as an error event while no query is running.
       client.on('error', () => {});
       try {
+        // A statement after BEGIN, so a router binds a server backend to sit idle in the transaction.
         await client.query('BEGIN');
+        await client.query('SELECT 1');
         await sleepms(1000);
         await expect(client.query('SELECT 1')).rejects.toThrow();
       } finally {

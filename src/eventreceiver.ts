@@ -73,3 +73,9 @@ export async function getQueue(name: string): Promise<WorkflowQueue | null> {
   const record = await DBOSExecutor.globalInstance!.systemDatabase.getQueue(name);
   return record === null ? null : new WorkflowQueue(record);
 }
+
+/** Whether the system database is sharded, which a receiver enqueueing in batches does not support. */
+export function isShardedSystemDatabase(): boolean {
+  ensureDBOSIsLaunched('isShardedSystemDatabase');
+  return DBOSExecutor.globalInstance!.systemDatabase.sharded;
+}

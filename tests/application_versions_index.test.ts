@@ -4,7 +4,7 @@ import { SystemDatabase } from '../src/system_database';
 import { allMigrations } from '../src/sysdb_migrations/internal/migrations';
 import { runSysMigrationsPg } from '../src/sysdb_migrations/migration_runner';
 import { GlobalLogger } from '../src/telemetry/logs';
-import { ensureTestDatabase, generateDBOSTestConfig } from './helpers';
+import { describeUnlessSharded, ensureTestDatabase, generateDBOSTestConfig } from './helpers';
 
 const SCHEMA = 'dbos_versions_index_test';
 
@@ -22,7 +22,8 @@ function planNodes(plan: PlanNode): PlanNode[] {
   return [plan, ...(plan.Plans ?? []).flatMap(planNodes)];
 }
 
-describe('indexed latest application version', () => {
+// Plans an unsharded schema it builds itself, which a router would send to every shard.
+describeUnlessSharded('indexed latest application version', () => {
   const config = generateDBOSTestConfig();
   let client: Client;
 

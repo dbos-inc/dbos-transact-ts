@@ -1,7 +1,16 @@
 import { DBOS, ConfiguredInstance, DBOSClient } from '../src';
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
-import { generateDBOSTestConfig, setUpDBOSTestSysDb, dropDatabase, reexecuteWorkflowById } from './helpers';
+import {
+  generateDBOSTestConfig,
+  setUpDBOSTestSysDb,
+  dropDatabase,
+  reexecuteWorkflowById,
+  usingSharding,
+  lostShardKeys,
+} from './helpers';
 import { dbRetryConfig, sleepms } from '../src/utils';
+import { scheduleSignature } from '../src/scheduler/scheduler';
+import type { WorkflowScheduleInternal } from '../src/system_database';
 
 describe('dynamic-scheduler-tests', () => {
   let config: DBOSConfig;
@@ -14,7 +23,8 @@ describe('dynamic-scheduler-tests', () => {
     await setUpDBOSTestSysDb(config);
     DBOS.setConfig(config);
     expect(config.systemDatabaseUrl).toBeDefined();
-    await dropDatabase(config.systemDatabaseUrl!);
+    // A sharded system database is reset through its router, which serves no DROP DATABASE.
+    if (!usingSharding()) await dropDatabase(config.systemDatabaseUrl!);
   });
 
   beforeEach(async () => {
@@ -1676,6 +1686,85 @@ describe('dynamic-scheduler-tests', () => {
     } finally {
       await DBOS.deleteSchedule('db-queued-schedule').catch(() => {});
       await DBOS.deleteQueue('db-scheduler-queue').catch(() => {});
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // lost-shard-keys
+  // ---------------------------------------------------------------------------
+
+  const tickedWf = DBOS.registerWorkflow(async (_scheduledDate: Date, _context: unknown) => Promise.resolve(), {
+    name: 'tickedWorkflow',
+  });
+
+  // The sharded run's lost-key check sees DBOS's own loops, so a schedule that drops its key fails a test.
+  (usingSharding() ? test : test.skip)('a-key-lost-on-a-schedule-loop-is-reported', async () => {
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    const listSchedules = sysdb.listSchedules.bind(sysdb);
+    // The polling loop starts each schedule's loop from what it lists, here with no key.
+    const keyless = jest
+      .spyOn(sysdb, 'listSchedules')
+      .mockImplementation(async (...args) =>
+        (await listSchedules(...args)).map((sched) => ({ ...sched, shardKey: undefined })),
+      );
+    try {
+      await DBOS.createSchedule({ scheduleName: 'keyless', workflowFn: tickedWf, schedule: '* * * * * *' });
+      await retryUntilSuccess(() => {
+        expect(lostShardKeys().some((lost) => lost.includes('#scheduleLoop'))).toBe(true);
+      });
+      // Stop the schedule before forgiving what it reported.
+      await DBOS.shutdown();
+    } finally {
+      keyless.mockRestore();
+    }
+    lostShardKeys().length = 0;
+  });
+});
+
+describe('schedule-loop-signature', () => {
+  test('signature-reacts-to-definition-fields-only', () => {
+    const base: WorkflowScheduleInternal = {
+      scheduleId: 'id-1',
+      scheduleName: 'sig',
+      workflowName: 'wf',
+      workflowClassName: '',
+      schedule: '* * * * *',
+      status: 'ACTIVE',
+      context: 'ctx',
+      lastFiredAt: null,
+      automaticBackfill: false,
+      cronTimezone: null,
+      queueName: null,
+      applicationName: 'app-a',
+      shardKey: undefined,
+    };
+    const sig = scheduleSignature(base);
+
+    // Identity, lifecycle and runtime fields leave a running loop alone.
+    const unchanged: Partial<WorkflowScheduleInternal>[] = [
+      { scheduleId: 'id-2' },
+      { status: 'PAUSED' },
+      { lastFiredAt: '2020-01-01T00:00:00+00:00' },
+      { automaticBackfill: true },
+      // Ownership, not definition: re-owning a schedule must not restart its loop.
+      { applicationName: 'app-b' },
+    ];
+    for (const change of unchanged) {
+      expect(scheduleSignature({ ...base, ...change })).toBe(sig);
+    }
+
+    // Definition fields restart it.
+    const changed: Partial<WorkflowScheduleInternal>[] = [
+      { workflowName: 'wf2' },
+      { workflowClassName: 'SomeClass' },
+      { schedule: '0 * * * *' },
+      { context: 'ctx2' },
+      { cronTimezone: 'America/Los_Angeles' },
+      { queueName: 'q' },
+      { shardKey: 'tenant-a' },
+    ];
+    for (const change of changed) {
+      expect(scheduleSignature({ ...base, ...change })).not.toBe(sig);
     }
   });
 });

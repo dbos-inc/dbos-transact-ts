@@ -8,6 +8,7 @@ import {
   DBOSStepAlreadyRecordedError,
   DBOSWorkflowConflictError,
   assertStillOwnsWorkflow,
+  checkpointWorkflowID,
   replayRecordedStep,
   registerTransaction,
   runTransaction,
@@ -100,7 +101,7 @@ class NodePostgresTransactionHandler implements DataSourceTransactionHandler {
         /*sql*/
         `DELETE FROM "${this.schemaName}".transaction_completion
          WHERE workflow_id = $1 AND function_num >= $2`,
-        [workflowID, startStep],
+        [checkpointWorkflowID(workflowID), startStep],
       );
       await beforeCommit?.();
     });
@@ -115,7 +116,7 @@ class NodePostgresTransactionHandler implements DataSourceTransactionHandler {
       /*sql*/
       `SELECT output, error FROM "${this.schemaName}".transaction_completion
        WHERE workflow_id = $1 AND function_num = $2`,
-      [workflowID, stepID],
+      [checkpointWorkflowID(workflowID), stepID],
     );
     if (rows.length === 0) {
       return undefined;
@@ -137,7 +138,7 @@ class NodePostgresTransactionHandler implements DataSourceTransactionHandler {
        VALUES ($1, $2, $3)
        ON CONFLICT (workflow_id, function_num) DO NOTHING
        RETURNING workflow_id`,
-      [workflowID, stepID, output],
+      [checkpointWorkflowID(workflowID), stepID, output],
     );
     if (rows.length === 0) {
       throw new DBOSStepAlreadyRecordedError(workflowID, stepID);
@@ -153,7 +154,7 @@ class NodePostgresTransactionHandler implements DataSourceTransactionHandler {
        VALUES ($1, $2, $3)
        ON CONFLICT (workflow_id, function_num) DO NOTHING
        RETURNING workflow_id`,
-      [workflowID, stepID, error],
+      [checkpointWorkflowID(workflowID), stepID, error],
     );
     if (rows.length === 0) {
       throw new DBOSStepAlreadyRecordedError(workflowID, stepID);

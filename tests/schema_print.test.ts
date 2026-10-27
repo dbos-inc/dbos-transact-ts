@@ -14,7 +14,7 @@ import { getCurrentSysDBVersion } from '../src/sysdb_migrations/migration_runner
 import { ensureSystemDatabase } from '../src/system_database';
 import { maskDatabaseUrl } from '../src/database_utils';
 import { GlobalLogger } from '../src/telemetry/logs';
-import { generateDBOSTestConfig } from './helpers';
+import { generateDBOSTestConfig, describeUnlessSharded } from './helpers';
 
 const FUNNY_SCHEMA = 'F8nny_sCHem@-n@m3';
 const LATEST = allMigrations().length;
@@ -74,7 +74,8 @@ async function dropDatabase(adminUrl: string, dbName: string): Promise<void> {
   }
 }
 
-describe('schema --print-migrations and --print-user-role', () => {
+// Tests core's unsharded schema migrations, which a sharded system database replaces.
+describeUnlessSharded('schema --print-migrations and --print-user-role', () => {
   test('print-migrations all: headers, per-migration bookkeeping, pure SQL, no database needed', async () => {
     const { status, out, err } = await runPrint(UNREACHABLE_URL, { printMigrations: 'all' });
     expect(status).toBe(0);
@@ -329,4 +330,23 @@ describe('schema --print-migrations and --print-user-role', () => {
       rmSync(workDir, { recursive: true, force: true });
     }
   }, 60000);
+
+  test('print-migrations refuses sharding', () => {
+    // Sharded migrations run only live, where they can distribute tables on Citus.
+    const cliPath = path.resolve(__dirname, '..', 'dist', 'src', 'cli', 'cli.js');
+    const workDir = mkdtempSync(path.join(tmpdir(), 'dbos-schema-print-'));
+    const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('DBOS')));
+    try {
+      const res = spawnSync(process.execPath, [cliPath, 'schema', '--print-migrations', 'all', '--sharding'], {
+        cwd: workDir,
+        encoding: 'utf-8',
+        env,
+      });
+      expect(res.status).toBe(1);
+      expect(res.stdout).toBe('');
+      expect(res.stderr).toContain('--print-migrations is not supported with --sharding');
+    } finally {
+      rmSync(workDir, { recursive: true, force: true });
+    }
+  });
 });

@@ -14,6 +14,7 @@ import {
 import { type DBOSSerializer, serializeArgs } from './serialization';
 import { DBOSError, DBOSInvalidQueuePriorityError } from './error';
 import { DBOS_QUEUE_MIN_PRIORITY, DBOS_QUEUE_MAX_PRIORITY } from './dbos-executor';
+import { validateShardKey } from './shard_keys';
 
 /**
  * Options describing a workflow to enqueue by name, without a reference to its
@@ -62,6 +63,8 @@ export interface EnqueueWorkflowOptions {
    * application sharing the system database may run.
    */
   applicationName?: string;
+  /** The shard key the workflow lives under; required on a sharded system database. */
+  shardKey?: string;
 }
 
 /**
@@ -87,6 +90,7 @@ export async function buildEnqueueStatus(
       `Invalid workflow ID '${options.workflowID}': workflow IDs must be non-empty and cannot be only whitespace.`,
     );
   }
+  validateShardKey(options.shardKey);
   const workflowUUID = options.workflowID ?? randomUUID();
   const serparam = await serializeArgs(
     positionalArgs,
@@ -124,5 +128,6 @@ export async function buildEnqueueStatus(
     delayUntilEpochMS,
     attributes: options.attributes,
     applicationName: options.applicationName,
+    shardKey: options.shardKey,
   };
 }

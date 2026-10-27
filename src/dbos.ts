@@ -6,6 +6,8 @@ import {
   DBOSContextOptions,
   functionIDGetIncrement,
   functionIDGet,
+  childWorkflowID,
+  nextWorkflowShardKey,
   DBOSLocalCtx,
   isInWorkflowCtx,
 } from './context';
@@ -80,6 +82,7 @@ import {
 } from './decorators';
 import { globalParams, INTERNAL_QUEUE_NAME, sleepConfig, sleepms } from './utils';
 import {
+  DBOSJSON,
   deserializeValue,
   JSONValue,
   registerSerializationRecipe,
@@ -106,6 +109,8 @@ import {
   WorkflowScheduleUpdate,
   VersionInfo,
   migrateSystemDatabase,
+  createSystemDatabase,
+  grantDbosSchemaPermissions,
 } from './system_database';
 import { readStreamCore, readStreamOffsetCore } from './streams';
 import { PoolClient } from 'pg';
@@ -117,12 +122,14 @@ import {
   createScheduleId,
   triggerSchedule as triggerScheduleImpl,
   backfillSchedule as backfillScheduleImpl,
+  scheduleShardKey,
 } from './scheduler/scheduler';
 import { validateCrontab, validateTimezone } from './scheduler/crontab';
 import { logQueue, registerInternalQueue, RegisterQueueOptions, WorkflowQueue, wfQueueRunner } from './wfqueue';
 import { enqueueWorkflowWithOptions } from './enqueue_workflow';
 import type { EnqueueWorkflowOptions } from './enqueue_options';
 import assert from 'node:assert';
+import { bindShardKeys } from './shard_keys';
 
 type AnyConstructor = new (...args: unknown[]) => object;
 
@@ -186,6 +193,14 @@ export interface StartWorkflowParams {
 export interface SendOptions {
   /** Serialization format override, allows cross-language send/recv */
   serializationType?: WorkflowSerializationFormat;
+  /** The destination's shard key; required on a sharded system database. */
+  shardKey?: string;
+}
+
+/** Options naming the shard key of the workflow an operation addresses. */
+export interface ShardKeyOptions {
+  /** The workflow's shard key; required on a sharded system database. */
+  shardKey?: string;
 }
 
 /**
@@ -210,6 +225,8 @@ export interface ReadStreamOptions extends PollingOptions {
    * not `instanceof`.
    */
   timeoutSeconds?: number;
+  /** The shard key of the workflow whose stream is read; required on a sharded system database. */
+  shardKey?: string;
 }
 
 /**
@@ -233,7 +250,7 @@ export interface PollingOptions {
 /**
  * Options for `DBOS.getResult` and workflow handle `getResult`.
  */
-export interface GetResultOptions extends PollingOptions {
+export interface GetResultOptions extends PollingOptions, ShardKeyOptions {
   /** Timeout in seconds; if the workflow does not complete before the timeout, `null` will be returned */
   timeoutSeconds?: number;
   /** Absolute deadline as a UNIX epoch timestamp in milliseconds; if the workflow does not complete before this time, `null` will be returned */
@@ -263,7 +280,7 @@ export interface RecvOptions extends PollingOptions {
 /**
  * Options for `DBOS.getEvent`
  */
-export interface GetEventOptions extends PollingOptions {
+export interface GetEventOptions extends PollingOptions, ShardKeyOptions {
   /** Timeout in seconds; if no event is received before the timeout (default 60 seconds), `null` will be returned */
   timeoutSeconds?: number;
   /** Absolute deadline as a UNIX epoch timestamp in milliseconds; if no event is received before this time, `null` will be returned */
@@ -273,7 +290,7 @@ export interface GetEventOptions extends PollingOptions {
 /**
  * Options for `DBOS.setWorkflowDelay`
  */
-export interface SetWorkflowDelayOptions {
+export interface SetWorkflowDelayOptions extends ShardKeyOptions {
   /** Number of seconds to delay the workflow from now */
   delaySeconds?: number;
   /** Absolute deadline as a UNIX epoch timestamp in milliseconds; the workflow will remain DELAYED until this time */
@@ -283,7 +300,7 @@ export interface SetWorkflowDelayOptions {
 /**
  * Options for `DBOS.cancelWorkflow` and `DBOS.cancelWorkflows`
  */
-export interface CancelWorkflowsOptions {
+export interface CancelWorkflowsOptions extends ShardKeyOptions {
   /** If true, also cancel all descendant (child) workflows recursively (default: false) */
   cancelChildren?: boolean;
 }
@@ -551,11 +568,36 @@ export class DBOS {
    * @param systemDatabaseUrl - The system database to create or migrate
    * @param options.schemaName - The schema holding the DBOS system tables (default: `dbos`)
    * @param options.applicationRole - A role to grant access to the system schema once migrated
+   * @param options.sharding - Create or migrate a sharded system database (requires @dbos-inc/dbos-enterprise)
    */
   static async migrate(
     systemDatabaseUrl: string,
-    options: { schemaName?: string; applicationRole?: string } = {},
+    options: { schemaName?: string; applicationRole?: string; sharding?: boolean } = {},
   ): Promise<void> {
+    if (options.sharding) {
+      // Sharded migrations come from Transact Enterprise; the grant is the same.
+      const sysdb = createSystemDatabase({
+        systemDatabaseUrl,
+        logger: new GlobalLogger(),
+        serializer: DBOSJSON,
+        schemaName: options.schemaName ?? 'dbos',
+        sharding: true,
+      });
+      try {
+        await sysdb.runMigrations();
+      } finally {
+        await sysdb.destroy();
+      }
+      if (options.applicationRole) {
+        await grantDbosSchemaPermissions(
+          systemDatabaseUrl,
+          options.applicationRole,
+          new GlobalLogger(),
+          options.schemaName ?? 'dbos',
+        );
+      }
+      return;
+    }
     await migrateSystemDatabase(
       systemDatabaseUrl,
       new GlobalLogger(),
@@ -595,7 +637,11 @@ export class DBOS {
     finalizeClassRegistrations();
 
     // Every enterprise feature requires Conductor to report the org entitled to it, and the package.
-    const features = enterprise.enabledFeatures(config);
+    let features = enterprise.enabledFeatures(config);
+    if (internalConfig.sharding) {
+      // Auto-upgrade is disabled on a sharded system database, so it needs no entitlement.
+      features = features.filter((f) => f !== enterprise.AUTO_UPGRADE);
+    }
     const entitlementOptions = {
       enterpriseKey: config.transactEnterpriseKey,
       conductorKey: options?.conductorKey,
@@ -611,7 +657,7 @@ export class DBOS {
           : undefined;
     // Workflows can also enroll for auto-upgrade individually, which the config flag's check above does not cover.
     const autoUpgradableWorkflowNames = autoUpgradableWorkflows(internalConfig.autoUpgrade);
-    if (autoUpgradableWorkflowNames.length > 0 && !internalConfig.autoUpgrade) {
+    if (autoUpgradableWorkflowNames.length > 0 && !internalConfig.autoUpgrade && !internalConfig.sharding) {
       await enterprise.requireEnterprise([enterprise.AUTO_UPGRADE], entitlementOptions);
       loadedEnterprise ??= enterprise.load(enterprise.AUTO_UPGRADE.description);
     }
@@ -715,7 +761,10 @@ export class DBOS {
     }
 
     // Start the auto-upgrade loop if any workflow takes part.
-    if (autoUpgradableWorkflowNames.length > 0) {
+    if (autoUpgradableWorkflowNames.length > 0 && executor.systemDatabase.sharded) {
+      // Its queries aren't keyed by shard, so it doesn't run on a sharded database.
+      executor.logger.warn('Auto-upgrade is disabled: it is not supported on a sharded system database.');
+    } else if (autoUpgradableWorkflowNames.length > 0) {
       assert(loadedEnterprise, 'the enterprise package is loaded whenever a workflow enrolls in auto-upgrade');
       const upgradePass = new loadedEnterprise.AutoUpgradePass(executor, {
         graceMs: internalConfig.autoUpgradeGraceMs ?? DEFAULT_AUTO_UPGRADE_GRACE_MS,
@@ -791,7 +840,7 @@ export class DBOS {
           executor.autoUpgrader = undefined;
         }
         await executor.awaitRunningWorkflows(drainTimeoutMS);
-        await executor.stopWorkflowTimeoutSweep();
+        await executor.stopBackgroundJobs();
       }
 
       // Stop the conductor
@@ -884,6 +933,12 @@ export class DBOS {
     return getCurrentContextStore()?.workflowId;
   }
 
+  /** The shard key of the currently executing workflow; undefined outside a workflow or on an unsharded database. */
+  static get shardKey(): string | undefined {
+    const ctx = getCurrentContextStore();
+    return ctx?.workflowId !== undefined ? ctx.shardKey : undefined;
+  }
+
   /** Use portable serialization by default? */
   static get #defaultSerializationType(): WorkflowSerializationFormat | undefined {
     return getCurrentContextStore()?.serializationType;
@@ -953,19 +1008,21 @@ export class DBOS {
    * @param workflowID - ID of the workflow
    * @returns status of the workflow as `WorkflowStatus`, or `null` if there is no workflow with `workflowID`
    */
-  static getWorkflowStatus(workflowID: string): Promise<WorkflowStatus | null> {
+  static async getWorkflowStatus(workflowID: string, options?: ShardKeyOptions): Promise<WorkflowStatus | null> {
     ensureDBOSIsLaunched('getWorkflowStatus');
-    if (DBOS.isWithinWorkflow()) {
-      if (DBOS.isInStep()) {
-        // OK to use directly
-        return DBOS.#executor.getWorkflowStatus(workflowID);
-      } else if (DBOS.isInWorkflow()) {
-        return DBOS.#executor.getWorkflowStatus(workflowID, DBOS.workflowID, functionIDGetIncrement());
-      } else {
-        throw new DBOSInvalidWorkflowTransitionError('Invalid call to `getWorkflowStatus` inside a `transaction`');
+    return await bindShardKeys([[workflowID, options?.shardKey]], () => {
+      if (DBOS.isWithinWorkflow()) {
+        if (DBOS.isInStep()) {
+          // OK to use directly
+          return DBOS.#executor.getWorkflowStatus(workflowID);
+        } else if (DBOS.isInWorkflow()) {
+          return DBOS.#executor.getWorkflowStatus(workflowID, DBOS.workflowID, functionIDGetIncrement());
+        } else {
+          throw new DBOSInvalidWorkflowTransitionError('Invalid call to `getWorkflowStatus` inside a `transaction`');
+        }
       }
-    }
-    return DBOS.#executor.getWorkflowStatus(workflowID);
+      return DBOS.#executor.getWorkflowStatus(workflowID);
+    });
   }
 
   /**
@@ -983,7 +1040,10 @@ export class DBOS {
       // Reserve the function ID synchronously, before any await.
       timerFuncID = functionIDGetIncrement();
     }
-    return await getResultInternal(workflowID, timeoutSeconds, timerFuncID, undefined, pollingIntervalMs);
+    const shardKey = typeof options === 'object' ? options.shardKey : undefined;
+    return await bindShardKeys([[workflowID, shardKey]], () =>
+      getResultInternal<T>(workflowID, timeoutSeconds, timerFuncID, undefined, pollingIntervalMs),
+    );
   }
 
   /**
@@ -1012,13 +1072,17 @@ export class DBOS {
     }
     const workflowIds = [...handleMap.keys()];
 
-    const completedId = await runInternalStep(async () => {
-      return await DBOSExecutor.globalInstance!.systemDatabase.awaitFirstWorkflowId(
-        workflowIds,
-        DBOS.workflowID,
-        pollingIntervalMs,
-      );
-    }, 'DBOS.waitFirst');
+    const completedId = await bindShardKeys(
+      handles.map((h) => [h.workflowID, h.shardKey] as const),
+      () =>
+        runInternalStep(async () => {
+          return await DBOSExecutor.globalInstance!.systemDatabase.awaitFirstWorkflowId(
+            workflowIds,
+            DBOS.workflowID,
+            pollingIntervalMs,
+          );
+        }, 'DBOS.waitFirst'),
+    );
 
     return handleMap.get(completedId)!;
   }
@@ -1038,13 +1102,17 @@ export class DBOS {
     const pollingIntervalMs = resolvePollingIntervalMs(options);
     const workflowIds = [...new Set(handles.map((handle) => handle.workflowID))];
 
-    await runInternalStep(async () => {
-      await DBOSExecutor.globalInstance!.systemDatabase.awaitWorkflowIds(
-        workflowIds,
-        DBOS.workflowID,
-        pollingIntervalMs,
-      );
-    }, 'DBOS.waitAll');
+    await bindShardKeys(
+      handles.map((h) => [h.workflowID, h.shardKey] as const),
+      () =>
+        runInternalStep(async () => {
+          await DBOSExecutor.globalInstance!.systemDatabase.awaitWorkflowIds(
+            workflowIds,
+            DBOS.workflowID,
+            pollingIntervalMs,
+          );
+        }, 'DBOS.waitAll'),
+    );
 
     return handles;
   }
@@ -1056,17 +1124,18 @@ export class DBOS {
    * @param workflowID - ID of the workflow
    * @returns `WorkflowHandle` that can be used to poll for the status or result of any workflow with `workflowID`
    */
-  static retrieveWorkflow<T = unknown>(workflowID: string): WorkflowHandle<Awaited<T>> {
+  static retrieveWorkflow<T = unknown>(workflowID: string, options?: ShardKeyOptions): WorkflowHandle<Awaited<T>> {
     ensureDBOSIsLaunched('retrieveWorkflow');
-    if (DBOS.isWithinWorkflow()) {
-      if (!DBOS.isInWorkflow()) {
-        throw new DBOSInvalidWorkflowTransitionError(
-          'Invalid call to `retrieveWorkflow` inside a `transaction` or `step`',
-        );
-      }
-      return new RetrievedHandle(workflowID);
+    if (DBOS.isWithinWorkflow() && !DBOS.isInWorkflow()) {
+      throw new DBOSInvalidWorkflowTransitionError(
+        'Invalid call to `retrieveWorkflow` inside a `transaction` or `step`',
+      );
     }
-    return DBOS.#executor.retrieveWorkflow(workflowID);
+    // The resolved key, so the handle also works outside this binding.
+    const shardKey = bindShardKeys([[workflowID, options?.shardKey]], () =>
+      DBOS.#executor.systemDatabase.keyHint(workflowID),
+    );
+    return new RetrievedHandle(workflowID, shardKey);
   }
 
   /**
@@ -1099,14 +1168,16 @@ export class DBOS {
    * @param workflowID - ID of the workflow
    * @param priority - Priority value (0 to 2,147,483,647). Lower values are dequeued first.
    */
-  static async setWorkflowPriority(workflowID: string, priority: number): Promise<void> {
+  static async setWorkflowPriority(workflowID: string, priority: number, options?: ShardKeyOptions): Promise<void> {
     ensureDBOSIsLaunched('setWorkflowPriority');
     if (priority < DBOS_QUEUE_MIN_PRIORITY || priority > DBOS_QUEUE_MAX_PRIORITY) {
       throw new DBOSInvalidQueuePriorityError(priority, DBOS_QUEUE_MIN_PRIORITY, DBOS_QUEUE_MAX_PRIORITY);
     }
-    return runInternalStep(async () => {
-      return DBOSExecutor.globalInstance!.systemDatabase.setWorkflowPriority(workflowID, priority);
-    }, 'DBOS.setWorkflowPriority');
+    return bindShardKeys([[workflowID, options?.shardKey]], () =>
+      runInternalStep(async () => {
+        return DBOSExecutor.globalInstance!.systemDatabase.setWorkflowPriority(workflowID, priority);
+      }, 'DBOS.setWorkflowPriority'),
+    );
   }
 
   /**
@@ -1119,9 +1190,12 @@ export class DBOS {
   static async setWorkflowDelay(workflowID: string, options: number | SetWorkflowDelayOptions): Promise<void> {
     ensureDBOSIsLaunched('setWorkflowDelay');
     const delayUntilEpochMS = resolveDelayEpochMS(options);
-    return runInternalStep(async () => {
-      return DBOSExecutor.globalInstance!.systemDatabase.setWorkflowDelay(workflowID, delayUntilEpochMS);
-    }, 'DBOS.setWorkflowDelay');
+    const shardKey = typeof options === 'object' ? options.shardKey : undefined;
+    return bindShardKeys([[workflowID, shardKey]], () =>
+      runInternalStep(async () => {
+        return DBOSExecutor.globalInstance!.systemDatabase.setWorkflowDelay(workflowID, delayUntilEpochMS);
+      }, 'DBOS.setWorkflowDelay'),
+    );
   }
 
   /**
@@ -1132,12 +1206,14 @@ export class DBOS {
    */
   static async listWorkflowSteps(
     workflowID: string,
-    options?: ListWorkflowStepsOptions,
+    options?: ListWorkflowStepsOptions & ShardKeyOptions,
   ): Promise<StepInfo[] | undefined> {
     ensureDBOSIsLaunched('listWorkflowSteps');
-    return await runInternalStep(async () => {
-      return await DBOS.#executor.listWorkflowSteps(workflowID, true, options);
-    }, 'DBOS.listWorkflowSteps');
+    return await bindShardKeys([[workflowID, options?.shardKey]], () =>
+      runInternalStep(async () => {
+        return await DBOS.#executor.listWorkflowSteps(workflowID, true, options);
+      }, 'DBOS.listWorkflowSteps'),
+    );
   }
 
   /**
@@ -1158,9 +1234,13 @@ export class DBOS {
    */
   static async cancelWorkflows(workflowIDs: string[], options?: CancelWorkflowsOptions): Promise<void> {
     ensureDBOSIsLaunched('cancelWorkflows');
-    return runInternalStep(async () => {
-      return DBOSExecutor.globalInstance!.systemDatabase.cancelWorkflows(workflowIDs, options?.cancelChildren);
-    }, 'DBOS.cancelWorkflow');
+    return bindShardKeys(
+      workflowIDs.map((wid) => [wid, options?.shardKey] as const),
+      () =>
+        runInternalStep(async () => {
+          return DBOSExecutor.globalInstance!.systemDatabase.cancelWorkflows(workflowIDs, options?.cancelChildren);
+        }, 'DBOS.cancelWorkflow'),
+    );
   }
 
   /**
@@ -1170,10 +1250,13 @@ export class DBOS {
    */
   static async resumeWorkflow<T>(
     workflowID: string,
-    options?: { queueName?: string },
+    options?: { queueName?: string; shardKey?: string },
   ): Promise<WorkflowHandle<Awaited<T>>> {
-    const handles = await this.resumeWorkflows<T>([workflowID], options);
-    return handles[0];
+    return await bindShardKeys([[workflowID, options?.shardKey]], async () => {
+      await this.resumeWorkflows<T>([workflowID], options);
+      // The resolved key, so the handle also works outside this binding.
+      return new RetrievedHandle<Awaited<T>>(workflowID, DBOS.#executor.systemDatabase.keyHint(workflowID));
+    });
   }
 
   /**
@@ -1184,13 +1267,18 @@ export class DBOS {
    */
   static async resumeWorkflows<T>(
     workflowIDs: string[],
-    options?: { queueName?: string },
+    options?: { queueName?: string; shardKey?: string },
   ): Promise<WorkflowHandle<Awaited<T>>[]> {
     ensureDBOSIsLaunched('resumeWorkflows');
-    await runInternalStep(async () => {
-      return DBOSExecutor.globalInstance!.systemDatabase.resumeWorkflows(workflowIDs, options?.queueName);
-    }, 'DBOS.resumeWorkflow');
-    return workflowIDs.map((wfid) => this.retrieveWorkflow(wfid));
+    return await bindShardKeys(
+      workflowIDs.map((wid) => [wid, options?.shardKey] as const),
+      async () => {
+        await runInternalStep(async () => {
+          return DBOSExecutor.globalInstance!.systemDatabase.resumeWorkflows(workflowIDs, options?.queueName);
+        }, 'DBOS.resumeWorkflow');
+        return workflowIDs.map((wfid) => new RetrievedHandle<Awaited<T>>(wfid, options?.shardKey));
+      },
+    );
   }
 
   /**
@@ -1202,8 +1290,12 @@ export class DBOS {
    * @param workflowID - ID of the workflow to delete
    * @param deleteChildren - If true, also delete all child workflows recursively (default: false)
    */
-  static async deleteWorkflow(workflowID: string, deleteChildren: boolean = false): Promise<void> {
-    return this.deleteWorkflows([workflowID], deleteChildren);
+  static async deleteWorkflow(
+    workflowID: string,
+    deleteChildren: boolean = false,
+    options?: ShardKeyOptions,
+  ): Promise<void> {
+    return this.deleteWorkflows([workflowID], deleteChildren, options);
   }
 
   /**
@@ -1214,11 +1306,19 @@ export class DBOS {
    * @param workflowIDs - IDs of the workflows to delete
    * @param deleteChildren - If true, also delete all child workflows recursively (default: false)
    */
-  static async deleteWorkflows(workflowIDs: string[], deleteChildren: boolean = false): Promise<void> {
+  static async deleteWorkflows(
+    workflowIDs: string[],
+    deleteChildren: boolean = false,
+    options?: ShardKeyOptions,
+  ): Promise<void> {
     ensureDBOSIsLaunched('deleteWorkflows');
-    return runInternalStep(async () => {
-      return DBOSExecutor.globalInstance!.systemDatabase.deleteWorkflows(workflowIDs, deleteChildren);
-    }, 'DBOS.deleteWorkflow');
+    return bindShardKeys(
+      workflowIDs.map((wid) => [wid, options?.shardKey] as const),
+      () =>
+        runInternalStep(async () => {
+          return DBOSExecutor.globalInstance!.systemDatabase.deleteWorkflows(workflowIDs, deleteChildren);
+        }, 'DBOS.deleteWorkflow'),
+    );
   }
 
   /**
@@ -1239,14 +1339,18 @@ export class DBOS {
       queueName?: string;
       queuePartitionKey?: string;
       replacementChildren?: Record<string, string>;
+      shardKey?: string;
     },
   ): Promise<WorkflowHandle<Awaited<T>>> {
     ensureDBOSIsLaunched('forkWorkflow');
-    const forkedID = await runInternalStep(async () => {
-      return await DBOS.#executor.forkWorkflow(workflowID, startStep, options);
-    }, 'DBOS.forkWorkflow');
-
-    return this.retrieveWorkflow(forkedID);
+    return await bindShardKeys([[workflowID, options?.shardKey]], async () => {
+      const forkedID = await runInternalStep(async () => {
+        return await DBOS.#executor.forkWorkflow(workflowID, startStep, options);
+      }, 'DBOS.forkWorkflow');
+      // A fork lives under its original's shard key, however the caller supplied it.
+      const forkKey = DBOS.#executor.systemDatabase.keyHint(workflowID);
+      return new RetrievedHandle<Awaited<T>>(forkedID, forkKey);
+    });
   }
 
   /**
@@ -1275,15 +1379,18 @@ export class DBOS {
       applicationVersion?: string;
       queueName?: string;
       queuePartitionKey?: string;
+      shardKey?: string;
     },
   ): Promise<WorkflowHandle<Awaited<T>>> {
     ensureDBOSIsLaunched('rewindWorkflow');
     const startStep = options?.startStep ?? 0;
-    await runInternalStep(async () => {
-      return await DBOS.#executor.rewindWorkflow(workflowID, startStep, options ?? {});
-    }, 'DBOS.rewindWorkflow');
-
-    return this.retrieveWorkflow(workflowID);
+    return await bindShardKeys([[workflowID, options?.shardKey]], async () => {
+      await runInternalStep(async () => {
+        return await DBOS.#executor.rewindWorkflow(workflowID, startStep, options ?? {});
+      }, 'DBOS.rewindWorkflow');
+      // The resolved key, so the handle also works outside this binding.
+      return new RetrievedHandle<Awaited<T>>(workflowID, DBOS.#executor.systemDatabase.keyHint(workflowID));
+    });
   }
 
   /**
@@ -1408,6 +1515,14 @@ export class DBOS {
   static async withWorkflowTimeout<R>(timeoutMS: number | null, callback: () => Promise<R>): Promise<R> {
     ensureDBOSIsLaunched('workflows');
     return DBOS.#withTopContext({ workflowTimeoutMS: timeoutMS }, callback);
+  }
+
+  /** Set the shard key of each workflow started, enqueued, or called in `callback`; their children don't inherit it. */
+  static async withShardKey<R>(shardKey: string, callback: () => Promise<R>): Promise<R> {
+    if (typeof shardKey !== 'string' || shardKey === '') {
+      throw new DBOSError('shardKey must be a non-empty string');
+    }
+    return DBOS.#withTopContext({ shardKeyForNextWorkflow: shardKey }, callback);
   }
 
   static async #withTopContext<R>(options: DBOSContextOptions, callback: () => Promise<R>): Promise<R> {
@@ -1561,6 +1676,7 @@ export class DBOS {
         topic,
         sermsg.serialization,
         idempotencyKey,
+        options?.shardKey,
       );
     } else if (DBOS.isInStep()) {
       // Inside a step: not recorded, but fenced on the enclosing workflow's ownership.
@@ -1576,6 +1692,7 @@ export class DBOS {
         topic,
         sermsg.serialization,
         idempotencyKey,
+        options?.shardKey,
       );
     } else {
       const sermsg = await serializeValue(
@@ -1589,6 +1706,8 @@ export class DBOS {
         topic,
         sermsg.serialization,
         idempotencyKey,
+        undefined,
+        options?.shardKey,
       );
     }
   }
@@ -1680,6 +1799,11 @@ export class DBOS {
    */
   static async getEvent<T>(workflowID: string, key: string, options?: number | GetEventOptions): Promise<T | null> {
     ensureDBOSIsLaunched('getEvent');
+    const shardKey = typeof options === 'object' ? options.shardKey : undefined;
+    return await bindShardKeys([[workflowID, shardKey]], () => DBOS.#getEvent<T>(workflowID, key, options));
+  }
+
+  static async #getEvent<T>(workflowID: string, key: string, options?: number | GetEventOptions): Promise<T | null> {
     const timeoutSeconds = resolveTimeoutSeconds(options);
     const pollingIntervalMs = resolvePollingIntervalMs(options);
     if (DBOS.isWithinWorkflow()) {
@@ -1793,6 +1917,7 @@ export class DBOS {
       timeoutMS: resolveStreamTimeoutMS(options),
       functionName: DBOS_FUNCNAME_READSTREAM,
       checkpoint: true,
+      shardKey: options.shardKey,
     });
   }
 
@@ -1822,6 +1947,7 @@ export class DBOS {
       timeoutMS: resolveStreamTimeoutMS(options),
       functionName: DBOS_FUNCNAME_READSTREAMOFFSET,
       checkpoint: true,
+      shardKey: options.shardKey,
     });
   }
 
@@ -1912,6 +2038,8 @@ export class DBOS {
 
     const queueName = params.queueName ?? ppctx?.queueAssignedForWorkflows;
     const timeoutMS = params.timeoutMS ?? ppctx?.workflowTimeoutMS;
+    // Set by DBOS.withShardKey; a workflow never inherits its caller's own key.
+    const shardKey = nextWorkflowShardKey(ppctx);
 
     const instance = $this === undefined || typeof $this === 'function' ? undefined : ($this as ConfiguredInstance);
     if (instance && !(instance instanceof ConfiguredInstance)) {
@@ -1958,7 +2086,7 @@ export class DBOS {
     if (isChild) {
       const pwfid = ppctx!.workflowId!;
       const wfParams: WorkflowParams = {
-        workflowUUID: wfId || pwfid + '-' + funcId,
+        workflowUUID: wfId || childWorkflowID(pwfid, funcId!, ppctx?.shardKey, shardKey),
         configuredInstance: instance,
         queueName,
         timeoutMS,
@@ -1971,6 +2099,7 @@ export class DBOS {
         workflowAttributes: params.workflowAttributes,
         authenticatedUser: params.authenticatedUser,
         authenticatedRoles: params.authenticatedRoles,
+        shardKey,
       };
 
       return await invokeRegOp(wfParams, pwfid, funcId);
@@ -1986,6 +2115,7 @@ export class DBOS {
         workflowAttributes: params.workflowAttributes,
         authenticatedUser: params.authenticatedUser,
         authenticatedRoles: params.authenticatedRoles,
+        shardKey,
       };
 
       return await invokeRegOp(wfParams, undefined, undefined);
@@ -2026,6 +2156,8 @@ export class DBOS {
     // Reserve the parent's child-funcID once, before any await. Each loop iteration passes it
     // through so the return-existing retry loop consumes a single funcID instead of one per try.
     const childFuncId = DBOS.isInWorkflow() ? functionIDGetIncrement() : undefined;
+    // The key the attached-to workflow lives under, as the start would have used.
+    const shardKey = nextWorkflowShardKey(getCurrentContextStore());
 
     // Resolve the workflow ID once: if the caller supplied one explicitly or via
     // `withNextWorkflowID`, reuse it on every iteration.
@@ -2059,7 +2191,7 @@ export class DBOS {
               { childWorkflowID: existingID },
             );
           }
-          return new RetrievedHandle<Return>(existingID);
+          return new RetrievedHandle<Return>(existingID, shardKey);
         }
         // The prior workflow's deduplication_id was cleared between our INSERT and
         // the lookup (it completed or was cancelled). Loop and try to claim the slot.
@@ -2454,6 +2586,7 @@ export class DBOS {
       cronTimezone: options.options?.cronTimezone ?? null,
       queueName: options.options?.queueName ?? null,
       applicationName: globalParams.appName,
+      shardKey: options.options?.shardKey,
     };
 
     await runTransactionalInternalStep(
@@ -2556,6 +2689,7 @@ export class DBOS {
       automaticBackfill?: boolean;
       cronTimezone?: string;
       queueName?: string;
+      shardKey?: string;
     }>,
   ): Promise<void> {
     ensureDBOSIsLaunched('applySchedules');
@@ -2590,6 +2724,7 @@ export class DBOS {
         automaticBackfill: sched.automaticBackfill ?? false,
         cronTimezone: sched.cronTimezone ?? null,
         queueName: sched.queueName ?? null,
+        shardKey: sched.shardKey,
       });
     }
 
@@ -2603,7 +2738,7 @@ export class DBOS {
     }
     const executor = DBOSExecutor.globalInstance!;
     const workflowID = await triggerScheduleImpl(executor.systemDatabase, executor.serializer, name);
-    return new RetrievedHandle(workflowID);
+    return new RetrievedHandle(workflowID, await scheduleShardKey(executor.systemDatabase, name));
   }
 
   static async backfillSchedule(name: string, start: Date, end: Date): Promise<WorkflowHandle<unknown>[]> {
@@ -2613,7 +2748,8 @@ export class DBOS {
     }
     const executor = DBOSExecutor.globalInstance!;
     const workflowIDs = await backfillScheduleImpl(executor.systemDatabase, executor.serializer, name, start, end);
-    return workflowIDs.map((id) => new RetrievedHandle(id));
+    const shardKey = await scheduleShardKey(executor.systemDatabase, name);
+    return workflowIDs.map((id) => new RetrievedHandle(id, shardKey));
   }
 
   // ==================== Application Versions ====================

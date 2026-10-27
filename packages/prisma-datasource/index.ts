@@ -6,6 +6,7 @@ import {
   DBOSStepAlreadyRecordedError,
   DBOSWorkflowConflictError,
   assertStillOwnsWorkflow,
+  checkpointWorkflowID,
   replayRecordedStep,
   registerTransaction,
   runTransaction,
@@ -127,7 +128,7 @@ class PrismaTransactionHandler implements DataSourceTransactionHandler {
       await client.$executeRawUnsafe(
         `DELETE FROM "${this.schemaName}".transaction_completion
         WHERE workflow_id = $1 AND function_num >= $2`,
-        workflowID,
+        checkpointWorkflowID(workflowID),
         startStep,
       );
       await beforeCommit?.();
@@ -143,7 +144,7 @@ class PrismaTransactionHandler implements DataSourceTransactionHandler {
     const result = await client.$queryRawUnsafe<Result[]>(
       `SELECT output, error FROM "${this.schemaName}".transaction_completion
       WHERE workflow_id = $1 AND function_num = $2`,
-      workflowID,
+      checkpointWorkflowID(workflowID),
       stepID,
     );
     if (result?.[0] === undefined) {
@@ -159,7 +160,7 @@ class PrismaTransactionHandler implements DataSourceTransactionHandler {
       `INSERT INTO "${this.schemaName}".transaction_completion (workflow_id, function_num, error)
        VALUES ($1, $2, $3)
        ON CONFLICT (workflow_id, function_num) DO NOTHING`,
-      workflowID,
+      checkpointWorkflowID(workflowID),
       stepID,
       error,
     );
@@ -190,7 +191,7 @@ class PrismaTransactionHandler implements DataSourceTransactionHandler {
       `INSERT INTO "${schemaName}".transaction_completion (workflow_id, function_num, output)
        VALUES ($1, $2, $3)
        ON CONFLICT (workflow_id, function_num) DO NOTHING`,
-      workflowID,
+      checkpointWorkflowID(workflowID),
       stepID,
       output,
     );

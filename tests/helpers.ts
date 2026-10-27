@@ -37,24 +37,95 @@ export async function ensureTestDatabase(databaseUrl: string) {
   }
 }
 
-export function generateDBOSTestConfig(): DBOSConfig {
+/* Sharded test mode */
+
+/** Whether the system database is a sharded one behind a router (requires @dbos-inc/dbos-enterprise). */
+export function usingSharding(): boolean {
+  return process.env.DBOS_DATABASE === 'SHARDED';
+}
+
+export function shardedSystemUrl(): string {
+  return process.env.DBOS_SHARDED_SYSTEM_URL ?? 'postgresql://postgres:dbos@localhost:6432/dbos';
+}
+
+// Worker processes import this file outside jest, where `test` and `describe` are undefined.
+const jestTest = typeof test === 'undefined' ? undefined : test;
+const jestDescribe = typeof describe === 'undefined' ? undefined : describe;
+
+/** For tests a sharded run can't serve: refused features, writes to unkeyed tables, own databases, batch timing. */
+export const testUnlessSharded = (usingSharding() ? jestTest?.skip : jestTest) as jest.It;
+export const describeUnlessSharded = (usingSharding() ? jestDescribe?.skip : jestDescribe) as jest.Describe;
+
+/** The local test database: the system database of an unsharded run, and the user database of either. */
+export function localTestDatabaseUrl(): string {
   const dbPassword = process.env.DB_PASSWORD || process.env.PGPASSWORD || 'dbos';
   const url = new URL(
     process.env.DBOS_TEST_DB_URL ?? `postgresql://postgres:${dbPassword}@localhost:5432/dbostest?sslmode=disable`,
   );
   // DBOS_TEST_DB_URL names the test database; the system database is named after it.
   url.pathname = `${url.pathname}_dbos_sys`;
+  return url.toString();
+}
 
+/** Shard keys the sharded run's harness saw core lose on its own service paths. */
+export function lostShardKeys(): string[] {
+  const harness = (globalThis as { dbosShardedHarness?: { lostShardKeys: string[] } }).dbosShardedHarness;
+  if (harness === undefined) {
+    throw new Error(
+      "A sharded run needs @dbos-inc/dbos-enterprise's harness: run jest with " +
+        '-c ../dbos-enterprise-ts/tests/sharding/core.jest.config.js',
+    );
+  }
+  return harness.lostShardKeys;
+}
+
+export function generateDBOSTestConfig(): DBOSConfig {
+  if (usingSharding()) {
+    // The harness supplies the keys core's tests don't pass.
+    lostShardKeys();
+    return { name: 'dbostest', systemDatabaseUrl: shardedSystemUrl(), sharding: true };
+  }
+  const url = localTestDatabaseUrl();
   return {
     name: 'dbostest',
-    systemDatabaseUrl: url.toString(),
-    ...(url.port === '26257' ? { useListenNotify: false } : {}),
+    systemDatabaseUrl: url,
+    ...(new URL(url).port === '26257' ? { useListenNotify: false } : {}),
   };
+}
+
+/** Drop the sharded schemas through the router, which runs DDL on every shard. */
+async function resetShardedSystemDatabase(systemDatabaseUrl: string) {
+  const client = new Client(getClientConfig(systemDatabaseUrl));
+  await client.connect();
+  try {
+    // Only schemas DBOS created, including custom system schemas a test configured; a coordinator's own stay.
+    const { rows } = await client.query<{ table_schema: string }>(
+      `SELECT DISTINCT table_schema FROM information_schema.tables WHERE table_name = 'dbos_migrations'
+       UNION SELECT 'dbos'`,
+    );
+    for (const { table_schema } of rows) {
+      await client.query(`DROP SCHEMA IF EXISTS "${table_schema.replaceAll('"', '""')}" CASCADE`);
+    }
+  } finally {
+    await client.end();
+  }
 }
 
 export async function setUpDBOSTestSysDb(config: DBOSConfig) {
   config.name ??= 'dbostest';
   const internalConfig = translateDbosConfig(config);
+
+  if (internalConfig.sharding) {
+    await resetShardedSystemDatabase(internalConfig.systemDatabaseUrl);
+    // The user database stays plain local Postgres, reset as in any other run.
+    await dropPGDatabase(localTestDatabaseUrl(), silentDropLogger);
+    await ensureTestDatabase(localTestDatabaseUrl());
+    await DBOS.migrate(internalConfig.systemDatabaseUrl, {
+      schemaName: internalConfig.systemDatabaseSchemaName,
+      sharding: true,
+    });
+    return;
+  }
 
   await dropPGDatabase(internalConfig.systemDatabaseUrl, silentDropLogger);
   await ensureSystemDatabase(
@@ -111,6 +182,22 @@ export async function queueEntriesAreCleanedUp() {
     --maxTries;
   }
   return success;
+}
+
+/** Expect `call` to fail with an error of this class whose message matches. */
+export async function expectError(
+  call: Promise<unknown> | (() => unknown),
+  errorClass: abstract new (...args: never[]) => Error,
+  message: string | RegExp,
+): Promise<void> {
+  let error: unknown;
+  try {
+    await (typeof call === 'function' ? call() : call);
+  } catch (e) {
+    error = e;
+  }
+  expect(error).toBeInstanceOf(errorClass);
+  expect((error as Error).message).toMatch(message);
 }
 
 // Poll `check` until it stops throwing, rethrowing its last failure if the deadline passes.
