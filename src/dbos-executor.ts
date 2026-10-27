@@ -941,7 +941,6 @@ export class DBOSExecutor {
     ...args: T
   ): Promise<R> {
     stepFnName = stepFnName ?? stepFn.name ?? '<unnamed>';
-    const startTime = Date.now();
     if (!stepConfig) {
       const stepReg = getFunctionRegistration(stepFn);
       stepConfig = stepReg?.stepConfig;
@@ -954,6 +953,23 @@ export class DBOSExecutor {
     // Intentionally advance the function ID before any awaits, then work with a copy of the context.
     const funcID = functionIDGetIncrement();
     const lctx = { ...getCurrentContextStore()! };
+    return await this.callStepFunctionAt(funcID, lctx, stepFn, stepFnName, stepConfig, clsInst, ...args);
+  }
+
+  /**
+   * Execute a step function at a function ID already drawn from the workflow context `lctx`.
+   * `stepConfig` must already be validated.
+   */
+  async callStepFunctionAt<T extends unknown[], R>(
+    funcID: number,
+    lctx: DBOSLocalCtx,
+    stepFn: TypedAsyncFunction<T, R>,
+    stepFnName: string,
+    stepConfig: StepConfig,
+    clsInst: object | null,
+    ...args: T
+  ): Promise<R> {
+    const startTime = Date.now();
     const wfid = lctx.workflowId!;
 
     await this.systemDatabase.checkIfCanceled(wfid);

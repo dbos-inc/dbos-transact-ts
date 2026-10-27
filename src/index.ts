@@ -12,6 +12,8 @@ export {
   ShardKeyOptions,
 } from './dbos';
 
+export type { StepReservation } from './dbos';
+
 export { DBOSClient } from './client';
 
 export { WorkflowSchedule, ScheduledWorkflowFn, ScheduleOptions } from './scheduler/scheduler';
