@@ -6,6 +6,8 @@ import {
   DBOSContextOptions,
   functionIDGetIncrement,
   functionIDGet,
+  DBOSLocalCtx,
+  isInWorkflowCtx,
 } from './context';
 import {
   DBOSConfig,
@@ -467,6 +469,56 @@ export async function runTransactionalInternalStep<T>(
     }
   }
   return callback(undefined);
+}
+
+/**
+ * A step ID drawn by `DBOS.reserveStep`, run exactly once later with `run`.
+ * It must run in the workflow that reserved it; a reservation that never runs leaves a gap in the step IDs.
+ */
+export class StepReservation {
+  #used = false;
+
+  constructor(
+    /** The reserved step ID */
+    readonly stepID: number,
+    private readonly ctx: DBOSLocalCtx,
+  ) {}
+
+  /**
+   * Run `func` as a checkpointed step at the reserved step ID
+   * @param func - The function to run as a step
+   * @param config - Configuration information for the step, particularly the retry policy and name
+   * @returns - result (either obtained from invoking function, or retrieved if run before)
+   */
+  async run<Return>(func: () => Promise<Return>, config: StepConfig & { name?: string } = {}): Promise<Return> {
+    ensureDBOSIsLaunched('steps');
+    if (this.#used) {
+      throw new DBOSInvalidWorkflowTransitionError('A step reservation can only be run once');
+    }
+    const ctx = getCurrentContextStore();
+    if (
+      ctx === undefined ||
+      !isInWorkflowCtx(ctx) ||
+      ctx.workflowId !== this.ctx.workflowId ||
+      ctx.ownerXid !== this.ctx.ownerXid
+    ) {
+      throw new DBOSInvalidWorkflowTransitionError(
+        `Step ${this.stepID} was reserved in workflow ${this.ctx.workflowId} and must be run from that workflow, outside any step or transaction`,
+      );
+    }
+    const name = config.name ?? func.name;
+    validateStepConfig(config, name);
+    // Claimed before any await, so a concurrent second run is rejected.
+    this.#used = true;
+    return await DBOSExecutor.globalInstance!.callStepFunctionAt<[], Return>(
+      this.stepID,
+      this.ctx,
+      func as unknown as TypedAsyncFunction<[], Return>,
+      name,
+      config,
+      null,
+    );
+  }
 }
 
 export class DBOS {
@@ -2201,6 +2253,24 @@ export class DBOS {
     }
 
     return func();
+  }
+
+  /**
+   * Draw the next step ID now, so a step can run at it later (for example, from another task) with `run`.
+   * This fixes the step's position in the workflow's history when it would otherwise depend on timing.
+   * Must be called from workflow code, not from a step or transaction.
+   * @returns - a `StepReservation` that runs a step at the reserved ID
+   */
+  static reserveStep(): StepReservation {
+    ensureDBOSIsLaunched('steps');
+    const ctx = getCurrentContextStore();
+    if (ctx === undefined || !isInWorkflowCtx(ctx)) {
+      throw new DBOSInvalidWorkflowTransitionError(
+        'DBOS.reserveStep must be called from a workflow, outside any step or transaction',
+      );
+    }
+    const stepID = functionIDGetIncrement();
+    return new StepReservation(stepID, { ...ctx });
   }
 
   /**
