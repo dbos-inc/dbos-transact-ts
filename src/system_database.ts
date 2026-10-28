@@ -61,6 +61,7 @@ import {
   DEBUG_TRIGGER_INITWF_COMMIT,
   DEBUG_TRIGGER_FIND_AND_MARK_AFTER_SELECT,
   DEBUG_TRIGGER_PARTITIONED_DEQUEUE_AFTER_CANDIDATES,
+  DEBUG_TRIGGER_PARTITIONED_DEQUEUE_BEFORE_STRIPES,
   debugTriggerPoint,
 } from './debugpoint';
 import {
@@ -488,6 +489,14 @@ async function releaseSystemDatabaseClient(client: ClientBase, customPool?: Pool
 /** A Postgres advisory lock key: the leading 8 bytes of SHA-256 over `lockName`, as a signed big-endian integer. */
 export function advisoryLockKey(lockName: string): bigint {
   return createHash('sha256').update(lockName).digest().readBigInt64BE(0);
+}
+
+/** Claim-lock stripes per partitioned queue: claims of one partition share a stripe, and a sweep holds at most this many locks. */
+export const PARTITION_CLAIM_STRIPES = 64;
+
+/** The claim-lock stripe of a partition key, the same in every worker. */
+export function partitionClaimStripe(partitionKey: string): number {
+  return createHash('sha256').update(partitionKey).digest().readUInt32BE(0) % PARTITION_CLAIM_STRIPES;
 }
 
 export async function isCockroachDB(client: ClientBase): Promise<boolean> {
@@ -1317,6 +1326,15 @@ export class SystemDatabase {
     ]);
     params.push(advisoryLockKey(name).toString());
     return `SELECT pg_try_advisory_xact_lock($${params.length}) AS acquired`;
+  }
+
+  /** Statement whose `stripes` lists which of `stripes` a sweep locked for the queue's partitions; no row means nothing to claim. */
+  partitionStripesQuery(queueName: string, stripes: number[], params: unknown[]): string {
+    const name = JSON.stringify(['dbos.partition_claim', this.schemaName, this.appName ?? '', queueName]);
+    params.push(stripes, Number(BigInt.asIntN(32, advisoryLockKey(name))));
+    return `SELECT ARRAY(
+              SELECT s FROM unnest($${params.length - 1}::int4[]) AS s WHERE pg_try_advisory_xact_lock($${params.length}::int4, s)
+            ) AS stripes`;
   }
 
   /** Predicate confining a statement that names no single workflow to the current shard. */
@@ -4609,6 +4627,8 @@ export class SystemDatabase {
     if (isLatestVersion === undefined && this.sharded) {
       isLatestVersion = await this.isLatestVersion(appVersion);
     }
+    // Sweeps whose heads differ lock disjoint rows, so claims of a partition also share its stripe lock; CockroachDB grants every advisory lock.
+    const useStripes = this.sharded || !(await this.#isCockroach());
     const client = await this.connect();
     try {
       await client.query('BEGIN');
@@ -4618,6 +4638,25 @@ export class SystemDatabase {
         isLatestVersion
           ? `(application_version = $${n} OR application_version IS NULL)`
           : `application_version = $${n}`;
+      // The partition's head: $1 queue, $2 ENQUEUED, `version` the app version, `pk` the partition key expression.
+      const headOf = (pk: string, version: number, scope: string) =>
+        `SELECT workflow_uuid
+           FROM "${this.schemaName}".workflow_status
+           WHERE queue_name = $1 AND status = $2
+             AND queue_partition_key = ${pk}
+             AND ${versionClause(version)}
+             AND ${scope}
+           -- workflow_uuid totalizes the head order (same head for every worker under created_at ties) and the index's trailing workflow_uuid keeps this a pure top-1 probe.
+           ORDER BY priority ASC, created_at ASC, workflow_uuid ASC
+           LIMIT 1`;
+      // No application filter by design: a mutual-exclusion probe must block on any owner's row.
+      const noPending = (pk: string, pending: number, scope: string) =>
+        `NOT EXISTS (
+           SELECT 1
+           FROM "${this.schemaName}".workflow_status
+           WHERE ${scope} AND queue_name = $1 AND status = $${pending}
+             AND queue_partition_key IS NOT NULL AND queue_partition_key = ${pk}
+         )`;
 
       // This worker's own budget bounds the sweep alongside the cap.
       const sweepLimit = Math.min(this.partitionedDequeueSweepCap, maxTasks);
@@ -4634,7 +4673,7 @@ export class SystemDatabase {
       const probeScope = this.scoped(undefined, candidateParams);
 
       // Walk distinct partition keys with a recursive-CTE loose index scan (one seek per key, mirroring getQueuePartitions) so sweep cost scales with partition count, not backlog depth.
-      const candidateResult = await client.query<{ workflow_uuid: string }>(
+      const candidateResult = await client.query<{ pk: string; workflow_uuid: string }>(
         `WITH RECURSIVE partitions AS (
            (SELECT MIN(queue_partition_key) AS pk
             FROM "${this.schemaName}".workflow_status
@@ -4650,38 +4689,58 @@ export class SystemDatabase {
            SELECT partitions.pk
            FROM partitions
            WHERE partitions.pk IS NOT NULL
-             -- No application filter by design: a mutual-exclusion probe must block on any owner's row.
-             AND NOT EXISTS (
-               SELECT 1
-               FROM "${this.schemaName}".workflow_status
-               WHERE ${probeScope} AND queue_name = $1 AND status = $4
-                 AND queue_partition_key IS NOT NULL AND queue_partition_key = partitions.pk
-             )
+             AND ${noPending('partitions.pk', 4, probeScope)}
            ORDER BY ${sweepOrder}
            LIMIT $5
          )
-         SELECT head.workflow_uuid
+         SELECT chosen.pk, head.workflow_uuid
          FROM chosen
          -- LATERAL plans as a tight nested loop; a correlated scalar subquery runs as a slower per-row SubPlan.
-         JOIN LATERAL (
-           SELECT workflow_uuid
-           FROM "${this.schemaName}".workflow_status
-           WHERE queue_name = $1 AND status = $2
-             AND queue_partition_key = chosen.pk
-             AND ${versionClause(3)}
-             AND ${candidateScope}
-           -- workflow_uuid totalizes the head order (same head for every worker under created_at ties) and the index's trailing workflow_uuid keeps this a pure top-1 probe.
-           ORDER BY priority ASC, created_at ASC, workflow_uuid ASC
-           LIMIT 1
-         ) head ON TRUE
+         JOIN LATERAL (${headOf('chosen.pk', 3, candidateScope)}) head ON TRUE
          -- Which partitions were chosen is settled above; order the result so the claim, and the dispatch it feeds, are deterministic.
          ORDER BY chosen.pk ASC`,
         candidateParams,
       );
-      const candidateIDs = candidateResult.rows.map((row) => row.workflow_uuid);
+      let candidateIDs = candidateResult.rows.map((row) => row.workflow_uuid);
       if (candidateIDs.length === 0) {
         await client.query('COMMIT');
         return [];
+      }
+
+      if (useStripes) {
+        await debugTriggerPoint(DEBUG_TRIGGER_PARTITIONED_DEQUEUE_BEFORE_STRIPES);
+        const stripeOf = new Map(candidateResult.rows.map((row) => [row.pk, partitionClaimStripe(row.pk)]));
+        const stripeParams: unknown[] = [];
+        const { rows: stripeRows } = await client.query<{ stripes: number[] }>(
+          this.partitionStripesQuery(queue.name, [...new Set(stripeOf.values())], stripeParams),
+          stripeParams,
+        );
+        const held = new Set(stripeRows[0]?.stripes ?? []);
+        // Partitions whose stripe another sweep holds are left to it, or to the next poll.
+        const heldPks = [...stripeOf].filter(([, stripe]) => held.has(stripe)).map(([pk]) => pk);
+        if (heldPks.length === 0) {
+          await client.query('COMMIT');
+          return [];
+        }
+
+        // Pick the heads again under the stripe locks, so a previous holder's claims and any newly visible head are seen.
+        const headParams: unknown[] = [queue.name, StatusString.ENQUEUED, appVersion, StatusString.PENDING];
+        const headScope = `${this.scoped(undefined, headParams)} AND ${this.appNameFilter('application_name', this.appName, headParams)}`;
+        const headProbeScope = this.scoped(undefined, headParams);
+        headParams.push(heldPks);
+        const headResult = await client.query<{ workflow_uuid: string }>(
+          `SELECT head.workflow_uuid
+           FROM unnest($${headParams.length}::text[]) AS chosen(pk)
+           JOIN LATERAL (${headOf('chosen.pk', 3, headScope)}) head ON TRUE
+           WHERE ${noPending('chosen.pk', 4, headProbeScope)}
+           ORDER BY chosen.pk ASC`,
+          headParams,
+        );
+        candidateIDs = headResult.rows.map((row) => row.workflow_uuid);
+        if (candidateIDs.length === 0) {
+          await client.query('COMMIT');
+          return [];
+        }
       }
       await debugTriggerPoint(DEBUG_TRIGGER_PARTITIONED_DEQUEUE_AFTER_CANDIDATES);
 

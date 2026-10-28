@@ -21,7 +21,7 @@ import {
   testUnlessSharded,
   usingSharding,
 } from './helpers';
-import { EnqueueOptions, QueueRecord, SystemDatabase } from '../src/system_database';
+import { EnqueueOptions, partitionClaimStripe, QueueRecord, SystemDatabase } from '../src/system_database';
 import { randomUUID } from 'node:crypto';
 import { globalParams, sleepms, INTERNAL_QUEUE_NAME } from '../src/utils';
 import { scopedShardKey } from '../src/shard_keys';
@@ -48,6 +48,7 @@ import {
   DEBUG_TRIGGER_BETWEEN_PARTITION_DISPATCHES,
   DEBUG_TRIGGER_FIND_AND_MARK_AFTER_SELECT,
   DEBUG_TRIGGER_PARTITIONED_DEQUEUE_AFTER_CANDIDATES,
+  DEBUG_TRIGGER_PARTITIONED_DEQUEUE_BEFORE_STRIPES,
   setDebugTrigger,
 } from '../src/debugpoint';
 import assert from 'node:assert';
@@ -3586,6 +3587,76 @@ describe('partitioned-batch-dequeue', () => {
       p2: 1,
       p3: 1,
     });
+  });
+
+  // Issue #1427: sweeps whose heads differ lock disjoint rows, so the partition's stripe lock and the re-picked head keep one PENDING per partition.
+  test.each([
+    ['while the paused sweep holds the stripe', DEBUG_TRIGGER_PARTITIONED_DEQUEUE_AFTER_CANDIDATES, false],
+    ['before the paused sweep takes the stripe', DEBUG_TRIGGER_PARTITIONED_DEQUEUE_BEFORE_STRIPES, true],
+  ])('a sweep that misses a new partition head never co-admits into it (%s)', async (_name, trigger, newHeadWins) => {
+    const queueName = `unpolled-newhead-${randomUUID()}`;
+    const queue = await registerBatchQueue(queueName);
+    const partition = 'p0';
+    // A partition on another stripe, which the paused sweep's locks must not block.
+    const other = ['p1', 'p2', 'p3', 'p4', 'p5'].find(
+      (p) => partitionClaimStripe(p) !== partitionClaimStripe(partition),
+    )!;
+    const enqueue = async (key: string, priority: number) => {
+      const wfid = `newhead-${key}-${priority}-${randomUUID()}`;
+      await DBOS.startWorkflow(batchWorkflow, {
+        workflowID: wfid,
+        queueName,
+        enqueueOptions: { queuePartitionKey: key, priority },
+      })(wfid);
+      return wfid;
+    };
+    const oldHead = await enqueue(partition, 5);
+
+    let release = () => {};
+    let paused = false;
+    let calls = 0;
+    setDebugTrigger(trigger, {
+      asyncCallback: async () => {
+        if (calls++ === 0) {
+          paused = true;
+          await new Promise<void>((resolve) => (release = resolve));
+        }
+      },
+    });
+    try {
+      const sweepB = sweep(queue, 'executor-b');
+      const deadline = Date.now() + 5000;
+      while (!paused && Date.now() < deadline) await sleepms(10);
+      expect(paused).toBe(true);
+
+      // A head the paused sweep never saw, outranking the one it chose.
+      const newHead = await enqueue(partition, 1);
+      const otherHead = await enqueue(other, 5);
+      const claimedA = await sweep(queue, 'executor-a');
+      release();
+      const claimedB = await sweepB;
+
+      if (newHeadWins) {
+        expect(claimedA).toEqual([newHead, otherHead]);
+        expect(claimedB).toEqual([]);
+      } else {
+        expect(claimedA).toEqual([otherHead]);
+        expect(claimedB).toEqual([oldHead]);
+      }
+      const { rows } = await sysdb.pool.query<{ queue_partition_key: string; count: string }>(
+        `SELECT queue_partition_key, COUNT(*) AS count
+         FROM "${sysdb.schemaName}".workflow_status
+         WHERE queue_name = $1 AND status = $2
+         GROUP BY queue_partition_key`,
+        [queueName, StatusString.PENDING],
+      );
+      expect(Object.fromEntries(rows.map((row) => [row.queue_partition_key, Number(row.count)]))).toEqual({
+        [partition]: 1,
+        [other]: 1,
+      });
+    } finally {
+      release();
+    }
   });
 
   test('dequeues only rows eligible for this worker app version', async () => {
