@@ -896,9 +896,11 @@ export class DBOS {
 
   /**
    * Restart queue dispatch, schedules, and registered event receivers after `DBOS.deactivateEventReceivers`.
-   *   Has no effect if receivers are already running.
+   *   Has no effect if receivers are already running. Throws if DBOS is not launched or is shutting down.
    */
   static async initEventReceivers(): Promise<void> {
+    // During shutdown the executor still exists but is no longer initialized; receivers started then would outlive it.
+    if (!DBOS.isInitialized()) throw new DBOSExecutorNotInitializedError();
     await DBOS.#executor.initEventReceivers(DBOS.#dbosConfig?.listenQueues || null);
   }
 

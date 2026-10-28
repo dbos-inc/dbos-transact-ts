@@ -921,15 +921,24 @@ describe('dynamic-scheduler-tests', () => {
   });
 
   // --- Event receivers restart ---
-  let restartCounter = 0;
-  async function restartWorkflow(_scheduledDate: Date, _context: unknown) {
-    restartCounter++;
+  const restartDates: Date[] = [];
+  async function restartWorkflow(scheduledDate: Date, _context: unknown) {
+    restartDates.push(new Date(scheduledDate));
     await Promise.resolve();
   }
   const regRestartWf = DBOS.registerWorkflow(restartWorkflow, { name: 'restartWorkflow' });
 
+  // A receiver whose initialize() can be made to fail, to check that a failed init can be retried.
+  let failReceiverInit = false;
+  DBOS.registerLifecycleCallback({
+    initialize: async () => {
+      await Promise.resolve();
+      if (failReceiverInit) throw new Error('receiver init failed');
+    },
+  });
+
   test('dynamic-scheduler-receivers-restart', async () => {
-    restartCounter = 0;
+    restartDates.length = 0;
 
     await DBOS.createSchedule({
       scheduleName: 'restart-test',
@@ -938,22 +947,32 @@ describe('dynamic-scheduler-tests', () => {
     });
 
     await retryUntilSuccess(() => {
-      expect(restartCounter).toBeGreaterThanOrEqual(1);
+      expect(restartDates.length).toBeGreaterThanOrEqual(1);
     });
 
     // Deactivate stops firing; a second deactivate is a no-op
     await DBOS.deactivateEventReceivers();
     await DBOS.deactivateEventReceivers();
     await sleepms(2000);
-    const snapshot = restartCounter;
+    const snapshot = restartDates.length;
     await sleepms(3000);
-    expect(restartCounter).toBe(snapshot);
+    expect(restartDates.length).toBe(snapshot);
 
-    // Reinitializing resumes firing; a second init is a no-op (a duplicate loop would outlive shutdown)
+    // A failed init tears down what it started, so a retry isn't a silent no-op
+    failReceiverInit = true;
+    try {
+      await expect(DBOS.initEventReceivers()).rejects.toThrow('receiver init failed');
+    } finally {
+      failReceiverInit = false;
+    }
+
+    // Reinitializing resumes firing; a second init is a no-op (a duplicate loop would outlive shutdown).
+    // Require a run scheduled after the restart: a run enqueued before deactivating could otherwise be dispatched late.
+    const restartedAt = Date.now();
     await DBOS.initEventReceivers();
     await DBOS.initEventReceivers();
     await retryUntilSuccess(() => {
-      expect(restartCounter).toBeGreaterThan(snapshot);
+      expect(restartDates.some((d) => d.getTime() > restartedAt)).toBe(true);
     });
 
     await DBOS.deleteSchedule('restart-test');
