@@ -920,6 +920,45 @@ describe('dynamic-scheduler-tests', () => {
     await DBOS.deleteSchedule('pause-test');
   });
 
+  // --- Event receivers restart ---
+  let restartCounter = 0;
+  async function restartWorkflow(_scheduledDate: Date, _context: unknown) {
+    restartCounter++;
+    await Promise.resolve();
+  }
+  const regRestartWf = DBOS.registerWorkflow(restartWorkflow, { name: 'restartWorkflow' });
+
+  test('dynamic-scheduler-receivers-restart', async () => {
+    restartCounter = 0;
+
+    await DBOS.createSchedule({
+      scheduleName: 'restart-test',
+      workflowFn: regRestartWf,
+      schedule: '* * * * * *',
+    });
+
+    await retryUntilSuccess(() => {
+      expect(restartCounter).toBeGreaterThanOrEqual(1);
+    });
+
+    // Deactivate stops firing; a second deactivate is a no-op
+    await DBOS.deactivateEventReceivers();
+    await DBOS.deactivateEventReceivers();
+    await sleepms(2000);
+    const snapshot = restartCounter;
+    await sleepms(3000);
+    expect(restartCounter).toBe(snapshot);
+
+    // Reinitializing resumes firing; a second init is a no-op (a duplicate loop would outlive shutdown)
+    await DBOS.initEventReceivers();
+    await DBOS.initEventReceivers();
+    await retryUntilSuccess(() => {
+      expect(restartCounter).toBeGreaterThan(snapshot);
+    });
+
+    await DBOS.deleteSchedule('restart-test');
+  });
+
   // ---------------------------------------------------------------------------
   // Trigger schedule
   // ---------------------------------------------------------------------------

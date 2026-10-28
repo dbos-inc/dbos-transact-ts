@@ -96,17 +96,18 @@ const STARTUP_FAST_POLL_INTERVAL_MS = 1_000;
 const MAX_SCHEDULE_SLEEP_MS = 60 * 60 * 1000;
 
 export class DynamicSchedulerLoop implements DBOSLifecycleCallback {
-  readonly #mainController = new AbortController();
+  #mainController = new AbortController();
   #pollingPromise: Promise<void> | undefined;
   readonly #scheduleLoops = new Map<string, ScheduleLoopEntry>();
   readonly #pollingIntervalMs: number;
 
   constructor(pollingIntervalMs?: number) {
     this.#pollingIntervalMs = pollingIntervalMs ?? 30000;
-    DBOS.registerLifecycleCallback(this);
   }
 
   async initialize(): Promise<void> {
+    // Fresh controller each time: destroy() aborts the last one, and receivers can be restarted.
+    this.#mainController = new AbortController();
     const signal = this.#mainController.signal;
     this.#pollingPromise = runWithAbortableDbRetries(signal, () => this.#pollingLoop(signal));
     await Promise.resolve();

@@ -885,6 +885,23 @@ export class DBOS {
     wfQueueRunner.clearRegistrations();
   }
 
+  /**
+   * Stop background work that brings new work into this process: queue dispatch, schedules,
+   *   and registered event receivers. Workflows already running here keep running.
+   *   Has no effect if receivers are already stopped. Restart them with `DBOS.initEventReceivers`.
+   */
+  static async deactivateEventReceivers(): Promise<void> {
+    await DBOS.#executor.deactivateEventReceivers();
+  }
+
+  /**
+   * Restart queue dispatch, schedules, and registered event receivers after `DBOS.deactivateEventReceivers`.
+   *   Has no effect if receivers are already running.
+   */
+  static async initEventReceivers(): Promise<void> {
+    await DBOS.#executor.initEventReceivers(DBOS.#dbosConfig?.listenQueues || null);
+  }
+
   // Global DBOS executor instance
   static get #executor() {
     return getExecutor();
