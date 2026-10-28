@@ -903,6 +903,7 @@ export class DBOS {
   /**
    * Restart queue dispatch, schedules, and registered event receivers after `DBOS.deactivateEventReceivers`.
    *   Has no effect if receivers are already running. Throws if DBOS is not launched, or if called from within a workflow.
+   *   If a receiver fails to start, stops whatever did start and rethrows the error, so the call can be retried.
    */
   static async initEventReceivers(): Promise<void> {
     // A launch that failed before the system database was ready leaves an uninitialized executor behind; don't start receivers on it.
