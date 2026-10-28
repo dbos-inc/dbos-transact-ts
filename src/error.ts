@@ -264,6 +264,25 @@ export class DBOSStepNondeterminismError extends DBOSError {
   }
 }
 
+export const WorkflowSuspended = 38;
+/**
+ * Raised by a suspend-mode recv or sleep (Transact Enterprise) once the workflow is parked in the
+ * database. The execution must exit: a send on the topic, the recv timeout, or the end of the
+ * sleep re-enqueues the workflow. Do not catch it in workflow code.
+ */
+export class DBOSWorkflowSuspendedError extends DBOSError {
+  constructor(
+    readonly workflowID: string,
+    readonly topic: string | undefined,
+  ) {
+    super(
+      `Workflow ${workflowID} suspended ${topic !== undefined ? `waiting on topic ${topic}` : 'sleeping'}`,
+      WorkflowSuspended,
+    );
+    this.name = 'DBOSWorkflowSuspendedError';
+  }
+}
+
 /**
  * True if `e` is a stream-read timeout, including the portable-serialization
  * replay form, which carries only the original type name.

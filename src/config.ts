@@ -209,6 +209,7 @@ export function translateDbosConfig(options: Partial<DBOSConfig>): DBOSConfigInt
     autoUpgradeIntervalMs: options.autoUpgradeIntervalMs,
     autoUpgradeGraceMs: options.autoUpgradeGraceMs,
     sharding: options.sharding === true,
+    suspendMode: options.suspendMode === true,
   };
 }
 

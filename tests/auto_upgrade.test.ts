@@ -99,6 +99,7 @@ describeUnlessSharded('auto-upgrade-launch', () => {
       ConductorWebsocket: NoopConductor,
       AutoUpgradePass: RecordingPass,
       ShardedSystemDatabase: class {},
+      Suspend: class {},
     }));
   });
 

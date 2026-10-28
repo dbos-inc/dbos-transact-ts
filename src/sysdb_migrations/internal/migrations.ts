@@ -1168,5 +1168,72 @@ $$ LANGUAGE plpgsql;`,
         `CREATE INDEX ${isCockroach ? '' : 'CONCURRENTLY'} IF NOT EXISTS "idx_application_versions_owner_timestamp" ON "${schemaName}"."application_versions" ("application_name", "version_timestamp" DESC)`,
       ],
     },
+    // Topic a SUSPENDED recv waits on.
+    {
+      name: '126_workflow_status_suspend_key',
+      pg: [`ALTER TABLE "${schemaName}"."workflow_status" ADD COLUMN IF NOT EXISTS "suspend_key" TEXT DEFAULT NULL`],
+    },
+    // Holds only suspended rows, so the wake-up sweep reads just the ones due.
+    {
+      name: '127_workflow_status_suspended_index',
+      online: true,
+      pg: [
+        `CREATE INDEX ${isCockroach ? '' : 'CONCURRENTLY'} IF NOT EXISTS "idx_workflow_status_suspended" ON "${schemaName}"."workflow_status" ("delay_until_epoch_ms") WHERE "status" = 'SUSPENDED' AND "delay_until_epoch_ms" IS NOT NULL`,
+      ],
+    },
+    // Replaced by 129, whose predicate also covers SUSPENDED workflows.
+    {
+      name: '128_drop_workflow_status_deadline_index',
+      online: true,
+      pg: [`DROP INDEX ${isCockroach ? '' : 'CONCURRENTLY'} IF EXISTS "${schemaName}"."idx_workflow_status_deadline"`],
+    },
+    {
+      name: '129_workflow_status_deadline_index_v2',
+      online: true,
+      pg: [
+        `CREATE INDEX ${isCockroach ? '' : 'CONCURRENTLY'} IF NOT EXISTS "idx_workflow_status_deadline" ON "${schemaName}"."workflow_status" ("workflow_deadline_epoch_ms") WHERE "status" IN ('ENQUEUED', 'PENDING', 'DELAYED', 'SUSPENDED') AND "workflow_deadline_epoch_ms" IS NOT NULL`,
+      ],
+    },
+    // send_message also wakes a SUSPENDED recv on its topic, as every SDK send does.
+    {
+      name: '130_send_message_wakes_suspended',
+      pg: [
+        `CREATE OR REPLACE FUNCTION "${schemaName}".send_message(
+            destination_id TEXT,
+            message JSON,
+            topic TEXT DEFAULT NULL,
+            message_id TEXT DEFAULT NULL
+        ) RETURNS VOID AS $$
+        DECLARE
+            v_topic TEXT := COALESCE(topic, '__null__topic__');
+            v_message_id TEXT := COALESCE(message_id, gen_random_uuid()::TEXT);
+        BEGIN
+            INSERT INTO "${schemaName}".notifications (
+                destination_uuid, topic, message, message_uuid, serialization
+            ) VALUES (
+                destination_id, v_topic, message, v_message_id, 'portable_json'
+            )
+            ON CONFLICT (message_uuid) DO NOTHING;
+            UPDATE "${schemaName}".workflow_status
+            SET delay_until_epoch_ms = 0
+            WHERE workflow_uuid = destination_id
+                AND status = 'SUSPENDED'
+                AND suspend_key = v_topic;
+        EXCEPTION
+            WHEN foreign_key_violation THEN
+                RAISE EXCEPTION 'DBOS non-existent workflow'
+                   USING DETAIL = format('Destination workflow %s does not exist', destination_id),
+                        ERRCODE = 'foreign_key_violation';
+        END;
+        $$ LANGUAGE plpgsql;`,
+        ...(isCockroach
+          ? []
+          : [
+              `ALTER FUNCTION "${schemaName}".send_message(
+            TEXT, JSON, TEXT, TEXT
+        ) SET search_path = pg_catalog, pg_temp;`,
+            ]),
+      ],
+    },
   ];
 }

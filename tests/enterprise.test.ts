@@ -120,6 +120,7 @@ describe('enterprise-launch', () => {
       ConductorWebsocket: FakeConductor,
       AutoUpgradePass: FakePass,
       ShardedSystemDatabase: class {},
+      Suspend: class {},
     }));
 
     await DBOS.launch({ conductorKey: 'test-key', conductorURL: 'ws://127.0.0.1:1' });
@@ -416,6 +417,8 @@ describe('entitlements', () => {
     expect(enterprise.enabledFeatures({ autoUpgrade: true })).toEqual([enterprise.AUTO_UPGRADE]);
     expect(enterprise.enabledFeatures({ sharding: false })).toEqual([]);
     expect(enterprise.enabledFeatures({ sharding: true })).toEqual([enterprise.SHARDING]);
+    expect(enterprise.enabledFeatures({ suspendMode: false })).toEqual([]);
+    expect(enterprise.enabledFeatures({ suspendMode: true })).toEqual([enterprise.SUSPEND]);
     // Every registered feature has a distinct entitlement name.
     const names = enterprise.FEATURES.map((f) => f.entitlement);
     expect(new Set(names).size).toBe(names.length);
@@ -464,6 +467,33 @@ describe('entitlements', () => {
         DBOS.launch({ conductorURL: conductor.url }),
         DBOSInitializationError,
         'not entitled to sharding',
+      );
+      expect(conductor.requests).toEqual([{ path: '/v2/entitlements', authorization: 'Bearer enterprise-key' }]);
+      expect(DBOS.isInitialized()).toBe(false);
+    } finally {
+      await DBOS.shutdown();
+    }
+  });
+
+  // A sharded run's harness stubs the entitlement check this exercises.
+  testUnlessSharded('a suspend-mode executor checks its entitlement', async () => {
+    const config = generateDBOSTestConfig();
+    await setUpDBOSTestSysDb(config);
+    try {
+      // Refused before the package is even loaded, so this holds without dbos-enterprise.
+      DBOS.setConfig({ ...config, suspendMode: true });
+      await expectError(
+        DBOS.launch(),
+        DBOSInitializationError,
+        `${enterprise.SUSPEND.description} requires a DBOS key`,
+      );
+      await DBOS.shutdown();
+      DBOS.setConfig({ ...config, suspendMode: true, transactEnterpriseKey: 'enterprise-key' });
+      conductor.entitle({ ...ALL_ENTITLED, suspendWorkflows: false });
+      await expectError(
+        DBOS.launch({ conductorURL: conductor.url }),
+        DBOSInitializationError,
+        'not entitled to suspendWorkflows',
       );
       expect(conductor.requests).toEqual([{ path: '/v2/entitlements', authorization: 'Bearer enterprise-key' }]);
       expect(DBOS.isInitialized()).toBe(false);

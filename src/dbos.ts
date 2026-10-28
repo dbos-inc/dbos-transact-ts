@@ -275,6 +275,24 @@ export interface RecvOptions extends PollingOptions {
   timeoutSeconds?: number;
   /** Absolute deadline as a UNIX epoch timestamp in milliseconds; if no message is received before this time, `null` will be returned */
   deadlineEpochMS?: number;
+  /**
+   * If true (requires suspend mode, a Transact Enterprise feature), a recv that has to wait parks the
+   * workflow in the database and exits its execution instead of holding it in memory; a send on the
+   * topic or the timeout re-enqueues it, and the replayed recv returns the message.
+   */
+  suspend?: boolean;
+}
+
+/**
+ * Options for `DBOS.sleep`
+ */
+export interface SleepOptions {
+  /**
+   * If true (requires suspend mode, a Transact Enterprise feature), the sleep parks the workflow in the
+   * database and exits its execution instead of holding it in memory; once the duration has passed the
+   * workflow is re-enqueued and the replayed sleep returns at once. A sleep of at most a second stays in place.
+   */
+  suspend?: boolean;
 }
 
 /**
@@ -325,6 +343,18 @@ export function resolveTimeoutSeconds(
     return Math.max(0, (options.deadlineEpochMS - Date.now()) / 1000);
   }
   return options.timeoutSeconds;
+}
+
+/** The suspend-mode operations, or a refusal naming `operation` when suspend mode is off. */
+function requireSuspendMode(operation: 'recv' | 'sleep'): enterprise.Suspend {
+  const suspend = DBOSExecutor.globalInstance!.systemDatabase.suspend;
+  if (suspend === undefined) {
+    throw new DBOSError(
+      `${operation} with suspend: true requires suspend mode, a Transact Enterprise feature: ` +
+        'set suspendMode to true in the DBOS configuration.',
+    );
+  }
+  return suspend;
 }
 
 export function resolvePollingIntervalMs(options?: number | PollingOptions): number | undefined {
@@ -421,27 +451,35 @@ export async function getResultInternal<T>(
   pollingIntervalMs?: number,
 ): Promise<T | null> {
   return await runInternalStep(
-    async () => {
-      const rres = await DBOSExecutor.globalInstance!.systemDatabase.awaitWorkflowResult(
-        workflowID,
-        timeoutSeconds,
-        DBOS.workflowID,
-        timerFuncID,
-        pollingIntervalMs,
-      );
-      if (!rres) return null;
-      if (rres?.cancelled) {
-        throw new DBOSAwaitedWorkflowCancelledError(workflowID);
-      }
-      if (rres?.maxRecoveryAttemptsExceeded) {
-        throw new DBOSAwaitedWorkflowExceededMaxRecoveryAttempts(workflowID);
-      }
-      return await DBOSExecutor.reviveResultOrError<T>(rres, getExecutor().serializer);
-    },
+    () => awaitRecordedResult<T>(workflowID, timeoutSeconds, timerFuncID, pollingIntervalMs),
     'DBOS.getResult',
     workflowID,
     assignedFuncID,
   );
+}
+
+/** Poll for the outcome recorded for `workflowID`, or null on timeout; the body of a `DBOS.getResult` step. */
+export async function awaitRecordedResult<T>(
+  workflowID: string,
+  timeoutSeconds?: number,
+  timerFuncID?: number,
+  pollingIntervalMs?: number,
+): Promise<T | null> {
+  const rres = await DBOSExecutor.globalInstance!.systemDatabase.awaitWorkflowResult(
+    workflowID,
+    timeoutSeconds,
+    DBOS.workflowID,
+    timerFuncID,
+    pollingIntervalMs,
+  );
+  if (!rres) return null;
+  if (rres?.cancelled) {
+    throw new DBOSAwaitedWorkflowCancelledError(workflowID);
+  }
+  if (rres?.maxRecoveryAttemptsExceeded) {
+    throw new DBOSAwaitedWorkflowExceededMaxRecoveryAttempts(workflowID);
+  }
+  return await DBOSExecutor.reviveResultOrError<T>(rres, getExecutor().serializer);
 }
 
 /**
@@ -1439,8 +1477,9 @@ export class DBOS {
    *   (calculated by adding `durationMS` to the original invocation time),
    *   regardless of workflow recovery.
    * @param durationMS - Length of sleep, in milliseconds.
+   * @param options - {@link SleepOptions}
    */
-  static async sleepms(durationMS: number): Promise<void> {
+  static async sleepms(durationMS: number, options?: SleepOptions): Promise<void> {
     if (!Number.isFinite(durationMS)) {
       throw new DBOSError('sleep duration must be a finite number of milliseconds');
     }
@@ -1453,7 +1492,16 @@ export class DBOS {
       if (durationMS <= 0) {
         return;
       }
-      return await DBOSExecutor.globalInstance!.systemDatabase.durableSleepms(DBOS.workflowID!, functionID, durationMS);
+      const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+      if (options?.suspend) {
+        const remainingMS = await requireSuspendMode('sleep').sleepSuspend(DBOS.workflowID!, functionID, durationMS);
+        const endTime = Date.now() + remainingMS;
+        while (Date.now() < endTime) {
+          await sleepms(Math.min(endTime - Date.now(), sleepConfig.maxTimeoutMS));
+        }
+        return await sysdb.checkIfCanceled(DBOS.workflowID!);
+      }
+      return await sysdb.durableSleepms(DBOS.workflowID!, functionID, durationMS);
     }
     const endTime = Date.now() + durationMS;
     while (Date.now() < endTime) {
@@ -1461,12 +1509,12 @@ export class DBOS {
     }
   }
   /** @see sleepms */
-  static async sleepSeconds(durationSec: number): Promise<void> {
-    return DBOS.sleepms(durationSec * 1000);
+  static async sleepSeconds(durationSec: number, options?: SleepOptions): Promise<void> {
+    return DBOS.sleepms(durationSec * 1000, options);
   }
   /** @see sleepms */
-  static async sleep(durationMS: number): Promise<void> {
-    return DBOS.sleepms(durationMS);
+  static async sleep(durationMS: number, options?: SleepOptions): Promise<void> {
+    return DBOS.sleepms(durationMS, options);
   }
 
   /**
@@ -1774,14 +1822,23 @@ export class DBOS {
       const timeoutFunctionID: number = functionIDGetIncrement();
       const timeoutSeconds = resolveTimeoutSeconds(options);
       const pollingIntervalMs = resolvePollingIntervalMs(options);
-      const msg = await DBOSExecutor.globalInstance!.systemDatabase.recv(
-        DBOS.workflowID!,
-        functionID,
-        timeoutFunctionID,
-        topic,
-        timeoutSeconds,
-        pollingIntervalMs,
-      );
+      const msg =
+        typeof options === 'object' && options.suspend
+          ? await requireSuspendMode('recv').recvSuspend(
+              DBOS.workflowID!,
+              functionID,
+              timeoutFunctionID,
+              topic,
+              timeoutSeconds,
+            )
+          : await DBOSExecutor.globalInstance!.systemDatabase.recv(
+              DBOS.workflowID!,
+              functionID,
+              timeoutFunctionID,
+              topic,
+              timeoutSeconds,
+              pollingIntervalMs,
+            );
 
       return (await deserializeValue(msg.serializedValue, msg.serialization, DBOS.#executor.serializer)) as T;
     }

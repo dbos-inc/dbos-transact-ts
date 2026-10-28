@@ -1,6 +1,7 @@
 export {
   DBOS,
   RecvOptions,
+  SleepOptions,
   GetEventOptions,
   GetResultOptions,
   PollingOptions,
@@ -24,7 +25,7 @@ export type { WorkflowQueue } from './wfqueue';
 
 export * as Error from './error';
 
-export { DBOSWorkflowConflictError, DBOSStepNondeterminismError } from './error';
+export { DBOSWorkflowConflictError, DBOSStepNondeterminismError, DBOSWorkflowSuspendedError } from './error';
 
 export { PortableWorkflowError } from '../schemas/system_db_schema';
 
