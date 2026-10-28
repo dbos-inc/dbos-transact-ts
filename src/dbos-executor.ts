@@ -333,7 +333,7 @@ export class DBOSExecutor {
   #backgroundJobsEnded?: Promise<void> = undefined;
   #eventReceiversActive = false;
   // Init and deactivate run one at a time, so overlapping calls can't interleave their awaits.
-  readonly #receiversLock = new Semaphore(1);
+  readonly receiversLock = new Semaphore(1);
   // Owned by this executor, not the global lifecycle registry, so a relaunch doesn't also restart a previous executor's scheduler.
   readonly #scheduler: DynamicSchedulerLoop;
 
@@ -1340,26 +1340,15 @@ export class DBOSExecutor {
   }
 
   async initEventReceivers(listenQueues: string[] | null) {
-    await this.#receiversLock.runExclusive(() => this.#initEventReceivers(listenQueues));
-  }
-
-  /** Like initEventReceivers, but on failure tears down whatever did start, under the same lock, so a retry starts clean. */
-  async restartEventReceivers(listenQueues: string[] | null) {
-    await this.#receiversLock.runExclusive(async () => {
-      try {
-        await this.#initEventReceivers(listenQueues);
-      } catch (e) {
-        await this.#deactivateEventReceivers();
-        throw e;
-      }
-    });
+    await this.receiversLock.runExclusive(() => this.initEventReceiversUnlocked(listenQueues));
   }
 
   async deactivateEventReceivers() {
-    await this.#receiversLock.runExclusive(() => this.#deactivateEventReceivers());
+    await this.receiversLock.runExclusive(() => this.deactivateEventReceiversUnlocked());
   }
 
-  async #initEventReceivers(listenQueues: string[] | null) {
+  /** Caller must hold receiversLock. */
+  async initEventReceiversUnlocked(listenQueues: string[] | null) {
     if (this.#eventReceiversActive) return;
     this.#eventReceiversActive = true;
     this.#wfqEnded = wfQueueRunner.dispatchLoop(this, listenQueues, this.config.maxConcurrentQueueDispatches);
@@ -1379,7 +1368,8 @@ export class DBOSExecutor {
     await this.#scheduler.initialize();
   }
 
-  async #deactivateEventReceivers() {
+  /** Caller must hold receiversLock. */
+  async deactivateEventReceiversUnlocked() {
     if (!this.#eventReceiversActive) return;
     this.#eventReceiversActive = false;
     this.logger.debug('Deactivating lifecycle listeners');

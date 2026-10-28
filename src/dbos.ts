@@ -911,7 +911,16 @@ export class DBOS {
     if (DBOS.isWithinWorkflow()) {
       throw new DBOSInvalidWorkflowTransitionError('Invalid call to `DBOS.initEventReceivers` inside a workflow');
     }
-    await DBOS.#executor.restartEventReceivers(DBOS.#dbosConfig?.listenQueues || null);
+    const executor = DBOS.#executor;
+    await executor.receiversLock.runExclusive(async () => {
+      try {
+        await executor.initEventReceiversUnlocked(DBOS.#dbosConfig?.listenQueues || null);
+      } catch (e) {
+        // Tear down whatever did start, under the same lock, so a retry starts clean and a call queued behind this one isn't undone.
+        await executor.deactivateEventReceiversUnlocked();
+        throw e;
+      }
+    });
   }
 
   // Global DBOS executor instance
