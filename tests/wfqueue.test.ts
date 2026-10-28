@@ -21,7 +21,7 @@ import {
   testUnlessSharded,
   usingSharding,
 } from './helpers';
-import { EnqueueOptions, partitionClaimBucket, QueueRecord, SystemDatabase } from '../src/system_database';
+import { EnqueueOptions, QueueRecord, SystemDatabase } from '../src/system_database';
 import { randomUUID } from 'node:crypto';
 import { globalParams, sleepms, INTERNAL_QUEUE_NAME } from '../src/utils';
 import { scopedShardKey } from '../src/shard_keys';
@@ -48,7 +48,7 @@ import {
   DEBUG_TRIGGER_BETWEEN_PARTITION_DISPATCHES,
   DEBUG_TRIGGER_FIND_AND_MARK_AFTER_SELECT,
   DEBUG_TRIGGER_PARTITIONED_DEQUEUE_AFTER_CANDIDATES,
-  DEBUG_TRIGGER_PARTITIONED_DEQUEUE_BEFORE_BUCKETS,
+  DEBUG_TRIGGER_PARTITIONED_DEQUEUE_BEFORE_LOCKS,
   setDebugTrigger,
 } from '../src/debugpoint';
 import assert from 'node:assert';
@@ -3589,18 +3589,16 @@ describe('partitioned-batch-dequeue', () => {
     });
   });
 
-  // Issue #1427: sweeps whose heads differ lock disjoint rows, so the partition's bucket lock and the re-picked head keep one PENDING per partition.
+  // Issue #1427: sweeps whose heads differ lock disjoint rows, so the partition's lock and the re-picked head keep one PENDING per partition.
   test.each([
-    ['while the paused sweep holds the bucket', DEBUG_TRIGGER_PARTITIONED_DEQUEUE_AFTER_CANDIDATES, false],
-    ['before the paused sweep takes the bucket', DEBUG_TRIGGER_PARTITIONED_DEQUEUE_BEFORE_BUCKETS, true],
+    ['while the paused sweep holds the partition lock', DEBUG_TRIGGER_PARTITIONED_DEQUEUE_AFTER_CANDIDATES, false],
+    ['before the paused sweep takes the partition lock', DEBUG_TRIGGER_PARTITIONED_DEQUEUE_BEFORE_LOCKS, true],
   ])('a sweep that misses a new partition head never co-admits into it (%s)', async (_name, trigger, newHeadWins) => {
     const queueName = `unpolled-newhead-${randomUUID()}`;
     const queue = await registerBatchQueue(queueName);
     const partition = 'p0';
-    // A partition in another bucket, which the paused sweep's locks must not block.
-    const other = ['p1', 'p2', 'p3', 'p4', 'p5'].find(
-      (p) => partitionClaimBucket(p) !== partitionClaimBucket(partition),
-    )!;
+    // Another partition, which the paused sweep's lock must not block.
+    const other = 'p1';
     const enqueue = async (key: string, priority: number) => {
       const wfid = `newhead-${key}-${priority}-${randomUUID()}`;
       await DBOS.startWorkflow(batchWorkflow, {
