@@ -937,6 +937,11 @@ describe('dynamic-scheduler-tests', () => {
     },
   });
 
+  async function initReceiversInWorkflow() {
+    await DBOS.initEventReceivers();
+  }
+  const regInitReceiversWf = DBOS.registerWorkflow(initReceiversInWorkflow, { name: 'initReceiversInWorkflow' });
+
   test('dynamic-scheduler-receivers-restart', async () => {
     restartDates.length = 0;
 
@@ -957,6 +962,9 @@ describe('dynamic-scheduler-tests', () => {
     const snapshot = restartDates.length;
     await sleepms(3000);
     expect(restartDates.length).toBe(snapshot);
+
+    // Receivers can't be started from inside a workflow
+    await expect(regInitReceiversWf()).rejects.toThrow('inside a workflow');
 
     // A failed init tears down what it started, so a retry isn't a silent no-op
     failReceiverInit = true;

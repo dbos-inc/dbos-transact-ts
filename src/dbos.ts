@@ -896,9 +896,15 @@ export class DBOS {
 
   /**
    * Restart queue dispatch, schedules, and registered event receivers after `DBOS.deactivateEventReceivers`.
-   *   Has no effect if receivers are already running. Throws if DBOS is not launched.
+   *   Has no effect if receivers are already running. Throws if DBOS is not launched, or if called from within a workflow.
    */
   static async initEventReceivers(): Promise<void> {
+    // A launch that failed in executor init leaves an uninitialized executor behind; don't start receivers on it.
+    if (!DBOS.isInitialized()) throw new DBOSExecutorNotInitializedError();
+    // Receivers started here would run in the calling workflow's context and record steps against it.
+    if (DBOS.isWithinWorkflow()) {
+      throw new DBOSInvalidWorkflowTransitionError('Invalid call to `DBOS.initEventReceivers` inside a workflow');
+    }
     const executor = DBOS.#executor;
     try {
       await executor.initEventReceivers(DBOS.#dbosConfig?.listenQueues || null);
