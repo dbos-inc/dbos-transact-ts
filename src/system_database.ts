@@ -3481,7 +3481,7 @@ export class SystemDatabase {
       this.pool.query<workflow_status>(
         `SELECT workflow_uuid FROM "${this.schemaName}".workflow_status
          WHERE ${ids}
-           AND status NOT IN ('${StatusString.PENDING}', '${StatusString.ENQUEUED}', '${StatusString.DELAYED}')
+           AND status NOT IN ('${StatusString.PENDING}', '${StatusString.ENQUEUED}', '${StatusString.DELAYED}', '${StatusString.SUSPENDED}')
          LIMIT 1`,
         params,
       ),
@@ -4977,9 +4977,11 @@ export class SystemDatabase {
     // If queuesOnly, filter for queued workflows
     if (input.queuesOnly) {
       whereClauses.push(`queue_name IS NOT NULL`);
-      whereClauses.push(`status IN ($${paramCounter}, $${paramCounter + 1}, $${paramCounter + 2})`);
-      params.push(StatusString.ENQUEUED, StatusString.PENDING, StatusString.DELAYED);
-      paramCounter += 3;
+      whereClauses.push(
+        `status IN ($${paramCounter}, $${paramCounter + 1}, $${paramCounter + 2}, $${paramCounter + 3})`,
+      );
+      params.push(StatusString.ENQUEUED, StatusString.PENDING, StatusString.DELAYED, StatusString.SUSPENDED);
+      paramCounter += 4;
     }
 
     addFilter('name', input.workflowName);

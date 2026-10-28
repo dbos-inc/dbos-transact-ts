@@ -5,7 +5,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { Client } from 'pg';
-import { DBOS, DBOSClient, DBOSConfig } from '../src';
+import { DBOS, DBOSClient, DBOSConfig, DBOSWorkflowSuspendedError } from '../src';
 import { DBOSExecutor } from '../src/dbos-executor';
 import { generateDBOSTestConfig, setUpDBOSTestSysDb, testUnlessSharded } from './helpers';
 
@@ -47,6 +47,14 @@ async function parkedDelay(db: Client, workflowID: string): Promise<number> {
   );
   return Number(rows[0].delay_until_epoch_ms);
 }
+
+test('the suspended error names what the workflow waits on', () => {
+  expect(new DBOSWorkflowSuspendedError('w', 'approve').message).toBe('Workflow w suspended waiting on topic approve');
+  expect(new DBOSWorkflowSuspendedError('w', '__null__topic__').message).toBe(
+    'Workflow w suspended waiting on a message with no topic',
+  );
+  expect(new DBOSWorkflowSuspendedError('w', undefined).message).toBe('Workflow w suspended sleeping');
+});
 
 describe('suspend-refused', () => {
   let config: DBOSConfig;
@@ -91,6 +99,24 @@ describe('suspend-refused', () => {
       expect(await parkedDelay(db, byClient)).toBe(0);
     } finally {
       await client.destroy();
+      await db.end();
+    }
+  });
+
+  // Parks a row with unrouted SQL; enterprise tests the sharded case.
+  testUnlessSharded('a parked workflow is still active: waitFirst skips it and queue listings show it', async () => {
+    const db = new Client({ connectionString: config.systemDatabaseUrl });
+    await db.connect();
+    try {
+      const workflowID = await parkByHand(db, 'approve');
+      await db.query('UPDATE dbos.workflow_status SET queue_name = $1 WHERE workflow_uuid = $2', [
+        'suspend-q',
+        workflowID,
+      ]);
+      expect(await DBOSExecutor.globalInstance!.systemDatabase.checkFirstWorkflowId([workflowID])).toBeUndefined();
+      const queued = await DBOS.listQueuedWorkflows({ queueName: 'suspend-q' });
+      expect(queued.map((w) => [w.workflowID, w.status])).toEqual([[workflowID, 'SUSPENDED']]);
+    } finally {
       await db.end();
     }
   });
