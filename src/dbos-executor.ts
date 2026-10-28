@@ -1340,27 +1340,21 @@ export class DBOSExecutor {
   async initEventReceivers(listenQueues: string[] | null) {
     if (this.#eventReceiversActive) return;
     this.#eventReceiversActive = true;
-    try {
-      this.#wfqEnded = wfQueueRunner.dispatchLoop(this, listenQueues, this.config.maxConcurrentQueueDispatches);
-      // Background jobs outlive deactivateEventReceivers (they stop after the shutdown drain), so a restart must not start a second loop.
-      if (!this.#backgroundJobsAbort) {
-        this.#backgroundJobsAbort = new AbortController();
-        this.#backgroundJobsEnded = backgroundJobsLoop(
-          this.systemDatabase,
-          this.logger,
-          this.#backgroundJobsAbort.signal,
-        );
-      }
-
-      for (const lcl of getLifecycleListeners()) {
-        await lcl.initialize?.();
-      }
-      await this.#scheduler.initialize();
-    } catch (e) {
-      // Tear down whatever did start, so a retry starts clean instead of finding receivers already marked active.
-      await this.deactivateEventReceivers();
-      throw e;
+    this.#wfqEnded = wfQueueRunner.dispatchLoop(this, listenQueues, this.config.maxConcurrentQueueDispatches);
+    // Background jobs outlive deactivateEventReceivers (they stop after the shutdown drain), so a restart must not start a second loop.
+    if (!this.#backgroundJobsAbort) {
+      this.#backgroundJobsAbort = new AbortController();
+      this.#backgroundJobsEnded = backgroundJobsLoop(
+        this.systemDatabase,
+        this.logger,
+        this.#backgroundJobsAbort.signal,
+      );
     }
+
+    for (const lcl of getLifecycleListeners()) {
+      await lcl.initialize?.();
+    }
+    await this.#scheduler.initialize();
   }
 
   async deactivateEventReceivers() {
