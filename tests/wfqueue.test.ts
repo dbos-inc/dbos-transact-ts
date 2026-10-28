@@ -4073,6 +4073,68 @@ describe('limiter-dequeue-locking', () => {
     30000,
   );
 
+  // Issue #1427: claimers whose heads differ lock disjoint rows, so only the claim lock keeps them from both spending one budget.
+  test.each([
+    ['higher-priority enqueue', { concurrency: 1 }, undefined, false],
+    ['other application version', { concurrency: 1 }, undefined, true],
+    [
+      'partition, higher-priority enqueue',
+      { partitionConcurrency: 1, partitionRateLimit: { limitPerPeriod: 100, periodSec: 60 } },
+      'p',
+      false,
+    ],
+  ] as const)(
+    'a claimer that misses a new queue head does not overspend the budget (%s)',
+    async (_name, limits, partition, splitVersions) => {
+      const queueName = `claim-lock-${randomUUID()}`;
+      const queue = await DBOS.registerQueue(queueName, { ...limits, onConflict: 'always_update' });
+      const versionB = parkedVersion;
+      const versionA = splitVersions ? `${parkedVersion}-other` : parkedVersion;
+      const enqueue = async (priority: number, applicationVersion: string) =>
+        (
+          await DBOS.startWorkflow(parkedWorkflow, {
+            queueName,
+            enqueueOptions: { priority, applicationVersion, queuePartitionKey: partition },
+          })()
+        ).workflowID;
+
+      const headB = await enqueue(5, versionB);
+
+      // Pause the first claimer after it has locked its head, before it marks it PENDING.
+      let release = () => {};
+      let paused = false;
+      let calls = 0;
+      setDebugTrigger(DEBUG_TRIGGER_FIND_AND_MARK_AFTER_SELECT, {
+        asyncCallback: async () => {
+          if (calls++ === 0) {
+            paused = true;
+            await new Promise<void>((resolve) => (release = resolve));
+          }
+        },
+      });
+      try {
+        const claimB = sysdb.findAndMarkStartableWorkflows(queue, 'executor-b', versionB, partition, 0, 0);
+        const deadline = Date.now() + 5000;
+        while (!paused && Date.now() < deadline) await sleepms(10);
+        expect(paused).toBe(true);
+
+        // A head the paused claimer cannot see: it outranks the locked one, or only the other version claims it.
+        const headA = await enqueue(1, versionA);
+        const claimA = await sysdb.findAndMarkStartableWorkflows(queue, 'executor-a', versionA, partition, 0, 0);
+        release();
+
+        expect(await claimB).toEqual([headB]);
+        expect(claimA).toEqual([]);
+        expect((await sysdb.getWorkflowStatus(headA))?.status).toBe(StatusString.ENQUEUED);
+        expect(await pendingCount(queueName)).toBe(1);
+      } finally {
+        release();
+        clearDebugTriggers();
+      }
+    },
+    30000,
+  );
+
   test('saturates deadline on near-maximum timeout to prevent bigint overflow (#1421)', async () => {
     const queueName = `overflow_timeout_queue_${randomUUID()}`;
     const queue = await DBOS.registerQueue(queueName, { onConflict: 'always_update' });
