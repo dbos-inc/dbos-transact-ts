@@ -61,7 +61,7 @@ import {
   DEBUG_TRIGGER_INITWF_COMMIT,
   DEBUG_TRIGGER_FIND_AND_MARK_AFTER_SELECT,
   DEBUG_TRIGGER_PARTITIONED_DEQUEUE_AFTER_CANDIDATES,
-  DEBUG_TRIGGER_PARTITIONED_DEQUEUE_BEFORE_STRIPES,
+  DEBUG_TRIGGER_PARTITIONED_DEQUEUE_BEFORE_BUCKETS,
   debugTriggerPoint,
 } from './debugpoint';
 import {
@@ -491,12 +491,12 @@ export function advisoryLockKey(lockName: string): bigint {
   return createHash('sha256').update(lockName).digest().readBigInt64BE(0);
 }
 
-/** Claim-lock stripes per partitioned queue: claims of one partition share a stripe, and a sweep holds at most this many locks. */
-export const PARTITION_CLAIM_STRIPES = 64;
+/** Claim-lock buckets per partitioned queue: claims of one partition share a bucket, and a sweep holds at most this many locks. */
+export const PARTITION_CLAIM_BUCKETS = 64;
 
-/** The claim-lock stripe of a partition key, the same in every worker. */
-export function partitionClaimStripe(partitionKey: string): number {
-  return createHash('sha256').update(partitionKey).digest().readUInt32BE(0) % PARTITION_CLAIM_STRIPES;
+/** The claim-lock bucket of a partition key, the same in every worker. */
+export function partitionClaimBucket(partitionKey: string): number {
+  return createHash('sha256').update(partitionKey).digest().readUInt32BE(0) % PARTITION_CLAIM_BUCKETS;
 }
 
 export async function isCockroachDB(client: ClientBase): Promise<boolean> {
@@ -1328,13 +1328,13 @@ export class SystemDatabase {
     return `SELECT pg_try_advisory_xact_lock($${params.length}) AS acquired`;
   }
 
-  /** Statement whose `stripes` lists which of `stripes` a sweep locked for the queue's partitions; no row means nothing to claim. */
-  partitionStripesQuery(queueName: string, stripes: number[], params: unknown[]): string {
+  /** Statement whose `buckets` lists which of `buckets` a sweep locked for the queue's partitions; no row means nothing to claim. */
+  partitionBucketsQuery(queueName: string, buckets: number[], params: unknown[]): string {
     const name = JSON.stringify(['dbos.partition_claim', this.schemaName, queueName]);
-    params.push(stripes, Number(BigInt.asIntN(32, advisoryLockKey(name))));
+    params.push(buckets, Number(BigInt.asIntN(32, advisoryLockKey(name))));
     return `SELECT ARRAY(
               SELECT s FROM unnest($${params.length - 1}::int4[]) AS s WHERE pg_try_advisory_xact_lock($${params.length}::int4, s)
-            ) AS stripes`;
+            ) AS buckets`;
   }
 
   /** Predicate confining a statement that names no single workflow to the current shard. */
@@ -4625,8 +4625,8 @@ export class SystemDatabase {
     if (isLatestVersion === undefined && this.sharded) {
       isLatestVersion = await this.isLatestVersion(appVersion);
     }
-    // Sweeps whose heads differ lock disjoint rows, so claims of a partition also share its stripe lock; CockroachDB grants every advisory lock.
-    const useStripes = this.sharded || !(await this.#isCockroach());
+    // Sweeps whose heads differ lock disjoint rows, so claims of a partition also share its bucket lock; CockroachDB grants every advisory lock.
+    const useBuckets = this.sharded || !(await this.#isCockroach());
     const client = await this.connect();
     try {
       await client.query('BEGIN');
@@ -4705,23 +4705,23 @@ export class SystemDatabase {
         return [];
       }
 
-      if (useStripes) {
-        await debugTriggerPoint(DEBUG_TRIGGER_PARTITIONED_DEQUEUE_BEFORE_STRIPES);
-        const stripeOf = new Map(candidateResult.rows.map((row) => [row.pk, partitionClaimStripe(row.pk)]));
-        const stripeParams: unknown[] = [];
-        const { rows: stripeRows } = await client.query<{ stripes: number[] }>(
-          this.partitionStripesQuery(queue.name, [...new Set(stripeOf.values())], stripeParams),
-          stripeParams,
+      if (useBuckets) {
+        await debugTriggerPoint(DEBUG_TRIGGER_PARTITIONED_DEQUEUE_BEFORE_BUCKETS);
+        const bucketOf = new Map(candidateResult.rows.map((row) => [row.pk, partitionClaimBucket(row.pk)]));
+        const bucketParams: unknown[] = [];
+        const { rows: bucketRows } = await client.query<{ buckets: number[] }>(
+          this.partitionBucketsQuery(queue.name, [...new Set(bucketOf.values())], bucketParams),
+          bucketParams,
         );
-        const held = new Set(stripeRows[0]?.stripes ?? []);
-        // Partitions whose stripe another sweep holds are left to it, or to the next poll.
-        const heldPks = [...stripeOf].filter(([, stripe]) => held.has(stripe)).map(([pk]) => pk);
+        const held = new Set(bucketRows[0]?.buckets ?? []);
+        // Partitions whose bucket another sweep holds are left to it, or to the next poll.
+        const heldPks = [...bucketOf].filter(([, bucket]) => held.has(bucket)).map(([pk]) => pk);
         if (heldPks.length === 0) {
           await client.query('COMMIT');
           return [];
         }
 
-        // Pick the heads again under the stripe locks, so a previous holder's claims and any newly visible head are seen.
+        // Pick the heads again under the bucket locks, so a previous holder's claims and any newly visible head are seen.
         const headParams: unknown[] = [queue.name, StatusString.ENQUEUED, appVersion, StatusString.PENDING];
         const headScope = `${this.scoped(undefined, headParams)} AND ${this.appNameFilter('application_name', this.appName, headParams)}`;
         const headProbeScope = this.scoped(undefined, headParams);
