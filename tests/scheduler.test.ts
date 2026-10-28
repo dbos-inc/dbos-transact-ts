@@ -928,12 +928,15 @@ describe('dynamic-scheduler-tests', () => {
   }
   const regRestartWf = DBOS.registerWorkflow(restartWorkflow, { name: 'restartWorkflow' });
 
-  // A receiver whose initialize() can be made to fail, to check that a failed init can be retried.
+  // A receiver whose next initialize() can be made to fail once, to check that a failed init can be retried.
   let failReceiverInit = false;
   DBOS.registerLifecycleCallback({
     initialize: async () => {
       await Promise.resolve();
-      if (failReceiverInit) throw new Error('receiver init failed');
+      if (failReceiverInit) {
+        failReceiverInit = false;
+        throw new Error('receiver init failed');
+      }
     },
   });
 
@@ -1000,6 +1003,20 @@ describe('dynamic-scheduler-tests', () => {
     ]);
     await retryUntilSuccess(() => {
       expect(restartDates.some((d) => d.getTime() > overlappedAt)).toBe(true);
+    });
+
+    // A failed init rolls back under the lock, so it can't undo an init queued behind it
+    await DBOS.deactivateEventReceivers();
+    failReceiverInit = true;
+    try {
+      const results = await Promise.allSettled([DBOS.initEventReceivers(), DBOS.initEventReceivers()]);
+      expect(results.map((r) => r.status)).toEqual(['rejected', 'fulfilled']);
+    } finally {
+      failReceiverInit = false;
+    }
+    const retriedAt = Date.now();
+    await retryUntilSuccess(() => {
+      expect(restartDates.some((d) => d.getTime() > retriedAt)).toBe(true);
     });
 
     await DBOS.deleteSchedule('restart-test');

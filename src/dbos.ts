@@ -892,6 +892,7 @@ export class DBOS {
    *   Restart them with `DBOS.initEventReceivers`.
    */
   static async deactivateEventReceivers(): Promise<void> {
+    if (!DBOS.isInitialized()) throw new DBOSExecutorNotInitializedError();
     // Not a checkpointed step, so it would rerun on every replay of the calling workflow.
     if (DBOS.isWithinWorkflow()) {
       throw new DBOSInvalidWorkflowTransitionError('Invalid call to `DBOS.deactivateEventReceivers` inside a workflow');
@@ -910,14 +911,7 @@ export class DBOS {
     if (DBOS.isWithinWorkflow()) {
       throw new DBOSInvalidWorkflowTransitionError('Invalid call to `DBOS.initEventReceivers` inside a workflow');
     }
-    const executor = DBOS.#executor;
-    try {
-      await executor.initEventReceivers(DBOS.#dbosConfig?.listenQueues || null);
-    } catch (e) {
-      // Tear down whatever did start, so a retry starts clean instead of finding receivers already marked active.
-      await executor.deactivateEventReceivers();
-      throw e;
-    }
+    await DBOS.#executor.restartEventReceivers(DBOS.#dbosConfig?.listenQueues || null);
   }
 
   // Global DBOS executor instance
