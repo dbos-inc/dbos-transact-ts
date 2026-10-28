@@ -383,14 +383,15 @@ export interface DebounceResult {
 //     caller are discarded and the handle resolves with the original workflow's result.
 export type DuplicationPolicy = 'reject' | 'return-existing';
 
-/** The flow-control limit that left a queue claim no room. */
+/** The flow-control limit that left a queue claim no room, or `claim_lock` when another worker held the claim's lock. */
 export type DequeueStopReason =
   | 'worker_concurrency'
   | 'partition_worker_concurrency'
   | 'limiter'
   | 'partition_limiter'
   | 'concurrency'
-  | 'partition_concurrency';
+  | 'partition_concurrency'
+  | 'claim_lock';
 
 /** The statements granting permissions on all entities in the system schema to a role. */
 export function getDbosSchemaPermissionsSql(schemaName: string, roleName: string): string[] {
@@ -1303,6 +1304,19 @@ export class SystemDatabase {
   /** Predicate a queue claim must also meet, evaluated once before it scans; sharded, it caps claimers per key. */
   claimGate(_queueName: string, _partitionKey: string | undefined, _params: unknown[]): string {
     return 'TRUE';
+  }
+
+  /** Statement whose `acquired` says whether a claim took its budget scope's transaction lock; no row means nothing to claim. */
+  claimLockQuery(queueName: string, partitionKey: string | undefined, params: unknown[]): string {
+    const name = JSON.stringify([
+      'dbos.queue_claim',
+      this.schemaName,
+      this.appName ?? '',
+      queueName,
+      partitionKey ?? null,
+    ]);
+    params.push(advisoryLockKey(name).toString());
+    return `SELECT pg_try_advisory_xact_lock($${params.length}) AS acquired`;
   }
 
   /** Predicate confining a statement that names no single workflow to the current shard. */
@@ -4330,19 +4344,33 @@ export class SystemDatabase {
       queue.partitionConcurrency !== undefined ||
       queue.rateLimit !== undefined ||
       queue.partitionRateLimit !== undefined;
-    // Shares that budget across partitions too, so sweeps of different partitions read disjoint rows and could each spend it.
+    // Shares that budget across partitions too, so sweeps of different partitions read disjoint rows and could each spend it: lock the whole queue.
     const hasWriteSkew =
       queuePartitionKey !== undefined && (queue.concurrency !== undefined || queue.rateLimit !== undefined);
     // A sharded database keeps the version row under another key, which the claim's transaction cannot span.
     if (isLatestVersion === undefined && this.sharded) {
       isLatestVersion = await this.isLatestVersion(appVersion);
     }
+    // Row locks only collide when claimers see the same queue head, so serialize claims on the budget's scope; CockroachDB grants every advisory lock.
+    const useClaimLock = hasSharedBudget && (this.sharded || !(await this.#isCockroach()));
 
     const client = await this.connect();
     try {
-      // Default to READ COMMITTED except with a budget shared across executors
-      if (hasSharedBudget) {
-        await client.query(`BEGIN ISOLATION LEVEL ${hasWriteSkew ? 'SERIALIZABLE' : 'REPEATABLE READ'}`);
+      if (useClaimLock) {
+        await client.query('BEGIN');
+        const lockParams: unknown[] = [];
+        const { rows } = await client.query<{ acquired: boolean }>(
+          this.claimLockQuery(queue.name, hasWriteSkew ? undefined : queuePartitionKey, lockParams),
+          lockParams,
+        );
+        if (rows[0]?.acquired !== true) {
+          await client.query('COMMIT');
+          // Another worker is claiming from this scope, so it still has work; the next poll retries.
+          return rows.length > 0 ? { claimedIDs, stopReason: 'claim_lock' } : { claimedIDs };
+        }
+      } else if (hasSharedBudget) {
+        // CockroachDB, which has no advisory locks: SERIALIZABLE aborts claimers that spend the same budget.
+        await client.query('BEGIN ISOLATION LEVEL SERIALIZABLE');
       } else {
         await client.query('BEGIN');
       }
