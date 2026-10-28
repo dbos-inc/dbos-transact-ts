@@ -1330,7 +1330,7 @@ export class SystemDatabase {
 
   /** Statement whose `stripes` lists which of `stripes` a sweep locked for the queue's partitions; no row means nothing to claim. */
   partitionStripesQuery(queueName: string, stripes: number[], params: unknown[]): string {
-    const name = JSON.stringify(['dbos.partition_claim', this.schemaName, this.appName ?? '', queueName]);
+    const name = JSON.stringify(['dbos.partition_claim', this.schemaName, queueName]);
     params.push(stripes, Number(BigInt.asIntN(32, advisoryLockKey(name))));
     return `SELECT ARRAY(
               SELECT s FROM unnest($${params.length - 1}::int4[]) AS s WHERE pg_try_advisory_xact_lock($${params.length}::int4, s)
