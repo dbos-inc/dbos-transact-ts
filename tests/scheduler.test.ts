@@ -941,6 +941,12 @@ describe('dynamic-scheduler-tests', () => {
     await DBOS.initEventReceivers();
   }
   const regInitReceiversWf = DBOS.registerWorkflow(initReceiversInWorkflow, { name: 'initReceiversInWorkflow' });
+  async function deactivateReceiversInWorkflow() {
+    await DBOS.deactivateEventReceivers();
+  }
+  const regDeactivateReceiversWf = DBOS.registerWorkflow(deactivateReceiversInWorkflow, {
+    name: 'deactivateReceiversInWorkflow',
+  });
 
   test('dynamic-scheduler-receivers-restart', async () => {
     restartDates.length = 0;
@@ -963,8 +969,9 @@ describe('dynamic-scheduler-tests', () => {
     await sleepms(3000);
     expect(restartDates.length).toBe(snapshot);
 
-    // Receivers can't be started from inside a workflow
+    // Receivers can't be started or stopped from inside a workflow
     await expect(regInitReceiversWf()).rejects.toThrow('inside a workflow');
+    await expect(regDeactivateReceiversWf()).rejects.toThrow('inside a workflow');
 
     // A failed init tears down what it started, so a retry isn't a silent no-op
     failReceiverInit = true;
@@ -981,6 +988,18 @@ describe('dynamic-scheduler-tests', () => {
     await DBOS.initEventReceivers();
     await retryUntilSuccess(() => {
       expect(restartDates.some((d) => d.getTime() > restartedAt)).toBe(true);
+    });
+
+    // Overlapping calls run one at a time in call order, so receivers end up running
+    const overlappedAt = Date.now();
+    await Promise.all([
+      DBOS.deactivateEventReceivers(),
+      DBOS.initEventReceivers(),
+      DBOS.deactivateEventReceivers(),
+      DBOS.initEventReceivers(),
+    ]);
+    await retryUntilSuccess(() => {
+      expect(restartDates.some((d) => d.getTime() > overlappedAt)).toBe(true);
     });
 
     await DBOS.deleteSchedule('restart-test');

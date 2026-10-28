@@ -888,9 +888,14 @@ export class DBOS {
   /**
    * Stop background work that brings new work into this process: queue dispatch, schedules,
    *   and registered event receivers. Workflows already running here keep running.
-   *   Has no effect if receivers are already stopped. Restart them with `DBOS.initEventReceivers`.
+   *   Has no effect if receivers are already stopped. Throws if DBOS is not launched, or if called from within a workflow.
+   *   Restart them with `DBOS.initEventReceivers`.
    */
   static async deactivateEventReceivers(): Promise<void> {
+    // Not a checkpointed step, so it would rerun on every replay of the calling workflow.
+    if (DBOS.isWithinWorkflow()) {
+      throw new DBOSInvalidWorkflowTransitionError('Invalid call to `DBOS.deactivateEventReceivers` inside a workflow');
+    }
     await DBOS.#executor.deactivateEventReceivers();
   }
 
@@ -899,7 +904,7 @@ export class DBOS {
    *   Has no effect if receivers are already running. Throws if DBOS is not launched, or if called from within a workflow.
    */
   static async initEventReceivers(): Promise<void> {
-    // A launch that failed in executor init leaves an uninitialized executor behind; don't start receivers on it.
+    // A launch that failed before the system database was ready leaves an uninitialized executor behind; don't start receivers on it.
     if (!DBOS.isInitialized()) throw new DBOSExecutorNotInitializedError();
     // Receivers started here would run in the calling workflow's context and record steps against it.
     if (DBOS.isWithinWorkflow()) {

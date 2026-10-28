@@ -65,7 +65,7 @@ import {
   runWithTopContext,
   runWithoutAbortableDbRetries,
 } from './context';
-import { globalParams, sleepms, INTERNAL_QUEUE_NAME } from './utils';
+import { globalParams, sleepms, INTERNAL_QUEUE_NAME, Semaphore } from './utils';
 import {
   DBOSPortableJSON,
   DBOSSerializer,
@@ -332,6 +332,8 @@ export class DBOSExecutor {
   #backgroundJobsAbort?: AbortController = undefined;
   #backgroundJobsEnded?: Promise<void> = undefined;
   #eventReceiversActive = false;
+  // Init and deactivate run one at a time, so overlapping calls can't interleave their awaits.
+  readonly #receiversLock = new Semaphore(1);
   // Owned by this executor, not the global lifecycle registry, so a relaunch doesn't also restart a previous executor's scheduler.
   readonly #scheduler: DynamicSchedulerLoop;
 
@@ -1338,52 +1340,56 @@ export class DBOSExecutor {
   }
 
   async initEventReceivers(listenQueues: string[] | null) {
-    if (this.#eventReceiversActive) return;
-    this.#eventReceiversActive = true;
-    this.#wfqEnded = wfQueueRunner.dispatchLoop(this, listenQueues, this.config.maxConcurrentQueueDispatches);
-    // Background jobs outlive deactivateEventReceivers (they stop after the shutdown drain), so a restart must not start a second loop.
-    if (!this.#backgroundJobsAbort) {
-      this.#backgroundJobsAbort = new AbortController();
-      this.#backgroundJobsEnded = backgroundJobsLoop(
-        this.systemDatabase,
-        this.logger,
-        this.#backgroundJobsAbort.signal,
-      );
-    }
+    await this.#receiversLock.runExclusive(async () => {
+      if (this.#eventReceiversActive) return;
+      this.#eventReceiversActive = true;
+      this.#wfqEnded = wfQueueRunner.dispatchLoop(this, listenQueues, this.config.maxConcurrentQueueDispatches);
+      // Background jobs outlive deactivateEventReceivers (they stop after the shutdown drain), so a restart must not start a second loop.
+      if (!this.#backgroundJobsAbort) {
+        this.#backgroundJobsAbort = new AbortController();
+        this.#backgroundJobsEnded = backgroundJobsLoop(
+          this.systemDatabase,
+          this.logger,
+          this.#backgroundJobsAbort.signal,
+        );
+      }
 
-    for (const lcl of getLifecycleListeners()) {
-      await lcl.initialize?.();
-    }
-    await this.#scheduler.initialize();
+      for (const lcl of getLifecycleListeners()) {
+        await lcl.initialize?.();
+      }
+      await this.#scheduler.initialize();
+    });
   }
 
   async deactivateEventReceivers() {
-    if (!this.#eventReceiversActive) return;
-    this.#eventReceiversActive = false;
-    this.logger.debug('Deactivating lifecycle listeners');
-    for (const lcl of getLifecycleListeners()) {
+    await this.#receiversLock.runExclusive(async () => {
+      if (!this.#eventReceiversActive) return;
+      this.#eventReceiversActive = false;
+      this.logger.debug('Deactivating lifecycle listeners');
+      for (const lcl of getLifecycleListeners()) {
+        try {
+          await lcl.destroy?.();
+        } catch (err) {
+          const e = err as Error;
+          this.logger.warn(`Error destroying lifecycle listener: ${e.message}`);
+        }
+      }
       try {
-        await lcl.destroy?.();
+        await this.#scheduler.destroy();
       } catch (err) {
         const e = err as Error;
-        this.logger.warn(`Error destroying lifecycle listener: ${e.message}`);
+        this.logger.warn(`Error destroying scheduler: ${e.message}`);
       }
-    }
-    try {
-      await this.#scheduler.destroy();
-    } catch (err) {
-      const e = err as Error;
-      this.logger.warn(`Error destroying scheduler: ${e.message}`);
-    }
 
-    this.logger.debug('Deactivating queue runner');
-    try {
-      wfQueueRunner.stop();
-      await this.#wfqEnded;
-    } catch (err) {
-      const e = err as Error;
-      this.logger.warn(`Error destroying wf queue runner: ${e.message}`);
-    }
+      this.logger.debug('Deactivating queue runner');
+      try {
+        wfQueueRunner.stop();
+        await this.#wfqEnded;
+      } catch (err) {
+        const e = err as Error;
+        this.logger.warn(`Error destroying wf queue runner: ${e.message}`);
+      }
+    });
   }
 
   /** Fetch the claimed workflows' statuses in as few round trips as possible, then dispatch each. */
