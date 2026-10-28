@@ -4365,6 +4365,29 @@ export class SystemDatabase {
     // Shares that budget across partitions too, so sweeps of different partitions read disjoint rows and could each spend it: lock the whole queue.
     const hasWriteSkew =
       queuePartitionKey !== undefined && (queue.concurrency !== undefined || queue.rateLimit !== undefined);
+
+    // Compute maxTasks, the number of workflows startable under every flow control limit on this queue.
+    let maxTasks = Infinity;
+
+    // The first limit found with no room, which the caller reads as why nothing was claimed.
+    let stopReason: DequeueStopReason | undefined = undefined;
+    const limit = (room: number, reason: DequeueStopReason) => {
+      maxTasks = Math.min(maxTasks, room);
+      if (maxTasks <= 0) stopReason ??= reason;
+    };
+
+    // This worker's own limits need no database, so a full worker returns before taking the claim lock a peer could use.
+    if (queue.workerConcurrency !== undefined) {
+      // Use the in-memory registry for this worker's running count — avoids a DB round trip.
+      limit(Math.max(0, queue.workerConcurrency - localRunningCount), 'worker_concurrency');
+    }
+    if (queue.partitionWorkerConcurrency !== undefined) {
+      limit(Math.max(0, queue.partitionWorkerConcurrency - partitionLocalRunningCount), 'partition_worker_concurrency');
+    }
+    if (maxTasks <= 0) {
+      return { claimedIDs, stopReason };
+    }
+
     // A sharded database keeps the version row under another key, which the claim's transaction cannot span.
     if (isLatestVersion === undefined && this.sharded) {
       isLatestVersion = await this.isLatestVersion(appVersion);
@@ -4429,31 +4452,6 @@ export class SystemDatabase {
         );
         return Number(rows[0]?.count ?? 0);
       };
-
-      // Compute maxTasks, the number of workflows startable under every flow control limit on this queue.
-      let maxTasks = Infinity;
-
-      // The first limit found with no room, which the caller reads as why nothing was claimed.
-      let stopReason: DequeueStopReason | undefined = undefined;
-      const limit = (room: number, reason: DequeueStopReason) => {
-        maxTasks = Math.min(maxTasks, room);
-        if (maxTasks <= 0) stopReason ??= reason;
-      };
-
-      if (queue.workerConcurrency !== undefined) {
-        // Use the in-memory registry for this worker's running count — avoids a DB round trip.
-        limit(Math.max(0, queue.workerConcurrency - localRunningCount), 'worker_concurrency');
-      }
-      if (queue.partitionWorkerConcurrency !== undefined) {
-        limit(
-          Math.max(0, queue.partitionWorkerConcurrency - partitionLocalRunningCount),
-          'partition_worker_concurrency',
-        );
-      }
-      if (maxTasks <= 0) {
-        await client.query('COMMIT');
-        return { claimedIDs, stopReason };
-      }
 
       if (queue.rateLimit !== undefined) {
         // Bound the claim by the limiter's remaining slots so a backlogged queue locks only what it can start.
