@@ -4387,7 +4387,7 @@ export class SystemDatabase {
     if (isLatestVersion === undefined && this.sharded) {
       isLatestVersion = await this.isLatestVersion(appVersion);
     }
-    // Row locks only collide when claimers see the same queue head, so serialize claims on the budget's scope; CockroachDB grants every advisory lock.
+    // Row locks only collide when claimers see the same queue head, so serialize claims on the budget's scope; CockroachDB has no advisory locks before 26.3.
     const useClaimLock = hasSharedBudget && (this.sharded || !(await this.#isCockroach()));
 
     const client = await this.connect();
@@ -4405,7 +4405,7 @@ export class SystemDatabase {
           return rows.length > 0 ? { claimedIDs, stopReason: 'claim_lock' } : { claimedIDs };
         }
       } else if (hasSharedBudget) {
-        // CockroachDB, which has no advisory locks: SERIALIZABLE aborts claimers that spend the same budget.
+        // CockroachDB, without advisory locks before 26.3: SERIALIZABLE aborts claimers that spend the same budget.
         await client.query('BEGIN ISOLATION LEVEL SERIALIZABLE');
       } else {
         await client.query('BEGIN');
@@ -4623,7 +4623,7 @@ export class SystemDatabase {
     if (isLatestVersion === undefined && this.sharded) {
       isLatestVersion = await this.isLatestVersion(appVersion);
     }
-    // Sweeps whose heads differ lock disjoint rows, so a claim also takes its partition's lock; CockroachDB grants every advisory lock.
+    // Sweeps whose heads differ lock disjoint rows, so a claim also takes its partition's lock; CockroachDB, without advisory locks before 26.3, relies on its SERIALIZABLE default.
     const usePartitionLocks = this.sharded || !(await this.#isCockroach());
     const client = await this.connect();
     try {
@@ -4801,8 +4801,8 @@ export class SystemDatabase {
       const claimedIDs: string[] = [];
       for (let start = 0; start < partitionKeys.length; start += this.partitionedDequeueBatchSize) {
         const batch = partitionKeys.slice(start, start + this.partitionedDequeueBatchSize);
-        await client.query('BEGIN');
         try {
+          await client.query('BEGIN');
           const batchIDs = await claimBatch(batch);
           await client.query('COMMIT');
           claimedIDs.push(...batchIDs);
