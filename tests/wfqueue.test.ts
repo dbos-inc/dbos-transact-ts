@@ -23,6 +23,7 @@ import {
 } from './helpers';
 import { EnqueueOptions, QueueRecord, SystemDatabase } from '../src/system_database';
 import { randomUUID } from 'node:crypto';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { globalParams, sleepms, INTERNAL_QUEUE_NAME } from '../src/utils';
 import { scopedShardKey } from '../src/shard_keys';
 
@@ -48,6 +49,7 @@ import {
   DEBUG_TRIGGER_BETWEEN_PARTITION_DISPATCHES,
   DEBUG_TRIGGER_FIND_AND_MARK_AFTER_SELECT,
   DEBUG_TRIGGER_PARTITIONED_DEQUEUE_AFTER_CANDIDATES,
+  DEBUG_TRIGGER_PARTITIONED_DEQUEUE_BEFORE_LOCKS,
   setDebugTrigger,
 } from '../src/debugpoint';
 import assert from 'node:assert';
@@ -3588,6 +3590,129 @@ describe('partitioned-batch-dequeue', () => {
     });
   });
 
+  // Issue #1427: sweeps whose heads differ lock disjoint rows, so the partition's lock and the re-picked head keep one PENDING per partition.
+  test.each([
+    ['while the paused sweep holds the partition lock', DEBUG_TRIGGER_PARTITIONED_DEQUEUE_AFTER_CANDIDATES, false],
+    ['before the paused sweep takes the partition lock', DEBUG_TRIGGER_PARTITIONED_DEQUEUE_BEFORE_LOCKS, true],
+  ])('a sweep that misses a new partition head never co-admits into it (%s)', async (_name, trigger, newHeadWins) => {
+    const queueName = `unpolled-newhead-${randomUUID()}`;
+    const queue = await registerBatchQueue(queueName);
+    const partition = 'p0';
+    // Another partition, which the paused sweep's lock must not block.
+    const other = 'p1';
+    const enqueue = async (key: string, priority: number) => {
+      const wfid = `newhead-${key}-${priority}-${randomUUID()}`;
+      await DBOS.startWorkflow(batchWorkflow, {
+        workflowID: wfid,
+        queueName,
+        enqueueOptions: { queuePartitionKey: key, priority },
+      })(wfid);
+      return wfid;
+    };
+    const oldHead = await enqueue(partition, 5);
+
+    let release = () => {};
+    let paused = false;
+    let calls = 0;
+    setDebugTrigger(trigger, {
+      asyncCallback: async () => {
+        if (calls++ === 0) {
+          paused = true;
+          await new Promise<void>((resolve) => (release = resolve));
+        }
+      },
+    });
+    try {
+      const sweepB = sweep(queue, 'executor-b');
+      const deadline = Date.now() + 5000;
+      while (!paused && Date.now() < deadline) await sleepms(10);
+      expect(paused).toBe(true);
+
+      // A head the paused sweep never saw, outranking the one it chose.
+      const newHead = await enqueue(partition, 1);
+      const otherHead = await enqueue(other, 5);
+      const claimedA = await sweep(queue, 'executor-a');
+      release();
+      const claimedB = await sweepB;
+
+      if (newHeadWins) {
+        expect(claimedA).toEqual([newHead, otherHead]);
+        expect(claimedB).toEqual([]);
+      } else {
+        expect(claimedA).toEqual([otherHead]);
+        expect(claimedB).toEqual([oldHead]);
+      }
+      const { rows } = await sysdb.pool.query<{ queue_partition_key: string; count: string }>(
+        `SELECT queue_partition_key, COUNT(*) AS count
+         FROM "${sysdb.schemaName}".workflow_status
+         WHERE queue_name = $1 AND status = $2
+         GROUP BY queue_partition_key`,
+        [queueName, StatusString.PENDING],
+      );
+      expect(Object.fromEntries(rows.map((row) => [row.queue_partition_key, Number(row.count)]))).toEqual({
+        [partition]: 1,
+        [other]: 1,
+      });
+    } finally {
+      release();
+    }
+  });
+
+  test('a batch that fails after an earlier batch committed still returns the committed claims', async () => {
+    const queueName = `unpolled-batchfail-${randomUUID()}`;
+    const queue = await registerBatchQueue(queueName);
+    const partitions = ['p0', 'p1', 'p2'];
+    const ids = await enqueuePartitionRows(queueName, 'batchfail', partitions, 1);
+
+    let calls = 0;
+    setDebugTrigger(DEBUG_TRIGGER_PARTITIONED_DEQUEUE_AFTER_CANDIDATES, {
+      callback: () => {
+        if (calls++ === 1) throw new Error('synthetic batch failure');
+      },
+    });
+    const originalBatchSize = sysdb.partitionedDequeueBatchSize;
+    sysdb.partitionedDequeueBatchSize = 1;
+    try {
+      // The first batch committed, so its claim reaches dispatch; the failed batch and the one after it are left to the next poll.
+      expect(await sweep(queue)).toEqual([ids['p0'][0]]);
+      expect(calls).toBe(2);
+      expect((await sysdb.getWorkflowStatus(ids['p0'][0]))?.status).toBe(StatusString.PENDING);
+      expect((await sysdb.getWorkflowStatus(ids['p1'][0]))?.status).toBe(StatusString.ENQUEUED);
+      expect((await sysdb.getWorkflowStatus(ids['p2'][0]))?.status).toBe(StatusString.ENQUEUED);
+
+      // The rollback released the failed batch's partition lock, so the next sweep claims the rest.
+      clearDebugTriggers();
+      expect(await sweep(queue)).toEqual([ids['p1'][0], ids['p2'][0]]);
+    } finally {
+      sysdb.partitionedDequeueBatchSize = originalBatchSize;
+    }
+  });
+
+  test('a batch that fails before any batch committed throws and claims nothing', async () => {
+    const queueName = `unpolled-batchfail-first-${randomUUID()}`;
+    const queue = await registerBatchQueue(queueName);
+    const partitions = ['p0', 'p1'];
+    const ids = await enqueuePartitionRows(queueName, 'batchfail-first', partitions, 1);
+
+    setDebugTrigger(DEBUG_TRIGGER_PARTITIONED_DEQUEUE_AFTER_CANDIDATES, {
+      callback: () => {
+        throw new Error('synthetic batch failure');
+      },
+    });
+    const originalBatchSize = sysdb.partitionedDequeueBatchSize;
+    sysdb.partitionedDequeueBatchSize = 1;
+    try {
+      await expect(sweep(queue)).rejects.toThrow('synthetic batch failure');
+      for (const p of partitions) {
+        expect((await sysdb.getWorkflowStatus(ids[p][0]))?.status).toBe(StatusString.ENQUEUED);
+      }
+      clearDebugTriggers();
+      expect(await sweep(queue)).toEqual(partitions.map((p) => ids[p][0]));
+    } finally {
+      sysdb.partitionedDequeueBatchSize = originalBatchSize;
+    }
+  });
+
   test('dequeues only rows eligible for this worker app version', async () => {
     const queueName = `unpolled-ver-${randomUUID()}`;
     const queue = await registerBatchQueue(queueName);
@@ -4069,6 +4194,70 @@ describe('limiter-dequeue-locking', () => {
       }
       // The limit must bind by admitting work, not by admitting nothing at all.
       expect(claimedTotal).toBeGreaterThan(0);
+    },
+    30000,
+  );
+
+  // Issue #1427: claimers whose heads differ lock disjoint rows, so only the claim lock keeps them from both spending one budget.
+  test.each([
+    ['higher-priority enqueue', { concurrency: 1 }, undefined, false],
+    ['other application version', { concurrency: 1 }, undefined, true],
+    [
+      'partition, higher-priority enqueue',
+      { partitionConcurrency: 1, partitionRateLimit: { limitPerPeriod: 100, periodSec: 60 } },
+      'p',
+      false,
+    ],
+  ] as const)(
+    'a claimer that misses a new queue head does not overspend the budget (%s)',
+    async (_name, limits, partition, splitVersions) => {
+      const queueName = `claim-lock-${randomUUID()}`;
+      const queue = await DBOS.registerQueue(queueName, { ...limits, onConflict: 'always_update' });
+      const versionB = parkedVersion;
+      const versionA = splitVersions ? `${parkedVersion}-other` : parkedVersion;
+      const enqueue = async (priority: number, applicationVersion: string) =>
+        (
+          await DBOS.startWorkflow(parkedWorkflow, {
+            queueName,
+            enqueueOptions: { priority, applicationVersion, queuePartitionKey: partition },
+          })()
+        ).workflowID;
+
+      const headB = await enqueue(5, versionB);
+
+      // Pause claimer B after it has locked its head, before it marks it PENDING; a background poll of another queue passes through.
+      const claimer = new AsyncLocalStorage<string>();
+      let release = () => {};
+      let paused = false;
+      setDebugTrigger(DEBUG_TRIGGER_FIND_AND_MARK_AFTER_SELECT, {
+        asyncCallback: async () => {
+          if (claimer.getStore() === 'b' && !paused) {
+            paused = true;
+            await new Promise<void>((resolve) => (release = resolve));
+          }
+        },
+      });
+      try {
+        const claimB = claimer.run('b', () =>
+          sysdb.findAndMarkStartableWorkflows(queue, 'executor-b', versionB, partition, 0, 0),
+        );
+        const deadline = Date.now() + 5000;
+        while (!paused && Date.now() < deadline) await sleepms(10);
+        expect(paused).toBe(true);
+
+        // A head the paused claimer cannot see: it outranks the locked one, or only the other version claims it.
+        const headA = await enqueue(1, versionA);
+        const claimA = await sysdb.findAndMarkStartableWorkflows(queue, 'executor-a', versionA, partition, 0, 0);
+        release();
+
+        expect(await claimB).toEqual([headB]);
+        expect(claimA).toEqual([]);
+        expect((await sysdb.getWorkflowStatus(headA))?.status).toBe(StatusString.ENQUEUED);
+        expect(await pendingCount(queueName)).toBe(1);
+      } finally {
+        release();
+        clearDebugTriggers();
+      }
     },
     30000,
   );
