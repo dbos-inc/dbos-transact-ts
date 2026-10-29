@@ -23,6 +23,7 @@ import {
 } from './helpers';
 import { EnqueueOptions, QueueRecord, SystemDatabase } from '../src/system_database';
 import { randomUUID } from 'node:crypto';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { globalParams, sleepms, INTERNAL_QUEUE_NAME } from '../src/utils';
 import { scopedShardKey } from '../src/shard_keys';
 
@@ -3657,6 +3658,61 @@ describe('partitioned-batch-dequeue', () => {
     }
   });
 
+  test('a batch that fails after an earlier batch committed still returns the committed claims', async () => {
+    const queueName = `unpolled-batchfail-${randomUUID()}`;
+    const queue = await registerBatchQueue(queueName);
+    const partitions = ['p0', 'p1', 'p2'];
+    const ids = await enqueuePartitionRows(queueName, 'batchfail', partitions, 1);
+
+    let calls = 0;
+    setDebugTrigger(DEBUG_TRIGGER_PARTITIONED_DEQUEUE_AFTER_CANDIDATES, {
+      callback: () => {
+        if (calls++ === 1) throw new Error('synthetic batch failure');
+      },
+    });
+    const originalBatchSize = sysdb.partitionedDequeueBatchSize;
+    sysdb.partitionedDequeueBatchSize = 1;
+    try {
+      // The first batch committed, so its claim reaches dispatch; the failed batch and the one after it are left to the next poll.
+      expect(await sweep(queue)).toEqual([ids['p0'][0]]);
+      expect(calls).toBe(2);
+      expect((await sysdb.getWorkflowStatus(ids['p0'][0]))?.status).toBe(StatusString.PENDING);
+      expect((await sysdb.getWorkflowStatus(ids['p1'][0]))?.status).toBe(StatusString.ENQUEUED);
+      expect((await sysdb.getWorkflowStatus(ids['p2'][0]))?.status).toBe(StatusString.ENQUEUED);
+
+      // The rollback released the failed batch's partition lock, so the next sweep claims the rest.
+      clearDebugTriggers();
+      expect(await sweep(queue)).toEqual([ids['p1'][0], ids['p2'][0]]);
+    } finally {
+      sysdb.partitionedDequeueBatchSize = originalBatchSize;
+    }
+  });
+
+  test('a batch that fails before any batch committed throws and claims nothing', async () => {
+    const queueName = `unpolled-batchfail-first-${randomUUID()}`;
+    const queue = await registerBatchQueue(queueName);
+    const partitions = ['p0', 'p1'];
+    const ids = await enqueuePartitionRows(queueName, 'batchfail-first', partitions, 1);
+
+    setDebugTrigger(DEBUG_TRIGGER_PARTITIONED_DEQUEUE_AFTER_CANDIDATES, {
+      callback: () => {
+        throw new Error('synthetic batch failure');
+      },
+    });
+    const originalBatchSize = sysdb.partitionedDequeueBatchSize;
+    sysdb.partitionedDequeueBatchSize = 1;
+    try {
+      await expect(sweep(queue)).rejects.toThrow('synthetic batch failure');
+      for (const p of partitions) {
+        expect((await sysdb.getWorkflowStatus(ids[p][0]))?.status).toBe(StatusString.ENQUEUED);
+      }
+      clearDebugTriggers();
+      expect(await sweep(queue)).toEqual(partitions.map((p) => ids[p][0]));
+    } finally {
+      sysdb.partitionedDequeueBatchSize = originalBatchSize;
+    }
+  });
+
   test('dequeues only rows eligible for this worker app version', async () => {
     const queueName = `unpolled-ver-${randomUUID()}`;
     const queue = await registerBatchQueue(queueName);
@@ -4169,20 +4225,22 @@ describe('limiter-dequeue-locking', () => {
 
       const headB = await enqueue(5, versionB);
 
-      // Pause the first claimer after it has locked its head, before it marks it PENDING.
+      // Pause claimer B after it has locked its head, before it marks it PENDING; a background poll of another queue passes through.
+      const claimer = new AsyncLocalStorage<string>();
       let release = () => {};
       let paused = false;
-      let calls = 0;
       setDebugTrigger(DEBUG_TRIGGER_FIND_AND_MARK_AFTER_SELECT, {
         asyncCallback: async () => {
-          if (calls++ === 0) {
+          if (claimer.getStore() === 'b' && !paused) {
             paused = true;
             await new Promise<void>((resolve) => (release = resolve));
           }
         },
       });
       try {
-        const claimB = sysdb.findAndMarkStartableWorkflows(queue, 'executor-b', versionB, partition, 0, 0);
+        const claimB = claimer.run('b', () =>
+          sysdb.findAndMarkStartableWorkflows(queue, 'executor-b', versionB, partition, 0, 0),
+        );
         const deadline = Date.now() + 5000;
         while (!paused && Date.now() < deadline) await sleepms(10);
         expect(paused).toBe(true);
