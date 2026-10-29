@@ -1309,13 +1309,7 @@ export class SystemDatabase {
 
   /** Statement whose `acquired` says whether a claim took its budget scope's transaction lock; no row means nothing to claim. */
   claimLockQuery(queueName: string, partitionKey: string | undefined, params: unknown[]): string {
-    const name = JSON.stringify([
-      'dbos.queue_claim',
-      this.schemaName,
-      this.appName ?? '',
-      queueName,
-      partitionKey ?? null,
-    ]);
+    const name = JSON.stringify(['dbos.queue_claim', this.schemaName, queueName, partitionKey ?? null]);
     params.push(advisoryLockKey(name).toString());
     return `SELECT pg_try_advisory_xact_lock($${params.length}) AS acquired`;
   }
