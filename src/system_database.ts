@@ -4296,7 +4296,7 @@ export class SystemDatabase {
   async cancelTimedOutWorkflows(limit: number): Promise<string[]> {
     const params: unknown[] = [StatusString.CANCELLED, Date.now(), limit];
     const scope = this.appNameFilter('application_name', this.appName, params);
-    // Literal statuses let the planner match idx_workflow_status_deadline under any plan mode.
+    // Literal statuses let the planner match idx_workflow_status_deadline_v2 under any plan mode.
     // SKIP LOCKED leaves a row a dequeue or a peer's sweep holds for the next sweep.
     const { rows } = await this.pool.query<{ workflow_uuid: string }>(
       `UPDATE "${this.schemaName}".workflow_status

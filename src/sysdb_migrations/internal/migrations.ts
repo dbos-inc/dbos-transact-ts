@@ -1181,18 +1181,19 @@ $$ LANGUAGE plpgsql;`,
         `CREATE INDEX ${isCockroach ? '' : 'CONCURRENTLY'} IF NOT EXISTS "idx_workflow_status_suspended" ON "${schemaName}"."workflow_status" ("delay_until_epoch_ms") WHERE "status" = 'SUSPENDED' AND "delay_until_epoch_ms" IS NOT NULL`,
       ],
     },
-    // Replaced by 129, whose predicate also covers SUSPENDED workflows.
+    // idx_workflow_status_deadline, with a predicate that also covers SUSPENDED workflows.
     {
-      name: '128_drop_workflow_status_deadline_index',
-      online: true,
-      pg: [`DROP INDEX ${isCockroach ? '' : 'CONCURRENTLY'} IF EXISTS "${schemaName}"."idx_workflow_status_deadline"`],
-    },
-    {
-      name: '129_workflow_status_deadline_index_v2',
+      name: '128_workflow_status_deadline_index_v2',
       online: true,
       pg: [
-        `CREATE INDEX ${isCockroach ? '' : 'CONCURRENTLY'} IF NOT EXISTS "idx_workflow_status_deadline" ON "${schemaName}"."workflow_status" ("workflow_deadline_epoch_ms") WHERE "status" IN ('ENQUEUED', 'PENDING', 'DELAYED', 'SUSPENDED') AND "workflow_deadline_epoch_ms" IS NOT NULL`,
+        `CREATE INDEX ${isCockroach ? '' : 'CONCURRENTLY'} IF NOT EXISTS "idx_workflow_status_deadline_v2" ON "${schemaName}"."workflow_status" ("workflow_deadline_epoch_ms") WHERE "status" IN ('ENQUEUED', 'PENDING', 'DELAYED', 'SUSPENDED') AND "workflow_deadline_epoch_ms" IS NOT NULL`,
       ],
+    },
+    // Superseded by idx_workflow_status_deadline_v2.
+    {
+      name: '129_drop_workflow_status_deadline_index',
+      online: true,
+      pg: [`DROP INDEX ${isCockroach ? '' : 'CONCURRENTLY'} IF EXISTS "${schemaName}"."idx_workflow_status_deadline"`],
     },
     // send_message also wakes a SUSPENDED recv on its topic, as every SDK send does.
     {
