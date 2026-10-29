@@ -861,7 +861,7 @@ class WFQueueRunner {
           queue.rateLimit === undefined &&
           queue.partitionRateLimit === undefined
         ) {
-          // Batched path: one transaction claims every partition's head (see findAndMarkStartablePartitionedWorkflows).
+          // Batched path: one sweep claims every partition's head (see findAndMarkStartablePartitionedWorkflows).
           const maxTasks = workerBudget(queue, workerLoad());
           if (maxTasks > 0) {
             const ownerXid = randomUUID();
