@@ -163,6 +163,7 @@ describe('test-app-version', () => {
       ConductorWebsocket: FakeConductor,
       AutoUpgradePass: FakePass,
       ShardedSystemDatabase: class {} as unknown as enterprise.ShardedSystemDatabaseFactory,
+      ExternalStorage: class {} as unknown as enterprise.ExternalStorageFactory,
     });
     try {
       // An empty DBOS__VMID is an unset one
