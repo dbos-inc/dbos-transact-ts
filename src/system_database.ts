@@ -61,6 +61,7 @@ import {
   DEBUG_TRIGGER_INITWF_COMMIT,
   DEBUG_TRIGGER_FIND_AND_MARK_AFTER_SELECT,
   DEBUG_TRIGGER_PARTITIONED_DEQUEUE_AFTER_CANDIDATES,
+  DEBUG_TRIGGER_PARTITIONED_DEQUEUE_BEFORE_LOCKS,
   debugTriggerPoint,
 } from './debugpoint';
 import {
@@ -383,14 +384,15 @@ export interface DebounceResult {
 //     caller are discarded and the handle resolves with the original workflow's result.
 export type DuplicationPolicy = 'reject' | 'return-existing';
 
-/** The flow-control limit that left a queue claim no room. */
+/** The flow-control limit that left a queue claim no room, or `claim_lock` when another worker held the claim's lock. */
 export type DequeueStopReason =
   | 'worker_concurrency'
   | 'partition_worker_concurrency'
   | 'limiter'
   | 'partition_limiter'
   | 'concurrency'
-  | 'partition_concurrency';
+  | 'partition_concurrency'
+  | 'claim_lock';
 
 /** The statements granting permissions on all entities in the system schema to a role. */
 export function getDbosSchemaPermissionsSql(schemaName: string, roleName: string): string[] {
@@ -1303,6 +1305,25 @@ export class SystemDatabase {
   /** Predicate a queue claim must also meet, evaluated once before it scans; sharded, it caps claimers per key. */
   claimGate(_queueName: string, _partitionKey: string | undefined, _params: unknown[]): string {
     return 'TRUE';
+  }
+
+  /** Statement whose `acquired` says whether a claim took its budget scope's transaction lock; no row means nothing to claim. */
+  claimLockQuery(queueName: string, partitionKey: string | undefined, params: unknown[]): string {
+    const name = JSON.stringify(['dbos.queue_claim', this.schemaName, queueName, partitionKey ?? null]);
+    params.push(advisoryLockKey(name).toString());
+    return `SELECT pg_try_advisory_xact_lock($${params.length}) AS acquired`;
+  }
+
+  /** Statement whose `held` lists which of `partitionKeys` a sweep's transaction locked; no row means nothing to claim. */
+  partitionLockQuery(queueName: string, partitionKeys: string[], params: unknown[]): string {
+    const name = JSON.stringify(['dbos.partition_claim', this.schemaName, queueName]);
+    // Two-int keys: the queue, then the partition, hashed so every worker computes the same lock.
+    const lockIDs = partitionKeys.map((pk) => createHash('sha256').update(pk).digest().readInt32BE(0));
+    params.push(partitionKeys, lockIDs, Number(BigInt.asIntN(32, advisoryLockKey(name))));
+    const n = params.length;
+    return `SELECT coalesce(array_agg(p.pk), '{}') AS held
+            FROM unnest($${n - 2}::text[], $${n - 1}::int4[]) AS p(pk, lock_id)
+            WHERE pg_try_advisory_xact_lock($${n}::int4, p.lock_id)`;
   }
 
   /** Predicate confining a statement that names no single workflow to the current shard. */
@@ -4330,19 +4351,56 @@ export class SystemDatabase {
       queue.partitionConcurrency !== undefined ||
       queue.rateLimit !== undefined ||
       queue.partitionRateLimit !== undefined;
-    // Shares that budget across partitions too, so sweeps of different partitions read disjoint rows and could each spend it.
+    // Shares that budget across partitions too, so sweeps of different partitions read disjoint rows and could each spend it: lock the whole queue.
     const hasWriteSkew =
       queuePartitionKey !== undefined && (queue.concurrency !== undefined || queue.rateLimit !== undefined);
+
+    // Compute maxTasks, the number of workflows startable under every flow control limit on this queue.
+    let maxTasks = Infinity;
+
+    // The first limit found with no room, which the caller reads as why nothing was claimed.
+    let stopReason: DequeueStopReason | undefined = undefined;
+    const limit = (room: number, reason: DequeueStopReason) => {
+      maxTasks = Math.min(maxTasks, room);
+      if (maxTasks <= 0) stopReason ??= reason;
+    };
+
+    // This worker's own limits need no database, so a full worker returns before taking the claim lock a peer could use.
+    if (queue.workerConcurrency !== undefined) {
+      // Use the in-memory registry for this worker's running count — avoids a DB round trip.
+      limit(Math.max(0, queue.workerConcurrency - localRunningCount), 'worker_concurrency');
+    }
+    if (queue.partitionWorkerConcurrency !== undefined) {
+      limit(Math.max(0, queue.partitionWorkerConcurrency - partitionLocalRunningCount), 'partition_worker_concurrency');
+    }
+    if (maxTasks <= 0) {
+      return { claimedIDs, stopReason };
+    }
+
     // A sharded database keeps the version row under another key, which the claim's transaction cannot span.
     if (isLatestVersion === undefined && this.sharded) {
       isLatestVersion = await this.isLatestVersion(appVersion);
     }
+    // Row locks only collide when claimers see the same queue head, so serialize claims on the budget's scope; CockroachDB has no advisory locks before 26.3.
+    const useClaimLock = hasSharedBudget && (this.sharded || !(await this.#isCockroach()));
 
     const client = await this.connect();
     try {
-      // Default to READ COMMITTED except with a budget shared across executors
-      if (hasSharedBudget) {
-        await client.query(`BEGIN ISOLATION LEVEL ${hasWriteSkew ? 'SERIALIZABLE' : 'REPEATABLE READ'}`);
+      if (useClaimLock) {
+        await client.query('BEGIN');
+        const lockParams: unknown[] = [];
+        const { rows } = await client.query<{ acquired: boolean }>(
+          this.claimLockQuery(queue.name, hasWriteSkew ? undefined : queuePartitionKey, lockParams),
+          lockParams,
+        );
+        if (rows[0]?.acquired !== true) {
+          await client.query('COMMIT');
+          // Another worker is claiming from this scope, so it still has work; the next poll retries.
+          return rows.length > 0 ? { claimedIDs, stopReason: 'claim_lock' } : { claimedIDs };
+        }
+      } else if (hasSharedBudget) {
+        // CockroachDB, without advisory locks before 26.3: SERIALIZABLE aborts claimers that spend the same budget.
+        await client.query('BEGIN ISOLATION LEVEL SERIALIZABLE');
       } else {
         await client.query('BEGIN');
       }
@@ -4383,31 +4441,6 @@ export class SystemDatabase {
         );
         return Number(rows[0]?.count ?? 0);
       };
-
-      // Compute maxTasks, the number of workflows startable under every flow control limit on this queue.
-      let maxTasks = Infinity;
-
-      // The first limit found with no room, which the caller reads as why nothing was claimed.
-      let stopReason: DequeueStopReason | undefined = undefined;
-      const limit = (room: number, reason: DequeueStopReason) => {
-        maxTasks = Math.min(maxTasks, room);
-        if (maxTasks <= 0) stopReason ??= reason;
-      };
-
-      if (queue.workerConcurrency !== undefined) {
-        // Use the in-memory registry for this worker's running count — avoids a DB round trip.
-        limit(Math.max(0, queue.workerConcurrency - localRunningCount), 'worker_concurrency');
-      }
-      if (queue.partitionWorkerConcurrency !== undefined) {
-        limit(
-          Math.max(0, queue.partitionWorkerConcurrency - partitionLocalRunningCount),
-          'partition_worker_concurrency',
-        );
-      }
-      if (maxTasks <= 0) {
-        await client.query('COMMIT');
-        return { claimedIDs, stopReason };
-      }
 
       if (queue.rateLimit !== undefined) {
         // Bound the claim by the limiter's remaining slots so a backlogged queue locks only what it can start.
@@ -4553,7 +4586,10 @@ export class SystemDatabase {
   /** Max heads admitted per sweep: bounds dispatch, not the partition walk; an unconstrained sweep takes the lowest keys, so higher keys can wait under sustained load. */
   partitionedDequeueSweepCap: number = 8192;
 
-  /** Dequeue each partition's head-of-line workflow in one transaction, at most {@link partitionedDequeueSweepCap} per sweep; only valid for partition-concurrency-1 queues with no queue-wide limit. */
+  /** Max partitions a sweep claims per transaction, which bounds the locks it holds at once and for how long. */
+  partitionedDequeueBatchSize: number = 64;
+
+  /** Dequeue each partition's head-of-line workflow, at most {@link partitionedDequeueSweepCap} per sweep in transactions of {@link partitionedDequeueBatchSize}; only valid for partition-concurrency-1 queues with no queue-wide limit. */
   async findAndMarkStartablePartitionedWorkflows(
     queue: WorkflowQueue,
     executorID: string,
@@ -4581,15 +4617,34 @@ export class SystemDatabase {
     if (isLatestVersion === undefined && this.sharded) {
       isLatestVersion = await this.isLatestVersion(appVersion);
     }
+    // Sweeps whose heads differ lock disjoint rows, so a claim also takes its partition's lock; CockroachDB, without advisory locks before 26.3, relies on its SERIALIZABLE default.
+    const usePartitionLocks = this.sharded || !(await this.#isCockroach());
     const client = await this.connect();
     try {
-      await client.query('BEGIN');
-
       isLatestVersion ??= await this.isLatestVersion(appVersion, client);
       const versionClause = (n: number) =>
         isLatestVersion
           ? `(application_version = $${n} OR application_version IS NULL)`
           : `application_version = $${n}`;
+      // The partition's head: $1 queue, $2 ENQUEUED, `version` the app version, `pk` the partition key expression.
+      const headOf = (pk: string, version: number, scope: string) =>
+        `SELECT workflow_uuid
+           FROM "${this.schemaName}".workflow_status
+           WHERE queue_name = $1 AND status = $2
+             AND queue_partition_key = ${pk}
+             AND ${versionClause(version)}
+             AND ${scope}
+           -- workflow_uuid totalizes the head order (same head for every worker under created_at ties) and the index's trailing workflow_uuid keeps this a pure top-1 probe.
+           ORDER BY priority ASC, created_at ASC, workflow_uuid ASC
+           LIMIT 1`;
+      // No application filter by design: a mutual-exclusion probe must block on any owner's row.
+      const noPending = (pk: string, pending: number, scope: string) =>
+        `NOT EXISTS (
+           SELECT 1
+           FROM "${this.schemaName}".workflow_status
+           WHERE ${scope} AND queue_name = $1 AND status = $${pending}
+             AND queue_partition_key IS NOT NULL AND queue_partition_key = ${pk}
+         )`;
 
       // This worker's own budget bounds the sweep alongside the cap.
       const sweepLimit = Math.min(this.partitionedDequeueSweepCap, maxTasks);
@@ -4606,7 +4661,8 @@ export class SystemDatabase {
       const probeScope = this.scoped(undefined, candidateParams);
 
       // Walk distinct partition keys with a recursive-CTE loose index scan (one seek per key, mirroring getQueuePartitions) so sweep cost scales with partition count, not backlog depth.
-      const candidateResult = await client.query<{ workflow_uuid: string }>(
+      // The walk takes no lock: each batch below picks its heads again under its partitions' locks.
+      const candidateResult = await client.query<{ pk: string }>(
         `WITH RECURSIVE partitions AS (
            (SELECT MIN(queue_partition_key) AS pk
             FROM "${this.schemaName}".workflow_status
@@ -4622,40 +4678,19 @@ export class SystemDatabase {
            SELECT partitions.pk
            FROM partitions
            WHERE partitions.pk IS NOT NULL
-             -- No application filter by design: a mutual-exclusion probe must block on any owner's row.
-             AND NOT EXISTS (
-               SELECT 1
-               FROM "${this.schemaName}".workflow_status
-               WHERE ${probeScope} AND queue_name = $1 AND status = $4
-                 AND queue_partition_key IS NOT NULL AND queue_partition_key = partitions.pk
-             )
+             AND ${noPending('partitions.pk', 4, probeScope)}
            ORDER BY ${sweepOrder}
            LIMIT $5
          )
-         SELECT head.workflow_uuid
+         SELECT chosen.pk
          FROM chosen
-         -- LATERAL plans as a tight nested loop; a correlated scalar subquery runs as a slower per-row SubPlan.
-         JOIN LATERAL (
-           SELECT workflow_uuid
-           FROM "${this.schemaName}".workflow_status
-           WHERE queue_name = $1 AND status = $2
-             AND queue_partition_key = chosen.pk
-             AND ${versionClause(3)}
-             AND ${candidateScope}
-           -- workflow_uuid totalizes the head order (same head for every worker under created_at ties) and the index's trailing workflow_uuid keeps this a pure top-1 probe.
-           ORDER BY priority ASC, created_at ASC, workflow_uuid ASC
-           LIMIT 1
-         ) head ON TRUE
-         -- Which partitions were chosen is settled above; order the result so the claim, and the dispatch it feeds, are deterministic.
+         -- Only partitions with a head this worker may run; LATERAL plans as a tight nested loop.
+         JOIN LATERAL (${headOf('chosen.pk', 3, candidateScope)}) head ON TRUE
+         -- Which partitions were chosen is settled above; order them so the claim, and the dispatch it feeds, are deterministic.
          ORDER BY chosen.pk ASC`,
         candidateParams,
       );
-      const candidateIDs = candidateResult.rows.map((row) => row.workflow_uuid);
-      if (candidateIDs.length === 0) {
-        await client.query('COMMIT');
-        return [];
-      }
-      await debugTriggerPoint(DEBUG_TRIGGER_PARTITIONED_DEQUEUE_AFTER_CANDIDATES);
+      const partitionKeys = candidateResult.rows.map((row) => row.pk);
 
       // Re-check queue/partition/version alongside status so a row resumeWorkflows moved to another queue mid-sweep is dropped, not hijacked.
       const claimGuard = (ids: string, status: number, name: number, version: number, scope: string) =>
@@ -4666,75 +4701,120 @@ export class SystemDatabase {
            AND ${versionClause(version)}
            AND ${scope}`;
 
-      const lockedParams: unknown[] = [StatusString.ENQUEUED, queue.name, appVersion];
-      const lockedIDsFilter = this.wfIn(undefined, candidateIDs, lockedParams);
-      const lockedScope = this.appNameFilter('application_name', this.appName, lockedParams);
-      // Lock the fixed candidate set — never a LIMIT query, whose SKIP LOCKED could slide past a locked head and admit out of order.
-      const lockedResult = await client.query<{ workflow_uuid: string }>(
-        `SELECT workflow_uuid
-         FROM "${this.schemaName}".workflow_status
-         WHERE ${claimGuard(lockedIDsFilter, 1, 2, 3, lockedScope)}
-         FOR UPDATE SKIP LOCKED`,
-        lockedParams,
-      );
-      const lockedIDs = new Set(lockedResult.rows.map((row) => row.workflow_uuid));
-      // Preserve partition order for submission.
-      const claimIDs = candidateIDs.filter((id) => lockedIDs.has(id));
-      if (claimIDs.length === 0) {
-        await client.query('COMMIT');
-        return [];
+      /** Claim the heads of these partitions inside the open transaction, returning the IDs it marked PENDING. */
+      const claimBatch = async (batch: string[]): Promise<string[]> => {
+        let heldPks = batch;
+        if (usePartitionLocks) {
+          await debugTriggerPoint(DEBUG_TRIGGER_PARTITIONED_DEQUEUE_BEFORE_LOCKS);
+          const lockParams: unknown[] = [];
+          const { rows } = await client.query<{ held: string[] }>(
+            this.partitionLockQuery(queue.name, batch, lockParams),
+            lockParams,
+          );
+          // Partitions another sweep holds are left to it, or to the next poll.
+          heldPks = rows[0]?.held ?? [];
+          if (heldPks.length === 0) return [];
+        }
+
+        // Pick the heads again under the locks, so a previous holder's claims and any newly visible head are seen.
+        const headParams: unknown[] = [queue.name, StatusString.ENQUEUED, appVersion, StatusString.PENDING];
+        const headScope = `${this.scoped(undefined, headParams)} AND ${this.appNameFilter('application_name', this.appName, headParams)}`;
+        const headProbeScope = this.scoped(undefined, headParams);
+        headParams.push(heldPks);
+        const headResult = await client.query<{ workflow_uuid: string }>(
+          `SELECT head.workflow_uuid
+           FROM unnest($${headParams.length}::text[]) AS chosen(pk)
+           JOIN LATERAL (${headOf('chosen.pk', 3, headScope)}) head ON TRUE
+           WHERE ${noPending('chosen.pk', 4, headProbeScope)}
+           ORDER BY chosen.pk ASC`,
+          headParams,
+        );
+        const candidateIDs = headResult.rows.map((row) => row.workflow_uuid);
+        if (candidateIDs.length === 0) return [];
+        await debugTriggerPoint(DEBUG_TRIGGER_PARTITIONED_DEQUEUE_AFTER_CANDIDATES);
+
+        const lockedParams: unknown[] = [StatusString.ENQUEUED, queue.name, appVersion];
+        const lockedIDsFilter = this.wfIn(undefined, candidateIDs, lockedParams);
+        const lockedScope = this.appNameFilter('application_name', this.appName, lockedParams);
+        // Lock the fixed candidate set — never a LIMIT query, whose SKIP LOCKED could slide past a locked head and admit out of order.
+        const lockedResult = await client.query<{ workflow_uuid: string }>(
+          `SELECT workflow_uuid
+           FROM "${this.schemaName}".workflow_status
+           WHERE ${claimGuard(lockedIDsFilter, 1, 2, 3, lockedScope)}
+           FOR UPDATE SKIP LOCKED`,
+          lockedParams,
+        );
+        const lockedIDs = new Set(lockedResult.rows.map((row) => row.workflow_uuid));
+        // Preserve partition order for submission.
+        const claimIDs = candidateIDs.filter((id) => lockedIDs.has(id));
+        if (claimIDs.length === 0) return [];
+
+        const flipParams: unknown[] = [
+          StatusString.PENDING,
+          executorID,
+          StatusString.ENQUEUED,
+          queue.name,
+          appVersion,
+          // Claim the row, as the unpartitioned dequeue does.
+          this.appName ?? null,
+          ownerXid,
+          startTimeMs,
+        ];
+        const flipIDsFilter = this.wfIn(undefined, claimIDs, flipParams);
+        const flipScope = this.appNameFilter('application_name', this.appName, flipParams);
+        // Start the workflows by marking them PENDING; RETURNING reports exactly the rows this statement flipped.
+        const flippedResult = await client.query<{ workflow_uuid: string }>(
+          `UPDATE "${this.schemaName}".workflow_status
+           SET status = $1,
+               owner_xid = $7,
+               executor_id = $2,
+               application_version = $5,
+               started_at_epoch_ms = (EXTRACT(epoch FROM now()) * 1000)::bigint,
+               rate_limited = FALSE,
+               application_name = COALESCE(application_name, $6),
+               recovery_attempts = recovery_attempts + 1,
+               updated_at = (EXTRACT(epoch FROM now()) * 1000)::bigint,
+               workflow_deadline_epoch_ms = CASE
+                 WHEN workflow_timeout_ms IS NOT NULL AND workflow_deadline_epoch_ms IS NULL THEN
+                   CASE
+                     WHEN workflow_timeout_ms > 9223372036854775807 - $8::bigint
+                     THEN 9223372036854775807
+                     ELSE $8::bigint + workflow_timeout_ms
+                   END
+                 ELSE workflow_deadline_epoch_ms
+               END
+           WHERE ${claimGuard(flipIDsFilter, 3, 4, 5, flipScope)}
+           RETURNING workflow_uuid`,
+          flipParams,
+        );
+        const flippedIDs = new Set(flippedResult.rows.map((row) => row.workflow_uuid));
+        return claimIDs.filter((id) => flippedIDs.has(id));
+      };
+
+      // One short transaction per batch, so a sweep holds at most a batch's locks, and only while it claims that batch.
+      const claimedIDs: string[] = [];
+      for (let start = 0; start < partitionKeys.length; start += this.partitionedDequeueBatchSize) {
+        const batch = partitionKeys.slice(start, start + this.partitionedDequeueBatchSize);
+        try {
+          await client.query('BEGIN');
+          const batchIDs = await claimBatch(batch);
+          await client.query('COMMIT');
+          claimedIDs.push(...batchIDs);
+        } catch (error) {
+          // Swallowed: a rollback failure must not mask why we are rolling back.
+          await client.query('ROLLBACK').catch(() => undefined);
+          // Earlier batches committed their claims, which must still reach dispatch; the next poll retries the rest.
+          if (claimedIDs.length === 0) throw error;
+          this.logger.warn(
+            `[${queue.name}] stopping a partitioned sweep after ${claimedIDs.length} claim(s): ${String(error)}`,
+          );
+          break;
+        }
       }
-
-      const flipParams: unknown[] = [
-        StatusString.PENDING,
-        executorID,
-        StatusString.ENQUEUED,
-        queue.name,
-        appVersion,
-        // Claim the row, as the unpartitioned dequeue does.
-        this.appName ?? null,
-        ownerXid,
-        startTimeMs,
-      ];
-      const flipIDsFilter = this.wfIn(undefined, claimIDs, flipParams);
-      const flipScope = this.appNameFilter('application_name', this.appName, flipParams);
-      // Start the workflows by marking them PENDING; RETURNING reports exactly the rows this statement flipped.
-      const flippedResult = await client.query<{ workflow_uuid: string }>(
-        `UPDATE "${this.schemaName}".workflow_status
-         SET status = $1,
-             owner_xid = $7,
-             executor_id = $2,
-             application_version = $5,
-             started_at_epoch_ms = (EXTRACT(epoch FROM now()) * 1000)::bigint,
-             rate_limited = FALSE,
-             application_name = COALESCE(application_name, $6),
-             recovery_attempts = recovery_attempts + 1,
-             updated_at = (EXTRACT(epoch FROM now()) * 1000)::bigint,
-             workflow_deadline_epoch_ms = CASE
-               WHEN workflow_timeout_ms IS NOT NULL AND workflow_deadline_epoch_ms IS NULL THEN
-                 CASE
-                   WHEN workflow_timeout_ms > 9223372036854775807 - $8::bigint
-                   THEN 9223372036854775807
-                   ELSE $8::bigint + workflow_timeout_ms
-                 END
-               ELSE workflow_deadline_epoch_ms
-             END
-         WHERE ${claimGuard(flipIDsFilter, 3, 4, 5, flipScope)}
-         RETURNING workflow_uuid`,
-        flipParams,
-      );
-
-      await client.query('COMMIT');
-
-      const flippedIDs = new Set(flippedResult.rows.map((row) => row.workflow_uuid));
-      const claimedIDs = claimIDs.filter((id) => flippedIDs.has(id));
       if (claimedIDs.length > 0) {
         this.logger.debug(`[${queue.name}] dequeueing ${claimedIDs.length} task(s)`);
       }
       return claimedIDs;
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
     } finally {
       client.release();
     }
