@@ -65,7 +65,7 @@ import {
   runWithTopContext,
   runWithoutAbortableDbRetries,
 } from './context';
-import { globalParams, sleepms, INTERNAL_QUEUE_NAME } from './utils';
+import { globalParams, sleepms, INTERNAL_QUEUE_NAME, Semaphore } from './utils';
 import {
   DBOSPortableJSON,
   DBOSSerializer,
@@ -331,6 +331,11 @@ export class DBOSExecutor {
   #wfqEnded?: Promise<void> = undefined;
   #backgroundJobsAbort?: AbortController = undefined;
   #backgroundJobsEnded?: Promise<void> = undefined;
+  #eventReceiversActive = false;
+  // Init and deactivate run one at a time, so overlapping calls can't interleave their awaits.
+  readonly receiversLock = new Semaphore(1);
+  // Owned by this executor, not the global lifecycle registry, so a relaunch doesn't also restart a previous executor's scheduler.
+  readonly #scheduler: DynamicSchedulerLoop;
 
   readonly executorID: string = globalParams.executorID;
 
@@ -361,7 +366,7 @@ export class DBOSExecutor {
       sharding: this.config.sharding,
     });
 
-    new DynamicSchedulerLoop(config.schedulerPollingIntervalMs); // Create the dynamic scheduler, which registers itself.
+    this.#scheduler = new DynamicSchedulerLoop(config.schedulerPollingIntervalMs);
 
     this.initialized = false;
     DBOSExecutor.globalInstance = this;
@@ -1335,16 +1340,38 @@ export class DBOSExecutor {
   }
 
   async initEventReceivers(listenQueues: string[] | null) {
+    await this.receiversLock.runExclusive(() => this.initEventReceiversUnlocked(listenQueues));
+  }
+
+  async deactivateEventReceivers() {
+    await this.receiversLock.runExclusive(() => this.deactivateEventReceiversUnlocked());
+  }
+
+  /** Caller must hold receiversLock. */
+  async initEventReceiversUnlocked(listenQueues: string[] | null) {
+    if (this.#eventReceiversActive) return;
+    this.#eventReceiversActive = true;
     this.#wfqEnded = wfQueueRunner.dispatchLoop(this, listenQueues, this.config.maxConcurrentQueueDispatches);
-    this.#backgroundJobsAbort = new AbortController();
-    this.#backgroundJobsEnded = backgroundJobsLoop(this.systemDatabase, this.logger, this.#backgroundJobsAbort.signal);
+    // Background jobs outlive deactivateEventReceivers (they stop after the shutdown drain), so a restart must not start a second loop.
+    if (!this.#backgroundJobsAbort) {
+      this.#backgroundJobsAbort = new AbortController();
+      this.#backgroundJobsEnded = backgroundJobsLoop(
+        this.systemDatabase,
+        this.logger,
+        this.#backgroundJobsAbort.signal,
+      );
+    }
 
     for (const lcl of getLifecycleListeners()) {
       await lcl.initialize?.();
     }
+    await this.#scheduler.initialize();
   }
 
-  async deactivateEventReceivers() {
+  /** Caller must hold receiversLock. */
+  async deactivateEventReceiversUnlocked() {
+    if (!this.#eventReceiversActive) return;
+    this.#eventReceiversActive = false;
     this.logger.debug('Deactivating lifecycle listeners');
     for (const lcl of getLifecycleListeners()) {
       try {
@@ -1353,6 +1380,12 @@ export class DBOSExecutor {
         const e = err as Error;
         this.logger.warn(`Error destroying lifecycle listener: ${e.message}`);
       }
+    }
+    try {
+      await this.#scheduler.destroy();
+    } catch (err) {
+      const e = err as Error;
+      this.logger.warn(`Error destroying scheduler: ${e.message}`);
     }
 
     this.logger.debug('Deactivating queue runner');

@@ -920,6 +920,108 @@ describe('dynamic-scheduler-tests', () => {
     await DBOS.deleteSchedule('pause-test');
   });
 
+  // --- Event receivers restart ---
+  const restartDates: Date[] = [];
+  async function restartWorkflow(scheduledDate: Date, _context: unknown) {
+    restartDates.push(new Date(scheduledDate));
+    await Promise.resolve();
+  }
+  const regRestartWf = DBOS.registerWorkflow(restartWorkflow, { name: 'restartWorkflow' });
+
+  // A receiver whose next initialize() can be made to fail once, to check that a failed init can be retried.
+  let failReceiverInit = false;
+  DBOS.registerLifecycleCallback({
+    initialize: async () => {
+      await Promise.resolve();
+      if (failReceiverInit) {
+        failReceiverInit = false;
+        throw new Error('receiver init failed');
+      }
+    },
+  });
+
+  async function initReceiversInWorkflow() {
+    await DBOS.initEventReceivers();
+  }
+  const regInitReceiversWf = DBOS.registerWorkflow(initReceiversInWorkflow, { name: 'initReceiversInWorkflow' });
+  async function deactivateReceiversInWorkflow() {
+    await DBOS.deactivateEventReceivers();
+  }
+  const regDeactivateReceiversWf = DBOS.registerWorkflow(deactivateReceiversInWorkflow, {
+    name: 'deactivateReceiversInWorkflow',
+  });
+
+  test('dynamic-scheduler-receivers-restart', async () => {
+    restartDates.length = 0;
+
+    await DBOS.createSchedule({
+      scheduleName: 'restart-test',
+      workflowFn: regRestartWf,
+      schedule: '* * * * * *',
+    });
+
+    await retryUntilSuccess(() => {
+      expect(restartDates.length).toBeGreaterThanOrEqual(1);
+    });
+
+    // Deactivate stops firing; a second deactivate is a no-op
+    await DBOS.deactivateEventReceivers();
+    await DBOS.deactivateEventReceivers();
+    await sleepms(2000);
+    const snapshot = restartDates.length;
+    await sleepms(3000);
+    expect(restartDates.length).toBe(snapshot);
+
+    // Receivers can't be started or stopped from inside a workflow
+    await expect(regInitReceiversWf()).rejects.toThrow('inside a workflow');
+    await expect(regDeactivateReceiversWf()).rejects.toThrow('inside a workflow');
+
+    // A failed init tears down what it started, so a retry isn't a silent no-op
+    failReceiverInit = true;
+    try {
+      await expect(DBOS.initEventReceivers()).rejects.toThrow('receiver init failed');
+    } finally {
+      failReceiverInit = false;
+    }
+
+    // Reinitializing resumes firing; a second init is a no-op (a duplicate loop would outlive shutdown).
+    // Require a run scheduled after the restart: a run enqueued before deactivating could otherwise be dispatched late.
+    const restartedAt = Date.now();
+    await DBOS.initEventReceivers();
+    await DBOS.initEventReceivers();
+    await retryUntilSuccess(() => {
+      expect(restartDates.some((d) => d.getTime() > restartedAt)).toBe(true);
+    });
+
+    // Overlapping calls run one at a time in call order, so receivers end up running
+    const overlappedAt = Date.now();
+    await Promise.all([
+      DBOS.deactivateEventReceivers(),
+      DBOS.initEventReceivers(),
+      DBOS.deactivateEventReceivers(),
+      DBOS.initEventReceivers(),
+    ]);
+    await retryUntilSuccess(() => {
+      expect(restartDates.some((d) => d.getTime() > overlappedAt)).toBe(true);
+    });
+
+    // A failed init rolls back under the lock, so it can't undo an init queued behind it
+    await DBOS.deactivateEventReceivers();
+    failReceiverInit = true;
+    try {
+      const results = await Promise.allSettled([DBOS.initEventReceivers(), DBOS.initEventReceivers()]);
+      expect(results.map((r) => r.status)).toEqual(['rejected', 'fulfilled']);
+    } finally {
+      failReceiverInit = false;
+    }
+    const retriedAt = Date.now();
+    await retryUntilSuccess(() => {
+      expect(restartDates.some((d) => d.getTime() > retriedAt)).toBe(true);
+    });
+
+    await DBOS.deleteSchedule('restart-test');
+  });
+
   // ---------------------------------------------------------------------------
   // Trigger schedule
   // ---------------------------------------------------------------------------

@@ -885,6 +885,45 @@ export class DBOS {
     wfQueueRunner.clearRegistrations();
   }
 
+  /**
+   * Stop background work that brings new work into this process: queue dispatch, schedules,
+   *   and registered event receivers. Workflows already running here keep running.
+   *   Has no effect if receivers are already stopped. Throws if DBOS is not launched, or if called from within a workflow.
+   *   Restart them with `DBOS.initEventReceivers`.
+   */
+  static async deactivateEventReceivers(): Promise<void> {
+    if (!DBOS.isInitialized()) throw new DBOSExecutorNotInitializedError();
+    // Not a checkpointed step, so it would rerun on every replay of the calling workflow.
+    if (DBOS.isWithinWorkflow()) {
+      throw new DBOSInvalidWorkflowTransitionError('Invalid call to `DBOS.deactivateEventReceivers` inside a workflow');
+    }
+    await DBOS.#executor.deactivateEventReceivers();
+  }
+
+  /**
+   * Restart queue dispatch, schedules, and registered event receivers after `DBOS.deactivateEventReceivers`.
+   *   Has no effect if receivers are already running. Throws if DBOS is not launched, or if called from within a workflow.
+   *   If a receiver fails to start, stops whatever did start and rethrows the error, so the call can be retried.
+   */
+  static async initEventReceivers(): Promise<void> {
+    // A launch that failed before the system database was ready leaves an uninitialized executor behind; don't start receivers on it.
+    if (!DBOS.isInitialized()) throw new DBOSExecutorNotInitializedError();
+    // Receivers started here would run in the calling workflow's context and record steps against it.
+    if (DBOS.isWithinWorkflow()) {
+      throw new DBOSInvalidWorkflowTransitionError('Invalid call to `DBOS.initEventReceivers` inside a workflow');
+    }
+    const executor = DBOS.#executor;
+    await executor.receiversLock.runExclusive(async () => {
+      try {
+        await executor.initEventReceiversUnlocked(DBOS.#dbosConfig?.listenQueues || null);
+      } catch (e) {
+        // Tear down whatever did start, under the same lock, so a retry starts clean and a call queued behind this one isn't undone.
+        await executor.deactivateEventReceiversUnlocked();
+        throw e;
+      }
+    });
+  }
+
   // Global DBOS executor instance
   static get #executor() {
     return getExecutor();
