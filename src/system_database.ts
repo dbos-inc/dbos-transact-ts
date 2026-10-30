@@ -14,7 +14,7 @@ import {
   DBOSQueryTimeoutError,
   DBOSStepNondeterminismError,
 } from './error';
-import { GetWorkflowsInput, StatusString, WorkflowIDReusePolicy } from './workflow';
+import { GetWorkflowsInput, isWorkflowActive, StatusString, WorkflowIDReusePolicy } from './workflow';
 import {
   notifications,
   operation_outputs,
@@ -957,10 +957,20 @@ export interface SystemDatabaseOptions extends ShardedSystemDatabaseOptions {
   useListenNotify?: boolean;
   notificationCoalesceMs?: number;
   sharding?: boolean;
+  suspendMode?: boolean;
 }
 
 /** Build the system database these options describe. */
 export function createSystemDatabase(options: SystemDatabaseOptions): SystemDatabase {
+  const sysdb = createBaseSystemDatabase(options);
+  if (options.suspendMode) {
+    const { Suspend } = enterprise.load(enterprise.SUSPEND.description);
+    sysdb.suspend = new Suspend(sysdb);
+  }
+  return sysdb;
+}
+
+function createBaseSystemDatabase(options: SystemDatabaseOptions): SystemDatabase {
   if (options.sharding) {
     const { ShardedSystemDatabase } = enterprise.load(enterprise.SHARDING.description);
     return new ShardedSystemDatabase({
@@ -1034,6 +1044,7 @@ export class SystemDatabase {
   shouldUseDBNotifications: boolean = true;
   readonly notificationsMap: NotificationMap<void> = new NotificationMap();
   readonly workflowEventsMap: NotificationMap<void> = new NotificationMap();
+  suspend?: enterprise.Suspend = undefined;
   readonly streamsMap: NotificationMap<void> = new NotificationMap();
   customPool: boolean = false;
 
@@ -2771,7 +2782,7 @@ export class SystemDatabase {
         throw new DBOSNonExistentWorkflowError(`Workflow ${workflowID} does not exist`);
       }
       const status = statusRows[0].status;
-      if (status === StatusString.PENDING || status === StatusString.ENQUEUED || status === StatusString.DELAYED) {
+      if (isWorkflowActive(status)) {
         throw new DBOSError(
           `Cannot rewind ${workflowID} (${status}): only a workflow in a terminal state can be rewound, so cancel it first`,
         );
@@ -3470,7 +3481,7 @@ export class SystemDatabase {
       this.pool.query<workflow_status>(
         `SELECT workflow_uuid FROM "${this.schemaName}".workflow_status
          WHERE ${ids}
-           AND status NOT IN ('${StatusString.PENDING}', '${StatusString.ENQUEUED}', '${StatusString.DELAYED}')
+           AND status NOT IN ('${StatusString.PENDING}', '${StatusString.ENQUEUED}', '${StatusString.DELAYED}', '${StatusString.SUSPENDED}')
          LIMIT 1`,
         params,
       ),
@@ -3507,7 +3518,7 @@ export class SystemDatabase {
       this.pool.query<{ workflow_uuid: string }>(
         `SELECT workflow_uuid FROM "${this.schemaName}".workflow_status
          WHERE ${ids}
-           AND status NOT IN ('${StatusString.PENDING}', '${StatusString.ENQUEUED}', '${StatusString.DELAYED}')`,
+           AND status NOT IN ('${StatusString.PENDING}', '${StatusString.ENQUEUED}', '${StatusString.DELAYED}', '${StatusString.SUSPENDED}')`,
         params,
       ),
     );
@@ -3649,6 +3660,17 @@ export class SystemDatabase {
     idempotencyKey?: string,
     shardKey?: string,
   ): Promise<void> {
+    if (db === this.pool) {
+      // All sends need a transaction now because they wake up suspended workflows unconditionally.
+      const client = await this.connect();
+      try {
+        return await this.inTransaction(client, () =>
+          this.sendDirectInternal(client, destinationID, message, topic, serialization, idempotencyKey, shardKey),
+        );
+      } finally {
+        client.release();
+      }
+    }
     topic = topic ?? this.nullTopic;
     // An idempotency key is scoped per destination: suffix it with the recipient's workflow ID.
     const messageUUID = idempotencyKey ? `${idempotencyKey}::${destinationID}` : randomUUID();
@@ -3675,6 +3697,25 @@ export class SystemDatabase {
       }
       throw err;
     }
+    await this.wakeReceivers(db, [destinationID], [topic]);
+  }
+
+  /**
+   * Make SUSPENDED receivers waiting on one of `topics` due, for the background pass to re-enqueue.
+   * Runs on every send, whether or not this process uses suspend mode, so any sender wakes a workflow
+   * another process parked. A primary-key probe per destination; it matches nothing in the common case.
+   *
+   * The match is destinations x topics, so a batch sending A on topic X and B on topic Y also wakes A
+   * if it waits on Y. The spurious wake-up is harmless: the replayed recv finds no message and parks again.
+   */
+  protected async wakeReceivers(db: ClientBase | Pool, destinations: string[], topics: string[]): Promise<void> {
+    const params: unknown[] = [topics];
+    await db.query(
+      `UPDATE "${this.schemaName}".workflow_status
+       SET delay_until_epoch_ms = 0
+       WHERE ${this.wfIn(undefined, destinations, params)} AND status = '${StatusString.SUSPENDED}' AND suspend_key = ANY($1::text[])`,
+      params,
+    );
   }
 
   @dbRetry()
@@ -3749,6 +3790,17 @@ export class SystemDatabase {
       }
     }
 
+    return await this.recvConsume(workflowID, functionID, topic, startTime);
+  }
+
+  /** Consume and return the oldest message on `topic`, or null if there is none, recording it as the recv at `functionID`. */
+  async recvConsume(
+    workflowID: string,
+    functionID: number,
+    topic: string | undefined,
+    startTime: number,
+  ): Promise<{ serializedValue: string | null; serialization: string | null }> {
+    topic = topic ?? this.nullTopic;
     await this.checkIfCanceled(workflowID);
 
     // Transactionally consume and return the message if it's in the DB, otherwise return null.
@@ -4244,7 +4296,7 @@ export class SystemDatabase {
   async cancelTimedOutWorkflows(limit: number): Promise<string[]> {
     const params: unknown[] = [StatusString.CANCELLED, Date.now(), limit];
     const scope = this.appNameFilter('application_name', this.appName, params);
-    // Literal statuses let the planner match idx_workflow_status_deadline under any plan mode.
+    // Literal statuses let the planner match idx_workflow_status_deadline_v2 under any plan mode.
     // SKIP LOCKED leaves a row a dequeue or a peer's sweep holds for the next sweep.
     const { rows } = await this.pool.query<{ workflow_uuid: string }>(
       `UPDATE "${this.schemaName}".workflow_status
@@ -4253,7 +4305,7 @@ export class SystemDatabase {
            completed_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint
        WHERE workflow_uuid IN (
          SELECT workflow_uuid FROM "${this.schemaName}".workflow_status
-         WHERE status IN ('${StatusString.ENQUEUED}', '${StatusString.PENDING}', '${StatusString.DELAYED}')
+         WHERE status IN ('${StatusString.ENQUEUED}', '${StatusString.PENDING}', '${StatusString.DELAYED}', '${StatusString.SUSPENDED}')
            AND workflow_deadline_epoch_ms IS NOT NULL
            AND workflow_deadline_epoch_ms <= $2
            AND ${scope}
@@ -4925,9 +4977,11 @@ export class SystemDatabase {
     // If queuesOnly, filter for queued workflows
     if (input.queuesOnly) {
       whereClauses.push(`queue_name IS NOT NULL`);
-      whereClauses.push(`status IN ($${paramCounter}, $${paramCounter + 1}, $${paramCounter + 2})`);
-      params.push(StatusString.ENQUEUED, StatusString.PENDING, StatusString.DELAYED);
-      paramCounter += 3;
+      whereClauses.push(
+        `status IN ($${paramCounter}, $${paramCounter + 1}, $${paramCounter + 2}, $${paramCounter + 3})`,
+      );
+      params.push(StatusString.ENQUEUED, StatusString.PENDING, StatusString.DELAYED, StatusString.SUSPENDED);
+      paramCounter += 4;
     }
 
     addFilter('name', input.workflowName);
@@ -5713,7 +5767,12 @@ export class SystemDatabase {
       queues = await move('queues');
       schedules = await move('workflow_schedules');
       versions = await move('application_versions');
-      inFlight = await move('workflow_status', [StatusString.PENDING, StatusString.ENQUEUED, StatusString.DELAYED]);
+      inFlight = await move('workflow_status', [
+        StatusString.PENDING,
+        StatusString.ENQUEUED,
+        StatusString.DELAYED,
+        StatusString.SUSPENDED,
+      ]);
       await client.query('COMMIT');
     } catch (e) {
       await client.query('ROLLBACK');
@@ -6008,7 +6067,7 @@ export class SystemDatabase {
   }
 
   /** Run `fn` in a READ COMMITTED transaction on `client`, so an ownership check holds its row lock until the write commits. */
-  protected async inTransaction<T>(client: PoolClient, fn: () => Promise<T>): Promise<T> {
+  async inTransaction<T>(client: PoolClient, fn: () => Promise<T>): Promise<T> {
     await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
     let result: T;
     try {
@@ -6023,7 +6082,7 @@ export class SystemDatabase {
   }
 
   /** Throw DBOSWorkflowConflictError unless ownerXid still owns the workflow; the row lock holds until commit, so no hand-off lands in between. */
-  protected async checkOwner(client: ClientBase, workflowID: string, ownerXid: string): Promise<void> {
+  async checkOwner(client: ClientBase, workflowID: string, ownerXid: string): Promise<void> {
     const params: unknown[] = [];
     const { rows } = await client.query<{ owner_xid: string | null }>(
       `SELECT owner_xid FROM "${this.schemaName}".workflow_status WHERE ${this.wf(undefined, workflowID, params)} FOR NO KEY UPDATE`,
@@ -6123,7 +6182,7 @@ export class SystemDatabase {
   // been cancelled.
   // For an actual sleep, completed_at is the wake deadline so the step's duration reflects the
   // sleep; a timeout marker records zero duration since its deadline may never be reached.
-  private async durableSleepInternal(
+  async durableSleepInternal(
     workflowID: string,
     functionID: number,
     durationMS: number,

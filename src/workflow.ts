@@ -1,8 +1,15 @@
 import { ConfiguredInstance } from './decorators';
 import { registerSerializationRecipe } from './serialization';
-import { DBOS, getResultInternal, resolvePollingIntervalMs, runInternalStep, type PollingOptions } from './dbos';
+import {
+  awaitRecordedResult,
+  DBOS,
+  getResultInternal,
+  resolvePollingIntervalMs,
+  runInternalStep,
+  type PollingOptions,
+} from './dbos';
 import { DuplicationPolicy, InternalEnqueueOptions } from './system_database';
-import { DBOSError } from './error';
+import { DBOSError, DBOSWorkflowSuspendedError } from './error';
 import { bindShardKeys } from './shard_keys';
 
 /**
@@ -106,7 +113,7 @@ export interface WorkflowConfig {
 export interface WorkflowStatus {
   // The workflow ID
   readonly workflowID: string;
-  // The status of the workflow.  One of PENDING, SUCCESS, ERROR, ENQUEUED, DELAYED, CANCELLED, or MAX_RECOVERY_ATTEMPTS_EXCEEDED.
+  // The status of the workflow.  One of PENDING, SUCCESS, ERROR, ENQUEUED, DELAYED, SUSPENDED, CANCELLED, or MAX_RECOVERY_ATTEMPTS_EXCEEDED.
   readonly status: string;
   // The name of the workflow function.
   readonly workflowName: string;
@@ -250,6 +257,8 @@ export const StatusString = {
   ENQUEUED: 'ENQUEUED',
   /** Workflow is on a `WorkflowQueue` waiting for a delay to expire before it can start */
   DELAYED: 'DELAYED',
+  /** Workflow is parked in the database by a suspend-mode recv or sleep, until a send or its timer re-enqueues it */
+  SUSPENDED: 'SUSPENDED',
 } as const;
 
 export type WorkflowStatusString =
@@ -259,10 +268,16 @@ export type WorkflowStatusString =
   | 'MAX_RECOVERY_ATTEMPTS_EXCEEDED'
   | 'CANCELLED'
   | 'ENQUEUED'
-  | 'DELAYED';
+  | 'DELAYED'
+  | 'SUSPENDED';
 
 export function isWorkflowActive(status: string) {
-  return status === StatusString.PENDING || status === StatusString.ENQUEUED || status === StatusString.DELAYED;
+  return (
+    status === StatusString.PENDING ||
+    status === StatusString.ENQUEUED ||
+    status === StatusString.DELAYED ||
+    status === StatusString.SUSPENDED
+  );
 }
 
 /**
@@ -307,11 +322,17 @@ export class InvokedHandle<R> implements InternalWFHandle<R> {
 
   async getResult(optionsOrFuncIdForGet?: PollingOptions | number): Promise<R> {
     const funcIdForGet = typeof optionsOrFuncIdForGet === 'number' ? optionsOrFuncIdForGet : undefined;
-    resolvePollingIntervalMs(optionsOrFuncIdForGet);
+    const pollingIntervalMs = resolvePollingIntervalMs(optionsOrFuncIdForGet);
     return await bindShardKeys([[this.workflowID, this.shardKey]], () =>
       runInternalStep(
         async () => {
-          return await this.workflowPromise;
+          try {
+            return await this.workflowPromise;
+          } catch (e) {
+            if (!(e instanceof DBOSWorkflowSuspendedError && e.workflowID === this.workflowID)) throw e;
+            // The workflow parked itself in the database: wait for the outcome a later execution records.
+            return (await awaitRecordedResult<R>(this.workflowID, undefined, undefined, pollingIntervalMs)) as R;
+          }
         },
         'DBOS.getResult',
         this.workflowID,

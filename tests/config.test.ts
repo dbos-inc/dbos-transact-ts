@@ -290,6 +290,7 @@ describe('dbos-config', () => {
         runMigrations: true,
         autoUpgrade: false,
         sharding: false,
+        suspendMode: false,
         telemetry: {
           logs: {
             logLevel: 'info',
@@ -410,6 +411,7 @@ describe('dbos-config', () => {
         runMigrations: true,
         autoUpgrade: false,
         sharding: false,
+        suspendMode: false,
         telemetry: {
           logs: {
             logLevel: 'info',
@@ -440,6 +442,7 @@ describe('dbos-config', () => {
         runMigrations: true,
         autoUpgrade: false,
         sharding: false,
+        suspendMode: false,
         telemetry: {
           logs: {
             logLevel: 'info',

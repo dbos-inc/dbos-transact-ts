@@ -8,6 +8,7 @@ import {
   DBOSWorkflowCancelledError,
   DBOSUnexpectedStepError,
   DBOSAwaitedWorkflowCancelledError,
+  DBOSWorkflowSuspendedError,
   DBOSQueueDuplicatedError,
   DBOSWorkflowIDInUseError,
   DBOSStepTimeoutError,
@@ -180,6 +181,12 @@ export interface DBOSConfig {
   /** Use Transact Enterprise's sharded system database, where every workflow names a shard key. Defaults to false. */
   sharding?: boolean;
   /**
+   * Turn on suspend mode (Transact Enterprise): `DBOS.recv` and `DBOS.sleep` called with `suspend: true`
+   * park a waiting workflow in the database instead of holding it in memory, and every send from this
+   * process wakes suspended receivers. Defaults to false.
+   */
+  suspendMode?: boolean;
+  /**
    * Milliseconds the latest application version must have been the latest before auto-upgrade
    * re-enqueues PENDING workflows left on older versions.
    */
@@ -285,6 +292,7 @@ export type DBOSConfigInternal = {
   autoUpgradeIntervalMs?: number;
   autoUpgradeGraceMs?: number;
   sharding: boolean;
+  suspendMode: boolean;
 };
 
 export interface InternalWorkflowParams extends WorkflowParams {
@@ -364,6 +372,7 @@ export class DBOSExecutor {
       observabilityQueryTimeoutMs: this.config.observabilityQueryTimeoutMs,
       idleTransactionTimeoutMs: this.config.systemDatabaseIdleTransactionTimeoutMs,
       sharding: this.config.sharding,
+      suspendMode: this.config.suspendMode,
     });
 
     this.#scheduler = new DynamicSchedulerLoop(config.schedulerPollingIntervalMs);
@@ -884,7 +893,11 @@ export class DBOSExecutor {
           }
           pendingAdopt = notRecordedWarning;
         } catch (err) {
-          if (err instanceof DBOSWorkflowConflictError) {
+          if (err instanceof DBOSWorkflowSuspendedError && err.workflowID === workflowID) {
+            // The workflow is parked in the database; free this slot and exit. Its handles wait on the recorded outcome.
+            runningEntry.release();
+            throw err;
+          } else if (err instanceof DBOSWorkflowConflictError) {
             // This execution lost ownership of the workflow.
             pendingAdopt = `Workflow ${workflowID} is no longer owned by this execution. Waiting for the owner's recorded outcome`;
           } else if (err instanceof DBOSWorkflowCancelledError) {
