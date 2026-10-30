@@ -46,7 +46,9 @@ import {
   DBOSInvalidQueuePriorityError,
   DBOSQueueDuplicatedError,
   DBOSInitializationError,
+  DBOSExternalStoreNotConfiguredError,
 } from './error';
+import type { ExternalObjectRef } from './external_storage';
 import { overwriteConfigForDBOSCloud, translateDbosConfig } from './config';
 import {
   AlertHandler,
@@ -195,6 +197,26 @@ export interface SendOptions {
   serializationType?: WorkflowSerializationFormat;
   /** The destination's shard key; required on a sharded system database. */
   shardKey?: string;
+}
+
+/**
+ * Options for `DBOS.storeExternalObject`
+ */
+export interface StoreExternalObjectOptions {
+  /** The workflow owning the object, which retention collects once the owner is deleted. Defaults to the calling workflow. */
+  ownerWorkflowID?: string;
+  /** Serialization format override; defaults to the calling workflow's */
+  serializationType?: WorkflowSerializationFormat;
+  /**
+   * Names the object within its owner, so storing under the same key again overwrites it. A key is up to 512
+   * characters in '/'-separated segments of letters, digits, '.', '_', '=' or '-', each starting with a letter or digit.
+   * Defaults to a new random key.
+   */
+  key?: string;
+  /** The owner's shard key; required on a sharded system database when storing outside the owner. */
+  shardKey?: string;
+  /** The store to upload to; required when several are configured. */
+  storeID?: string;
 }
 
 /** Options naming the shard key of the workflow an operation addresses. */
@@ -1786,6 +1808,74 @@ export class DBOS {
       return (await deserializeValue(msg.serializedValue, msg.serialization, DBOS.#executor.serializer)) as T;
     }
     throw new DBOSInvalidWorkflowTransitionError('Attempt to call `DBOS.recv` outside of a workflow'); // Only workflows can recv
+  }
+
+  static #externalStorage(): enterprise.ExternalStorage {
+    const storage = DBOS.#executor.externalStorage;
+    if (storage === undefined) {
+      throw new DBOSExternalStoreNotConfiguredError(undefined, []);
+    }
+    return storage;
+  }
+
+  /**
+   * Upload a value to an external store and return a small ref to it, which can be returned from a step or
+   * workflow or passed as a workflow input in place of the value. Called from a workflow, the upload is a step.
+   * Requires `externalStores` in the DBOS configuration (Transact Enterprise).
+   * @param value - The value to store
+   * @param options - {@link StoreExternalObjectOptions}; outside a workflow, `ownerWorkflowID` is required
+   * @returns A ref to pass to `DBOS.loadExternalObject`
+   */
+  static async storeExternalObject<T>(
+    value: T,
+    options: StoreExternalObjectOptions = {},
+  ): Promise<ExternalObjectRef<T>> {
+    ensureDBOSIsLaunched('storeExternalObject');
+    const storage = DBOS.#externalStorage();
+    const ctx = getCurrentContextStore();
+    const owner = options.ownerWorkflowID ?? ctx?.workflowId;
+    if (owner === undefined) {
+      throw new DBOSError('storeExternalObject called outside a workflow requires an ownerWorkflowID');
+    }
+    // Another key would hide the object from its owner, so retention would collect it while the owner lives.
+    if (
+      ctx?.workflowId === owner &&
+      ctx.shardKey !== undefined &&
+      options.shardKey !== undefined &&
+      options.shardKey !== ctx.shardKey
+    ) {
+      throw new DBOSError(
+        `storeExternalObject's shardKey ${options.shardKey} differs from workflow ${owner}'s shard key ${ctx.shardKey}`,
+      );
+    }
+    const store = async () =>
+      (await storage.store(value, {
+        ownerWorkflowID: owner,
+        serializationType: options.serializationType ?? DBOS.#defaultSerializationType,
+        key: options.key,
+        storeID: options.storeID,
+      })) as ExternalObjectRef<T>;
+    return await bindShardKeys([[owner, options.shardKey]], () =>
+      DBOS.isInWorkflow() ? DBOS.runStep(store, { name: 'DBOS.storeExternalObject' }) : store(),
+    );
+  }
+
+  /**
+   * Load the value an external object ref points to. Call it from a step, not a workflow, and use the value
+   * in that step: a step's return value is checkpointed, so return only a small result.
+   * @param ref - A ref returned by `storeExternalObject`
+   * @returns The stored value
+   */
+  static async loadExternalObject<T>(ref: ExternalObjectRef<T>): Promise<T> {
+    ensureDBOSIsLaunched('loadExternalObject');
+    // A load is I/O, so it belongs in a step's retries and checkpointed errors, not a workflow body.
+    if (DBOS.isInWorkflow()) {
+      throw new DBOSError(
+        'loadExternalObject may not be called from a workflow. Call it from a step and use the value there: ' +
+          "a step's return value is checkpointed, so return only a small result.",
+      );
+    }
+    return (await DBOS.#externalStorage().get(ref)) as T;
   }
 
   /**

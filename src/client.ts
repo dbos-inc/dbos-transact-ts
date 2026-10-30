@@ -32,6 +32,7 @@ import {
   type CancelWorkflowsOptions,
   type ReadStreamOptions,
   type ShardKeyOptions,
+  type StoreExternalObjectOptions,
   resolvePollingIntervalMs,
   resolveTimeoutSeconds,
   resolveDelayEpochMS,
@@ -58,7 +59,10 @@ import {
   DBOSError,
   DBOSInvalidWorkflowTransitionError,
   DBOSQueueDuplicatedError,
+  DBOSExternalStoreNotConfiguredError,
 } from './error';
+import * as enterprise from './enterprise';
+import { checkExternalStores, type ExternalObjectRef, type ExternalStore } from './external_storage';
 import { ClientBase, Pool } from 'pg';
 import { randomUUID } from 'node:crypto';
 import {
@@ -88,6 +92,13 @@ export interface ClientEnqueueOptions extends EnqueueWorkflowOptions {
    *     and the handle resolves with the original workflow's result.
    */
   duplicationPolicy?: DuplicationPolicy;
+}
+
+/**
+ * Options for `DBOSClient.storeExternalObject`, which must name the owner workflow.
+ */
+export interface ClientStoreExternalObjectOptions extends StoreExternalObjectOptions {
+  ownerWorkflowID: string;
 }
 
 /**
@@ -140,6 +151,7 @@ export class ClientHandle<R> implements WorkflowHandle<R> {
 export class DBOSClient {
   private readonly logger: GlobalLogger;
   private readonly systemDatabase: SystemDatabase;
+  #externalStorage: enterprise.ExternalStorage | undefined = undefined;
 
   private constructor(
     systemDatabaseUrl: string,
@@ -185,6 +197,7 @@ export class DBOSClient {
    * @param observabilityQueryTimeoutMs - An optional statement timeout, in milliseconds, for read-only observability queries against the system database. Defaults to 30000. Set to 0 or less to disable the cap.
    * @param systemDatabaseIdleTransactionTimeoutMs - An optional PostgreSQL `idle_in_transaction_session_timeout`, in milliseconds, for connections of the system database pool the client creates. Defaults to 60000. Set to 0 or less to leave the server's setting in place. Not applied to a custom `systemDatabasePool`.
    * @param sharding - Whether the system database is sharded (requires @dbos-inc/dbos-enterprise). Defaults to false.
+   * @param externalStores - The object stores for `storeExternalObject` and `loadExternalObject`, matching the application's. If there are multiple, `storeExternalObject` must specify one with `storeID`. Requires Transact Enterprise.
    * @returns A Promise that resolves with the DBOSClient instance.
    */
   static async create({
@@ -199,6 +212,7 @@ export class DBOSClient {
     observabilityQueryTimeoutMs,
     systemDatabaseIdleTransactionTimeoutMs,
     sharding,
+    externalStores,
   }: {
     systemDatabaseUrl: string;
     systemDatabasePool?: Pool;
@@ -211,7 +225,12 @@ export class DBOSClient {
     observabilityQueryTimeoutMs?: number;
     systemDatabaseIdleTransactionTimeoutMs?: number;
     sharding?: boolean;
+    externalStores?: ExternalStore[];
   }): Promise<DBOSClient> {
+    const stores = checkExternalStores(externalStores);
+    // Loaded before any connection exists, so a missing package leaves nothing to clean up.
+    const ExternalStorage =
+      stores.length > 0 ? enterprise.load(enterprise.EXTERNAL_STORAGE.description).ExternalStorage : undefined;
     const client = new DBOSClient(
       systemDatabaseUrl,
       systemDatabasePool,
@@ -225,6 +244,9 @@ export class DBOSClient {
       systemDatabaseIdleTransactionTimeoutMs,
       sharding,
     );
+    if (ExternalStorage !== undefined) {
+      client.#externalStorage = new ExternalStorage(client.systemDatabase, { stores, serializer: client.serializer });
+    }
     try {
       // Unkeyed statements on a sharded schema would read and write across every tenant's rows.
       await client.systemDatabase.checkShardedSchema();
@@ -534,6 +556,40 @@ export class DBOSClient {
       undefined,
       options?.shardKey,
     );
+  }
+
+  #externalStorageOrThrow(): enterprise.ExternalStorage {
+    if (this.#externalStorage === undefined) {
+      throw new DBOSExternalStoreNotConfiguredError(undefined, []);
+    }
+    return this.#externalStorage;
+  }
+
+  /**
+   * Upload a value to an external store (if there are multiple, specify one with `storeID`) and return a ref to it.
+   * @param value - The value to store
+   * @param options - {@link ClientStoreExternalObjectOptions}, naming the workflow that owns the object
+   * @returns A ref to pass to `loadExternalObject`, or to a workflow as an input
+   */
+  async storeExternalObject<T>(value: T, options: ClientStoreExternalObjectOptions): Promise<ExternalObjectRef<T>> {
+    const storage = this.#externalStorageOrThrow();
+    return (await bindShardKeys([[options.ownerWorkflowID, options.shardKey]], () =>
+      storage.store(value, {
+        ownerWorkflowID: options.ownerWorkflowID,
+        serializationType: options.serializationType,
+        key: options.key,
+        storeID: options.storeID,
+      }),
+    )) as ExternalObjectRef<T>;
+  }
+
+  /**
+   * Load the value an external object ref points to.
+   * @param ref - A ref returned by `storeExternalObject`
+   * @returns The stored value
+   */
+  async loadExternalObject<T>(ref: ExternalObjectRef<T>): Promise<T> {
+    return (await this.#externalStorageOrThrow().get(ref)) as T;
   }
 
   /**

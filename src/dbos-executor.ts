@@ -27,7 +27,9 @@ import {
 } from './workflow';
 
 import { type StepConfig, validateStepConfig } from './step';
+import * as enterprise from './enterprise';
 import type { ConductorConnection } from './enterprise';
+import type { ExternalStore } from './external_storage';
 import { type AutoUpgradeLoop, autoUpgradableWorkflows, type EnrolledWorkflow } from './auto_upgrade';
 import { TelemetryCollector } from './telemetry/collector';
 import { getActiveSpan, runWithTrace, SpanStatusCode, Tracer } from './telemetry/traces';
@@ -180,6 +182,12 @@ export interface DBOSConfig {
   /** Use Transact Enterprise's sharded system database, where every workflow names a shard key. Defaults to false. */
   sharding?: boolean;
   /**
+   * The object stores for values passed to `DBOS.storeExternalObject`. If there are multiple,
+   * `storeExternalObject` must specify one with `storeID`, and each needs a unique `storeID`.
+   * Requires Transact Enterprise.
+   */
+  externalStores?: ExternalStore[];
+  /**
    * Milliseconds the latest application version must have been the latest before auto-upgrade
    * re-enqueues PENDING workflows left on older versions.
    */
@@ -285,6 +293,7 @@ export type DBOSConfigInternal = {
   autoUpgradeIntervalMs?: number;
   autoUpgradeGraceMs?: number;
   sharding: boolean;
+  externalStores: ExternalStore[];
 };
 
 export interface InternalWorkflowParams extends WorkflowParams {
@@ -320,6 +329,8 @@ export class DBOSExecutor {
   autoUpgrader: AutoUpgradeLoop | undefined = undefined;
   // System Database
   readonly systemDatabase: SystemDatabase;
+  // Set when external stores are configured
+  readonly externalStorage: enterprise.ExternalStorage | undefined;
 
   static readonly defaultNotificationTimeoutSec = 60;
 
@@ -365,6 +376,16 @@ export class DBOSExecutor {
       idleTransactionTimeoutMs: this.config.systemDatabaseIdleTransactionTimeoutMs,
       sharding: this.config.sharding,
     });
+
+    // Built before recovery and queues start, as their workflows may use external objects.
+    if (config.externalStores.length > 0) {
+      const { ExternalStorage } = enterprise.load(enterprise.EXTERNAL_STORAGE.description);
+      this.externalStorage = new ExternalStorage(this.systemDatabase, {
+        stores: config.externalStores,
+        serializer: this.serializer,
+        checkCallerOwner: true,
+      });
+    }
 
     this.#scheduler = new DynamicSchedulerLoop(config.schedulerPollingIntervalMs);
 

@@ -336,7 +336,12 @@ export async function causeChaos(db: string): Promise<void> {
 /* Entitlements */
 
 // Every entitlement Conductor reports today.
-export const ALL_ENTITLED: Record<string, boolean> = { sharding: true, autoUpgrade: true, suspendWorkflows: true };
+export const ALL_ENTITLED: Record<string, boolean> = {
+  sharding: true,
+  autoUpgrade: true,
+  suspendWorkflows: true,
+  externalStorage: true,
+};
 
 /**
  * A local stand-in for Conductor's entitlements route. Tests name it as their conductorURL,

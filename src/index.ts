@@ -10,11 +10,14 @@ export {
   ReadStreamOptions,
   ReadStreamOffsetOptions,
   ShardKeyOptions,
+  StoreExternalObjectOptions,
 } from './dbos';
 
 export type { StepReservation } from './dbos';
 
-export { DBOSClient } from './client';
+export { DBOSClient, ClientStoreExternalObjectOptions } from './client';
+
+export type { ExternalObjectRef, ExternalStore } from './external_storage';
 
 export { WorkflowSchedule, ScheduledWorkflowFn, ScheduleOptions } from './scheduler/scheduler';
 

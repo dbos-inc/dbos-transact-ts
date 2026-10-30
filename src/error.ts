@@ -264,6 +264,64 @@ export class DBOSStepNondeterminismError extends DBOSError {
   }
 }
 
+export const ExternalStoreNotConfigured = 39;
+/** Raised when no external store is configured, or a ref or storeID names a store that isn't. */
+export class DBOSExternalStoreNotConfiguredError extends DBOSError {
+  constructor(
+    readonly storeID: string | undefined,
+    readonly configuredStoreIDs: string[],
+  ) {
+    super(
+      configuredStoreIDs.length === 0
+        ? 'External objects require externalStores in the DBOS configuration or DBOSClient'
+        : `External store ${storeID} is not configured; the configured stores are ${configuredStoreIDs.join(', ')}`,
+      ExternalStoreNotConfigured,
+    );
+    this.name = 'DBOSExternalStoreNotConfiguredError';
+  }
+}
+
+export const ExternalObjectMissing = 40;
+/** Raised when an external object's ref is valid but its object no longer exists. */
+export class DBOSExternalObjectMissingError extends DBOSError {
+  constructor(
+    readonly storeID: string,
+    readonly key: string,
+  ) {
+    super(`External object ${key} no longer exists in store ${storeID}`, ExternalObjectMissing);
+    this.name = 'DBOSExternalObjectMissingError';
+  }
+}
+
+export const ExternalObjectIntegrity = 41;
+/** Raised when an external object's stored bytes don't match its ref. */
+export class DBOSExternalObjectIntegrityError extends DBOSError {
+  constructor(
+    readonly storeID: string,
+    readonly key: string,
+    readonly detail: string,
+  ) {
+    super(`External object ${key} in store ${storeID} does not match its ref: ${detail}`, ExternalObjectIntegrity);
+    this.name = 'DBOSExternalObjectIntegrityError';
+  }
+}
+
+export const ExternalStoreFailed = 42;
+/** Raised when an external store call fails after the store's own retries; the store's error is its `cause`. */
+export class DBOSExternalStoreError extends DBOSError {
+  constructor(
+    readonly storeID: string,
+    readonly key: string,
+    readonly operation: string,
+    readonly detail: string,
+    cause?: unknown,
+  ) {
+    super(`External store ${storeID} failed to ${operation} ${key}: ${detail}`, ExternalStoreFailed);
+    this.name = 'DBOSExternalStoreError';
+    this.cause = cause;
+  }
+}
+
 /**
  * True if `e` is a stream-read timeout, including the portable-serialization
  * replay form, which carries only the original type name.
