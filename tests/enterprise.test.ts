@@ -1,7 +1,9 @@
-import { DBOS } from '../src';
+import { DBOS, DBOSClient } from '../src';
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import * as enterprise from '../src/enterprise';
-import { DBOSInitializationError } from '../src/error';
+import { DBOSExternalStoreNotConfiguredError, DBOSInitializationError } from '../src/error';
+import { checkExternalStores, type ExternalStore } from '../src/external_storage';
+import * as systemDatabase from '../src/system_database';
 import { globalParams } from '../src/utils';
 import { GlobalLogger } from '../src/telemetry/logs';
 import {
@@ -48,6 +50,22 @@ describe('enterprise-loader', () => {
   test('a package without the Conductor client names that cause', () => {
     jest.replaceProperty(enterprise.enterpriseLoader, 'override', () => ({}));
     expect(() => enterprise.load()).toThrow('it does not export ConductorWebsocket');
+  });
+
+  test('a refused client opens no connection', async () => {
+    jest.replaceProperty(enterprise.enterpriseLoader, 'override', () => {
+      throw new Error('refused');
+    });
+    const created = jest.spyOn(systemDatabase, 'createSystemDatabase');
+    await expectError(
+      DBOSClient.create({
+        systemDatabaseUrl: generateDBOSTestConfig().systemDatabaseUrl!,
+        externalStores: [{ storeID: 'refused-store' } as ExternalStore],
+      }),
+      DBOSInitializationError,
+      'refused',
+    );
+    expect(created).not.toHaveBeenCalled();
   });
 });
 
@@ -120,6 +138,7 @@ describe('enterprise-launch', () => {
       ConductorWebsocket: FakeConductor,
       AutoUpgradePass: FakePass,
       ShardedSystemDatabase: class {},
+      ExternalStorage: class {},
     }));
 
     await DBOS.launch({ conductorKey: 'test-key', conductorURL: 'ws://127.0.0.1:1' });
@@ -416,6 +435,9 @@ describe('entitlements', () => {
     expect(enterprise.enabledFeatures({ autoUpgrade: true })).toEqual([enterprise.AUTO_UPGRADE]);
     expect(enterprise.enabledFeatures({ sharding: false })).toEqual([]);
     expect(enterprise.enabledFeatures({ sharding: true })).toEqual([enterprise.SHARDING]);
+    expect(enterprise.enabledFeatures({ externalStores: [{}] })).toEqual([enterprise.EXTERNAL_STORAGE]);
+    // An empty list configures no store, so it needs no entitlement.
+    expect(enterprise.enabledFeatures({ externalStores: [] })).toEqual([]);
     // Every registered feature has a distinct entitlement name.
     const names = enterprise.FEATURES.map((f) => f.entitlement);
     expect(new Set(names).size).toBe(names.length);
@@ -470,5 +492,68 @@ describe('entitlements', () => {
     } finally {
       await DBOS.shutdown();
     }
+  });
+
+  // A sharded run's harness stubs the entitlement check this exercises.
+  testUnlessSharded('external storage checks its entitlement', async () => {
+    const config = generateDBOSTestConfig();
+    await setUpDBOSTestSysDb(config);
+    const store = { storeID: 'store' } as ExternalStore;
+    try {
+      // Refused before the package is even loaded, so this holds without dbos-enterprise.
+      DBOS.setConfig({ ...config, externalStores: [store] });
+      await expectError(
+        DBOS.launch(),
+        DBOSInitializationError,
+        `${enterprise.EXTERNAL_STORAGE.description} requires a DBOS key`,
+      );
+      await DBOS.shutdown();
+      DBOS.setConfig({ ...config, externalStores: [store], transactEnterpriseKey: 'enterprise-key' });
+      conductor.entitle({ ...ALL_ENTITLED, externalStorage: false });
+      await expectError(
+        DBOS.launch({ conductorURL: conductor.url }),
+        DBOSInitializationError,
+        'not entitled to externalStorage',
+      );
+      expect(conductor.requests).toEqual([{ path: '/v2/entitlements', authorization: 'Bearer enterprise-key' }]);
+      expect(DBOS.isInitialized()).toBe(false);
+    } finally {
+      await DBOS.shutdown();
+    }
+  });
+});
+
+describe('external-storage-config', () => {
+  afterEach(async () => {
+    await DBOS.shutdown();
+  });
+
+  test('external stores must be an array', () => {
+    const store = { storeID: 'only' } as ExternalStore;
+    expect(() => checkExternalStores(store)).toThrow('not a single Object; pass [store]');
+    expect(checkExternalStores([store])).toEqual([store]);
+    expect(checkExternalStores(undefined)).toEqual([]);
+    expect(() => checkExternalStores([store, { storeID: 'only' }])).toThrow('these repeat: only');
+  });
+
+  test('external objects need a store', async () => {
+    const config = generateDBOSTestConfig();
+    await setUpDBOSTestSysDb(config);
+    DBOS.setConfig(config);
+    await DBOS.launch();
+    await expect(DBOS.storeExternalObject('value', { ownerWorkflowID: 'owner' })).rejects.toThrow(
+      DBOSExternalStoreNotConfiguredError,
+    );
+    await expect(
+      DBOS.loadExternalObject({
+        version: 1,
+        store: 's3://bucket',
+        key: 'key',
+        size: 0,
+        sha256: '',
+        serialization: 'js_superjson',
+        encoding: 'utf8',
+      }),
+    ).rejects.toThrow(DBOSExternalStoreNotConfiguredError);
   });
 });

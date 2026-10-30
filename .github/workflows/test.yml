@@ -171,6 +171,11 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 10
+      # An S3 server for the S3 external store's tests.
+      moto:
+        image: motoserver/moto:5.1.4
+        ports:
+          - 5000:5000
 
     steps:
       - uses: actions/checkout@v4.1.1
@@ -228,3 +233,4 @@ jobs:
         env:
           PGPASSWORD: dbos
           DBOS_COCKROACHDB_URL: postgresql://root@localhost:26257/postgres
+          DBOS_TEST_S3_ENDPOINT: http://localhost:5000

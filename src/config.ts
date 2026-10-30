@@ -5,6 +5,7 @@ import path from 'path';
 import assert from 'assert';
 import { maskDatabaseUrl } from './database_utils';
 import { DBOSJSON } from './serialization';
+import { checkExternalStores } from './external_storage';
 import { validateIdleTransactionTimeoutMs, validateObservabilityQueryTimeoutMs } from './system_database';
 
 export const dbosConfigFilePath = 'dbos-config.yaml';
@@ -209,6 +210,7 @@ export function translateDbosConfig(options: Partial<DBOSConfig>): DBOSConfigInt
     autoUpgradeIntervalMs: options.autoUpgradeIntervalMs,
     autoUpgradeGraceMs: options.autoUpgradeGraceMs,
     sharding: options.sharding === true,
+    externalStores: checkExternalStores(options.externalStores),
   };
 }
 

@@ -1168,5 +1168,25 @@ $$ LANGUAGE plpgsql;`,
         `CREATE INDEX ${isCockroach ? '' : 'CONCURRENTLY'} IF NOT EXISTS "idx_application_versions_owner_timestamp" ON "${schemaName}"."application_versions" ("application_name", "version_timestamp" DESC)`,
       ],
     },
+    // Versions 126-130 are suspend mode's.
+    {},
+    {},
+    {},
+    {},
+    {},
+    // Objects stored with DBOS.storeExternalObject, so garbage collection can find those whose owner is gone.
+    {
+      name: '131_external_objects',
+      pg: [
+        `CREATE TABLE IF NOT EXISTS "${schemaName}"."external_objects" (
+          "object_key" TEXT NOT NULL,
+          "store_id" TEXT NOT NULL,
+          "workflow_uuid" TEXT NOT NULL,
+          "created_at" BIGINT NOT NULL,
+          PRIMARY KEY ("store_id", "object_key")
+        )`,
+        `CREATE INDEX IF NOT EXISTS "idx_external_objects_store_created_at" ON "${schemaName}"."external_objects" ("store_id", "created_at")`,
+      ],
+    },
   ];
 }

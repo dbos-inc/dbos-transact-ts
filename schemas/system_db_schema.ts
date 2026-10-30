@@ -118,6 +118,14 @@ export interface workflow_schedules {
   application_name?: string | null; // Owning application. NULL means unclaimed; schedule_name stays globally unique.
 }
 
+// Objects stored with DBOS.storeExternalObject; workflow_uuid is the owner.
+export interface external_objects {
+  object_key: string;
+  store_id: string;
+  workflow_uuid: string;
+  created_at: number;
+}
+
 export interface application_versions {
   version_id: string;
   version_name: string;

@@ -147,8 +147,9 @@ describeUnlessSharded('sysdb migration runner', () => {
     `);
     const before = await client.query(`SELECT * FROM "${TEST_SCHEMA}".application_versions ORDER BY version_id`);
     const result = await runSysMigrationsPg(client, migrations, TEST_SCHEMA, { onWarn: () => {} });
-    expect(result.appliedCount).toBe(2);
+    expect(result.appliedCount).toBe(migrations.slice(beforeIndexes).filter((m) => m.pg?.length).length);
     expect(await indexExists(client, 'idx_application_versions_timestamp')).toBe(true);
+    expect(await tableExists(client, 'external_objects')).toBe(true);
     expect(await indexExists(client, 'idx_application_versions_owner_timestamp')).toBe(true);
     const after = await client.query(`SELECT * FROM "${TEST_SCHEMA}".application_versions ORDER BY version_id`);
     expect(after.rows).toEqual(before.rows);

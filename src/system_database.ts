@@ -6008,7 +6008,7 @@ export class SystemDatabase {
   }
 
   /** Run `fn` in a READ COMMITTED transaction on `client`, so an ownership check holds its row lock until the write commits. */
-  protected async inTransaction<T>(client: PoolClient, fn: () => Promise<T>): Promise<T> {
+  async inTransaction<T>(client: PoolClient, fn: () => Promise<T>): Promise<T> {
     await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
     let result: T;
     try {
@@ -6023,7 +6023,7 @@ export class SystemDatabase {
   }
 
   /** Throw DBOSWorkflowConflictError unless ownerXid still owns the workflow; the row lock holds until commit, so no hand-off lands in between. */
-  protected async checkOwner(client: ClientBase, workflowID: string, ownerXid: string): Promise<void> {
+  async checkOwner(client: ClientBase, workflowID: string, ownerXid: string): Promise<void> {
     const params: unknown[] = [];
     const { rows } = await client.query<{ owner_xid: string | null }>(
       `SELECT owner_xid FROM "${this.schemaName}".workflow_status WHERE ${this.wf(undefined, workflowID, params)} FOR NO KEY UPDATE`,
