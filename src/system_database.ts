@@ -3794,6 +3794,7 @@ export class SystemDatabase {
   }
 
   /** Consume and return the oldest message on `topic`, or null if there is none, recording it as the recv at `functionID`. */
+  @dbRetry()
   async recvConsume(
     workflowID: string,
     functionID: number,
@@ -6182,6 +6183,7 @@ export class SystemDatabase {
   // been cancelled.
   // For an actual sleep, completed_at is the wake deadline so the step's duration reflects the
   // sleep; a timeout marker records zero duration since its deadline may never be reached.
+  @dbRetry()
   async durableSleepInternal(
     workflowID: string,
     functionID: number,
