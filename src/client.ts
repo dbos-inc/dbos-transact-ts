@@ -11,6 +11,7 @@ import {
   type DebounceResult,
   DBOS_FUNCNAME_READSTREAM,
   DEFAULT_POOL_SIZE,
+  type BatchSendItems,
 } from './system_database';
 
 import { DLogger, GlobalLogger } from './telemetry/logs';
@@ -534,6 +535,32 @@ export class DBOSClient {
       undefined,
       options?.shardKey,
     );
+  }
+
+  /**
+   * Sends multiple messages to workflows in a single transaction. All messages commit together, or none do.
+   * @param messages - The messages to send, each with a destination workflow ID.
+   * @param options - {@link ClientSendOptions} applied to every message in the batch.
+   * @returns A Promise that resolves when all messages have been sent.
+   */
+  async sendBatch<T>(
+    messages: { destinationID: string; message: T; topic?: string; idempotencyKey?: string }[],
+    options?: ClientSendOptions,
+  ): Promise<void> {
+    const items: BatchSendItems = await Promise.all(
+      messages.map(async ({ destinationID, message, topic, idempotencyKey }) => {
+        const sermsg = await serializeValue(message, this.serializer, options?.serializationType);
+        return {
+          destinationID,
+          message: sermsg.serializedValue,
+          topic,
+          serialization: sermsg.serialization,
+          idempotencyKey,
+          shardKey: options?.shardKey,
+        };
+      }),
+    );
+    await this.systemDatabase.sendDirectBatch(items);
   }
 
   /**
