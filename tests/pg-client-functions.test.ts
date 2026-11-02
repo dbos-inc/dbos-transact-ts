@@ -95,6 +95,57 @@ describeUnlessSharded('PostgreSQL Client Functions', () => {
     }
   });
 
+  // send_message wakes a SUSPENDED recv on its topic, as an SDK send does. Parks finished workflows by
+  // hand, as @dbos-inc/dbos-enterprise's recv would.
+  test('pg-send-wakes-suspended-receiver', async () => {
+    const deadlineMs = 2 ** 52;
+    const dbClient = new Client(poolConfig);
+    const park = async (topic: string) => {
+      const handle = await DBOS.startWorkflow(ClientTest).sendTest(topic);
+      await DBOS.send(handle.workflowID, 'done', topic);
+      await handle.getResult();
+      await dbClient.query(
+        `UPDATE dbos.workflow_status SET status = 'SUSPENDED', suspend_key = $1, delay_until_epoch_ms = $2
+         WHERE workflow_uuid = $3`,
+        [topic, deadlineMs, handle.workflowID],
+      );
+      return handle.workflowID;
+    };
+    const send = async (workflowID: string, topic: string | null) => {
+      await dbClient.query(`SELECT dbos.send_message(destination_id => $1, message => $2::JSON, topic => $3)`, [
+        workflowID,
+        JSON.stringify('m'),
+        topic,
+      ]);
+    };
+    const delay = async (workflowID: string) => {
+      const { rows } = await dbClient.query<{ delay_until_epoch_ms: string }>(
+        'SELECT delay_until_epoch_ms FROM dbos.workflow_status WHERE workflow_uuid = $1',
+        [workflowID],
+      );
+      return Number(rows[0].delay_until_epoch_ms);
+    };
+
+    try {
+      await DBOS.launch();
+      await dbClient.connect();
+
+      const onTopic = await park('approve');
+      await send(onTopic, 'other');
+      expect(await delay(onTopic)).toBe(deadlineMs);
+      await send(onTopic, 'approve');
+      expect(await delay(onTopic)).toBe(0);
+
+      // A null topic matches a recv waiting with no topic.
+      const noTopic = await park('__null__topic__');
+      await send(noTopic, null);
+      expect(await delay(noTopic)).toBe(0);
+    } finally {
+      await dbClient.end();
+      await DBOS.shutdown();
+    }
+  });
+
   // Test PostgreSQL enqueue function
   test('pg-enqueue', async () => {
     const wfid = `pg-db-test-${Date.now()}`;

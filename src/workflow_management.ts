@@ -1,6 +1,6 @@
 import type { ShardKeyColumns, SystemDatabase, WorkflowStatusInternal } from './system_database';
 import type { StepInfo, WorkflowStatus, GetWorkflowsInput, ListWorkflowStepsOptions } from './workflow';
-import { StatusString } from './workflow';
+import { isWorkflowActive } from './workflow';
 import type { DataSourceTransactionHandler } from './datasource';
 import { DBOSError, DBOSNonExistentWorkflowError, DBOSWorkflowConflictError } from './error';
 import { DBOSSerializer, safeParse, safeParseError, safeParsePositionalArgs } from './serialization';
@@ -81,11 +81,7 @@ async function checkRewindable(sysdb: SystemDatabase, workflowID: string): Promi
   if (status === null) {
     throw new DBOSNonExistentWorkflowError(`Workflow ${workflowID} does not exist`);
   }
-  if (
-    status.status === StatusString.PENDING ||
-    status.status === StatusString.ENQUEUED ||
-    status.status === StatusString.DELAYED
-  ) {
+  if (isWorkflowActive(status.status)) {
     throw new DBOSError(
       `Cannot rewind ${workflowID} (${status.status}): only a workflow in a terminal state can be rewound, so cancel it first`,
     );
@@ -268,7 +264,10 @@ export async function runBackgroundJobs(
   }
 }
 
-/** Enqueue DELAYED workflows whose delay expired and cancel those past their deadline, until `signal` aborts. */
+/**
+ * Enqueue DELAYED workflows whose delay expired and cancel those past their deadline, until `signal` aborts.
+ * In suspend mode, also re-enqueue the SUSPENDED workflows whose wake time has come.
+ */
 export async function backgroundJobsLoop(
   sysdb: SystemDatabase,
   logger: GlobalLogger,
@@ -283,8 +282,13 @@ export async function backgroundJobsLoop(
       if (cancelled.length < workflowTimeoutConfig.batchSize) break;
     }
   };
-  await runBackgroundJobs(sysdb, logger, signal, 'background_jobs', workflowTimeoutConfig.pollingIntervalMs, {
+  const jobs: Record<string, () => Promise<void>> = {
     delayed_workflows: () => sysdb.transitionDelayedWorkflows(),
     workflow_timeout: sweep,
-  });
+  };
+  const suspend = sysdb.suspend;
+  if (suspend !== undefined) {
+    jobs.suspended_workflows = () => suspend.transitionSuspendedWorkflows();
+  }
+  await runBackgroundJobs(sysdb, logger, signal, 'background_jobs', workflowTimeoutConfig.pollingIntervalMs, jobs);
 }

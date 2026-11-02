@@ -69,6 +69,35 @@ export interface ShardedSystemDatabaseOptions {
 
 export type ShardedSystemDatabaseFactory = new (options: ShardedSystemDatabaseOptions) => SystemDatabase;
 
+/**
+ * Suspend mode for recv and sleep: a waiting recv or a sleep parks its workflow in the database as
+ * SUSPENDED instead of holding it in memory; a send on the recv's topic, the recv timeout, or the end
+ * of the sleep re-enqueues it. The send side is core's (SystemDatabase.wakeReceivers), so any sender
+ * wakes a parked recv.
+ */
+export interface Suspend {
+  /**
+   * The recorded or waiting message, or null once the timeout has passed. Otherwise parks the
+   * workflow and throws DBOSWorkflowSuspendedError, so the execution exits.
+   */
+  recvSuspend(
+    workflowID: string,
+    functionID: number,
+    timeoutFunctionID: number,
+    topic: string | undefined,
+    timeoutSeconds: number | undefined,
+  ): Promise<{ serializedValue: string | null; serialization: string | null }>;
+  /**
+   * Checkpoint the sleep and park the workflow until its end time, throwing DBOSWorkflowSuspendedError;
+   * or return the milliseconds to sleep in place when that end time is near or past.
+   */
+  sleepSuspend(workflowID: string, functionID: number, durationMS: number): Promise<number>;
+  /** Re-enqueue the SUSPENDED workflows whose wake time has come. */
+  transitionSuspendedWorkflows(): Promise<void>;
+}
+
+export type SuspendFactory = new (sysdb: SystemDatabase) => Suspend;
+
 /** Where to store one external object, and in what format. */
 export interface ExternalObjectStoreOptions {
   ownerWorkflowID: string;
@@ -101,6 +130,7 @@ export interface Enterprise {
   ConductorWebsocket: ConductorFactory;
   AutoUpgradePass: AutoUpgradePassFactory;
   ShardedSystemDatabase: ShardedSystemDatabaseFactory;
+  Suspend: SuspendFactory;
   ExternalStorage: ExternalStorageFactory;
 }
 
@@ -110,7 +140,7 @@ export const CONDUCTOR = 'Connecting to DBOS Conductor';
 export interface Feature {
   readonly entitlement: string;
   readonly description: string;
-  readonly configKey?: 'autoUpgrade' | 'sharding' | 'externalStores';
+  readonly configKey?: 'autoUpgrade' | 'sharding' | 'suspendMode' | 'externalStores';
 }
 
 export const AUTO_UPGRADE: Feature = {
@@ -125,6 +155,12 @@ export const SHARDING: Feature = {
   configKey: 'sharding',
 };
 
+export const SUSPEND: Feature = {
+  entitlement: 'suspendWorkflows',
+  description: 'Suspending workflows on recv and sleep',
+  configKey: 'suspendMode',
+};
+
 export const EXTERNAL_STORAGE: Feature = {
   entitlement: 'externalStorage',
   description: 'Using external storage',
@@ -132,12 +168,13 @@ export const EXTERNAL_STORAGE: Feature = {
 };
 
 // Every entitled feature; a new one is a Feature here, named by Conductor's camelCase key.
-export const FEATURES: readonly Feature[] = [AUTO_UPGRADE, SHARDING, EXTERNAL_STORAGE];
+export const FEATURES: readonly Feature[] = [AUTO_UPGRADE, SHARDING, SUSPEND, EXTERNAL_STORAGE];
 
 /** The enterprise features a config turns on. */
 export function enabledFeatures(config: {
   autoUpgrade?: boolean;
   sharding?: boolean;
+  suspendMode?: boolean;
   externalStores?: readonly unknown[];
 }): Feature[] {
   return FEATURES.filter((f) => {
@@ -346,7 +383,13 @@ export function load(feature: string = CONDUCTOR): Enterprise {
   } catch (e) {
     throw unavailable(feature, e instanceof Error ? e.message.split('\n')[0] : String(e));
   }
-  for (const name of ['ConductorWebsocket', 'AutoUpgradePass', 'ShardedSystemDatabase', 'ExternalStorage'] as const) {
+  for (const name of [
+    'ConductorWebsocket',
+    'AutoUpgradePass',
+    'ShardedSystemDatabase',
+    'Suspend',
+    'ExternalStorage',
+  ] as const) {
     if (typeof loaded?.[name] !== 'function') {
       throw unavailable(feature, `it does not export ${name}`);
     }

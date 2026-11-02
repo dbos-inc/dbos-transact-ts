@@ -290,6 +290,7 @@ describe('dbos-config', () => {
         runMigrations: true,
         autoUpgrade: false,
         sharding: false,
+        suspendMode: false,
         externalStores: [],
         telemetry: {
           logs: {
@@ -411,6 +412,7 @@ describe('dbos-config', () => {
         runMigrations: true,
         autoUpgrade: false,
         sharding: false,
+        suspendMode: false,
         externalStores: [],
         telemetry: {
           logs: {
@@ -442,6 +444,7 @@ describe('dbos-config', () => {
         runMigrations: true,
         autoUpgrade: false,
         sharding: false,
+        suspendMode: false,
         externalStores: [],
         telemetry: {
           logs: {
