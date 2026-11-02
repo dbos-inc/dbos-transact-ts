@@ -164,6 +164,7 @@ describe('test-app-version', () => {
       AutoUpgradePass: FakePass,
       ShardedSystemDatabase: class {} as unknown as enterprise.ShardedSystemDatabaseFactory,
       Suspend: class {} as unknown as enterprise.SuspendFactory,
+      ExternalStorage: class {} as unknown as enterprise.ExternalStorageFactory,
     });
     try {
       // An empty DBOS__VMID is an unset one

@@ -8,10 +8,12 @@
 import type { Pool } from 'pg';
 import type { DBOSExecutor } from './dbos-executor';
 import { DBOSInitializationError } from './error';
+import type { ExternalObjectRef, ExternalStore } from './external_storage';
 import type { DBOSSerializer } from './serialization';
 import type { SystemDatabase } from './system_database';
 import { GlobalLogger } from './telemetry/logs';
 import { globalParams } from './utils';
+import type { WorkflowSerializationFormat } from './workflow';
 
 export const ENTERPRISE_PACKAGE = '@dbos-inc/dbos-enterprise';
 
@@ -96,12 +98,40 @@ export interface Suspend {
 
 export type SuspendFactory = new (sysdb: SystemDatabase) => Suspend;
 
+/** Where to store one external object, and in what format. */
+export interface ExternalObjectStoreOptions {
+  ownerWorkflowID: string;
+  serializationType: WorkflowSerializationFormat;
+  key?: string;
+  storeID?: string;
+}
+
+/**
+ * Stores and loads external objects for one DBOS instance or client. Shard keys come from the
+ * caller's bindings, as for any other workflow-addressed write.
+ */
+export interface ExternalStorage {
+  readonly stores: ExternalStore[];
+  store(value: unknown, options: ExternalObjectStoreOptions): Promise<ExternalObjectRef>;
+  get(ref: ExternalObjectRef): Promise<unknown>;
+}
+
+export interface ExternalStorageOptions {
+  stores: ExternalStore[];
+  serializer: DBOSSerializer;
+  /** Refuse a store from a workflow that no longer owns its execution; off for clients, whose caller may be in another database. */
+  checkCallerOwner?: boolean;
+}
+
+export type ExternalStorageFactory = new (sysdb: SystemDatabase, options: ExternalStorageOptions) => ExternalStorage;
+
 /** What the @dbos-inc/dbos-enterprise module must export. */
 export interface Enterprise {
   ConductorWebsocket: ConductorFactory;
   AutoUpgradePass: AutoUpgradePassFactory;
   ShardedSystemDatabase: ShardedSystemDatabaseFactory;
   Suspend: SuspendFactory;
+  ExternalStorage: ExternalStorageFactory;
 }
 
 export const CONDUCTOR = 'Connecting to DBOS Conductor';
@@ -110,7 +140,7 @@ export const CONDUCTOR = 'Connecting to DBOS Conductor';
 export interface Feature {
   readonly entitlement: string;
   readonly description: string;
-  readonly configKey?: 'autoUpgrade' | 'sharding' | 'suspendMode';
+  readonly configKey?: 'autoUpgrade' | 'sharding' | 'suspendMode' | 'externalStores';
 }
 
 export const AUTO_UPGRADE: Feature = {
@@ -131,16 +161,28 @@ export const SUSPEND: Feature = {
   configKey: 'suspendMode',
 };
 
+export const EXTERNAL_STORAGE: Feature = {
+  entitlement: 'externalStorage',
+  description: 'Using external storage',
+  configKey: 'externalStores',
+};
+
 // Every entitled feature; a new one is a Feature here, named by Conductor's camelCase key.
-export const FEATURES: readonly Feature[] = [AUTO_UPGRADE, SHARDING, SUSPEND];
+export const FEATURES: readonly Feature[] = [AUTO_UPGRADE, SHARDING, SUSPEND, EXTERNAL_STORAGE];
 
 /** The enterprise features a config turns on. */
 export function enabledFeatures(config: {
   autoUpgrade?: boolean;
   sharding?: boolean;
   suspendMode?: boolean;
+  externalStores?: readonly unknown[];
 }): Feature[] {
-  return FEATURES.filter((f) => f.configKey !== undefined && config[f.configKey] === true);
+  return FEATURES.filter((f) => {
+    if (f.configKey === undefined) return false;
+    const value = config[f.configKey];
+    // An empty list configures no store, so it needs no entitlement.
+    return Array.isArray(value) ? value.length > 0 : value === true;
+  });
 }
 
 export const ENTITLEMENTS_PATH = '/v2/entitlements';
@@ -341,7 +383,13 @@ export function load(feature: string = CONDUCTOR): Enterprise {
   } catch (e) {
     throw unavailable(feature, e instanceof Error ? e.message.split('\n')[0] : String(e));
   }
-  for (const name of ['ConductorWebsocket', 'AutoUpgradePass', 'ShardedSystemDatabase', 'Suspend'] as const) {
+  for (const name of [
+    'ConductorWebsocket',
+    'AutoUpgradePass',
+    'ShardedSystemDatabase',
+    'Suspend',
+    'ExternalStorage',
+  ] as const) {
     if (typeof loaded?.[name] !== 'function') {
       throw unavailable(feature, `it does not export ${name}`);
     }

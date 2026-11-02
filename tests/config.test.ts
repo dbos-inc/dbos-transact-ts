@@ -291,6 +291,7 @@ describe('dbos-config', () => {
         autoUpgrade: false,
         sharding: false,
         suspendMode: false,
+        externalStores: [],
         telemetry: {
           logs: {
             logLevel: 'info',
@@ -412,6 +413,7 @@ describe('dbos-config', () => {
         autoUpgrade: false,
         sharding: false,
         suspendMode: false,
+        externalStores: [],
         telemetry: {
           logs: {
             logLevel: 'info',
@@ -443,6 +445,7 @@ describe('dbos-config', () => {
         autoUpgrade: false,
         sharding: false,
         suspendMode: false,
+        externalStores: [],
         telemetry: {
           logs: {
             logLevel: 'info',

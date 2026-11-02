@@ -100,6 +100,7 @@ describeUnlessSharded('auto-upgrade-launch', () => {
       AutoUpgradePass: RecordingPass,
       ShardedSystemDatabase: class {},
       Suspend: class {},
+      ExternalStorage: class {},
     }));
   });
 
