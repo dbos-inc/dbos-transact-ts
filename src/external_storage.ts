@@ -38,6 +38,14 @@ export function checkExternalStores(stores: unknown): ExternalStore[] {
     throw new DBOSInitializationError(`externalStores must be an array of stores, not a single ${type}; pass [store]`);
   }
   const configured = stores as ExternalStore[];
+  const unnamed = configured.findIndex(
+    (store) => typeof (store as Partial<ExternalStore> | null)?.storeID !== 'string',
+  );
+  if (unnamed !== -1) {
+    throw new DBOSInitializationError(
+      `Each external store needs a string storeID, but the store at index ${unnamed} has none`,
+    );
+  }
   const ids = configured.map((store) => store.storeID);
   const repeated = [...new Set(ids.filter((id, i) => ids.indexOf(id) !== i))].sort();
   if (repeated.length > 0) {

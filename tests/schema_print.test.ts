@@ -18,10 +18,6 @@ import { generateDBOSTestConfig, describeUnlessSharded } from './helpers';
 
 const FUNNY_SCHEMA = 'F8nny_sCHem@-n@m3';
 const LATEST = allMigrations().length;
-// The latest migration before LATEST that prints statements; empty ones print no version bookkeeping.
-const PREVIOUS = allMigrations()
-  .slice(0, LATEST - 1)
-  .reduce((last, m, i) => ((m.pg ?? []).length > 0 ? i + 1 : last), 0);
 const UNREACHABLE_URL = 'postgres://nobody:nopass@nonexistent-host.invalid:1/no_such_db';
 
 type CliResult = { status: number; out: string; err: string };
@@ -259,17 +255,17 @@ describeUnlessSharded('schema --print-migrations and --print-user-role', () => {
     const client = new Client({ connectionString: dbUrl });
     await client.connect();
     try {
-      // Truncate the full script right after the bookkeeping of the last migration before latest that has statements.
+      // Truncate the full script right after the version latest-1 bookkeeping.
       const statements = generateMigrationStatements('dbos');
-      const marker = `UPDATE "dbos"."dbos_migrations" SET "version" = ${PREVIOUS};`;
+      const marker = `UPDATE "dbos"."dbos_migrations" SET "version" = ${LATEST - 1};`;
       const markerIdx = statements.indexOf(marker);
       expect(markerIdx).toBeGreaterThan(-1);
       for (const stmt of statements.slice(0, markerIdx + 1)) {
         await client.query(stmt);
       }
-      expect(await getCurrentSysDBVersion(client, 'dbos')).toBe(PREVIOUS);
+      expect(await getCurrentSysDBVersion(client, 'dbos')).toBe(LATEST - 1);
 
-      // The last migration printed alone applies on top of that version.
+      // The last migration printed alone applies on top of version latest-1.
       const { status, out } = await runPrint(dbUrl, { printMigrations: String(LATEST) });
       expect(status).toBe(0);
       expect(out).not.toContain('CREATE SCHEMA');
