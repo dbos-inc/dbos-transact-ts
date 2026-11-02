@@ -1878,7 +1878,7 @@ export class DBOS {
   /**
    * Upload a value to an external store (if there are multiple, specify one with `storeID`) and return a ref to it.
    * A `Uint8Array` value, such as a `Buffer`, is stored as is, without serialization, which is fastest for large
-   * objects, and loads as a `Buffer`. Don't modify it until the returned promise resolves.
+   * objects, and loads as a `Buffer`.
    * @param value - The value to store
    * @param options - {@link StoreExternalObjectOptions}; outside a workflow, `ownerWorkflowID` is required
    * @returns A ref to pass to `DBOS.loadExternalObject`

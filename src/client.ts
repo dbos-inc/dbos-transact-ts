@@ -568,7 +568,7 @@ export class DBOSClient {
   /**
    * Upload a value to an external store (if there are multiple, specify one with `storeID`) and return a ref to it.
    * A `Uint8Array` value, such as a `Buffer`, is stored as is, without serialization, which is fastest for large
-   * objects, and loads as a `Buffer`. Don't modify it until the returned promise resolves.
+   * objects, and loads as a `Buffer`.
    * @param value - The value to store
    * @param options - {@link ClientStoreExternalObjectOptions}, naming the workflow that owns the object
    * @returns A ref to pass to `loadExternalObject`, or to a workflow as an input
