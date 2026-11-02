@@ -3793,7 +3793,10 @@ export class SystemDatabase {
     return await this.recvConsume(workflowID, functionID, topic, startTime);
   }
 
-  /** Consume and return the oldest message on `topic`, or null if there is none, recording it as the recv at `functionID`. */
+  /**
+   * Consume and return the oldest message on `topic`, or null if there is none, recording it as the recv at `functionID`. Idempotent on `functionID`.
+   */
+  @dbRetry()
   async recvConsume(
     workflowID: string,
     functionID: number,
@@ -3801,7 +3804,13 @@ export class SystemDatabase {
     startTime: number,
   ): Promise<{ serializedValue: string | null; serialization: string | null }> {
     topic = topic ?? this.nullTopic;
-    await this.checkIfCanceled(workflowID);
+    const res = await this.getOperationResultAndThrowIfCancelled(workflowID, functionID);
+    if (res) {
+      if (res.functionName !== DBOS_FUNCNAME_RECV) {
+        throw new DBOSUnexpectedStepError(workflowID, functionID, DBOS_FUNCNAME_RECV, res.functionName!);
+      }
+      return { serializedValue: res.output!, serialization: res.serialization ?? null };
+    }
 
     // Transactionally consume and return the message if it's in the DB, otherwise return null.
     let message: string | null = null;
@@ -6182,6 +6191,7 @@ export class SystemDatabase {
   // been cancelled.
   // For an actual sleep, completed_at is the wake deadline so the step's duration reflects the
   // sleep; a timeout marker records zero duration since its deadline may never be reached.
+  @dbRetry()
   async durableSleepInternal(
     workflowID: string,
     functionID: number,
