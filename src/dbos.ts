@@ -1819,9 +1819,9 @@ export class DBOS {
   }
 
   /**
-   * Upload a value to an external store and return a small ref to it, which can be returned from a step or
-   * workflow or passed as a workflow input in place of the value. Called from a workflow, the upload is a step.
-   * Requires `externalStores` in the DBOS configuration (Transact Enterprise).
+   * Upload a value to an external store (if there are multiple, specify one with `storeID`) and return a ref to it.
+   * A `Uint8Array` value, such as a `Buffer`, is stored as is, without serialization, which is fastest for large
+   * objects, and loads as a `Buffer`.
    * @param value - The value to store
    * @param options - {@link StoreExternalObjectOptions}; outside a workflow, `ownerWorkflowID` is required
    * @returns A ref to pass to `DBOS.loadExternalObject`
