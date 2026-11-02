@@ -274,6 +274,27 @@ describe('queued-wf-tests-simple', () => {
     await doTheWFCancelTest();
     sysDB().dbPollingIntervalResultMs = prev;
   });
+
+  // recvConsume runs under dbRetry: a retry after a commit whose acknowledgment was lost must return
+  // the message already recorded at that function ID, not consume the next one.
+  test('recv-consume-is-idempotent-per-function-id', async () => {
+    const workflowID = randomUUID();
+    await (await DBOS.startWorkflow(PGSDBTests, { workflowID }).returnAResult('done')).getResult();
+    await DBOS.send(workflowID, 'first', 'topic');
+    await DBOS.send(workflowID, 'second', 'topic');
+
+    const message = (r: { serializedValue: string | null }) =>
+      Promise.resolve(DBOSExecutor.globalInstance!.serializer.parse(r.serializedValue));
+
+    const first = await sysDB().recvConsume(workflowID, 7, 'topic', Date.now());
+    await expect(message(first)).resolves.toBe('first');
+    const again = await sysDB().recvConsume(workflowID, 7, 'topic', Date.now());
+    expect(again).toEqual(first);
+
+    const next = await sysDB().recvConsume(workflowID, 8, 'topic', Date.now());
+    await expect(message(next)).resolves.toBe('second');
+    expect(next.serialization).toBe(first.serialization);
+  });
 });
 
 describe('sysdb-no-listen-notify', () => {
