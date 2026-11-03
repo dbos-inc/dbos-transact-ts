@@ -4,7 +4,12 @@ import {
   DEBUG_TRIGGER_BETWEEN_PARTITION_DISPATCHES,
   debugTriggerPoint,
 } from './debugpoint';
-import { retriablePostgresException, type QueueRecord, type SystemDatabase } from './system_database';
+import {
+  retriablePostgresException,
+  type DequeueStopReason,
+  type QueueRecord,
+  type SystemDatabase,
+} from './system_database';
 import type { GlobalLogger } from './telemetry/logs';
 import { globalParams, RESERVED_QUEUE_NAME_PREFIX } from './utils';
 import { runWithAbortableDbRetries } from './context';
@@ -878,10 +883,15 @@ class WFQueueRunner {
           }
         } else {
           // Every other partitioned config sweeps one partition at a time, in random order to prevent starvation.
-          const partitionKeys = shuffled(await sysdb.getQueuePartitions(queue.name));
+          let globalBudget = Infinity;
+          if (queue.concurrency !== undefined) {
+            globalBudget = Math.max(0, queue.concurrency - (await sysdb.countPendingQueueWorkflows(queue.name)));
+          }
+          const partitionKeys = globalBudget > 0 ? shuffled(await sysdb.getQueuePartitions(queue.name)) : [];
           for (const partitionKey of partitionKeys) {
-            if (workerBudget(queue, workerLoad()) <= 0) break;
+            if (workerBudget(queue, workerLoad()) <= 0 || polled >= globalBudget) break;
             let partitionWfids: string[];
+            let stopReason: DequeueStopReason | undefined = undefined;
             const ownerXid = randomUUID();
             try {
               partitionWfids = await sysdb.findAndMarkStartableWorkflows(
@@ -894,6 +904,7 @@ class WFQueueRunner {
                 ownerXid,
                 isLatestVersion,
               );
+              stopReason = (partitionWfids as { stopReason?: DequeueStopReason }).stopReason;
             } catch (e) {
               // Lock held or claim raced by another worker: skip just this partition, no queue-wide backoff.
               if (isContentionError(e)) continue;
@@ -902,6 +913,9 @@ class WFQueueRunner {
             polled += partitionWfids.length;
             await dispatch(partitionWfids, ownerXid);
             await debugTriggerPoint(DEBUG_TRIGGER_BETWEEN_PARTITION_DISPATCHES);
+            if (stopReason === 'concurrency' || stopReason === 'limiter') {
+              break;
+            }
           }
         }
       } catch (e) {
