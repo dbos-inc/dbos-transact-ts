@@ -6,7 +6,6 @@ import {
 } from './debugpoint';
 import {
   retriablePostgresException,
-  type DequeueStopReason,
   type QueueRecord,
   type SystemDatabase,
 } from './system_database';
@@ -891,32 +890,25 @@ class WFQueueRunner {
           for (const partitionKey of partitionKeys) {
             if (workerBudget(queue, workerLoad()) <= 0 || polled >= globalBudget) break;
             let partitionWfids: string[];
-            let stopReason: DequeueStopReason | undefined = undefined;
             const ownerXid = randomUUID();
             try {
-              const claimResult = await sysdb.claimStartableWorkflows(
+              partitionWfids = await sysdb.findAndMarkStartableWorkflows(
                 queue,
                 exec.executorID,
                 globalParams.appVersion,
                 partitionKey,
-                workerLoad(),
-                sysdb.countRunningWorkflowsForPartition(queue.name, partitionKey),
                 ownerXid,
                 isLatestVersion,
               );
-              partitionWfids = claimResult.claimedIDs;
-              stopReason = claimResult.stopReason;
             } catch (e) {
               // Lock held or claim raced by another worker: skip just this partition, no queue-wide backoff.
               if (isContentionError(e)) continue;
               throw e;
             }
+            if (partitionWfids.length === 0) continue;
             polled += partitionWfids.length;
             await dispatch(partitionWfids, ownerXid);
             await debugTriggerPoint(DEBUG_TRIGGER_BETWEEN_PARTITION_DISPATCHES);
-            if (stopReason === 'concurrency' || stopReason === 'limiter') {
-              break;
-            }
           }
         }
       } catch (e) {
