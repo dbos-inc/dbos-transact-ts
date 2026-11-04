@@ -897,6 +897,8 @@ class WFQueueRunner {
                 exec.executorID,
                 globalParams.appVersion,
                 partitionKey,
+                workerLoad(),
+                sysdb.countRunningWorkflowsForPartition(queue.name, partitionKey),
                 ownerXid,
                 isLatestVersion,
               );
