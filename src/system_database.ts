@@ -2436,13 +2436,23 @@ export class SystemDatabase {
     }
 
     // Nondeprecated - skip matching entry, unpatched if nonmatching entry,
-    //  If there is no entry, we insert one that indicates it is patched, as an owner-checked checkpoint.
+    //  If the history ends before this point, we insert an entry that indicates it is patched, as an owner-checked checkpoint.
+    //  If the history has a checkpoint past this point but none here, the execution reached this point on pre-patch code (e.g., recv).
+    //  It is unpatched, and nothing is consumed.
     const client = await this.connect();
     try {
       return await this.inTransaction(client, async () => {
-        const checkpointName = await readCheckpointName(client);
-        if (checkpointName !== undefined) {
-          const matches = checkpointName === patchName;
+        const params: unknown[] = [functionID];
+        const { rows } = await client.query<Pick<operation_outputs, 'function_id' | 'function_name'>>(
+          `SELECT function_id, function_name
+           FROM "${this.schemaName}".operation_outputs
+          WHERE ${this.wf(undefined, workflowID, params)} AND function_id>=$1
+          ORDER BY function_id
+          LIMIT 1`,
+          params,
+        );
+        if (rows.length !== 0) {
+          const matches = rows[0].function_id === functionID && rows[0].function_name === patchName;
           return { isPatched: matches, hasEntry: matches };
         }
         const dn = Date.now();
