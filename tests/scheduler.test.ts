@@ -7,10 +7,17 @@ import {
   reexecuteWorkflowById,
   usingSharding,
   lostShardKeys,
+  Event,
 } from './helpers';
 import { dbRetryConfig, sleepms } from '../src/utils';
-import { scheduleSignature } from '../src/scheduler/scheduler';
-import type { WorkflowScheduleInternal } from '../src/system_database';
+import { Scheduler, scheduleSignature, schedulerConfig, schedulerLoop } from '../src/scheduler/scheduler';
+import {
+  createSystemDatabase,
+  type SystemDatabase,
+  type WorkflowScheduleInternal,
+  type WorkflowStatusInternal,
+} from '../src/system_database';
+import { GlobalLogger } from '../src/telemetry/logs';
 
 describe('dynamic-scheduler-tests', () => {
   let config: DBOSConfig;
@@ -651,12 +658,16 @@ describe('dynamic-scheduler-tests', () => {
   // Dynamic scheduler firing tests
   // ---------------------------------------------------------------------------
 
-  async function retryUntilSuccess(fn: () => void, timeoutMs: number = 10000, intervalMs: number = 200): Promise<void> {
+  async function retryUntilSuccess(
+    fn: () => void | Promise<void>,
+    timeoutMs: number = 10000,
+    intervalMs: number = 200,
+  ): Promise<void> {
     const deadline = Date.now() + timeoutMs;
     let lastError: Error | undefined;
     while (Date.now() < deadline) {
       try {
-        fn();
+        await fn();
         return;
       } catch (e) {
         lastError = e as Error;
@@ -1171,6 +1182,9 @@ describe('dynamic-scheduler-tests', () => {
       for (const ctx of backfillResults.contexts) {
         expect(ctx).toEqual({ source: scheduleName });
       }
+      // Backfilled ticks don't move last_fired_at; only a live tick (if one slipped in before the pause) can.
+      const last = (await DBOS.getSchedule(scheduleName))?.lastFiredAt ?? null;
+      expect(last === null || Date.parse(last) >= end.getTime()).toBe(true);
 
       await DBOS.deleteSchedule(scheduleName);
     }
@@ -1792,6 +1806,290 @@ describe('dynamic-scheduler-tests', () => {
   });
 
   // ---------------------------------------------------------------------------
+  // one-loop scheduler
+  // ---------------------------------------------------------------------------
+
+  const loopTickWf = DBOS.registerWorkflow(async (_scheduledDate: Date, _context: unknown) => Promise.resolve(), {
+    name: 'loopTickWorkflow',
+  });
+  let drainRelease = new Event();
+  const drainBlockedWf = DBOS.registerWorkflow(() => drainRelease.wait(), { name: 'drainBlockedWorkflow' });
+
+  /** Another process's handle on this application's system database. */
+  function peerSysDb(): SystemDatabase {
+    const local = DBOSExecutor.globalInstance!.systemDatabase;
+    return createSystemDatabase({
+      systemDatabaseUrl: config.systemDatabaseUrl!,
+      logger: new GlobalLogger(),
+      serializer: DBOSExecutor.globalInstance!.serializer,
+      schemaName: local.schemaName,
+      useListenNotify: false,
+      appName: local.appName,
+      sharding: config.sharding,
+    });
+  }
+
+  /** A scheduler on `sysdb`, as another process would run it. */
+  function peerScheduler(sysdb: SystemDatabase): Scheduler {
+    const quiet = new GlobalLogger();
+    jest.spyOn(quiet, 'warn').mockImplementation(() => {});
+    return new Scheduler(sysdb, DBOSExecutor.globalInstance!.serializer, quiet);
+  }
+
+  /** Wrap `sysdb`'s batch enqueue, calling `onBatch` with each batch's statuses before it runs. */
+  function onEnqueue(sysdb: SystemDatabase, onBatch: (statuses: WorkflowStatusInternal[]) => void) {
+    const enqueue = sysdb.enqueueScheduledWorkflows.bind(sysdb);
+    return jest.spyOn(sysdb, 'enqueueScheduledWorkflows').mockImplementation((statuses, firedAt) => {
+      onBatch(statuses);
+      return enqueue(statuses, firedAt);
+    });
+  }
+
+  test('many-schedules-fire-from-one-loop', async () => {
+    const names = Array.from({ length: 100 }, (_, i) => `many-${i}`);
+    await DBOS.applySchedules(
+      names.map((scheduleName) => ({ scheduleName, workflowFn: loopTickWf, schedule: '* * * * * *' })),
+    );
+    await retryUntilSuccess(async () => {
+      const fired = await DBOS.listWorkflows({ scheduleName: names, loadInput: false, loadOutput: false });
+      expect(new Set(fired.map((w) => w.scheduleName))).toEqual(new Set(names));
+    });
+  });
+
+  test('broken-schedules-do-not-stop-healthy-ones', async () => {
+    const executor = DBOSExecutor.globalInstance!;
+    // "poison" fails every enqueue; "stale" has a context that can't be loaded.
+    const sysdb = executor.systemDatabase;
+    const enqueue = sysdb.enqueueScheduledWorkflows.bind(sysdb);
+    const poisoned = jest
+      .spyOn(sysdb, 'enqueueScheduledWorkflows')
+      .mockImplementation((statuses, firedAt) =>
+        statuses.some((s) => s.scheduleName === 'poison')
+          ? Promise.reject(new Error('poisoned tick'))
+          : enqueue(statuses, firedAt),
+      );
+    let broken = true;
+    const parse = executor.serializer.parse.bind(executor.serializer);
+    const stale = jest.spyOn(executor.serializer, 'parse').mockImplementation((text) => {
+      if (broken && typeof text === 'string' && text.includes('stale-region')) {
+        throw new Error("context can't be loaded");
+      }
+      return parse(text);
+    });
+    try {
+      await DBOS.applySchedules([
+        { scheduleName: 'healthy', workflowFn: loopTickWf, schedule: '* * * * * *' },
+        { scheduleName: 'poison', workflowFn: loopTickWf, schedule: '* * * * * *' },
+        { scheduleName: 'stale', workflowFn: loopTickWf, schedule: '* * * * * *', context: { region: 'stale-region' } },
+      ]);
+      await retryUntilSuccess(async () => {
+        expect((await DBOS.listWorkflows({ scheduleName: 'healthy' })).length).toBeGreaterThanOrEqual(2);
+      });
+      expect(await DBOS.listWorkflows({ scheduleName: 'poison' })).toEqual([]);
+      expect(await DBOS.listWorkflows({ scheduleName: 'stale' })).toEqual([]);
+      expect((await DBOS.getSchedule('poison'))?.lastFiredAt).toBeNull();
+
+      // Once its context loads, the stale schedule starts firing with no definition change.
+      broken = false;
+      await retryUntilSuccess(async () => {
+        expect((await DBOS.listWorkflows({ scheduleName: 'stale' })).length).toBeGreaterThanOrEqual(1);
+      });
+    } finally {
+      poisoned.mockRestore();
+      stale.mockRestore();
+    }
+  });
+
+  test('only-the-lease-holder-fires-and-a-taker-fires-what-it-missed', async () => {
+    // A second process's scheduler fires nothing while this one holds the lease; taking over after an outage, it fires every tick missed and none a poll showed fired.
+    const executor = DBOSExecutor.globalInstance!;
+    const peer = peerSysDb();
+    const prefix = 'sched-lease-ticks-';
+    // [process, scheduled time, wall-clock time of the attempt]
+    const attempts: Array<[string, number, number]> = [];
+    const record = (name: string) => (statuses: WorkflowStatusInternal[]) => {
+      for (const status of statuses) {
+        if (status.workflowUUID.startsWith(prefix)) {
+          attempts.push([name, Date.parse(status.workflowUUID.slice(prefix.length)), Date.now()]);
+        }
+      }
+    };
+    onEnqueue(executor.systemDatabase, record('local'));
+    onEnqueue(peer, record('peer'));
+    let peerLeads = false;
+    const peerStop = new AbortController();
+    const peerLoop = schedulerLoop(peerStop.signal, peerScheduler(peer), 1000, () => peerLeads);
+    try {
+      await DBOS.createSchedule({ scheduleName: 'lease-ticks', workflowFn: loopTickWf, schedule: '* * * * * *' });
+      await retryUntilSuccess(() => {
+        expect(executor.backgroundLease.held()).toBe(true);
+        expect(attempts.filter(([name]) => name === 'local').length).toBeGreaterThanOrEqual(4);
+      });
+      expect(attempts.filter(([name]) => name === 'peer')).toEqual([]);
+
+      // This process stops its background jobs and scheduler, giving up the lease.
+      await executor.stopBackgroundJobs();
+      expect(executor.backgroundLease.held()).toBe(false);
+      const lostAt = Date.now();
+      const localLast = Math.max(...attempts.filter(([name]) => name === 'local').map(([, at]) => at));
+      // An outage: nobody fires for a while, then the peer takes over.
+      await sleepms(5000);
+      peerLeads = true;
+
+      await retryUntilSuccess(() => {
+        expect(attempts.some(([name, at]) => name === 'peer' && at > lostAt + 6000)).toBe(true);
+      });
+      expect(attempts.filter(([name, , when]) => name === 'local' && when > lostAt)).toEqual([]);
+      // The peer's polls showed local's ticks fired, so it fired only those after them.
+      expect(Math.min(...attempts.filter(([name]) => name === 'peer').map(([, at]) => at))).toBeGreaterThan(localLast);
+      const fired = (await DBOS.listWorkflows({ scheduleName: 'lease-ticks' }))
+        .map((w) => Date.parse(w.workflowID.slice(prefix.length)))
+        .sort((a, b) => a - b);
+      expect(fired).toEqual(fired.map((_, i) => fired[0] + i * 1000));
+    } finally {
+      peerStop.abort();
+      await peerLoop;
+      await peer.destroy();
+    }
+  }, 60_000);
+
+  test('a-holder-losing-the-lease-mid-pass-fires-the-rest', async () => {
+    // The lease is checked once per pass, so a holder losing it mid-pass still fires every tick that pass took.
+    const executor = DBOSExecutor.globalInstance!;
+    // This process stops firing, so the peer alone fires.
+    await executor.stopBackgroundJobs();
+    const peer = peerSysDb();
+    const batchSize = schedulerConfig.fireBatchSize;
+    schedulerConfig.fireBatchSize = 1;
+    let leads = true;
+    const batches: string[] = [];
+    onEnqueue(peer, (statuses) => {
+      batches.push(...statuses.map((s) => s.workflowUUID));
+      leads = false;
+    });
+    const names = [0, 1, 2].map((i) => `mid-pass-${i}`);
+    for (const scheduleName of names) {
+      await DBOS.createSchedule({ scheduleName, workflowFn: loopTickWf, schedule: '* * * * * *' });
+    }
+    const stop = new AbortController();
+    let loop: Promise<void> | undefined;
+    try {
+      // Away from a second boundary, so the peer's first poll arms all three for one tick.
+      await retryUntilSuccess(() => {
+        expect(Date.now() % 1000).toBeGreaterThan(100);
+        expect(Date.now() % 1000).toBeLessThan(600);
+      });
+      loop = schedulerLoop(stop.signal, peerScheduler(peer), 1000, () => leads);
+      await retryUntilSuccess(() => expect(batches.length).toBeGreaterThanOrEqual(3));
+      // One batch per schedule, all for the same tick, though the lease went after the first.
+      const ticks = names.map((name) =>
+        batches
+          .slice(0, 3)
+          .filter((id) => id.startsWith(`sched-${name}-`))
+          .map((id) => id.slice(`sched-${name}-`.length)),
+      );
+      expect(ticks.map((t) => t.length)).toEqual([1, 1, 1]);
+      expect(new Set(ticks.map((t) => t[0])).size).toBe(1);
+    } finally {
+      schedulerConfig.fireBatchSize = batchSize;
+      stop.abort();
+      await loop;
+      await peer.destroy();
+    }
+  });
+
+  test('schedules-fire-through-the-shutdown-drain', async () => {
+    // A process draining at shutdown keeps firing, as it still holds the lock others wait on.
+    const executor = DBOSExecutor.globalInstance!;
+    const attempts: number[] = [];
+    onEnqueue(executor.systemDatabase, () => attempts.push(Date.now()));
+    await DBOS.createSchedule({ scheduleName: 'drain-ticks', workflowFn: loopTickWf, schedule: '* * * * * *' });
+    await retryUntilSuccess(() => expect(attempts.length).toBeGreaterThan(0));
+
+    drainRelease = new Event();
+    // Released inside the drain, so the workflow finishes before shutdown returns.
+    await DBOS.startWorkflow(drainBlockedWf)();
+    const started = Date.now();
+    const timer = setTimeout(() => drainRelease.set(), 3000);
+    try {
+      await DBOS.shutdown({ workflowCompletionTimeoutMS: 6000 });
+    } finally {
+      clearTimeout(timer);
+      drainRelease.set();
+    }
+    expect(attempts.some((at) => at > started + 2000)).toBe(true);
+  });
+
+  test('a-starting-scheduler-arms-from-the-last-fired-tick', async () => {
+    // A scheduler's first poll arms each schedule after its last fired tick, back at most the startup look-back, so a tick missed while its leader died still fires; later arms start now.
+    const executor = DBOSExecutor.globalInstance!;
+    // This process stops firing, so nothing else stamps these schedules.
+    await executor.stopBackgroundJobs();
+    const sysdb = executor.systemDatabase;
+    const now = Math.floor(Date.now() / 1000) * 1000;
+    const create = async (scheduleName: string, lastFired: number) => {
+      await DBOS.createSchedule({ scheduleName, workflowFn: loopTickWf, schedule: '* * * * * *' });
+      await sysdb.updateLastFiredAt(scheduleName, new Date(lastFired).toISOString());
+    };
+    await create('lookback-recent', now - 5000);
+    await create('lookback-stale', now - 3_600_000);
+    const scheduler = peerScheduler(sysdb);
+    await scheduler.poll();
+    const armed = async (name: string) => scheduler.entries.get((await sysdb.getSchedule(name))!.scheduleId)!.nextTime;
+
+    // The tick after the last fired one, though it is already due.
+    expect(await armed('lookback-recent')).toBe(now - 4000);
+    // Back no further than the look-back.
+    const stale = await armed('lookback-stale');
+    expect(stale).toBeGreaterThan(now - (schedulerConfig.startupLookbackMs + 2000));
+    expect(stale).toBeLessThan(now - 20_000);
+    // Armed on a later poll, as on a create or resume: from now.
+    await create('lookback-later', now - 5000);
+    await scheduler.poll();
+    expect(await armed('lookback-later')).toBeGreaterThan(now);
+  });
+
+  test('a-stopping-scheduler-leaves-the-rest-of-its-pass-due', async () => {
+    // Firing stops between batches once stopping, leaving the rest of the pass due and unstamped for the process that takes over.
+    const executor = DBOSExecutor.globalInstance!;
+    // This process stops firing, so only the peer's scheduler fires and stamps.
+    await executor.stopBackgroundJobs();
+    const peer = peerSysDb();
+    const batchSize = schedulerConfig.fireBatchSize;
+    schedulerConfig.fireBatchSize = 1;
+    const stop = new AbortController();
+    const batches: string[] = [];
+    onEnqueue(peer, (statuses) => {
+      batches.push(...statuses.map((s) => s.workflowUUID));
+      stop.abort();
+    });
+    const names = [0, 1, 2].map((i) => `stop-pass-${i}`);
+    for (const scheduleName of names) {
+      await DBOS.createSchedule({ scheduleName, workflowFn: loopTickWf, schedule: '* * * * * *' });
+    }
+    try {
+      const scheduler = peerScheduler(peer);
+      await scheduler.poll();
+      await retryUntilSuccess(() => {
+        for (const entry of scheduler.entries.values()) {
+          expect(entry.nextTime).toBeLessThanOrEqual(Date.now());
+        }
+      });
+      await scheduler.fireDue(stop.signal);
+      expect(batches.length).toBe(1);
+      expect(scheduler.heap.size).toBe(3);
+      const unstamped: string[] = [];
+      for (const name of names) {
+        if ((await peer.getSchedule(name))?.lastFiredAt === null) unstamped.push(name);
+      }
+      expect(unstamped.length).toBe(2);
+    } finally {
+      schedulerConfig.fireBatchSize = batchSize;
+      await peer.destroy();
+    }
+  });
+
+  // ---------------------------------------------------------------------------
   // lost-shard-keys
   // ---------------------------------------------------------------------------
 
@@ -1800,10 +2098,10 @@ describe('dynamic-scheduler-tests', () => {
   });
 
   // The sharded run's lost-key check sees DBOS's own loops, so a schedule that drops its key fails a test.
-  (usingSharding() ? test : test.skip)('a-key-lost-on-a-schedule-loop-is-reported', async () => {
+  (usingSharding() ? test : test.skip)('a-key-lost-on-the-scheduler-loop-is-reported', async () => {
     const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
     const listSchedules = sysdb.listSchedules.bind(sysdb);
-    // The polling loop starts each schedule's loop from what it lists, here with no key.
+    // The scheduler arms each schedule from what it lists, here with no key.
     const keyless = jest
       .spyOn(sysdb, 'listSchedules')
       .mockImplementation(async (...args) =>
@@ -1812,7 +2110,8 @@ describe('dynamic-scheduler-tests', () => {
     try {
       await DBOS.createSchedule({ scheduleName: 'keyless', workflowFn: tickedWf, schedule: '* * * * * *' });
       await retryUntilSuccess(() => {
-        expect(lostShardKeys().some((lost) => lost.includes('#scheduleLoop'))).toBe(true);
+        // The canary reports only service-path fallbacks, so this is the scheduler's own write.
+        expect(lostShardKeys().some((lost) => lost.includes('sched-keyless-'))).toBe(true);
       });
       // Stop the schedule before forgiving what it reported.
       await DBOS.shutdown();

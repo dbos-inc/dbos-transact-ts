@@ -94,6 +94,7 @@ import {
   rewindWorkflow,
   toWorkflowStatus,
   backgroundJobsLoop,
+  BackgroundLease,
 } from './workflow_management';
 import { maskDatabaseUrl } from './database_utils';
 import type { DataSourceTransactionHandler } from './datasource';
@@ -353,6 +354,8 @@ export class DBOSExecutor {
   #eventReceiversActive = false;
   // Init and deactivate run one at a time, so overlapping calls can't interleave their awaits.
   readonly receiversLock = new Semaphore(1);
+  // Held while this process holds the background-jobs lock; the scheduler fires only then.
+  readonly backgroundLease = new BackgroundLease();
   // Owned by this executor, not the global lifecycle registry, so a relaunch doesn't also restart a previous executor's scheduler.
   readonly #scheduler: DynamicSchedulerLoop;
 
@@ -396,7 +399,13 @@ export class DBOSExecutor {
       });
     }
 
-    this.#scheduler = new DynamicSchedulerLoop(config.schedulerPollingIntervalMs);
+    this.#scheduler = new DynamicSchedulerLoop(
+      this.systemDatabase,
+      this.serializer,
+      this.logger,
+      config.schedulerPollingIntervalMs,
+      () => this.backgroundLease.held(),
+    );
 
     this.initialized = false;
     DBOSExecutor.globalInstance = this;
@@ -468,10 +477,10 @@ export class DBOSExecutor {
     await this.systemDatabase.awaitRunningWorkflows(timeoutMS);
   }
 
-  /** Stop the background jobs. Called after the shutdown drain, so timeouts still fire while workflows finish. */
+  /** Stop the background jobs and the scheduler. Called after the shutdown drain, so timeouts and schedules still fire while workflows finish. */
   async stopBackgroundJobs() {
     this.#backgroundJobsAbort?.abort();
-    await this.#backgroundJobsEnded;
+    await Promise.all([this.#scheduler.destroy(), this.#backgroundJobsEnded]);
     this.#backgroundJobsAbort = undefined;
     this.#backgroundJobsEnded = undefined;
   }
@@ -1377,8 +1386,9 @@ export class DBOSExecutor {
     await this.receiversLock.runExclusive(() => this.initEventReceiversUnlocked(listenQueues));
   }
 
-  async deactivateEventReceivers() {
-    await this.receiversLock.runExclusive(() => this.deactivateEventReceiversUnlocked());
+  /** With `keepScheduler`, the scheduler runs on until `stopBackgroundJobs`. */
+  async deactivateEventReceivers(options?: { keepScheduler?: boolean }) {
+    await this.receiversLock.runExclusive(() => this.deactivateEventReceiversUnlocked(options));
   }
 
   /** Caller must hold receiversLock. */
@@ -1393,6 +1403,7 @@ export class DBOSExecutor {
         this.systemDatabase,
         this.logger,
         this.#backgroundJobsAbort.signal,
+        this.backgroundLease,
       );
     }
 
@@ -1403,7 +1414,7 @@ export class DBOSExecutor {
   }
 
   /** Caller must hold receiversLock. */
-  async deactivateEventReceiversUnlocked() {
+  async deactivateEventReceiversUnlocked(options?: { keepScheduler?: boolean }) {
     if (!this.#eventReceiversActive) return;
     this.#eventReceiversActive = false;
     this.logger.debug('Deactivating lifecycle listeners');
@@ -1415,11 +1426,8 @@ export class DBOSExecutor {
         this.logger.warn(`Error destroying lifecycle listener: ${e.message}`);
       }
     }
-    try {
+    if (!options?.keepScheduler) {
       await this.#scheduler.destroy();
-    } catch (err) {
-      const e = err as Error;
-      this.logger.warn(`Error destroying scheduler: ${e.message}`);
     }
 
     this.logger.debug('Deactivating queue runner');

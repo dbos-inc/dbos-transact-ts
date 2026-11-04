@@ -892,7 +892,8 @@ export class DBOS {
       // Stop background processing, then drain the workflows still running in this process.
       // Conductor stays connected for the drain, so it can still observe and cancel those workflows.
       if (executor) {
-        await executor.deactivateEventReceivers();
+        // The scheduler fires through the drain, as this process may hold the background-jobs lock its peers wait on.
+        await executor.deactivateEventReceivers({ keepScheduler: true });
         // The upgrader stops before the drain: it holds the application's lease, which other
         // executors on the latest version wait on, and nothing below depends on it.
         if (executor.autoUpgrader) {
