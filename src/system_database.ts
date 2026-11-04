@@ -1954,9 +1954,11 @@ export class SystemDatabase {
       lockParams,
     );
     const params: unknown[] = [names];
-    const cases = names.map((name) => `WHEN $${params.push(name)} THEN $${params.push(latest.get(name))}`);
+    const cases = names.map(
+      (name) => `WHEN schedule_name = $${params.push(name)} THEN $${params.push(latest.get(name))}`,
+    );
     await client.query(
-      `UPDATE "${this.schemaName}".workflow_schedules SET last_fired_at = CASE schedule_name ${cases.join(' ')} END
+      `UPDATE "${this.schemaName}".workflow_schedules SET last_fired_at = CASE ${cases.join(' ')} END
        WHERE ${this.global(undefined, params)} AND schedule_name = ANY($1::text[])`,
       params,
     );
