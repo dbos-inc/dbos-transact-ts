@@ -975,13 +975,17 @@ describe('dynamic-scheduler-tests', () => {
       expect(restartDates.length).toBeGreaterThanOrEqual(1);
     });
 
-    // Deactivate stops firing; a second deactivate is a no-op
+    // Deactivate stops dispatch, so no runs execute here, but the schedule keeps enqueueing them; a second deactivate is a no-op
     await DBOS.deactivateEventReceivers();
     await DBOS.deactivateEventReceivers();
     await sleepms(2000);
     const snapshot = restartDates.length;
+    const enqueued = async () =>
+      (await DBOS.listWorkflows({ scheduleName: 'restart-test', status: 'ENQUEUED', loadInput: false })).length;
+    const enqueuedBefore = await enqueued();
     await sleepms(3000);
     expect(restartDates.length).toBe(snapshot);
+    expect(await enqueued()).toBeGreaterThan(enqueuedBefore);
 
     // Receivers can't be started or stopped from inside a workflow
     await expect(regInitReceiversWf()).rejects.toThrow('inside a workflow');

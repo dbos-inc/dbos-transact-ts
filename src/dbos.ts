@@ -892,8 +892,7 @@ export class DBOS {
       // Stop background processing, then drain the workflows still running in this process.
       // Conductor stays connected for the drain, so it can still observe and cancel those workflows.
       if (executor) {
-        // The scheduler fires through the drain, as this process may hold the background-jobs lock its peers wait on.
-        await executor.deactivateEventReceivers({ keepScheduler: true });
+        await executor.deactivateEventReceivers();
         // The upgrader stops before the drain: it holds the application's lease, which other
         // executors on the latest version wait on, and nothing below depends on it.
         if (executor.autoUpgrader) {
@@ -947,8 +946,8 @@ export class DBOS {
   }
 
   /**
-   * Stop background work that brings new work into this process: queue dispatch, schedules,
-   *   and registered event receivers. Workflows already running here keep running.
+   * Stop background work that brings new work into this process: queue dispatch and registered event receivers.
+   *   Schedules keep firing, so another process can run them. Workflows already running here keep running.
    *   Has no effect if receivers are already stopped. Throws if DBOS is not launched, or if called from within a workflow.
    *   Restart them with `DBOS.initEventReceivers`.
    */
@@ -962,7 +961,7 @@ export class DBOS {
   }
 
   /**
-   * Restart queue dispatch, schedules, and registered event receivers after `DBOS.deactivateEventReceivers`.
+   * Restart queue dispatch and registered event receivers after `DBOS.deactivateEventReceivers`.
    *   Has no effect if receivers are already running. Throws if DBOS is not launched, or if called from within a workflow.
    *   If a receiver fails to start, stops whatever did start and rethrows the error, so the call can be retried.
    */

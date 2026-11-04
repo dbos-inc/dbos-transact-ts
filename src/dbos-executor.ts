@@ -1386,9 +1386,8 @@ export class DBOSExecutor {
     await this.receiversLock.runExclusive(() => this.initEventReceiversUnlocked(listenQueues));
   }
 
-  /** With `keepScheduler`, the scheduler runs on until `stopBackgroundJobs`. */
-  async deactivateEventReceivers(options?: { keepScheduler?: boolean }) {
-    await this.receiversLock.runExclusive(() => this.deactivateEventReceiversUnlocked(options));
+  async deactivateEventReceivers() {
+    await this.receiversLock.runExclusive(() => this.deactivateEventReceiversUnlocked());
   }
 
   /** Caller must hold receiversLock. */
@@ -1396,7 +1395,7 @@ export class DBOSExecutor {
     if (this.#eventReceiversActive) return;
     this.#eventReceiversActive = true;
     this.#wfqEnded = wfQueueRunner.dispatchLoop(this, listenQueues, this.config.maxConcurrentQueueDispatches);
-    // Background jobs outlive deactivateEventReceivers (they stop after the shutdown drain), so a restart must not start a second loop.
+    // Background jobs and the scheduler outlive deactivateEventReceivers until stopBackgroundJobs, so a restart must not start them again.
     if (!this.#backgroundJobsAbort) {
       this.#backgroundJobsAbort = new AbortController();
       this.#backgroundJobsEnded = backgroundJobsLoop(
@@ -1405,16 +1404,16 @@ export class DBOSExecutor {
         this.#backgroundJobsAbort.signal,
         this.backgroundLease,
       );
+      await this.#scheduler.initialize();
     }
 
     for (const lcl of getLifecycleListeners()) {
       await lcl.initialize?.();
     }
-    await this.#scheduler.initialize();
   }
 
   /** Caller must hold receiversLock. */
-  async deactivateEventReceiversUnlocked(options?: { keepScheduler?: boolean }) {
+  async deactivateEventReceiversUnlocked() {
     if (!this.#eventReceiversActive) return;
     this.#eventReceiversActive = false;
     this.logger.debug('Deactivating lifecycle listeners');
@@ -1426,10 +1425,6 @@ export class DBOSExecutor {
         this.logger.warn(`Error destroying lifecycle listener: ${e.message}`);
       }
     }
-    if (!options?.keepScheduler) {
-      await this.#scheduler.destroy();
-    }
-
     this.logger.debug('Deactivating queue runner');
     try {
       wfQueueRunner.stop();
