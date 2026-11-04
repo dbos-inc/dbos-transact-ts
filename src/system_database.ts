@@ -153,6 +153,14 @@ export const DEFAULT_IDLE_TRANSACTION_TIMEOUT_MS = 60_000;
 // How long a background job's lock may sit idle before Postgres ends its holder's session.
 export const BACKGROUND_JOB_LOCK_IDLE_TIMEOUT_MS = 5000;
 
+/** Orders strings by code unit, which matches Postgres's "C" collation outside surrogate pairs. */
+export function compareCodeUnits(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+/** Renews a held background job lock in place, so it is never free mid-hold; rejects if the lock was lost. */
+export type BackgroundJobRenew = () => Promise<void>;
+
 /** The timeout is rendered into a `SET idle_in_transaction_session_timeout`, which takes only an in-range integer. */
 export function validateIdleTransactionTimeoutMs(value: number | undefined): void {
   if (value !== undefined && (!Number.isFinite(value) || value > MAX_STATEMENT_TIMEOUT_MS)) {
@@ -1042,6 +1050,8 @@ export class SystemDatabase {
   dbPollingIntervalStreamMs: number = 1000;
   dbPollingIntervalCancelMs: number = 1000;
   shouldUseDBNotifications: boolean = true;
+  // How long a background job's lock may sit idle before Postgres ends its holder's session.
+  backgroundJobLockIdleTimeoutMs: number = BACKGROUND_JOB_LOCK_IDLE_TIMEOUT_MS;
   readonly notificationsMap: NotificationMap<void> = new NotificationMap();
   readonly workflowEventsMap: NotificationMap<void> = new NotificationMap();
   suspend?: enterprise.Suspend = undefined;
@@ -1404,35 +1414,42 @@ export class SystemDatabase {
     return bindShardKeys([[workflowID, key]], callback);
   }
 
-  /** Run `callback` under this application's lock for a background job, passing whether it was taken. */
-  async backgroundJobLock<T>(jobName: string, callback: (acquired: boolean) => Promise<T>): Promise<T> {
+  /** Run `callback` under this application's lock for a background job, passing undefined if refused, else a call renewing it in place. */
+  async backgroundJobLock<T>(
+    jobName: string,
+    callback: (renew: BackgroundJobRenew | undefined) => Promise<T>,
+  ): Promise<T> {
     // CockroachDB grants every advisory lock, so each process runs every job.
     if (await this.#isCockroach()) {
-      return await callback(true);
+      return await callback(() => Promise.resolve());
     }
     // Leading 8 bytes of SHA-256, big-endian signed, as for the retention lock.
     const key = advisoryLockKey(`dbos.background_job.${this.schemaName}.${this.appName ?? ''}.${jobName}`);
+    const timeout = `'${Math.trunc(this.backgroundJobLockIdleTimeoutMs)}'`;
     return await this.lockedBackgroundJob(
       jobName,
-      `SELECT pg_try_advisory_xact_lock($1) AS acquired FROM set_config('idle_in_transaction_session_timeout', $2, true)`,
-      [key.toString(), String(BACKGROUND_JOB_LOCK_IDLE_TIMEOUT_MS)],
+      `SELECT pg_try_advisory_xact_lock(${key}) FROM set_config('idle_in_transaction_session_timeout', ${timeout}, true)`,
+      // Snapshot-free, so a concurrent index build never waits on it; fails if the session ended.
+      async (client) => {
+        await client.query(`SET LOCAL idle_in_transaction_session_timeout = ${timeout}`);
+      },
       callback,
     );
   }
 
-  /** Take a transaction-scoped background job lock with `lockQuery`, which returns `acquired`, and run `callback`. */
+  /** Take a transaction-scoped lock with literal `lockQuery` (its first column says if taken), as a bound statement's portal keeps its snapshot (an xmin) while the session idles. */
   protected async lockedBackgroundJob<T>(
     jobName: string,
     lockQuery: string,
-    lockParams: unknown[],
-    callback: (acquired: boolean) => Promise<T>,
+    renew: (client: PoolClient) => Promise<void>,
+    callback: (renew: BackgroundJobRenew | undefined) => Promise<T>,
   ): Promise<T> {
     const client = await this.connect();
     try {
-      await client.query('BEGIN');
+      await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
       // The local idle timeout ends a frozen holder's session, releasing its lock.
-      const { rows } = await client.query<{ acquired: boolean }>(lockQuery, lockParams);
-      return await callback(rows[0]?.acquired === true);
+      const { rows } = await client.query<[boolean]>({ text: lockQuery, rowMode: 'array' });
+      return await callback(rows[0]?.[0] === true ? () => renew(client) : undefined);
     } finally {
       try {
         await client.query('ROLLBACK');
@@ -1824,7 +1841,7 @@ export class SystemDatabase {
    * Stamp created_at monotonic within each partition key so per-key order holds across batches.
    * Unordered rows (no partition key) get wall-clock time and never touch the cursors.
    */
-  async #assignBatchCreatedAt(statuses: WorkflowStatusInternal[]): Promise<number[]> {
+  protected async assignBatchCreatedAt(statuses: WorkflowStatusInternal[]): Promise<number[]> {
     const nowMS = Date.now();
     const batchKeys = new Set<string>();
     for (const status of statuses) {
@@ -1870,8 +1887,7 @@ export class SystemDatabase {
    * shutdown. Callers retry this themselves.
    */
   async enqueueWorkflows(statuses: WorkflowStatusInternal[]): Promise<Set<string>> {
-    const inserted = new Set<string>();
-    if (statuses.length === 0) return inserted;
+    if (statuses.length === 0) return new Set();
     for (const status of statuses) {
       if (status.status !== StatusString.ENQUEUED) {
         throw new DBOSError(
@@ -1882,7 +1898,83 @@ export class SystemDatabase {
         throw new DBOSError(`enqueueWorkflows does not support deduplication IDs, but ${status.workflowUUID} has one`);
       }
     }
-    const createdAts = await this.#assignBatchCreatedAt(statuses);
+    // Stamped before the transaction, as seeding a key's cursor reads on another connection.
+    const createdAts = await this.assignBatchCreatedAt(statuses);
+    const client = await this.connect();
+    try {
+      return await this.inTransaction(client, () => this.insertWorkflowBatch(client, statuses, createdAts));
+    } finally {
+      client.release();
+    }
+  }
+
+  /** Batch-enqueue scheduled runs, skipping existing IDs, stamping last_fired_at from `firedAt` (ID to tick) for those inserted, in one transaction. */
+  @dbRetry()
+  async enqueueScheduledWorkflows(
+    statuses: WorkflowStatusInternal[],
+    firedAt: Map<string, string>,
+  ): Promise<Set<string>> {
+    if (statuses.length === 0) return new Set();
+    // Stamped before the transaction, as seeding a key's cursor reads on another connection.
+    const createdAts = await this.assignBatchCreatedAt(statuses);
+    const client = await this.connect();
+    try {
+      return await this.inTransaction(client, async () => {
+        const inserted = await this.insertWorkflowBatch(client, statuses, createdAts);
+        await this.stampLastFiredAt(client, statuses, firedAt, inserted);
+        return inserted;
+      });
+    } finally {
+      client.release();
+    }
+  }
+
+  /** Set each schedule's last_fired_at to its last inserted tick, `statuses` being in tick order. */
+  protected async stampLastFiredAt(
+    client: ClientBase,
+    statuses: WorkflowStatusInternal[],
+    firedAt: Map<string, string>,
+    inserted: Set<string>,
+  ): Promise<void> {
+    const latest = new Map<string, string>();
+    for (const status of statuses) {
+      const fired = firedAt.get(status.workflowUUID);
+      if (inserted.has(status.workflowUUID) && fired !== undefined && status.scheduleName !== undefined) {
+        latest.set(status.scheduleName, fired);
+      }
+    }
+    if (latest.size === 0) return;
+    // Sorted, like applySchedules, so concurrent writers lock schedule rows in one order.
+    const names = Array.from(latest.keys()).sort(compareCodeUnits);
+    const lockParams: unknown[] = [names];
+    await client.query(
+      `SELECT 1 FROM "${this.schemaName}".workflow_schedules
+       WHERE ${this.global(undefined, lockParams)} AND schedule_name = ANY($1::text[])
+       ORDER BY schedule_name COLLATE "C" FOR UPDATE`,
+      lockParams,
+    );
+    const params: unknown[] = [names];
+    const cases = names.map(
+      (name) => `WHEN schedule_name = $${params.push(name)} THEN $${params.push(latest.get(name))}`,
+    );
+    await client.query(
+      `UPDATE "${this.schemaName}".workflow_schedules SET last_fired_at = CASE ${cases.join(' ')} END
+       WHERE ${this.global(undefined, params)} AND schedule_name = ANY($1::text[])`,
+      params,
+    );
+  }
+
+  /** Insert these ENQUEUED workflows' rows on `client` with `stamped` from assignBatchCreatedAt, skipping existing IDs. Returns the IDs inserted. */
+  protected async insertWorkflowBatch(
+    client: ClientBase,
+    batch: WorkflowStatusInternal[],
+    stamped: number[],
+  ): Promise<Set<string>> {
+    // Inserted in one global order, so batches overlapping across processes wait on each other instead of deadlocking.
+    const order = batch.map((_, i) => i).sort((a, b) => compareCodeUnits(batch[a].workflowUUID, batch[b].workflowUUID));
+    const statuses = order.map((i) => batch[i]);
+    const createdAts = order.map((i) => stamped[i]);
+    const inserted = new Set<string>();
     const columns = [
       'workflow_uuid',
       'status',
@@ -1913,86 +2005,76 @@ export class SystemDatabase {
       'schedule_name',
       'application_name',
     ];
-    const client = await this.connect();
-    try {
-      await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
-      // Chunk to stay well under the bind-parameter limit.
-      const chunkSize = 500;
-      for (let start = 0; start < statuses.length; start += chunkSize) {
-        const chunk = statuses.slice(start, start + chunkSize);
-        const keyed = chunk.map((status) => ({
-          ...this.wfValues(status.workflowUUID, status.shardKey),
-          ...this.parentValues(status.parentWorkflowID),
-        }));
-        const rows = chunk.map((status, i) => {
-          const createdAt = createdAts[start + i];
-          return [
-            ...Object.values(keyed[i]),
-            status.workflowUUID,
-            status.status,
-            status.workflowName,
-            // For cross-language compatibility, these MUST be NULL in the database when not set
-            status.workflowClassName === '' ? null : status.workflowClassName,
-            status.workflowConfigName === '' ? null : status.workflowConfigName,
-            status.queueName ?? null,
-            status.authenticatedUser,
-            status.assumedRole,
-            JSON.stringify(status.authenticatedRoles),
-            status.executorId,
-            status.applicationVersion ?? null,
-            status.applicationID,
-            createdAt,
-            0,
-            createdAt,
-            status.timeoutMS ?? null,
-            status.deadlineEpochMS ?? null,
-            // Legacy column: the payload lives in workflow_input.
-            null,
-            null,
-            status.priority,
-            status.queuePartitionKey ?? null,
-            status.parentWorkflowID ?? null,
-            status.serialization,
-            null,
-            status.delayUntilEpochMS ?? null,
-            status.attributes ? JSON.stringify(status.attributes) : null,
-            status.scheduleName ?? null,
-            status.applicationName ?? null,
-          ];
-        });
-        const returned = await this.insertRows<{ workflow_uuid: string }>(
-          client,
-          'workflow_status',
-          [...Object.keys(keyed[0]), ...columns],
-          rows,
-          `ON CONFLICT (${this.keyConflict('workflow_uuid')}) DO NOTHING RETURNING workflow_uuid`,
-        );
-        for (const row of returned) {
-          inserted.add(row.workflow_uuid);
-        }
+    // Chunk to stay well under the bind-parameter limit.
+    const chunkSize = 500;
+    for (let start = 0; start < statuses.length; start += chunkSize) {
+      const chunk = statuses.slice(start, start + chunkSize);
+      const keyed = chunk.map((status) => ({
+        ...this.wfValues(status.workflowUUID, status.shardKey),
+        ...this.parentValues(status.parentWorkflowID),
+      }));
+      const rows = chunk.map((status, i) => {
+        const createdAt = createdAts[start + i];
+        return [
+          ...Object.values(keyed[i]),
+          status.workflowUUID,
+          status.status,
+          status.workflowName,
+          // For cross-language compatibility, these MUST be NULL in the database when not set
+          status.workflowClassName === '' ? null : status.workflowClassName,
+          status.workflowConfigName === '' ? null : status.workflowConfigName,
+          status.queueName ?? null,
+          status.authenticatedUser,
+          status.assumedRole,
+          JSON.stringify(status.authenticatedRoles),
+          status.executorId,
+          status.applicationVersion ?? null,
+          status.applicationID,
+          createdAt,
+          0,
+          createdAt,
+          status.timeoutMS ?? null,
+          status.deadlineEpochMS ?? null,
+          // Legacy column: the payload lives in workflow_input.
+          null,
+          null,
+          status.priority,
+          status.queuePartitionKey ?? null,
+          status.parentWorkflowID ?? null,
+          status.serialization,
+          null,
+          status.delayUntilEpochMS ?? null,
+          status.attributes ? JSON.stringify(status.attributes) : null,
+          status.scheduleName ?? null,
+          status.applicationName ?? null,
+        ];
+      });
+      const returned = await this.insertRows<{ workflow_uuid: string }>(
+        client,
+        'workflow_status',
+        [...Object.keys(keyed[0]), ...columns],
+        rows,
+        `ON CONFLICT (${this.keyConflict('workflow_uuid')}) DO NOTHING RETURNING workflow_uuid`,
+      );
+      for (const row of returned) {
+        inserted.add(row.workflow_uuid);
       }
-      for (let start = 0; start < statuses.length; start += chunkSize) {
-        const chunk = statuses.slice(start, start + chunkSize);
-        const keyed = chunk.map((status) => this.wfValues(status.workflowUUID, status.shardKey));
-        await this.insertRows(
-          client,
-          'workflow_input',
-          [...Object.keys(keyed[0]), 'workflow_uuid', 'inputs', 'retention_timestamp'],
-          chunk.map((status, i) => [
-            ...Object.values(keyed[i]),
-            status.workflowUUID,
-            status.input,
-            createdAts[start + i],
-          ]),
-          `ON CONFLICT (${this.keyConflict('workflow_uuid')}) DO NOTHING`,
-        );
-      }
-      await client.query('COMMIT');
-    } catch (e) {
-      await client.query('ROLLBACK');
-      throw e;
-    } finally {
-      client.release();
+    }
+    for (let start = 0; start < statuses.length; start += chunkSize) {
+      const chunk = statuses.slice(start, start + chunkSize);
+      const keyed = chunk.map((status) => this.wfValues(status.workflowUUID, status.shardKey));
+      await this.insertRows(
+        client,
+        'workflow_input',
+        [...Object.keys(keyed[0]), 'workflow_uuid', 'inputs', 'retention_timestamp'],
+        chunk.map((status, i) => [
+          ...Object.values(keyed[i]),
+          status.workflowUUID,
+          status.input,
+          createdAts[start + i],
+        ]),
+        `ON CONFLICT (${this.keyConflict('workflow_uuid')}) DO NOTHING`,
+      );
     }
     return inserted;
   }
@@ -5343,7 +5425,9 @@ export class SystemDatabase {
     const client = await this.connect();
     try {
       await client.query('BEGIN');
-      for (const sched of schedules) {
+      // Sorted, so concurrent writers lock schedule rows in one order.
+      const sorted = [...schedules].sort((a, b) => compareCodeUnits(a.scheduleName, b.scheduleName));
+      for (const sched of sorted) {
         const owner = await this.#resolveRowOwner(
           client,
           'workflow_schedules',
