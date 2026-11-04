@@ -1841,7 +1841,7 @@ export class SystemDatabase {
    * Stamp created_at monotonic within each partition key so per-key order holds across batches.
    * Unordered rows (no partition key) get wall-clock time and never touch the cursors.
    */
-  async #assignBatchCreatedAt(statuses: WorkflowStatusInternal[]): Promise<number[]> {
+  protected async assignBatchCreatedAt(statuses: WorkflowStatusInternal[]): Promise<number[]> {
     const nowMS = Date.now();
     const batchKeys = new Set<string>();
     for (const status of statuses) {
@@ -1898,9 +1898,11 @@ export class SystemDatabase {
         throw new DBOSError(`enqueueWorkflows does not support deduplication IDs, but ${status.workflowUUID} has one`);
       }
     }
+    // Stamped before the transaction, as seeding a key's cursor reads on another connection.
+    const createdAts = await this.assignBatchCreatedAt(statuses);
     const client = await this.connect();
     try {
-      return await this.inTransaction(client, () => this.insertWorkflowBatch(client, statuses));
+      return await this.inTransaction(client, () => this.insertWorkflowBatch(client, statuses, createdAts));
     } finally {
       client.release();
     }
@@ -1913,10 +1915,12 @@ export class SystemDatabase {
     firedAt: Map<string, string>,
   ): Promise<Set<string>> {
     if (statuses.length === 0) return new Set();
+    // Stamped before the transaction, as seeding a key's cursor reads on another connection.
+    const createdAts = await this.assignBatchCreatedAt(statuses);
     const client = await this.connect();
     try {
       return await this.inTransaction(client, async () => {
-        const inserted = await this.insertWorkflowBatch(client, statuses);
+        const inserted = await this.insertWorkflowBatch(client, statuses, createdAts);
         await this.stampLastFiredAt(client, statuses, firedAt, inserted);
         return inserted;
       });
@@ -1958,10 +1962,12 @@ export class SystemDatabase {
     );
   }
 
-  /** Insert these ENQUEUED workflows' rows on `client`, skipping existing IDs. Returns the IDs inserted. */
-  protected async insertWorkflowBatch(client: ClientBase, batch: WorkflowStatusInternal[]): Promise<Set<string>> {
-    // Stamped in the caller's order, which is each partition key's order.
-    const stamped = await this.#assignBatchCreatedAt(batch);
+  /** Insert these ENQUEUED workflows' rows on `client` with `stamped` from assignBatchCreatedAt, skipping existing IDs. Returns the IDs inserted. */
+  protected async insertWorkflowBatch(
+    client: ClientBase,
+    batch: WorkflowStatusInternal[],
+    stamped: number[],
+  ): Promise<Set<string>> {
     // Inserted in one global order, so batches overlapping across processes wait on each other instead of deadlocking.
     const order = batch.map((_, i) => i).sort((a, b) => compareCodeUnits(batch[a].workflowUUID, batch[b].workflowUUID));
     const statuses = order.map((i) => batch[i]);

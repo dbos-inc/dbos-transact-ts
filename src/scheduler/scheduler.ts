@@ -613,14 +613,15 @@ export async function backfillSchedule(
   }
   const definition = await scheduleDefinition(sched, serializer);
   const matcher = new TimeMatcher(sched.schedule, sched.cronTimezone ?? undefined);
-  const times: number[] = [];
-  for (let next = nextTick(matcher, start.getTime()); next < end.getTime(); next = nextTick(matcher, next)) {
-    times.push(next);
-  }
   const batchSize = schedulerConfig.fireBatchSize;
   const workflowIDs: string[] = [];
-  for (let i = 0; i < times.length; i += batchSize) {
-    const batch = times.slice(i, i + batchSize).map((at): [ScheduleDefinition, number] => [definition, at]);
+  // Computed a batch at a time, so a long backfill yields to the event loop between batches.
+  let next = nextTick(matcher, start.getTime());
+  while (next < end.getTime()) {
+    const batch: [ScheduleDefinition, number][] = [];
+    for (; next < end.getTime() && batch.length < batchSize; next = nextTick(matcher, next)) {
+      batch.push([definition, next]);
+    }
     workflowIDs.push(...(await enqueueTicks(systemDatabase, serializer, batch, false)));
   }
   return workflowIDs;
