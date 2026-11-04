@@ -346,7 +346,7 @@ export class Scheduler {
     const batchSize = schedulerConfig.fireBatchSize;
     let fired = 0;
     while (fired < due.length && !signal.aborted) {
-      await this.#fire(due.slice(fired, fired + batchSize));
+      await this.#fire(due.slice(fired, fired + batchSize), signal);
       fired += batchSize;
     }
     for (const entry of due.slice(0, fired)) {
@@ -382,7 +382,7 @@ export class Scheduler {
     this.logger.error(`Cannot run schedule '${entry.definition.scheduleName}': ${errorText(e)}`);
   }
 
-  async #fire(batch: ScheduleEntry[]): Promise<void> {
+  async #fire(batch: ScheduleEntry[], signal: AbortSignal): Promise<void> {
     try {
       await enqueueTicks(
         this.systemDatabase,
@@ -396,6 +396,11 @@ export class Scheduler {
         this.logger.warn(`Exception in schedule '${batch[0].definition.scheduleName}': ${errorText(e)}`);
         return;
       }
+      // A stopping loop's retries are cut short, so retrying each schedule would only log a warning per schedule.
+      if (signal.aborted) {
+        this.logger.warn(`Exception enqueueing ${batch.length} scheduled workflows: ${errorText(e)}`);
+        return;
+      }
       // Logged here, as the per-schedule retries may succeed and never show it.
       this.logger.warn(
         `Exception enqueueing ${batch.length} scheduled workflows, retrying each schedule alone: ${errorText(e)}`,
@@ -403,7 +408,8 @@ export class Scheduler {
     }
     // One failing schedule must not hold back the rest of its batch.
     for (const entry of batch) {
-      await this.#fire([entry]);
+      if (signal.aborted) return;
+      await this.#fire([entry], signal);
     }
   }
 }
