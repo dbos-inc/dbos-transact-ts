@@ -124,11 +124,14 @@ export async function scheduleDefinition(
   };
 }
 
-/** The first tick strictly after `after`, or Infinity if the schedule can never fire again. */
+/** The first tick strictly after `after`; throws if the schedule can never fire again. */
 function nextTick(matcher: TimeMatcher, after: number): number {
   const next = matcher.nextWakeupTime(after).getTime();
   // TimeMatcher returns a non-matching instant only past its search horizon.
-  return matcher.match(next) ? next : Infinity;
+  if (!matcher.match(next)) {
+    throw new DBOSError(`The schedule never fires after ${new Date(after).toISOString()}`);
+  }
+  return next;
 }
 
 /** An active schedule in the scheduler and its next tick. */

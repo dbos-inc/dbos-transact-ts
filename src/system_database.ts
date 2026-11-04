@@ -1428,7 +1428,7 @@ export class SystemDatabase {
     const timeout = `'${Math.trunc(this.backgroundJobLockIdleTimeoutMs)}'`;
     return await this.lockedBackgroundJob(
       jobName,
-      `SELECT pg_try_advisory_xact_lock('${key}'::int8) AS acquired FROM set_config('idle_in_transaction_session_timeout', ${timeout}, true)`,
+      `SELECT pg_try_advisory_xact_lock(${key}) FROM set_config('idle_in_transaction_session_timeout', ${timeout}, true)`,
       // Snapshot-free, so a concurrent index build never waits on it; fails if the session ended.
       async (client) => {
         await client.query(`SET LOCAL idle_in_transaction_session_timeout = ${timeout}`);
@@ -1437,7 +1437,7 @@ export class SystemDatabase {
     );
   }
 
-  /** Take a transaction-scoped lock with literal `lockQuery`, as a bound statement's portal keeps its snapshot (an xmin) while the session idles. */
+  /** Take a transaction-scoped lock with literal `lockQuery` (its first column says if taken), as a bound statement's portal keeps its snapshot (an xmin) while the session idles. */
   protected async lockedBackgroundJob<T>(
     jobName: string,
     lockQuery: string,
@@ -1448,8 +1448,8 @@ export class SystemDatabase {
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
       // The local idle timeout ends a frozen holder's session, releasing its lock.
-      const { rows } = await client.query<{ acquired: boolean }>(lockQuery);
-      return await callback(rows[0]?.acquired === true ? () => renew(client) : undefined);
+      const { rows } = await client.query<[boolean]>({ text: lockQuery, rowMode: 'array' });
+      return await callback(rows[0]?.[0] === true ? () => renew(client) : undefined);
     } finally {
       try {
         await client.query('ROLLBACK');
