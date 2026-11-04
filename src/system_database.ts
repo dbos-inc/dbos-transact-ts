@@ -107,6 +107,19 @@ export const DBOS_FUNCNAME_READSTREAM = 'DBOS.readStream';
 export const DBOS_FUNCNAME_READSTREAMOFFSET = 'DBOS.readStreamOffset';
 export const DEFAULT_POOL_SIZE = 10;
 
+/** One message in a batched send; `topic` and `shardKey` default like a single send's. */
+export interface BatchSendItem {
+  destinationID: string;
+  message: string | null;
+  topic?: string;
+  serialization: string | null;
+  idempotencyKey?: string;
+  shardKey?: string;
+}
+
+/** The items of a batched send, inserted together in one transaction. */
+export type BatchSendItems = BatchSendItem[];
+
 export const DBOS_STREAM_CLOSED_SENTINEL = '__DBOS_STREAM_CLOSED__';
 // The sentinel as it is stored: portable JSON, the same bytes every language writes and reads.
 export const DBOS_STREAM_CLOSED_SENTINEL_SERIALIZED = DBOSPortableJSON.stringify(DBOS_STREAM_CLOSED_SENTINEL);
@@ -3639,6 +3652,103 @@ export class SystemDatabase {
     } finally {
       client.release();
     }
+  }
+
+  /**
+   * Send a batch of notifications in a single transaction. All rows commit or none do, and the
+   * destination workflows are woken once for every destination/topic in the batch.
+   */
+  @dbRetry()
+  async sendDirectBatch(items: BatchSendItems): Promise<void> {
+    if (items.length === 0) return;
+    const client: PoolClient = await this.connect();
+    try {
+      await this.inTransaction(client, () => this.sendDirectBatchInternal(client, items));
+    } finally {
+      client.release();
+    }
+  }
+
+  /** A recorded batch send: a single step that inserts every notification in one transaction. */
+  @dbRetry()
+  async sendBatch(workflowID: string, functionID: number, items: BatchSendItems): Promise<void> {
+    const startTime = Date.now();
+    let missing: DBOSNonExistentWorkflowError | undefined;
+    const client: PoolClient = await this.connect();
+    try {
+      await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
+      await this.#runAndRecordResult(client, DBOS_FUNCNAME_SEND, workflowID, functionID, async () => {
+        await this.sendDirectBatchInternal(client, items);
+        return undefined;
+      });
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      if (error instanceof DBOSNonExistentWorkflowError) {
+        missing = error;
+      } else {
+        throw error;
+      }
+    } finally {
+      client.release();
+    }
+    if (missing) {
+      await this.recordOperationError(workflowID, functionID, DBOS_FUNCNAME_SEND, startTime, missing);
+      throw missing;
+    }
+  }
+
+  /** A batch send from inside a step of `workflowID`: not recorded, but lands only while the caller owns the workflow. */
+  @dbRetry()
+  async sendFromStepBatch(workflowID: string, items: BatchSendItems): Promise<void> {
+    const ownerXid = currentOwnerXid(workflowID);
+    const client: PoolClient = await this.connect();
+    try {
+      await this.inTransaction(client, async () => {
+        await this.sendDirectBatchInternal(client, items);
+        if (ownerXid !== undefined) {
+          await this.checkOwner(client, workflowID, ownerXid);
+        }
+      });
+    } finally {
+      client.release();
+    }
+  }
+
+  /** Insert all notifications in `items` into `db`'s current transaction and wake their receivers. */
+  protected async sendDirectBatchInternal(db: ClientBase | Pool, items: BatchSendItems): Promise<void> {
+    const destinations: string[] = [];
+    const topics: string[] = [];
+    const rows: Record<string, unknown>[] = items.map((item) => {
+      const topic = item.topic ?? this.nullTopic;
+      const messageUUID = item.idempotencyKey ? `${item.idempotencyKey}::${item.destinationID}` : randomUUID();
+      destinations.push(item.destinationID);
+      topics.push(topic);
+      return {
+        ...this.wfValues(item.destinationID, item.shardKey),
+        destination_uuid: item.destinationID,
+        topic,
+        message: item.message,
+        serialization: item.serialization,
+        message_uuid: messageUUID,
+      };
+    });
+    try {
+      await this.insertRows(
+        db,
+        'notifications',
+        Object.keys(rows[0]),
+        rows.map((row) => Object.values(row)),
+        `ON CONFLICT (${this.keyConflict('message_uuid')}) DO NOTHING`,
+      );
+    } catch (error) {
+      const err: DatabaseError = error as DatabaseError;
+      if (err.code === '23503') {
+        throw new DBOSNonExistentWorkflowError('Sent to a non-existent destination workflow UUID');
+      }
+      throw err;
+    }
+    await this.wakeReceivers(db, destinations, topics);
   }
 
   @dbRetry()
