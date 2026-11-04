@@ -894,7 +894,7 @@ class WFQueueRunner {
             let stopReason: DequeueStopReason | undefined = undefined;
             const ownerXid = randomUUID();
             try {
-              partitionWfids = await sysdb.findAndMarkStartableWorkflows(
+              const claimResult = await sysdb.claimStartableWorkflows(
                 queue,
                 exec.executorID,
                 globalParams.appVersion,
@@ -904,7 +904,8 @@ class WFQueueRunner {
                 ownerXid,
                 isLatestVersion,
               );
-              stopReason = (partitionWfids as { stopReason?: DequeueStopReason }).stopReason;
+              partitionWfids = claimResult.claimedIDs;
+              stopReason = claimResult.stopReason;
             } catch (e) {
               // Lock held or claim raced by another worker: skip just this partition, no queue-wide backoff.
               if (isContentionError(e)) continue;

@@ -4392,8 +4392,8 @@ export class SystemDatabase {
     // Written to every claimed row: the dispatches of this claim own their executions.
     ownerXid: string | null = null,
     isLatestVersion?: boolean,
-  ): Promise<string[] & { stopReason?: DequeueStopReason }> {
-    const { claimedIDs, stopReason } = await this.claimStartableWorkflows(
+  ): Promise<string[]> {
+    const { claimedIDs } = await this.claimStartableWorkflows(
       queue,
       executorID,
       appVersion,
@@ -4403,9 +4403,7 @@ export class SystemDatabase {
       ownerXid,
       isLatestVersion,
     );
-    const result = claimedIDs as string[] & { stopReason?: DequeueStopReason };
-    result.stopReason = stopReason;
-    return result;
+    return claimedIDs;
   }
 
   /** Claim this queue's next workflows, plus the limit that left no room to claim any (undefined if every limit had room). */
