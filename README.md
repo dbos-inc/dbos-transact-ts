@@ -116,6 +116,11 @@ await DBOS.launch();
 await DBOS.registerQueue(queueName);
 ```
 
+When enqueueing from SQL with `dbos.enqueue_workflow`, timestamps are sampled from the database clock when the function runs, rather than when the caller's transaction started.
+This also accounts for time spent waiting for a row lock before a trigger calls the function.
+The timestamps do not guarantee transaction commit order: a transaction can wait or continue working after enqueueing, timestamps have millisecond resolution, and wall clocks can move backwards.
+Applications requiring domain-event ordering should carry a sequence assigned under the relevant entity's lock and have consumers enforce it.
+
 [Read more ↗️](https://docs.dbos.dev/typescript/tutorials/queue-tutorial)
 
 </details>

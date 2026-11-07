@@ -7,6 +7,14 @@ import { DBOSConfig } from '../src/dbos-executor';
 const testQueueName = 'test-queue';
 
 class ClientTest {
+  static enqueueOrder: string[] = [];
+
+  @DBOS.workflow()
+  static async recordEnqueueOrder(label: string) {
+    ClientTest.enqueueOrder.push(label);
+    return Promise.resolve(label);
+  }
+
   @DBOS.workflow()
   static async enqueueTest(
     numVal: number,
@@ -201,6 +209,45 @@ describeUnlessSharded('PostgreSQL Client Functions', () => {
       const result = await handle.getResult();
       expect(result).toBe('42-test-{"first":"John","last":"Doe","age":30}');
     } finally {
+      await DBOS.shutdown();
+    }
+  });
+
+  test.each([false, true])('transaction age does not reverse queue execution (partitioned=%s)', async (partitioned) => {
+    const queueName = `timestamp-order-${partitioned}`;
+    const first = new Client(poolConfig);
+    const second = new Client(poolConfig);
+    const enqueue = (client: Client, label: string) =>
+      client.query(
+        `SELECT dbos.enqueue_workflow(
+          'recordEnqueueOrder', $1, positional_args => ARRAY[$2::json], class_name => 'ClientTest',
+          workflow_id => $3, queue_partition_key => $4)`,
+        [queueName, JSON.stringify(label), `${queueName}-${label}`, partitioned ? 'one-partition' : null],
+      );
+    ClientTest.enqueueOrder = [];
+    try {
+      await Promise.all([first.connect(), second.connect()]);
+      await first.query('BEGIN');
+      await first.query('SELECT now()');
+      await second.query('SELECT pg_sleep(0.02)');
+      await enqueue(second, 'earlier');
+      await second.query('SELECT pg_sleep(0.02)');
+      await enqueue(first, 'later');
+      await first.query('COMMIT');
+
+      // Start dispatch only once both commits are visible, with one execution at a time.
+      await DBOS.launch();
+      await DBOS.registerQueue(queueName, {
+        ...(partitioned ? { partitionConcurrency: 1 } : { globalConcurrency: 1 }),
+        minPollingIntervalMs: 10,
+      });
+      await Promise.all(
+        ['earlier', 'later'].map((label) => DBOS.retrieveWorkflow(`${queueName}-${label}`).getResult()),
+      );
+      expect(ClientTest.enqueueOrder).toEqual(['earlier', 'later']);
+    } finally {
+      await first.query('ROLLBACK');
+      await Promise.all([first.end(), second.end()]);
       await DBOS.shutdown();
     }
   });

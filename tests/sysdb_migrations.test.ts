@@ -133,6 +133,53 @@ describeUnlessSharded('sysdb migration runner', () => {
     expect(await tableExists(client, 'event_dispatch_kv')).toBe(true);
   });
 
+  test('upgrades enqueue timestamps without changing existing workflows or the function identity', async () => {
+    const migrations = allMigrations(TEST_SCHEMA, { useListenNotify: false });
+    const beforeClock = migrations.findIndex((migration) => migration.name === '132_enqueue_workflow_clock_timestamp');
+    expect(beforeClock).toBeGreaterThan(0);
+    await runSysMigrationsPg(client, migrations.slice(0, beforeClock), TEST_SCHEMA, { onWarn: () => {} });
+    const enqueue = (id: string) =>
+      client.query(`SELECT "${TEST_SCHEMA}".enqueue_workflow('testWorkflow', 'testQueue', workflow_id => $1)`, [id]);
+    const functionMetadata = () =>
+      client.query(
+        `SELECT p.oid, p.proacl, p.proconfig, pg_get_function_identity_arguments(p.oid) AS args
+        FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+        WHERE n.nspname = $1 AND p.proname = 'enqueue_workflow'`,
+        [TEST_SCHEMA],
+      );
+    await enqueue('existing');
+    const beforeStatus = await client.query(`SELECT * FROM "${TEST_SCHEMA}".workflow_status`);
+    const beforeInput = await client.query(`SELECT * FROM "${TEST_SCHEMA}".workflow_input`);
+    await client.query(`REVOKE EXECUTE ON FUNCTION "${TEST_SCHEMA}".enqueue_workflow(
+      TEXT, TEXT, JSON[], JSON, TEXT, TEXT, TEXT, TEXT, BIGINT, BIGINT, TEXT, INT4, TEXT, TEXT, TEXT, BIGINT, TEXT
+    ) FROM PUBLIC`);
+    const beforeFunction = await functionMetadata();
+
+    const result = await runSysMigrationsPg(client, migrations, TEST_SCHEMA, { onWarn: () => {} });
+    expect(result.appliedCount).toBe(migrations.length - beforeClock);
+    expect((await client.query(`SELECT * FROM "${TEST_SCHEMA}".workflow_status`)).rows).toEqual(beforeStatus.rows);
+    expect((await client.query(`SELECT * FROM "${TEST_SCHEMA}".workflow_input`)).rows).toEqual(beforeInput.rows);
+    expect((await functionMetadata()).rows).toEqual(beforeFunction.rows);
+
+    try {
+      await client.query('BEGIN');
+      await client.query('SELECT pg_sleep(0.02)');
+      const { rows: before } = await client.query<{ ms: string }>(
+        'SELECT (EXTRACT(epoch FROM clock_timestamp()) * 1000)::bigint AS ms',
+      );
+      await enqueue('after-upgrade');
+      const { rows } = await client.query<{ created_at: string }>(
+        `SELECT created_at FROM "${TEST_SCHEMA}".workflow_status WHERE workflow_uuid = 'after-upgrade'`,
+      );
+      expect(Number(rows[0].created_at)).toBeGreaterThanOrEqual(Number(before[0].ms));
+      await client.query('COMMIT');
+    } finally {
+      await client.query('ROLLBACK');
+    }
+    const rerun = await runSysMigrationsPg(client, migrations, TEST_SCHEMA, { onWarn: () => {} });
+    expect(rerun.appliedCount).toBe(0);
+  });
+
   test('upgrades existing application versions without retiming or deleting them', async () => {
     const migrations = allMigrations(TEST_SCHEMA, { useListenNotify: false });
     const beforeIndexes = migrations.findIndex(
