@@ -3819,6 +3819,10 @@ export class SystemDatabase {
       if (res.functionName !== DBOS_FUNCNAME_RECV) {
         throw new DBOSUnexpectedStepError(workflowID, functionID, DBOS_FUNCNAME_RECV, res.functionName!);
       }
+      const ownerXid = currentOwnerXid(workflowID);
+      if (ownerXid !== undefined && (await this.getWorkflowOwner(workflowID)) !== ownerXid) {
+        throw new DBOSWorkflowConflictError(workflowID);
+      }
       return { serializedValue: res.output!, serialization: res.serialization ?? null };
     }
 
