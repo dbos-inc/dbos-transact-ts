@@ -4,7 +4,8 @@
 
 import { DBOS, DBOSClient, DBOSConfig } from '../src';
 import { DBOSExecutor } from '../src/dbos-executor';
-import { DBOSWorkflowCancelledError } from '../src/error';
+import { DBOSWorkflowCancelledError, DBOSWorkflowConflictError } from '../src/error';
+import { runWithTopContext } from '../src/context';
 import { sleepms } from '../src/utils';
 import { generateDBOSTestConfig, setUpDBOSTestSysDb, describeUnlessSharded } from './helpers';
 
@@ -294,6 +295,22 @@ describe('queued-wf-tests-simple', () => {
     const next = await sysDB().recvConsume(workflowID, 8, 'topic', Date.now());
     await expect(message(next)).resolves.toBe('second');
     expect(next.serialization).toBe(first.serialization);
+  });
+
+  test('recv-consume-non-owner-throws-conflict-error', async () => {
+    const workflowID = randomUUID();
+    await (await DBOS.startWorkflow(PGSDBTests, { workflowID }).returnAResult('done')).getResult();
+    await DBOS.send(workflowID, 'first', 'topic');
+
+    const first = await sysDB().recvConsume(workflowID, 7, 'topic', Date.now());
+    expect(first.serializedValue).toBeDefined();
+
+    // A stale execution calling recvConsume with an outdated owner token must throw DBOSWorkflowConflictError
+    await expect(
+      runWithTopContext({ workflowId: workflowID, ownerXid: 'stale-owner' }, async () => {
+        return await sysDB().recvConsume(workflowID, 7, 'topic', Date.now());
+      }),
+    ).rejects.toThrow(DBOSWorkflowConflictError);
   });
 });
 
