@@ -1178,7 +1178,7 @@ $$ LANGUAGE plpgsql;`,
       name: '127_workflow_status_suspended_index',
       online: true,
       pg: [
-        `CREATE INDEX ${isCockroach ? '' : 'CONCURRENTLY'} IF NOT EXISTS "idx_workflow_status_suspended" ON "${schemaName}"."workflow_status" ("delay_until_epoch_ms") WHERE "status" = 'SUSPENDED' AND "delay_until_epoch_ms" IS NOT NULL`,
+        `CREATE INDEX ${isCockroach ? '' : 'CONCURRENTLY'} IF NOT EXISTS "idx_workflow_status_suspended" ON "${schemaName}"."workflow_status" ("delay_until_epoch_ms") WHERE "status" = 'SUSPENDED'`,
       ],
     },
     // idx_workflow_status_deadline, with a predicate that also covers SUSPENDED workflows.
@@ -1216,9 +1216,9 @@ $$ LANGUAGE plpgsql;`,
             )
             ON CONFLICT (message_uuid) DO NOTHING;
             UPDATE "${schemaName}".workflow_status
-            SET delay_until_epoch_ms = 0
+            -- Status is tested in SET, not WHERE, so the planner cannot scan idx_workflow_status_suspended.
+            SET delay_until_epoch_ms = CASE WHEN status = 'SUSPENDED' THEN 0 ELSE delay_until_epoch_ms END
             WHERE workflow_uuid = destination_id
-                AND status = 'SUSPENDED'
                 AND suspend_key = v_topic;
         EXCEPTION
             WHEN foreign_key_violation THEN

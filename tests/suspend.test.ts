@@ -7,7 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { Client } from 'pg';
 import { DBOS, DBOSClient, DBOSConfig, DBOSWorkflowSuspendedError } from '../src';
 import { DBOSExecutor } from '../src/dbos-executor';
-import { generateDBOSTestConfig, setUpDBOSTestSysDb, testUnlessSharded } from './helpers';
+import { generateDBOSTestConfig, retryUntilSuccess, setUpDBOSTestSysDb, testUnlessSharded } from './helpers';
 
 const waiter = DBOS.registerWorkflow(
   async () => {
@@ -29,13 +29,14 @@ const parked = DBOS.registerWorkflow(async () => Promise.resolve(), { name: 'sus
 const PARKED_DELAY_MS = 2 ** 52;
 
 /** Park a finished workflow by hand, as @dbos-inc/dbos-enterprise's recv would. */
-async function parkByHand(db: Client, topic: string): Promise<string> {
+async function parkByHand(db: Client, topic: string, deadlineMs: number | null = null): Promise<string> {
   const workflowID = randomUUID();
   await (await DBOS.startWorkflow(parked, { workflowID })()).getResult();
   await db.query(
-    `UPDATE dbos.workflow_status SET status = 'SUSPENDED', suspend_key = $1, delay_until_epoch_ms = $2
+    `UPDATE dbos.workflow_status SET status = 'SUSPENDED', suspend_key = $1, delay_until_epoch_ms = $2,
+       workflow_deadline_epoch_ms = $4
      WHERE workflow_uuid = $3`,
-    [topic, PARKED_DELAY_MS, workflowID],
+    [topic, PARKED_DELAY_MS, workflowID, deadlineMs],
   );
   return workflowID;
 }
@@ -120,4 +121,90 @@ describe('suspend-refused', () => {
       await db.end();
     }
   });
+
+  // Parks rows with unrouted SQL; enterprise tests the sharded case.
+  testUnlessSharded('cancel, resume and the timeout sweep clear the suspend key', async () => {
+    const db = new Client({ connectionString: config.systemDatabaseUrl });
+    await db.connect();
+    const row = async (workflowID: string) => {
+      const { rows } = await db.query<{ status: string; suspend_key: string | null }>(
+        'SELECT status, suspend_key FROM dbos.workflow_status WHERE workflow_uuid = $1',
+        [workflowID],
+      );
+      return rows[0];
+    };
+    try {
+      const cancelled = await parkByHand(db, 'approve');
+      await DBOS.cancelWorkflow(cancelled);
+      expect(await row(cancelled)).toEqual({ status: 'CANCELLED', suspend_key: null });
+
+      const resumed = await parkByHand(db, 'approve');
+      await (await DBOS.resumeWorkflow(resumed)).getResult();
+      expect(await row(resumed)).toEqual({ status: 'SUCCESS', suspend_key: null });
+
+      const timedOut = await parkByHand(db, 'approve', 1);
+      await retryUntilSuccess(async () => {
+        await DBOSExecutor.globalInstance!.systemDatabase.cancelTimedOutWorkflows(10);
+        expect(await row(timedOut)).toEqual({ status: 'CANCELLED', suspend_key: null });
+      });
+    } finally {
+      await db.end();
+    }
+  });
+
+  // Every send runs the wake update, so it must probe the primary key: planned with statistics that
+  // predate the parked rows, it must not scan idx_workflow_status_suspended.
+  testUnlessSharded('the wake update probes the primary key', async () => {
+    // A PostgreSQL planner check.
+    if (new URL(config.systemDatabaseUrl!).port === '26257') return;
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase as unknown as {
+      wakeReceivers(db: ClientLike, destinations: string[], topics: string[]): Promise<void>;
+    };
+    const wake = sysdb.wakeReceivers.bind(sysdb);
+    const captured: { text: string; params: unknown[] }[] = [];
+    const spy = jest.spyOn(sysdb, 'wakeReceivers').mockImplementation((client, destinations, topics) =>
+      wake(
+        new Proxy(client, {
+          get(target, prop, receiver) {
+            if (prop !== 'query') return Reflect.get(target, prop, receiver) as unknown;
+            return (text: string, params: unknown[]) => {
+              captured.push({ text, params });
+              return target.query(text, params);
+            };
+          },
+        }),
+        destinations,
+        topics,
+      ),
+    );
+    const db = new Client({ connectionString: config.systemDatabaseUrl });
+    await db.connect();
+    try {
+      // Not parked, so the statistics gathered below see no SUSPENDED rows.
+      const target = randomUUID();
+      await (await DBOS.startWorkflow(parked, { workflowID: target })()).getResult();
+      await DBOS.send(target, 'm', 'approve');
+      spy.mockRestore();
+      expect(captured).toHaveLength(1);
+
+      // Analyzed before the rows are parked, the planner takes the suspended index for empty.
+      await db.query('ANALYZE dbos.workflow_status');
+      await db.query(
+        `INSERT INTO dbos.workflow_status (workflow_uuid, name, status, created_at, updated_at, suspend_key, delay_until_epoch_ms)
+         SELECT 'wake-plan-' || i || '-' || $1::text, 'wake_plan_probe', 'SUSPENDED', 1, 1, 'approve', $2::bigint
+         FROM generate_series(1, 2000) AS i`,
+        [randomUUID(), PARKED_DELAY_MS],
+      );
+      const plan = await db.query<{ 'QUERY PLAN': string }>(`EXPLAIN ${captured[0].text}`, captured[0].params);
+      const text = plan.rows.map((r) => r['QUERY PLAN']).join('\n');
+      expect(text).not.toContain('idx_workflow_status_suspended');
+      expect(text).toContain('workflow_status_pkey');
+    } finally {
+      spy.mockRestore();
+      await db.query(`DELETE FROM dbos.workflow_status WHERE name = 'wake_plan_probe'`);
+      await db.end();
+    }
+  });
 });
+
+type ClientLike = { query(text: string, params: unknown[]): Promise<unknown> };
