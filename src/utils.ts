@@ -178,6 +178,14 @@ export function interruptibleSleep(ms: number, signal: AbortSignal): Promise<voi
   });
 }
 
+/** Quote a string as a SQL literal, as Postgres's quote_literal does, whatever standard_conforming_strings is. */
+export function quoteLiteral(value: string): string {
+  if (value.includes('\\')) {
+    return `E'${value.replace(/\\/g, '\\\\').replace(/'/g, "''")}'`;
+  }
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
 // Capture original functions
 const originalStdoutWrite = process.stdout.write.bind(process.stdout);
 const originalStderrWrite = process.stderr.write.bind(process.stderr);
