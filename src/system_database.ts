@@ -2572,6 +2572,7 @@ export class SystemDatabase {
     await this.pool.query(
       `UPDATE "${this.schemaName}".workflow_status
        SET status = $1, owner_xid = NULL, queue_name = NULL, deduplication_id = NULL, started_at_epoch_ms = NULL,
+           suspend_key = NULL,
            updated_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint,
            completed_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint
        WHERE ${this.wfIn(undefined, workflowIDs, params)}
@@ -2612,7 +2613,7 @@ export class SystemDatabase {
         `UPDATE "${this.schemaName}".workflow_status
          SET status = $1, owner_xid = NULL, queue_name = $2, recovery_attempts = 0,
              workflow_deadline_epoch_ms = NULL, deduplication_id = NULL,
-             started_at_epoch_ms = NULL,
+             started_at_epoch_ms = NULL, suspend_key = NULL,
              updated_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint,
              completed_at = NULL
          WHERE ${this.wfIn(undefined, workflowIDs, updateParams)}
@@ -2962,7 +2963,7 @@ export class SystemDatabase {
         `UPDATE "${schema}".workflow_status
          SET status = $1, owner_xid = NULL, queue_name = $2, queue_partition_key = $3, recovery_attempts = 0,
              workflow_deadline_epoch_ms = NULL, deduplication_id = NULL, started_at_epoch_ms = NULL,
-             completed_at = NULL, output = NULL, error = NULL,
+             suspend_key = NULL, completed_at = NULL, output = NULL, error = NULL,
              updated_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint${setVersion}
          WHERE ${this.wf(undefined, workflowID, params)} AND status = $4`,
         params,
@@ -3803,9 +3804,10 @@ export class SystemDatabase {
   protected async wakeReceivers(db: ClientBase | Pool, destinations: string[], topics: string[]): Promise<void> {
     const params: unknown[] = [topics];
     await db.query(
+      // Status is tested in SET, not WHERE, so the planner cannot scan idx_workflow_status_suspended.
       `UPDATE "${this.schemaName}".workflow_status
-       SET delay_until_epoch_ms = 0
-       WHERE ${this.wfIn(undefined, destinations, params)} AND status = '${StatusString.SUSPENDED}' AND suspend_key = ANY($1::text[])`,
+       SET delay_until_epoch_ms = CASE WHEN status = '${StatusString.SUSPENDED}' THEN 0 ELSE delay_until_epoch_ms END
+       WHERE ${this.wfIn(undefined, destinations, params)} AND suspend_key = ANY($1::text[])`,
       params,
     );
   }
@@ -4406,6 +4408,7 @@ export class SystemDatabase {
     const { rows } = await this.pool.query<{ workflow_uuid: string }>(
       `UPDATE "${this.schemaName}".workflow_status
        SET status = $1, owner_xid = NULL, queue_name = NULL, deduplication_id = NULL, started_at_epoch_ms = NULL,
+           suspend_key = NULL,
            updated_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint,
            completed_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint
        WHERE workflow_uuid IN (
