@@ -22,13 +22,18 @@ import {
 } from '../src/error';
 import assert from 'node:assert';
 import { deriveDatabaseUrl, dropPGDatabase, ensurePGDatabase, getDatabaseNameFromUrl } from '../src/database_utils';
-import { sleepConfig, sleepms } from '../src/utils';
+import { globalParams, sleepConfig, sleepms } from '../src/utils';
 import { getCurrentContextStore } from '../src/context';
 import { bindShardKeys, shardKeyScope } from '../src/shard_keys';
 import { buildEnqueueStatus } from '../src/enqueue_options';
 import { DBOSJSON } from '../src/serialization';
-import { createSystemDatabase, DBOS_FUNCNAME_GETSTATUS, type SystemDatabase } from '../src/system_database';
-import { runBackgroundJobs } from '../src/workflow_management';
+import {
+  advisoryLockKey,
+  createSystemDatabase,
+  DBOS_FUNCNAME_GETSTATUS,
+  type SystemDatabase,
+} from '../src/system_database';
+import { BackgroundLease, backgroundJobsLoop, runBackgroundJobs } from '../src/workflow_management';
 import { GlobalLogger } from '../src/telemetry/logs';
 
 const silentDropLogger = { warn: () => {} };
@@ -1689,21 +1694,35 @@ describe('background-jobs', () => {
     });
     const interval = 200;
     const runs: Array<[string, number]> = [];
+    // Recorded, as the loop catches a job's exceptions: an assertion in the job could never fail the test.
+    const unheld: string[] = [];
     const stops = { local: new AbortController(), peer: new AbortController() };
+    const leases = { local: new BackgroundLease(), peer: new BackgroundLease() };
     // The failing job warns on every run.
     const quiet = new GlobalLogger();
     jest.spyOn(quiet, 'warn').mockImplementation(() => {});
     const loop = (name: 'local' | 'peer', sysdb: SystemDatabase) =>
-      runBackgroundJobs(sysdb, quiet, stops[name].signal, 'test_jobs', interval, {
-        failing: () => Promise.reject(new Error('injected job failure')),
-        job: () => {
-          runs.push([name, performance.now()]);
-          return Promise.resolve();
+      runBackgroundJobs(
+        sysdb,
+        quiet,
+        stops[name].signal,
+        'test_jobs',
+        interval,
+        {
+          failing: () => Promise.reject(new Error('injected job failure')),
+          job: () => {
+            // A holder's lease is held while its jobs run.
+            if (!leases[name].held()) unheld.push(name);
+            runs.push([name, performance.now()]);
+            return Promise.resolve();
+          },
         },
-      });
+        leases[name],
+      );
     const loops = { local: loop('local', local), peer: loop('peer', peer) };
     try {
       await retryUntilSuccess(() => expect(runs.length).toBeGreaterThanOrEqual(8), 5000);
+      expect(unheld).toEqual([]);
       // A start trails its lock's by one round trip, so gaps vary by about that much.
       const starts = runs.map(([, at]) => at);
       expect(starts[starts.length - 1] - starts[0]).toBeGreaterThanOrEqual((starts.length - 1) * interval * 0.9);
@@ -1715,12 +1734,131 @@ describe('background-jobs', () => {
       const other = holder === 'local' ? 'peer' : 'local';
       stops[holder].abort();
       await loops[holder];
-      await retryUntilSuccess(() => expect(runs[runs.length - 1][0]).toBe(other), 5000);
+      expect(leases[holder].held()).toBe(false);
+      await retryUntilSuccess(() => {
+        expect(runs[runs.length - 1][0]).toBe(other);
+        expect(leases[other].held()).toBe(true);
+      }, 5000);
     } finally {
       stops.local.abort();
       stops.peer.abort();
       await Promise.all([loops.local, loops.peer]);
       await peer.destroy();
+    }
+  });
+
+  test('background-jobs-hold-one-lock-session-across-intervals', async () => {
+    // A holder keeps its lock session across intervals, renewing it in place past the idle timeout, so a peer retrying as fast as it can never finds the lock free mid-hold.
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    // Short, so a hold that went idle instead of renewing would lose its session mid-test.
+    const idleTimeout = sysdb.backgroundJobLockIdleTimeoutMs;
+    sysdb.backgroundJobLockIdleTimeoutMs = 500;
+    const runs: number[] = [];
+    const stop = new AbortController();
+    const lease = new BackgroundLease();
+    const loop = runBackgroundJobs(
+      sysdb,
+      new GlobalLogger(),
+      stop.signal,
+      'hold_jobs',
+      100,
+      {
+        job: () => {
+          runs.push(performance.now());
+          return Promise.resolve();
+        },
+      },
+      lease,
+      3000,
+    );
+    try {
+      await retryUntilSuccess(() => expect(lease.held()).toBe(true), 5000);
+      const deadline = performance.now() + 2000;
+      while (performance.now() < deadline) {
+        await sysdb.backgroundJobLock('hold_jobs', (renew) => {
+          expect(renew).toBeUndefined();
+          return Promise.resolve();
+        });
+        expect(lease.held()).toBe(true);
+      }
+      expect(runs.length).toBeGreaterThanOrEqual(10);
+    } finally {
+      stop.abort();
+      await loop;
+      sysdb.backgroundJobLockIdleTimeoutMs = idleTimeout;
+    }
+  });
+
+  test('background-jobs-lock-is-per-application-version', async () => {
+    // Each application version takes its own background-jobs lock, so every live version runs the jobs and fires schedules, the latest code included.
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    const names: string[] = [];
+    const appVersion = globalParams.appVersion;
+    const lock = jest.spyOn(sysdb, 'backgroundJobLock');
+    try {
+      for (const version of ['v1', 'v2']) {
+        globalParams.appVersion = version;
+        const stop = new AbortController();
+        lock.mockImplementation((lockName, callback) => {
+          names.push(lockName);
+          stop.abort();
+          return callback(undefined);
+        });
+        await backgroundJobsLoop(sysdb, new GlobalLogger(), stop.signal);
+      }
+    } finally {
+      lock.mockRestore();
+      globalParams.appVersion = appVersion;
+    }
+    expect(names).toEqual(['background_jobs.v1', 'background_jobs.v2']);
+  });
+
+  testUnlessSharded('background-job-lock-session-holds-no-snapshot', async () => {
+    // A held lock's idle session holds no xmin, even after renewals, so it never holds back vacuum.
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    const key = advisoryLockKey(`dbos.background_job.${sysdb.schemaName}.${sysdb.appName ?? ''}.xmin_job`);
+    const client = new Client({ connectionString: config.systemDatabaseUrl });
+    await client.connect();
+    try {
+      await sysdb.backgroundJobLock('xmin_job', async (renew) => {
+        expect(renew).toBeDefined();
+        for (let i = 0; i < 8; i++) {
+          await renew!();
+        }
+        const { rows } = await client.query<{ backend_xmin: string | null; state: string }>(
+          `SELECT a.backend_xmin::text, a.state FROM pg_stat_activity a
+           JOIN pg_locks l ON l.pid = a.pid WHERE l.locktype = 'advisory' AND l.granted
+           AND l.classid::int8 = $1 AND l.objid::int8 = $2 AND l.objsubid = 1`,
+          [((key >> 32n) & 0xffffffffn).toString(), (key & 0xffffffffn).toString()],
+        );
+        expect(rows).toEqual([{ backend_xmin: null, state: 'idle in transaction' }]);
+      });
+    } finally {
+      await client.end();
+    }
+  });
+
+  testUnlessSharded('concurrent-index-builds-do-not-wait-on-the-background-job-lock', async () => {
+    // An online migration's CREATE INDEX CONCURRENTLY waits for older snapshots' transactions to end; the lock's idle transaction holds none, so a build never waits out a hold.
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    const client = new Client({ connectionString: config.systemDatabaseUrl });
+    await client.connect();
+    try {
+      await client.query("SET statement_timeout = '10s'");
+      await client.query('DROP TABLE IF EXISTS cic_probe');
+      await client.query('CREATE TABLE cic_probe (id int)');
+      await sysdb.backgroundJobLock('cic_job', async (renew) => {
+        expect(renew).toBeDefined();
+        for (let i = 0; i < 8; i++) {
+          await renew!();
+        }
+        const started = performance.now();
+        await client.query('CREATE INDEX CONCURRENTLY cic_probe_idx ON cic_probe (id)');
+        expect(performance.now() - started).toBeLessThan(3000);
+      });
+      await client.query('DROP TABLE cic_probe');
+    } finally {
+      await client.end();
     }
   });
 });

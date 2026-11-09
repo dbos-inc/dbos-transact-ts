@@ -6,6 +6,7 @@ import { DBOSError, DBOSNonExistentWorkflowError, DBOSWorkflowConflictError } fr
 import { DBOSSerializer, safeParse, safeParseError, safeParsePositionalArgs } from './serialization';
 import { randomUUID } from 'node:crypto';
 import type { GlobalLogger } from './telemetry/logs';
+import { globalParams } from './utils';
 
 export async function listWorkflows(sysdb: SystemDatabase, input: GetWorkflowsInput): Promise<WorkflowStatus[]> {
   const workflows = await sysdb.listWorkflows(input);
@@ -211,9 +212,28 @@ export async function toWorkflowStatus(
 export const workflowTimeoutConfig = {
   /** How often one of an application's processes runs its background jobs. */
   pollingIntervalMs: 1000,
+  /** How long a holder keeps one lock transaction before retaking the lock: a peer can win it then. */
+  holdMs: 60_000,
   /** Most workflows one sweep transaction cancels; a full batch sweeps again at once. */
   batchSize: 1000,
 };
+
+/** Whether this process holds the background-jobs lock, kept until its loop fails to retake it, as two holders only duplicate work. */
+export class BackgroundLease {
+  #held = false;
+
+  renew(): void {
+    this.#held = true;
+  }
+
+  lose(): void {
+    this.#held = false;
+  }
+
+  held(): boolean {
+    return this.#held;
+  }
+}
 
 export function waitOrAbort(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
@@ -230,7 +250,7 @@ export function waitOrAbort(ms: number, signal: AbortSignal): Promise<void> {
   });
 }
 
-/** Run `jobs` once per interval in whichever of this application's processes holds their lock, until aborted. */
+/** Run `jobs` once per interval in whichever of this application's processes holds their lock, holding it up to `holdMs` before retaking it, until aborted. */
 export async function runBackgroundJobs(
   sysdb: SystemDatabase,
   logger: GlobalLogger,
@@ -238,29 +258,47 @@ export async function runBackgroundJobs(
   lockName: string,
   intervalMs: number,
   jobs: Record<string, () => Promise<void>>,
+  lease?: BackgroundLease,
+  holdMs: number = workflowTimeoutConfig.holdMs,
 ): Promise<void> {
-  while (!signal.aborted) {
-    const started = performance.now();
-    let held = false;
-    try {
-      await sysdb.backgroundJobLock(lockName, async (acquired) => {
-        if (!acquired) return;
-        for (const [jobName, job] of Object.entries(jobs)) {
-          try {
-            await job();
-          } catch (e) {
-            logger.warn(`Exception in background job ${jobName}: ${(e as Error).message}`);
+  try {
+    while (!signal.aborted) {
+      let held = false;
+      try {
+        await sysdb.backgroundJobLock(lockName, async (renew) => {
+          if (renew === undefined) {
+            lease?.lose();
+            return;
           }
-        }
-        await waitOrAbort(Math.max(0, intervalMs - (performance.now() - started)), signal);
-        held = true;
-      });
-    } catch (e) {
-      logger.warn(`Exception taking the ${lockName} lock: ${(e as Error).message}`);
+          lease?.renew();
+          const holdUntil = performance.now() + holdMs;
+          while (true) {
+            // Timed from the pass's start, so slow jobs can't shorten the interval.
+            const started = performance.now();
+            for (const [jobName, job] of Object.entries(jobs)) {
+              try {
+                await job();
+              } catch (e) {
+                logger.warn(`Exception in background job ${jobName}: ${(e as Error).message}`);
+              }
+            }
+            await waitOrAbort(Math.max(0, intervalMs - (performance.now() - started)), signal);
+            if (signal.aborted || performance.now() >= holdUntil) break;
+            // In place, so the lock is never free mid-hold.
+            await renew();
+          }
+          held = true;
+        });
+      } catch (e) {
+        lease?.lose();
+        logger.warn(`Exception taking the ${lockName} lock: ${(e as Error).message}`);
+      }
+      // The holder tries again at once and so keeps the jobs; the rest poll for them.
+      const wait = held ? 0 : intervalMs * (0.9 + Math.random() * 0.2);
+      await waitOrAbort(wait, signal);
     }
-    // The holder tries again at once and so keeps the jobs; the rest poll for them.
-    const wait = held ? 0 : intervalMs * (0.9 + Math.random() * 0.2);
-    await waitOrAbort(wait, signal);
+  } finally {
+    lease?.lose();
   }
 }
 
@@ -272,6 +310,7 @@ export async function backgroundJobsLoop(
   sysdb: SystemDatabase,
   logger: GlobalLogger,
   signal: AbortSignal,
+  lease?: BackgroundLease,
 ): Promise<void> {
   const sweep = async () => {
     while (!signal.aborted) {
@@ -290,5 +329,14 @@ export async function backgroundJobsLoop(
   if (suspend !== undefined) {
     jobs.suspended_workflows = () => suspend.transitionSuspendedWorkflows();
   }
-  await runBackgroundJobs(sysdb, logger, signal, 'background_jobs', workflowTimeoutConfig.pollingIntervalMs, jobs);
+  await runBackgroundJobs(
+    sysdb,
+    logger,
+    signal,
+    // One holder per application version, so the latest code always runs them; they tolerate overlap.
+    `background_jobs.${globalParams.appVersion}`,
+    workflowTimeoutConfig.pollingIntervalMs,
+    jobs,
+    lease,
+  );
 }
