@@ -2255,6 +2255,7 @@ describe('test-fork', () => {
     static stepTwoCount = 0;
     static step1Gate = new Event();
     static step1Started = new Event();
+    static runExited = new Event();
 
     @DBOS.step()
     static async stepOne(x: number): Promise<number> {
@@ -2272,11 +2273,15 @@ describe('test-fork', () => {
 
     @DBOS.workflow()
     static async simpleWorkflow(x: number): Promise<number> {
-      const a = await ResumeForkQueueWorkflow.stepOne(x);
-      ResumeForkQueueWorkflow.step1Started.set();
-      await ResumeForkQueueWorkflow.step1Gate.wait();
-      const b = await ResumeForkQueueWorkflow.stepTwo(x);
-      return a + b;
+      try {
+        const a = await ResumeForkQueueWorkflow.stepOne(x);
+        ResumeForkQueueWorkflow.step1Started.set();
+        await ResumeForkQueueWorkflow.step1Gate.wait();
+        const b = await ResumeForkQueueWorkflow.stepTwo(x);
+        return a + b;
+      } finally {
+        ResumeForkQueueWorkflow.runExited.set();
+      }
     }
   }
 
@@ -2285,6 +2290,7 @@ describe('test-fork', () => {
     ResumeForkQueueWorkflow.stepTwoCount = 0;
     ResumeForkQueueWorkflow.step1Gate = new Event();
     ResumeForkQueueWorkflow.step1Started = new Event();
+    ResumeForkQueueWorkflow.runExited = new Event();
 
     const input = 5;
     const expectedOutput = input + 1 + (input + 2);
@@ -2299,6 +2305,8 @@ describe('test-fork', () => {
     await DBOS.cancelWorkflow(wfid);
     ResumeForkQueueWorkflow.step1Gate.set();
     await expect(handle.getResult()).rejects.toThrow(DBOSAwaitedWorkflowCancelledError);
+    // The cancelled run outlives getResult; resumed before it exits, it would run stepTwo too.
+    await ResumeForkQueueWorkflow.runExited.wait();
     await expect(DBOS.getWorkflowStatus(wfid)).resolves.toMatchObject({ status: StatusString.CANCELLED });
     expect(ResumeForkQueueWorkflow.stepOneCount).toBe(1);
     expect(ResumeForkQueueWorkflow.stepTwoCount).toBe(0);
