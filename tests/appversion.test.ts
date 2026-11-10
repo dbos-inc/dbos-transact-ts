@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto';
+import { Client } from 'pg';
 import { DBOS, DBOSClient, StatusString } from '../src';
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import { globalParams } from '../src/utils';
@@ -124,6 +125,53 @@ describe('test-app-version', () => {
     handles = await recoverPendingWorkflows();
     expect(handles.length).toBe(0);
     await expect(YetAnotherWorkflow.anotherWorkflow()).resolves.toEqual(1);
+  });
+
+  test('test-recover-workflows-version-override', async () => {
+    class TestRecoverWorkflowsVersion {
+      @DBOS.workflow()
+      static async target(x: number) {
+        return Promise.resolve(x);
+      }
+    }
+
+    const launch = async (version: string) => {
+      await DBOS.shutdown();
+      config.applicationVersion = version;
+      DBOS.setConfig(config);
+      await DBOS.launch();
+    };
+
+    await launch('v1');
+    const wfid = randomUUID();
+    const handle = await DBOS.startWorkflow(TestRecoverWorkflowsVersion, { workflowID: wfid }).target(5);
+    await expect(handle.getResult()).resolves.toBe(5);
+    const client = new Client({ connectionString: config.systemDatabaseUrl });
+    await client.connect();
+    try {
+      await client.query(`UPDATE dbos.workflow_status SET status=$1, executor_id=$2 WHERE workflow_uuid=$3`, [
+        StatusString.PENDING,
+        'dead-executor',
+        wfid,
+      ]);
+    } finally {
+      await client.end();
+    }
+
+    // A v2 process recovers only v2 workflows unless told otherwise
+    await launch('v2');
+    await expect(DBOS.recoverWorkflows(['dead-executor'])).resolves.toEqual([]);
+    const handles = await DBOS.recoverWorkflows(['dead-executor'], { applicationVersion: 'v1' });
+    expect(handles.map((h) => h.workflowID)).toEqual([wfid]);
+
+    // Re-enqueued on its own version, so the v2 process leaves it alone
+    const stat = await DBOS.getWorkflowStatus(wfid);
+    expect(stat?.status).toBe(StatusString.ENQUEUED);
+    expect(stat?.applicationVersion).toBe('v1');
+
+    // A v1 process runs it
+    await launch('v1');
+    await expect(DBOS.retrieveWorkflow(wfid).getResult()).resolves.toBe(5);
   });
 
   test('test-setting-app-version', async () => {

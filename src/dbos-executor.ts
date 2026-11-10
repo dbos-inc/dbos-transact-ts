@@ -39,6 +39,7 @@ import { TelemetryExporter } from './telemetry/exporters';
 import {
   createSystemDatabase,
   type SystemDatabase,
+  type RecoveredWorkflow,
   type WorkflowStatusInternal,
   type SystemDatabaseStoredResult,
 } from './system_database';
@@ -1360,26 +1361,33 @@ export class DBOSExecutor {
    * It returns all workflows that were executing when the previous executor failed to a queue, which re-dispatches them.
    */
   async recoverPendingWorkflows(executorIDs: string[] = ['local']): Promise<WorkflowHandle<unknown>[]> {
-    const handlerArray: WorkflowHandle<unknown>[] = [];
+    const recovered = await this.recoverExecutorWorkflows(executorIDs);
+    return recovered.map(({ workflowID, shardKey }) => this.retrieveWorkflow(workflowID, shardKey));
+  }
+
+  /** Re-enqueue the given executors' PENDING workflows from `appVersion` and return the workflows recovered. */
+  async recoverExecutorWorkflows(
+    executorIDs: string[],
+    appVersion: string = globalParams.appVersion,
+  ): Promise<RecoveredWorkflow[]> {
+    const allRecovered: RecoveredWorkflow[] = [];
     for (const execID of executorIDs) {
       this.logger.debug(`Recovering workflows assigned to executor: ${execID}`);
       const recovered = await this.systemDatabase.reenqueueWorkflowsForRecovery(
         execID,
-        globalParams.appVersion,
+        appVersion,
         INTERNAL_QUEUE_NAME,
       );
       if (recovered.length > 0) {
         this.logger.info(
-          `Recovering ${recovered.length} workflows from application version ${globalParams.appVersion}`,
+          `Recovering ${recovered.length} workflows for executor ${execID} from application version ${appVersion}`,
         );
       } else {
-        this.logger.info(`No workflows to recover from application version ${globalParams.appVersion}`);
+        this.logger.info(`No workflows to recover for executor ${execID} from application version ${appVersion}`);
       }
-      for (const { workflowID, shardKey } of recovered) {
-        handlerArray.push(this.retrieveWorkflow(workflowID, shardKey));
-      }
+      allRecovered.push(...recovered);
     }
-    return handlerArray;
+    return allRecovered;
   }
 
   async initEventReceivers(listenQueues: string[] | null) {
