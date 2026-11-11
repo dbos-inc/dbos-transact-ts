@@ -428,10 +428,10 @@ describe('system-database-idle-transaction-timeout', () => {
     }
   }
 
-  test('a new connection runs no query ahead of the borrower', async () => {
+  test('the timeout is set before a new connection is handed out', async () => {
     const sysdb = makeSysDb(12345);
     try {
-      // A connect-time query would sit in front of the borrower's first one on a busy client.
+      // An unawaited query from a 'connect' listener would sit in front of the borrower's first one.
       expect(sysdb.pool.listenerCount('connect')).toBe(0);
       expect(await sessionTimeoutMs(sysdb)).toBe('12345');
     } finally {

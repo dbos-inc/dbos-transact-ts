@@ -161,7 +161,10 @@ export function compareCodeUnits(a: string, b: string): number {
 /** Renews a held background job lock in place, so it is never free mid-hold; rejects if the lock was lost. */
 export type BackgroundJobRenew = () => Promise<void>;
 
-/** The timeout is sent as the idle_in_transaction_session_timeout startup parameter, which takes only an in-range integer. */
+/** pg-pool's hook for a new client: the borrower receives it only once `done` is called. */
+type PoolVerify = (client: PoolClient, done: (err?: Error) => void) => void;
+
+/** The timeout is rendered into a `SET idle_in_transaction_session_timeout`, which takes only an in-range integer. */
 export function validateIdleTransactionTimeoutMs(value: number | undefined): void {
   if (value !== undefined && (!Number.isFinite(value) || value > MAX_STATEMENT_TIMEOUT_MS)) {
     throw new Error(
@@ -1138,14 +1141,27 @@ export class SystemDatabase {
       this.pool = systemDatabasePool;
       this.customPool = true;
     } else {
-      const systemPoolConfig: PoolConfig = {
+      const timeoutMs = this.idleTransactionTimeoutMs;
+      const systemPoolConfig: PoolConfig & { verify?: PoolVerify } = {
         ...getClientConfig(systemDatabaseUrl),
         // This sets the application_name column in pg_stat_activity
         application_name: `dbos_transact_${globalParams.executorID}_${globalParams.appVersion}`,
         max: sysDbPoolSize,
-        // A startup parameter, so no query races the borrower's first one; a connection string value overrides it.
-        idle_in_transaction_session_timeout: this.idleTransactionTimeoutMs,
       };
+      if (timeoutMs !== undefined) {
+        // A SET, not a startup parameter, which session-mode PgBouncer rejects; awaited before the borrower gets the client.
+        systemPoolConfig.verify = (client, done) => {
+          client.query(`SET idle_in_transaction_session_timeout = ${timeoutMs}`).then(
+            () => done(),
+            (err: Error) => {
+              this.logger.warn(
+                `Could not set idle_in_transaction_session_timeout on a system database connection: ${err}`,
+              );
+              done();
+            },
+          );
+        };
+      }
       this.pool = new Pool(systemPoolConfig);
     }
 
