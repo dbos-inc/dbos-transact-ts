@@ -61,7 +61,6 @@ import {
 import { JsonWorkflowArgs } from '../schemas/system_db_schema';
 import {
   runInStepContext,
-  getNextWFID,
   functionIDGetIncrement,
   runWithParentContext,
   getCurrentContextStore,
@@ -1253,8 +1252,7 @@ export class DBOSExecutor {
       replacementChildren?: Record<string, string>;
     } = {},
   ): Promise<string> {
-    const newWorkflowID = options.newWorkflowID ?? getNextWFID(undefined);
-    return forkWorkflow(this.systemDatabase, workflowID, startStep, { ...options, newWorkflowID });
+    return forkWorkflow(this.systemDatabase, workflowID, startStep, options);
   }
 
   /** Clear the checkpoints of the data sources this execution called, committing only while it still owns the workflow. */
