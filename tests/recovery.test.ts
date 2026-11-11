@@ -245,6 +245,72 @@ describe('recovery-tests', () => {
     expect(LocalRecovery.cnt).toBe(10); // Should run twice.
   });
 
+  class RecoverWorkflows {
+    static count = 0;
+
+    @DBOS.workflow()
+    static async target(x: number) {
+      RecoverWorkflows.count++;
+      return Promise.resolve(x);
+    }
+
+    @DBOS.workflow()
+    static async recovering(executorIDs: string[]) {
+      return (await DBOS.recoverWorkflows(executorIDs)).map((h) => h.workflowID);
+    }
+
+    @DBOS.step()
+    static async recoveringStep(executorIDs: string[]) {
+      return (await DBOS.recoverWorkflows(executorIDs)).map((h) => h.workflowID);
+    }
+
+    @DBOS.workflow()
+    static async workflowWithRecoveringStep(executorIDs: string[]) {
+      return await RecoverWorkflows.recoveringStep(executorIDs);
+    }
+  }
+
+  test('recover-workflows', async () => {
+    RecoverWorkflows.count = 0;
+    const markPending = (workflowID: string, executorID: string) =>
+      systemDBClient.query(`UPDATE dbos.workflow_status SET status=$1, executor_id=$2 WHERE workflow_uuid=$3`, [
+        StatusString.PENDING,
+        executorID,
+        workflowID,
+      ]);
+
+    const wfid = randomUUID();
+    await expect(
+      (await DBOS.startWorkflow(RecoverWorkflows, { workflowID: wfid }).target(5)).getResult(),
+    ).resolves.toBe(5);
+    await markPending(wfid, 'dead-executor');
+
+    // Only the named executors' workflows are recovered
+    await expect(DBOS.recoverWorkflows(['other-executor'])).resolves.toEqual([]);
+    const handles = await DBOS.recoverWorkflows(['dead-executor']);
+    expect(handles.map((h) => h.workflowID)).toEqual([wfid]);
+    await expect(handles[0].getResult()).resolves.toBe(5);
+    expect(RecoverWorkflows.count).toBe(2);
+    const stat = await handles[0].getStatus();
+    expect(stat?.executorId).toBe(DBOSExecutor.globalInstance!.executorID);
+    expect(stat?.recoveryAttempts).toBe(2);
+
+    // A workflow owned by a live executor is not recovered for the dead one
+    await markPending(wfid, DBOSExecutor.globalInstance!.executorID);
+    await expect(DBOS.recoverWorkflows(['dead-executor'])).resolves.toEqual([]);
+
+    // Recovery is rejected from within a workflow or step and re-enqueues nothing
+    await markPending(wfid, 'dead-executor');
+    await expect(RecoverWorkflows.recovering(['dead-executor'])).rejects.toThrow('within a workflow or step');
+    await expect(RecoverWorkflows.workflowWithRecoveringStep(['dead-executor'])).rejects.toThrow(
+      'within a workflow or step',
+    );
+    const untouched = await DBOS.getWorkflowStatus(wfid);
+    expect(untouched?.status).toBe(StatusString.PENDING);
+    expect(untouched?.executorId).toBe('dead-executor');
+    expect(RecoverWorkflows.count).toBe(2);
+  });
+
   test('recovery-reenqueue-is-ownership-conditional', async () => {
     // Recovery only re-enqueues workflows still owned by an executor it declared dead, so a duplicate or delayed sweep for that executor cannot yank back a workflow a live executor has since claimed.
     const sysDB = DBOSExecutor.globalInstance!.systemDatabase;

@@ -2201,10 +2201,11 @@ export class SystemDatabase {
   // Recovery re-enqueues rather than executing directly so the queue's atomic dequeue admits exactly one runner, and the executor ID predicate rejects sweeps for rows a live executor has already claimed.
   async reenqueueWorkflowsForRecovery(
     executorID: string,
-    appVersion: string,
+    appVersion: string | undefined,
     recoveryQueueName: string,
   ): Promise<RecoveredWorkflow[]> {
-    const params: unknown[] = [StatusString.ENQUEUED, recoveryQueueName, StatusString.PENDING, executorID, appVersion];
+    const params: unknown[] = [StatusString.ENQUEUED, recoveryQueueName, StatusString.PENDING, executorID];
+    const versionFilter = appVersion === undefined ? '' : `AND application_version = $${params.push(appVersion)}`;
     // executor_id defaults to "local", so it collides across applications.
     const scope = this.appNameFilter('application_name', this.appName, params);
     const keyColumn = this.keyColumn(undefined);
@@ -2217,7 +2218,7 @@ export class SystemDatabase {
            queue_name = COALESCE(queue_name, $2)
        WHERE status = $3
          AND executor_id = $4
-         AND application_version = $5
+         ${versionFilter}
          AND ${scope}
        RETURNING workflow_uuid${keyColumn !== undefined ? `, ${keyColumn} AS shard_key` : ''}`,
       params,

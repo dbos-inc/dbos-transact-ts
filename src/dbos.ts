@@ -1381,6 +1381,22 @@ export class DBOS {
   }
 
   /**
+   * Recover the PENDING workflows of the given executors by re-enqueueing them.
+   * @param executorIDs - IDs of the executors whose workflows to recover
+   * @returns Handles to the recovered workflows
+   * @throws DBOSError if called from within a workflow or step
+   */
+  static async recoverWorkflows<T = unknown>(executorIDs: string[]): Promise<WorkflowHandle<Awaited<T>>[]> {
+    ensureDBOSIsLaunched('recoverWorkflows');
+    // Recovery can re-enqueue the calling workflow, fencing it out of its own execution.
+    if (DBOS.isWithinWorkflow()) {
+      throw new DBOSError('DBOS.recoverWorkflows cannot be called from within a workflow or step');
+    }
+    const recovered = await DBOS.#executor.recoverExecutorWorkflows(executorIDs);
+    return recovered.map(({ workflowID, shardKey }) => new RetrievedHandle<Awaited<T>>(workflowID, shardKey));
+  }
+
+  /**
    * Delete a workflow and optionally all its child workflows.
    * This permanently removes the workflow from the system database.
    *
