@@ -1151,9 +1151,21 @@ export class SystemDatabase {
       if (timeoutMs !== undefined) {
         // A SET, not a startup parameter, which session-mode PgBouncer rejects; awaited before the borrower gets the client.
         systemPoolConfig.verify = (client, done) => {
+          // pg-pool has detached its listener and the borrower's comes after done, so a socket death here needs a guard.
+          let socketError: Error | undefined;
+          const onError = (err: Error) => {
+            socketError = err;
+          };
+          client.on('error', onError);
           client.query(`SET idle_in_transaction_session_timeout = ${timeoutMs}`).then(
-            () => done(),
+            () => {
+              client.removeListener('error', onError);
+              done();
+            },
             (err: Error) => {
+              client.removeListener('error', onError);
+              // A dead connection fails the checkout with a retryable error; pg-pool discards it.
+              if (socketError) return done(socketError);
               this.logger.warn(
                 `Could not set idle_in_transaction_session_timeout on a system database connection: ${err}`,
               );
