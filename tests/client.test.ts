@@ -70,6 +70,14 @@ class ClientTest {
   }
 
   @DBOS.workflow()
+  static async batchSendWorkflow(topic: string, destA: string, destB: string) {
+    await DBOS.sendBatch<string>([
+      { destinationID: destA, message: 'batch-A', topic },
+      { destinationID: destB, message: 'batch-B', topic },
+    ]);
+  }
+
+  @DBOS.workflow()
   static async eventTest(key: string, value: string, update: boolean = false) {
     await DBOS.setEvent(key, value);
     await DBOS.sleepSeconds(5);
@@ -1174,6 +1182,71 @@ describe('DBOSClient', () => {
       await txClient.end();
       await client.destroy();
     }
+  });
+
+  test('DBOSClient-sendBatch-delivers-to-multiple-destinations', async () => {
+    await DBOS.launch();
+    await registerTestQueue();
+    const now = Date.now();
+    const topic = `test-batch-topic-${now}`;
+    const destA = `client-batch-a-${now}`;
+    const destB = `client-batch-b-${now}`;
+    const handleA = await DBOS.startWorkflow(ClientTest, { workflowID: destA }).sendTest(topic);
+    const handleB = await DBOS.startWorkflow(ClientTest, { workflowID: destB }).sendTest(topic);
+
+    const client = await DBOSClient.create({ systemDatabaseUrl });
+    try {
+      await client.sendBatch<string>([
+        { destinationID: destA, message: 'msg-A', topic },
+        { destinationID: destB, message: 'msg-B', topic },
+      ]);
+      // Both destinations in the same batch receive their own message.
+      expect(await handleA.getResult()).toBe('msg-A');
+      expect(await handleB.getResult()).toBe('msg-B');
+    } finally {
+      await client.destroy();
+    }
+  });
+
+  test('DBOSClient-sendBatch-idempotent-per-destination', async () => {
+    await DBOS.launch();
+    await registerTestQueue();
+    const now = Date.now();
+    const topic = `test-batch-idem-topic-${now}`;
+    const dest = `client-batch-idem-${now}`;
+    const idempotencyKey = `batch-idem-key-${now}`;
+    const handle = await DBOS.startWorkflow(ClientTest, { workflowID: dest }).sendTest(topic);
+
+    const client = await DBOSClient.create({ systemDatabaseUrl });
+    try {
+      // The same idempotency key used twice for the same destination inserts only one message.
+      await client.sendBatch<string>([{ destinationID: dest, message: 'only-once', topic, idempotencyKey }]);
+      await client.sendBatch<string>([{ destinationID: dest, message: 'duplicate', topic, idempotencyKey }]);
+      expect(await handle.getResult()).toBe('only-once');
+      expect(await countNotifications(dest)).toBe(1);
+    } finally {
+      await client.destroy();
+    }
+  });
+
+  test('DBOS-sendBatch-inside-workflow-delivers-to-multiple-destinations', async () => {
+    await DBOS.launch();
+    await registerTestQueue();
+    const now = Date.now();
+    const topic = `test-batch-wf-topic-${now}`;
+    const destA = `wf-batch-a-${now}`;
+    const destB = `wf-batch-b-${now}`;
+    const handleA = await DBOS.startWorkflow(ClientTest, { workflowID: destA }).sendTest(topic);
+    const handleB = await DBOS.startWorkflow(ClientTest, { workflowID: destB }).sendTest(topic);
+    const sender = await DBOS.startWorkflow(ClientTest, { workflowID: `wf-batch-sender-${now}` }).batchSendWorkflow(
+      topic,
+      destA,
+      destB,
+    );
+
+    await sender.getResult();
+    expect(await handleA.getResult()).toBe('batch-A');
+    expect(await handleB.getResult()).toBe('batch-B');
   });
 
   test('DBOSClient-enqueue-and-send-in-transaction', async () => {

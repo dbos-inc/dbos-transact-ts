@@ -85,6 +85,7 @@ import {
 import { globalParams, INTERNAL_QUEUE_NAME, sleepConfig, sleepms } from './utils';
 import {
   DBOSJSON,
+  DBOSSerializer,
   deserializeValue,
   JSONValue,
   registerSerializationRecipe,
@@ -113,6 +114,7 @@ import {
   migrateSystemDatabase,
   createSystemDatabase,
   grantDbosSchemaPermissions,
+  type BatchSendItems,
 } from './system_database';
 import { readStreamCore, readStreamOffsetCore } from './streams';
 import { PoolClient } from 'pg';
@@ -1818,6 +1820,54 @@ export class DBOS {
         undefined,
         options?.shardKey,
       );
+    }
+  }
+
+  /**
+   * Send multiple `message`s to workflows in a single, atomic transaction.
+   * Each message is sent to its own destination workflow, exactly like `DBOS.send`, but all of them
+   * commit together (or none do). Callable from inside or outside a workflow or step.
+   *
+   * @param messages - Array of messages, each with a destination workflow ID, optional `topic`, and
+   *   optional per-destination `idempotencyKey`.
+   * @param options - `SendOptions` applied to every message in the batch (e.g. `serializationType`).
+   * @see `DBOS.send`, `DBOS.recv`
+   */
+  static async sendBatch<T>(
+    messages: { destinationID: string; message: T; topic?: string; idempotencyKey?: string }[],
+    options?: SendOptions,
+  ): Promise<void> {
+    ensureDBOSIsLaunched('sendBatch');
+    const serializeAll = async (
+      serializer: DBOSSerializer,
+      fallbackType: WorkflowSerializationFormat,
+    ): Promise<BatchSendItems> => {
+      return await Promise.all(
+        messages.map(async ({ destinationID, message, topic, idempotencyKey }) => {
+          const sermsg = await serializeValue(message, serializer, options?.serializationType ?? fallbackType);
+          return {
+            destinationID,
+            message: sermsg.serializedValue,
+            topic,
+            serialization: sermsg.serialization,
+            idempotencyKey,
+            shardKey: options?.shardKey,
+          };
+        }),
+      );
+    };
+    if (DBOS.isInWorkflow()) {
+      // Advance the function ID synchronously before any await, like DBOS.send, so concurrent
+      // step calls in the same workflow don't race for IDs.
+      const functionID: number = functionIDGetIncrement();
+      const items = await serializeAll(DBOS.#executor.serializer, DBOS.#defaultSerializationType);
+      return await DBOSExecutor.globalInstance!.systemDatabase.sendBatch(DBOS.workflowID!, functionID, items);
+    } else if (DBOS.isInStep()) {
+      const items = await serializeAll(DBOS.#executor.serializer, DBOS.#defaultSerializationType);
+      return await DBOSExecutor.globalInstance!.systemDatabase.sendFromStepBatch(DBOS.workflowID!, items);
+    } else {
+      const items = await serializeAll(DBOS.#executor.serializer, DBOS.#defaultSerializationType);
+      return await DBOSExecutor.globalInstance!.systemDatabase.sendDirectBatch(items);
     }
   }
 
