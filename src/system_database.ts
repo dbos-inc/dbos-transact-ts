@@ -161,6 +161,9 @@ export function compareCodeUnits(a: string, b: string): number {
 /** Renews a held background job lock in place, so it is never free mid-hold; rejects if the lock was lost. */
 export type BackgroundJobRenew = () => Promise<void>;
 
+/** pg-pool's hook for a new client: the borrower receives it only once `done` is called. */
+type PoolVerify = (client: PoolClient, done: (err?: Error) => void) => void;
+
 /** The timeout is rendered into a `SET idle_in_transaction_session_timeout`, which takes only an in-range integer. */
 export function validateIdleTransactionTimeoutMs(value: number | undefined): void {
   if (value !== undefined && (!Number.isFinite(value) || value > MAX_STATEMENT_TIMEOUT_MS)) {
@@ -1138,12 +1141,39 @@ export class SystemDatabase {
       this.pool = systemDatabasePool;
       this.customPool = true;
     } else {
-      const systemPoolConfig: PoolConfig = {
+      const timeoutMs = this.idleTransactionTimeoutMs;
+      const systemPoolConfig: PoolConfig & { verify?: PoolVerify } = {
         ...getClientConfig(systemDatabaseUrl),
         // This sets the application_name column in pg_stat_activity
         application_name: `dbos_transact_${globalParams.executorID}_${globalParams.appVersion}`,
         max: sysDbPoolSize,
       };
+      if (timeoutMs !== undefined) {
+        // A SET, not a startup parameter, which session-mode PgBouncer rejects; awaited before the borrower gets the client.
+        systemPoolConfig.verify = (client, done) => {
+          // pg-pool has detached its listener and the borrower's comes after done, so a socket death here needs a guard.
+          let socketError: Error | undefined;
+          const onError = (err: Error) => {
+            socketError = err;
+          };
+          client.on('error', onError);
+          client.query(`SET idle_in_transaction_session_timeout = ${timeoutMs}`).then(
+            () => {
+              client.removeListener('error', onError);
+              done();
+            },
+            (err: Error) => {
+              client.removeListener('error', onError);
+              // A dead connection fails the checkout with a retryable error; pg-pool discards it.
+              if (socketError) return done(socketError);
+              this.logger.warn(
+                `Could not set idle_in_transaction_session_timeout on a system database connection: ${err}`,
+              );
+              done();
+            },
+          );
+        };
+      }
       this.pool = new Pool(systemPoolConfig);
     }
 
@@ -1159,17 +1189,6 @@ export class SystemDatabase {
       this.pool.on('error', (err: Error) => {
         this.logger.warn(`Unexpected error in pool: ${err}`);
       });
-      const timeoutMs = this.idleTransactionTimeoutMs;
-      if (timeoutMs !== undefined) {
-        // Queued ahead of the borrower's first query; outside any transaction, so it persists for the session.
-        this.pool.on('connect', (client: PoolClient) => {
-          client.query(`SET idle_in_transaction_session_timeout = ${timeoutMs}`).catch((err: Error) => {
-            this.logger.warn(
-              `Could not set idle_in_transaction_session_timeout on a system database connection: ${err}`,
-            );
-          });
-        });
-      }
     }
   }
 
