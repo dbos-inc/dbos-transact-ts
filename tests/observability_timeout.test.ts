@@ -415,6 +415,60 @@ describe('system-database-idle-transaction-timeout', () => {
     }
   });
 
+  /** idle_in_transaction_session_timeout and lock_timeout as one of the handle's sessions sees them. */
+  async function sessionSettings(sysdb: SystemDatabase): Promise<Record<string, string>> {
+    const client = await sysdb.pool.connect();
+    try {
+      const { rows } = await client.query<{ name: string; setting: string }>(
+        `SELECT name, setting FROM pg_settings WHERE name IN ('idle_in_transaction_session_timeout', 'lock_timeout')`,
+      );
+      return Object.fromEntries(rows.map((row) => [row.name, row.setting]));
+    } finally {
+      client.release();
+    }
+  }
+
+  test('a new connection runs no query ahead of the borrower', async () => {
+    const sysdb = makeSysDb(12345);
+    try {
+      // A connect-time query would sit in front of the borrower's first one on a busy client.
+      expect(sysdb.pool.listenerCount('connect')).toBe(0);
+      expect(await sessionTimeoutMs(sysdb)).toBe('12345');
+    } finally {
+      await sysdb.destroy();
+    }
+  });
+
+  test('connection string options for other parameters keep both those and the timeout', async () => {
+    const url = new URL(systemDatabaseUrl);
+    url.searchParams.set('options', '-c lock_timeout=4321');
+    const sysdb = makeSysDb(12345, url.toString());
+    try {
+      expect(await sessionSettings(sysdb)).toEqual({
+        idle_in_transaction_session_timeout: '12345',
+        lock_timeout: '4321',
+      });
+    } finally {
+      await sysdb.destroy();
+    }
+  });
+
+  test('PGOPTIONS keeps applying alongside the timeout', async () => {
+    const saved = process.env.PGOPTIONS;
+    process.env.PGOPTIONS = '-c lock_timeout=4321';
+    const sysdb = makeSysDb(12345);
+    try {
+      expect(await sessionSettings(sysdb)).toEqual({
+        idle_in_transaction_session_timeout: '12345',
+        lock_timeout: '4321',
+      });
+    } finally {
+      if (saved === undefined) delete process.env.PGOPTIONS;
+      else process.env.PGOPTIONS = saved;
+      await sysdb.destroy();
+    }
+  });
+
   test('a caller-supplied pool is left alone', async () => {
     const pool = new Pool({ connectionString: systemDatabaseUrl, max: 1 });
     const sysdb = makeSysDb(12345, systemDatabaseUrl, pool);
