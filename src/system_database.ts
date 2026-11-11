@@ -179,6 +179,12 @@ function setsIdleTransactionTimeout(databaseUrl: string): boolean {
   }
 }
 
+/** Startup `options` so pg applies idle_in_transaction_session_timeout before the first query. */
+function applyIdleTransactionTimeoutPoolOption(config: PoolConfig, timeoutMs: number): void {
+  const option = `-c idle_in_transaction_session_timeout=${timeoutMs}`;
+  config.options = config.options ? `${config.options} ${option}` : option;
+}
+
 export interface WorkflowScheduleInternal {
   scheduleId: string;
   scheduleName: string;
@@ -1144,6 +1150,9 @@ export class SystemDatabase {
         application_name: `dbos_transact_${globalParams.executorID}_${globalParams.appVersion}`,
         max: sysDbPoolSize,
       };
+      if (this.idleTransactionTimeoutMs !== undefined) {
+        applyIdleTransactionTimeoutPoolOption(systemPoolConfig, this.idleTransactionTimeoutMs);
+      }
       this.pool = new Pool(systemPoolConfig);
     }
 
@@ -1159,17 +1168,6 @@ export class SystemDatabase {
       this.pool.on('error', (err: Error) => {
         this.logger.warn(`Unexpected error in pool: ${err}`);
       });
-      const timeoutMs = this.idleTransactionTimeoutMs;
-      if (timeoutMs !== undefined) {
-        // Queued ahead of the borrower's first query; outside any transaction, so it persists for the session.
-        this.pool.on('connect', (client: PoolClient) => {
-          client.query(`SET idle_in_transaction_session_timeout = ${timeoutMs}`).catch((err: Error) => {
-            this.logger.warn(
-              `Could not set idle_in_transaction_session_timeout on a system database connection: ${err}`,
-            );
-          });
-        });
-      }
     }
   }
 

@@ -365,6 +365,31 @@ describe('system-database-idle-transaction-timeout', () => {
     }
   });
 
+  test('idle transaction timeout uses pool startup options instead of connect SET', async () => {
+    const sysdb = makeSysDb(12345);
+    const statements: string[] = [];
+    sysdb.pool.on('connect', (client: PoolClient) => {
+      const query = client.query.bind(client);
+      client.query = ((...args: Parameters<typeof query>) => {
+        const first = args[0];
+        statements.push(typeof first === 'string' ? first : String((first as { text: string }).text));
+        return query(...args);
+      }) as typeof client.query;
+    });
+    try {
+      const client = await sysdb.pool.connect();
+      try {
+        await client.query('SELECT 1');
+      } finally {
+        client.release();
+      }
+      expect(statements.some((s) => s.includes('SET idle_in_transaction_session_timeout'))).toBe(false);
+      expect(await sessionTimeoutMs(sysdb)).toBe('12345');
+    } finally {
+      await sysdb.destroy();
+    }
+  });
+
   test('the timeout persists on a reused connection', async () => {
     // A pool of one, so the second checkout is the same session after a return and a rollback.
     const sysdb = makeSysDb(12345, systemDatabaseUrl, undefined, 1);
