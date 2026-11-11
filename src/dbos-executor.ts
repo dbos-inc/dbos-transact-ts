@@ -467,7 +467,7 @@ export class DBOSExecutor {
     this.logger.info(`Application version: ${globalParams.appVersion}`);
 
     if (!this.conductor) {
-      await this.recoverPendingWorkflows([this.executorID]);
+      await this.recoverPendingWorkflows([this.executorID], globalParams.appVersion);
     }
 
     this.logger.info('DBOS launched!');
@@ -1360,16 +1360,16 @@ export class DBOSExecutor {
    * A recovery process that by default runs during executor init time.
    * It returns all workflows that were executing when the previous executor failed to a queue, which re-dispatches them.
    */
-  async recoverPendingWorkflows(executorIDs: string[] = ['local']): Promise<WorkflowHandle<unknown>[]> {
-    const recovered = await this.recoverExecutorWorkflows(executorIDs);
+  async recoverPendingWorkflows(
+    executorIDs: string[] = ['local'],
+    appVersion?: string,
+  ): Promise<WorkflowHandle<unknown>[]> {
+    const recovered = await this.recoverExecutorWorkflows(executorIDs, appVersion);
     return recovered.map(({ workflowID, shardKey }) => this.retrieveWorkflow(workflowID, shardKey));
   }
 
-  /** Re-enqueue the given executors' PENDING workflows from `appVersion` and return the workflows recovered. */
-  async recoverExecutorWorkflows(
-    executorIDs: string[],
-    appVersion: string = globalParams.appVersion,
-  ): Promise<RecoveredWorkflow[]> {
+  /** Re-enqueue the given executors' PENDING workflows, from `appVersion` only if given, and return those re-enqueued. */
+  async recoverExecutorWorkflows(executorIDs: string[], appVersion?: string): Promise<RecoveredWorkflow[]> {
     const allRecovered: RecoveredWorkflow[] = [];
     for (const execID of executorIDs) {
       this.logger.debug(`Recovering workflows assigned to executor: ${execID}`);
@@ -1378,12 +1378,11 @@ export class DBOSExecutor {
         appVersion,
         INTERNAL_QUEUE_NAME,
       );
+      const from = appVersion === undefined ? '' : ` from application version ${appVersion}`;
       if (recovered.length > 0) {
-        this.logger.info(
-          `Recovering ${recovered.length} workflows for executor ${execID} from application version ${appVersion}`,
-        );
+        this.logger.info(`Recovering ${recovered.length} workflows for executor ${execID}${from}`);
       } else {
-        this.logger.info(`No workflows to recover for executor ${execID} from application version ${appVersion}`);
+        this.logger.info(`No workflows to recover for executor ${execID}${from}`);
       }
       allRecovered.push(...recovered);
     }

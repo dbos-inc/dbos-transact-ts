@@ -113,7 +113,8 @@ describe('test-app-version', () => {
     await expect(handles[0].getResult()).resolves.toEqual(0);
     await DBOSExecutor.globalInstance?.systemDatabase.setWorkflowStatus(handle.workflowID, StatusString.PENDING, true);
 
-    // Shutdown and restart with different source code. Verify it does not recover.
+    // Shutdown and restart with different source code
+    const oldVersion = DBOS.applicationVersion;
     await DBOS.shutdown();
     class YetAnotherWorkflow {
       @DBOS.workflow()
@@ -122,56 +123,80 @@ describe('test-app-version', () => {
       }
     }
     await DBOS.launch();
-    handles = await recoverPendingWorkflows();
-    expect(handles.length).toBe(0);
+    expect(DBOS.applicationVersion).not.toEqual(oldVersion);
+
+    // Startup recovery covers only its own version, so the old workflow is still pending
+    const pending = await DBOS.getWorkflowStatus(handle.workflowID);
+    expect(pending?.status).toBe(StatusString.PENDING);
+    expect(pending?.executorId).toBe('test-app-version-recovery');
+
+    // Explicit recovery re-enqueues it on its own version, which this process does not run
+    handles = await recoverPendingWorkflows(['test-app-version-recovery']);
+    expect(handles.map((h) => h.workflowID)).toEqual([handle.workflowID]);
+    const requeued = await DBOS.getWorkflowStatus(handle.workflowID);
+    expect(requeued?.status).toBe(StatusString.ENQUEUED);
+    expect(requeued?.applicationVersion).toBe(oldVersion);
     await expect(YetAnotherWorkflow.anotherWorkflow()).resolves.toEqual(1);
   });
 
-  test('test-recover-workflows-version-override', async () => {
+  test('test-recover-workflows-any-version', async () => {
     class TestRecoverWorkflowsVersion {
       @DBOS.workflow()
-      static async target(x: number) {
+      static async target(x: string) {
         return Promise.resolve(x);
       }
     }
 
+    const queueName = 'recover-any-version';
     const launch = async (version: string) => {
       await DBOS.shutdown();
       config.applicationVersion = version;
       DBOS.setConfig(config);
       await DBOS.launch();
+      await DBOS.registerQueue(queueName, { globalConcurrency: 1, onConflict: 'always_update' });
     };
-
-    await launch('v1');
-    const wfid = randomUUID();
-    const handle = await DBOS.startWorkflow(TestRecoverWorkflowsVersion, { workflowID: wfid }).target(5);
-    await expect(handle.getResult()).resolves.toBe(5);
     const client = new Client({ connectionString: config.systemDatabaseUrl });
     await client.connect();
+    const pendingOnQueue = async () => {
+      const { rows } = await client.query<{ count: string }>(
+        `SELECT count(*) AS count FROM dbos.workflow_status WHERE queue_name = $1 AND status = $2`,
+        [queueName, StatusString.PENDING],
+      );
+      return Number(rows[0].count);
+    };
+
     try {
-      await client.query(`UPDATE dbos.workflow_status SET status=$1, executor_id=$2 WHERE workflow_uuid=$3`, [
-        StatusString.PENDING,
-        'dead-executor',
-        wfid,
-      ]);
+      await launch('v1');
+      const wfid = randomUUID();
+      const handle = await DBOS.startWorkflow(TestRecoverWorkflowsVersion, { workflowID: wfid, queueName }).target(
+        'v1',
+      );
+      await expect(handle.getResult()).resolves.toBe('v1');
+      await client.query(
+        `UPDATE dbos.workflow_status SET status=$1, executor_id=$2, queue_name=$3 WHERE workflow_uuid=$4`,
+        [StatusString.PENDING, 'dead-executor', queueName, wfid],
+      );
+
+      // A v2 process recovers the dead executor's v1 workflow, freeing the queue's only slot
+      await launch('v2');
+      await expect(pendingOnQueue()).resolves.toBe(1);
+      const handles = await DBOS.recoverWorkflows(['dead-executor']);
+      expect(handles.map((h) => h.workflowID)).toEqual([wfid]);
+      await expect(pendingOnQueue()).resolves.toBe(0);
+
+      // v2 runs its own work but skips the older v1 workflow ahead of it
+      const v2Handle = await DBOS.startWorkflow(TestRecoverWorkflowsVersion, { queueName }).target('v2');
+      await expect(v2Handle.getResult()).resolves.toBe('v2');
+      const stat = await DBOS.getWorkflowStatus(wfid);
+      expect(stat?.status).toBe(StatusString.ENQUEUED);
+      expect(stat?.applicationVersion).toBe('v1');
+
+      // A v1 process runs it
+      await launch('v1');
+      await expect(DBOS.retrieveWorkflow(wfid).getResult()).resolves.toBe('v1');
     } finally {
       await client.end();
     }
-
-    // A v2 process recovers only v2 workflows unless told otherwise
-    await launch('v2');
-    await expect(DBOS.recoverWorkflows(['dead-executor'])).resolves.toEqual([]);
-    const handles = await DBOS.recoverWorkflows(['dead-executor'], { applicationVersion: 'v1' });
-    expect(handles.map((h) => h.workflowID)).toEqual([wfid]);
-
-    // Re-enqueued on its own version, so the v2 process leaves it alone
-    const stat = await DBOS.getWorkflowStatus(wfid);
-    expect(stat?.status).toBe(StatusString.ENQUEUED);
-    expect(stat?.applicationVersion).toBe('v1');
-
-    // A v1 process runs it
-    await launch('v1');
-    await expect(DBOS.retrieveWorkflow(wfid).getResult()).resolves.toBe(5);
   });
 
   test('test-setting-app-version', async () => {

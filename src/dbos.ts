@@ -1381,22 +1381,18 @@ export class DBOS {
   }
 
   /**
-   * Recover the PENDING workflows of the given executors by re-enqueueing them on their application version.
+   * Recover the PENDING workflows of the given executors by re-enqueueing them.
    * @param executorIDs - IDs of the executors whose workflows to recover
-   * @param options.applicationVersion - Recover workflows from this application version instead of this process's
    * @returns Handles to the recovered workflows
    * @throws DBOSError if called from within a workflow or step
    */
-  static async recoverWorkflows<T = unknown>(
-    executorIDs: string[],
-    options?: { applicationVersion?: string },
-  ): Promise<WorkflowHandle<Awaited<T>>[]> {
+  static async recoverWorkflows<T = unknown>(executorIDs: string[]): Promise<WorkflowHandle<Awaited<T>>[]> {
     ensureDBOSIsLaunched('recoverWorkflows');
     // Recovery can re-enqueue the calling workflow, fencing it out of its own execution.
     if (DBOS.isWithinWorkflow()) {
       throw new DBOSError('DBOS.recoverWorkflows cannot be called from within a workflow or step');
     }
-    const recovered = await DBOS.#executor.recoverExecutorWorkflows(executorIDs, options?.applicationVersion);
+    const recovered = await DBOS.#executor.recoverExecutorWorkflows(executorIDs);
     return recovered.map(({ workflowID, shardKey }) => new RetrievedHandle<Awaited<T>>(workflowID, shardKey));
   }
 
