@@ -3002,14 +3002,16 @@ export class DBOS {
    */
   static async setLatestApplicationVersion(versionName: string, options?: { applicationName?: string }): Promise<void> {
     ensureDBOSIsLaunched('setLatestApplicationVersion');
-    // Promotion is a side effect on shared state, so it belongs in a step, not a workflow body.
-    if (DBOS.isInWorkflow()) {
-      throw new DBOSError('DBOS.setLatestApplicationVersion cannot be called from a workflow; call it from a step');
-    }
-    await DBOSExecutor.globalInstance!.systemDatabase.updateApplicationVersionTimestamp(
-      versionName,
-      Date.now(),
-      options?.applicationName,
+    // The promotion commits atomically with its checkpoint, so a replay does not promote again.
+    await runTransactionalInternalStep(
+      (client) =>
+        DBOSExecutor.globalInstance!.systemDatabase.updateApplicationVersionTimestamp(
+          versionName,
+          Date.now(),
+          options?.applicationName,
+          client,
+        ),
+      'DBOS.setLatestApplicationVersion',
     );
   }
 

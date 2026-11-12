@@ -134,26 +134,14 @@ const queueWorkflow = DBOS.registerWorkflow(
   { name: 'durabilityQueueWorkflow' },
 );
 
-const promote = DBOS.registerStep(async () => DBOS.setLatestApplicationVersion(names.version), {
-  name: 'durabilityPromote',
-});
-
 const versionWorkflow = DBOS.registerWorkflow(
   async () => {
-    // Promoting a version is refused in a workflow body, before it takes a step ID,
-    // but allowed in a step.
-    let refused = '';
-    try {
-      await DBOS.setLatestApplicationVersion(names.version);
-    } catch (e) {
-      refused = (e as Error).message;
-    }
-    await promote();
+    await DBOS.setLatestApplicationVersion(names.version);
     const listedAt = (await DBOS.listApplicationVersions()).find(
       (v) => v.versionName === names.version,
     )!.versionTimestamp;
     const latest = await DBOS.getLatestApplicationVersion();
-    return { refused, listedAt, latestName: latest.versionName, latestAt: latest.versionTimestamp };
+    return { listedAt, latestName: latest.versionName, latestAt: latest.versionTimestamp };
   },
   { name: 'durabilityVersionWorkflow' },
 );
@@ -164,11 +152,10 @@ const scheduledTarget = DBOS.registerWorkflow(async (_scheduledAt: Date, _ctx: u
 
 const concurrentWorkflow = DBOS.registerWorkflow(
   async () => {
-    // Validation errors and refusals throw before the calls take a step ID.
+    // Validation errors throw before the calls take a step ID.
     const refusals = await Promise.allSettled([
       DBOS.registerQueue('_dbos_reserved'),
       DBOS.createSchedule({ scheduleName: 'bad', workflowFn: scheduledTarget, schedule: 'nope' }),
-      DBOS.setLatestApplicationVersion(names.version),
     ]);
     // Every call claims its step ID before its first await, so the numbering follows call
     // order. Each group ends with an extra call, so even its last variant has a later
@@ -192,6 +179,7 @@ const concurrentWorkflow = DBOS.registerWorkflow(
       DBOS.deleteQueue(`no-such-queue-${randomUUID()}`),
       DBOS.getLatestApplicationVersion(),
       DBOS.listApplicationVersions(),
+      DBOS.setLatestApplicationVersion(names.version),
       DBOS.listQueues(),
     ]);
     await DBOS.deleteSchedule(names.schedule);
@@ -337,15 +325,10 @@ describe('api-durability', () => {
     const handle = await DBOS.startWorkflow(versionWorkflow)();
     const result = await handle.getResult();
     const promotedAt = result.latestAt;
-    expect(result).toEqual({
-      refused: 'DBOS.setLatestApplicationVersion cannot be called from a workflow; call it from a step',
-      listedAt: promotedAt,
-      latestName: names.version,
-      latestAt: promotedAt,
-    });
+    expect(result).toEqual({ listedAt: promotedAt, latestName: names.version, latestAt: promotedAt });
     const steps = await stepsOf(handle.workflowID);
     expect(steps.map((s) => s[1])).toEqual([
-      'durabilityPromote',
+      'DBOS.setLatestApplicationVersion',
       'DBOS.listApplicationVersions',
       'DBOS.getLatestApplicationVersion',
     ]);
@@ -371,7 +354,7 @@ describe('api-durability', () => {
     names.version = DBOS.applicationVersion;
 
     const handle = await DBOS.startWorkflow(concurrentWorkflow)();
-    expect(await handle.getResult()).toEqual(['rejected', 'rejected', 'rejected']);
+    expect(await handle.getResult()).toEqual(['rejected', 'rejected']);
     const steps = await stepsOf(handle.workflowID);
     expect(steps.map((s) => s[1])).toEqual([
       'DBOS.createSchedule',
@@ -385,10 +368,11 @@ describe('api-durability', () => {
       'DBOS.deleteQueue',
       'DBOS.getLatestApplicationVersion',
       'DBOS.listApplicationVersions',
+      'DBOS.setLatestApplicationVersion',
       'DBOS.listQueues',
       'DBOS.deleteSchedule',
     ]);
-    // Consecutive IDs: the refused and invalid calls took none.
+    // Consecutive IDs: the invalid calls took none.
     expect(steps.map((s) => s[0])).toEqual(steps.map((_, i) => steps[0][0] + i));
   }, 60000);
 
