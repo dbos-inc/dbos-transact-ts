@@ -5569,11 +5569,13 @@ export class SystemDatabase {
     versionName: string,
     newTimestamp: number,
     applicationName?: string,
+    txnClient?: PoolClient,
   ): Promise<void> {
     const owner = applicationName ?? this.appName;
-    const client = await this.connect();
+    // A caller-supplied client is already in a transaction, which owns BEGIN and COMMIT.
+    const client = txnClient ?? (await this.connect());
     try {
-      await client.query('BEGIN');
+      if (!txnClient) await client.query('BEGIN');
       const resolved = await this.#resolveRowOwner(
         client,
         'application_versions',
@@ -5593,12 +5595,12 @@ export class SystemDatabase {
          WHERE ${this.global(undefined, params)} AND version_name = $2 AND ${scope}`,
         params,
       );
-      await client.query('COMMIT');
+      if (!txnClient) await client.query('COMMIT');
     } catch (e) {
-      await client.query('ROLLBACK');
+      if (!txnClient) await client.query('ROLLBACK');
       throw e;
     } finally {
-      client.release();
+      if (!txnClient) client.release();
     }
   }
 
