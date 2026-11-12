@@ -113,6 +113,7 @@ import {
   migrateSystemDatabase,
   createSystemDatabase,
   grantDbosSchemaPermissions,
+  withDbRetry,
 } from './system_database';
 import { readStreamCore, readStreamOffsetCore } from './streams';
 import { PoolClient } from 'pg';
@@ -465,6 +466,15 @@ export function runInternalStep<T>(
   return callback();
 }
 
+/**
+ * Like `runInternalStep`, but when the call is recorded as a workflow step, retry the
+ * callback's transient database errors: a recorded error would be re-raised on every
+ * replay. Other callers fail fast.
+ */
+function runRetriedInternalStep<T>(callback: () => Promise<T>, funcName: string): Promise<T> {
+  return runInternalStep(DBOS.isInWorkflow() ? () => withDbRetry(callback) : callback, funcName);
+}
+
 export async function getResultInternal<T>(
   workflowID: string,
   timeoutSeconds?: number,
@@ -634,6 +644,10 @@ export class DBOS {
     systemDatabaseUrl: string,
     options: { schemaName?: string; applicationRole?: string; sharding?: boolean } = {},
   ): Promise<void> {
+    // Migration is a database side effect, so it belongs in a step, not a workflow body.
+    if (DBOS.isInWorkflow()) {
+      throw new DBOSError('DBOS.migrate cannot be called from a workflow; call it from a step');
+    }
     if (options.sharding) {
       // Sharded migrations come from Transact Enterprise; the grant is the same.
       const sysdb = createSystemDatabase({
@@ -2775,26 +2789,26 @@ export class DBOS {
     }
 
     const serializer = DBOSExecutor.globalInstance!.serializer;
-    const schedInternal: WorkflowScheduleInternal = {
-      scheduleId: createScheduleId(),
-      scheduleName: options.scheduleName,
-      workflowName: funcName,
-      workflowClassName: className,
-      schedule: options.schedule,
-      status: 'ACTIVE',
-      context: await serializer.stringify(options.context),
-      lastFiredAt: null,
-      automaticBackfill: options.options?.automaticBackfill ?? false,
-      cronTimezone: options.options?.cronTimezone ?? null,
-      queueName: options.options?.queueName ?? null,
-      applicationName: globalParams.appName,
-      shardKey: options.options?.shardKey,
-    };
-
-    await runTransactionalInternalStep(
-      (client) => DBOSExecutor.globalInstance!.systemDatabase.createSchedule(schedInternal, client),
-      'DBOS.createSchedule',
-    );
+    // The context is serialized inside the step, so the step ID is claimed before any
+    // await and concurrent calls in a workflow number their steps in call order.
+    await runTransactionalInternalStep(async (client) => {
+      const schedInternal: WorkflowScheduleInternal = {
+        scheduleId: createScheduleId(),
+        scheduleName: options.scheduleName,
+        workflowName: funcName,
+        workflowClassName: className,
+        schedule: options.schedule,
+        status: 'ACTIVE',
+        context: await serializer.stringify(options.context),
+        lastFiredAt: null,
+        automaticBackfill: options.options?.automaticBackfill ?? false,
+        cronTimezone: options.options?.cronTimezone ?? null,
+        queueName: options.options?.queueName ?? null,
+        applicationName: globalParams.appName,
+        shardKey: options.options?.shardKey,
+      };
+      return DBOSExecutor.globalInstance!.systemDatabase.createSchedule(schedInternal, client);
+    }, 'DBOS.createSchedule');
   }
 
   /**
@@ -2869,17 +2883,17 @@ export class DBOS {
       validateTimezone(updates.cronTimezone);
     }
     const serializer = DBOSExecutor.globalInstance!.serializer;
-    // Only the keys the caller provided are updated. An `undefined` value leaves a field unchanged; `null` clears a nullable field. Including `context` (even as `undefined`) sets it, since `undefined` is a valid empty context.
-    const internalUpdates: WorkflowScheduleUpdate = {};
-    if (updates.schedule !== undefined) internalUpdates.schedule = updates.schedule;
-    if ('context' in updates) internalUpdates.context = await serializer.stringify(updates.context);
-    if (updates.automaticBackfill !== undefined) internalUpdates.automaticBackfill = updates.automaticBackfill;
-    if (updates.cronTimezone !== undefined) internalUpdates.cronTimezone = updates.cronTimezone;
-    if (updates.queueName !== undefined) internalUpdates.queueName = updates.queueName;
-    await runTransactionalInternalStep(
-      (client) => DBOSExecutor.globalInstance!.systemDatabase.updateSchedule(name, internalUpdates, client),
-      'DBOS.updateSchedule',
-    );
+    // The context is serialized inside the step, so the step ID is claimed before any await.
+    await runTransactionalInternalStep(async (client) => {
+      // Only the keys the caller provided are updated. An `undefined` value leaves a field unchanged; `null` clears a nullable field. Including `context` (even as `undefined`) sets it, since `undefined` is a valid empty context.
+      const internalUpdates: WorkflowScheduleUpdate = {};
+      if (updates.schedule !== undefined) internalUpdates.schedule = updates.schedule;
+      if ('context' in updates) internalUpdates.context = await serializer.stringify(updates.context);
+      if (updates.automaticBackfill !== undefined) internalUpdates.automaticBackfill = updates.automaticBackfill;
+      if (updates.cronTimezone !== undefined) internalUpdates.cronTimezone = updates.cronTimezone;
+      if (updates.queueName !== undefined) internalUpdates.queueName = updates.queueName;
+      return DBOSExecutor.globalInstance!.systemDatabase.updateSchedule(name, internalUpdates, client);
+    }, 'DBOS.updateSchedule');
   }
 
   static async applySchedules(
@@ -2961,7 +2975,10 @@ export class DBOS {
    */
   static async listApplicationVersions(): Promise<VersionInfo[]> {
     ensureDBOSIsLaunched('listApplicationVersions');
-    return await DBOSExecutor.globalInstance!.systemDatabase.listApplicationVersions();
+    return await runRetriedInternalStep(
+      () => DBOSExecutor.globalInstance!.systemDatabase.listApplicationVersions(),
+      'DBOS.listApplicationVersions',
+    );
   }
 
   /**
@@ -2970,7 +2987,11 @@ export class DBOS {
    */
   static async getLatestApplicationVersion(): Promise<VersionInfo> {
     ensureDBOSIsLaunched('getLatestApplicationVersion');
-    return await DBOSExecutor.globalInstance!.systemDatabase.getLatestApplicationVersion();
+    // The system database method already retries transient errors.
+    return await runInternalStep(
+      () => DBOSExecutor.globalInstance!.systemDatabase.getLatestApplicationVersion(),
+      'DBOS.getLatestApplicationVersion',
+    );
   }
 
   /**
@@ -2979,6 +3000,10 @@ export class DBOS {
    */
   static async setLatestApplicationVersion(versionName: string, options?: { applicationName?: string }): Promise<void> {
     ensureDBOSIsLaunched('setLatestApplicationVersion');
+    // Promotion is a side effect on shared state, so it belongs in a step, not a workflow body.
+    if (DBOS.isInWorkflow()) {
+      throw new DBOSError('DBOS.setLatestApplicationVersion cannot be called from a workflow; call it from a step');
+    }
     await DBOSExecutor.globalInstance!.systemDatabase.updateApplicationVersionTimestamp(
       versionName,
       Date.now(),
@@ -3006,30 +3031,34 @@ export class DBOS {
     const { onConflict = 'update_if_latest_version', ...params } = options;
     WorkflowQueue.validateQueueRegistration(name, params);
 
-    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
-    let updateExisting: boolean;
-    if (onConflict === 'always_update') {
-      updateExisting = true;
-    } else if (onConflict === 'never_update') {
-      updateExisting = false;
-    } else {
-      const latest = await sysdb.getLatestApplicationVersion();
-      updateExisting = latest.versionName === globalParams.appVersion;
-    }
+    // In a workflow this is a step: every database read and write runs inside it, and it
+    // records the queue's plain record, which any serializer stores.
+    const persisted = await runRetriedInternalStep(async () => {
+      const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+      let updateExisting: boolean;
+      if (onConflict === 'always_update') {
+        updateExisting = true;
+      } else if (onConflict === 'never_update') {
+        updateExisting = false;
+      } else {
+        const latest = await sysdb.getLatestApplicationVersion();
+        updateExisting = latest.versionName === globalParams.appVersion;
+      }
 
-    const record = WorkflowQueue.recordFromParams(name, params);
-    const inserted = await sysdb.upsertQueue(record, updateExisting);
+      const record = WorkflowQueue.recordFromParams(name, params);
+      const inserted = await sysdb.upsertQueue(record, updateExisting);
 
-    const persisted = await sysdb.getQueue(name);
-    if (persisted === null) {
-      throw new Error(`Queue '${name}' missing from database after upsert`);
-    }
-    const queue = new WorkflowQueue(persisted);
-    if (inserted) {
-      DBOSExecutor.globalInstance!.logger.info(`Registered new queue:`);
-      logQueue(DBOSExecutor.globalInstance!.logger, queue);
-    }
-    return queue;
+      const stored = await sysdb.getQueue(name);
+      if (stored === null) {
+        throw new Error(`Queue '${name}' missing from database after upsert`);
+      }
+      if (inserted) {
+        DBOSExecutor.globalInstance!.logger.info(`Registered new queue:`);
+        logQueue(DBOSExecutor.globalInstance!.logger, new WorkflowQueue(stored));
+      }
+      return stored;
+    }, 'DBOS.registerQueue');
+    return new WorkflowQueue(persisted);
   }
 
   /**
@@ -3083,7 +3112,10 @@ export class DBOS {
   /** Delete a database-backed queue. Pending workflows on it are unrecoverable. */
   static async deleteQueue(name: string): Promise<void> {
     ensureDBOSIsLaunched('deleteQueue');
-    await DBOSExecutor.globalInstance!.systemDatabase.deleteQueue(name);
+    await runRetriedInternalStep(
+      () => DBOSExecutor.globalInstance!.systemDatabase.deleteQueue(name),
+      'DBOS.deleteQueue',
+    );
   }
 
   /**
@@ -3093,7 +3125,10 @@ export class DBOS {
    */
   static async listQueues(applicationName?: string | string[]): Promise<WorkflowQueue[]> {
     ensureDBOSIsLaunched('listQueues');
-    const records = await DBOSExecutor.globalInstance!.systemDatabase.listQueues(applicationName);
+    const records = await runRetriedInternalStep(
+      () => DBOSExecutor.globalInstance!.systemDatabase.listQueues(applicationName),
+      'DBOS.listQueues',
+    );
     return records.map((record) => new WorkflowQueue(record));
   }
 }
