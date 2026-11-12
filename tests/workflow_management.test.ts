@@ -1834,6 +1834,15 @@ describe('test-fork', () => {
     }
 
     @DBOS.workflow()
+    static async forkThenStartWorkflow(id: string, assignedID: string): Promise<[string, string]> {
+      return await DBOS.withNextWorkflowID(assignedID, async () => {
+        const forked = await DBOS.forkWorkflow(id, 0);
+        const started = await DBOS.startWorkflow(ExampleWorkflow).steplessWorkflow();
+        return [forked.workflowID, started.workflowID];
+      });
+    }
+
+    @DBOS.workflow()
     static async parentWorkflow() {
       await ExampleWorkflow.stepOne(1);
       const handle = await DBOS.startWorkflow(ExampleWorkflow).childWorkflow();
@@ -2060,6 +2069,27 @@ describe('test-fork', () => {
     expect(ExampleWorkflow.stepThreeCount).toBe(2);
     expect(ExampleWorkflow.stepFourCount).toBe(2);
     expect(ExampleWorkflow.stepFiveCount).toBe(2);
+  });
+
+  test('test-fork-WithNextWorkflowId-replay', async () => {
+    const targetID = randomUUID();
+    await (await DBOS.startWorkflow(ExampleWorkflow, { workflowID: targetID }).steplessWorkflow()).getResult();
+
+    const parentID = randomUUID();
+    const assignedID = randomUUID();
+    const handle = await DBOS.startWorkflow(ExampleWorkflow, { workflowID: parentID }).forkThenStartWorkflow(
+      targetID,
+      assignedID,
+    );
+    const result = await handle.getResult();
+    const steps = (await DBOS.listWorkflowSteps(parentID))!;
+    const startStepID = steps.find((s) => s.name !== 'DBOS.forkWorkflow' && s.childWorkflowID)!.functionID;
+    expect(result).toEqual([assignedID, `${parentID}-${startStepID}`]);
+
+    // Replay the fork step from its checkpoint and run the start live: the assigned ID is
+    // still consumed by the fork, so the start derives its ID instead of reusing it.
+    const forked = await DBOS.forkWorkflow<[string, string]>(parentID, startStepID);
+    await expect(forked.getResult()).resolves.toEqual([assignedID, `${forked.workflowID}-${startStepID}`]);
   });
 
   test('test-fork-version', async () => {
