@@ -4461,6 +4461,21 @@ export class SystemDatabase {
     return rows[0].workflow_uuid;
   }
 
+  /** How many of this queue's workflows are running across every worker. */
+  @dbRetry()
+  async countPendingQueueWorkflows(queueName: string): Promise<number> {
+    const params: unknown[] = [queueName, StatusString.PENDING];
+    const scope = `${this.scoped(undefined, params)} AND ${this.appNameFilter('application_name', this.appName, params)}`;
+    const { rows } = await this.#pollWithLimiter(() =>
+      this.pool.query<{ count: string }>(
+        `SELECT COUNT(*) FROM "${this.schemaName}".workflow_status
+         WHERE queue_name = $1 AND status = $2 AND ${scope}`,
+        params,
+      ),
+    );
+    return Number(rows[0]?.count ?? 0);
+  }
+
   @dbRetry()
   async getQueuePartitions(queueName: string): Promise<string[]> {
     // Recursive-CTE loose index scan: SELECT DISTINCT would scan every ENQUEUED row, whereas each iteration here is one seek on idx_workflow_status_partition_dequeue_v3, so cost scales with the number of partitions rather than the backlog depth.
