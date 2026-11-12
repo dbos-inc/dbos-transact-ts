@@ -1472,9 +1472,11 @@ export class DBOS {
     },
   ): Promise<WorkflowHandle<Awaited<T>>> {
     ensureDBOSIsLaunched('forkWorkflow');
+    // Consume an ID assigned by withNextWorkflowID before the step boundary, so that a replayed step also consume it.
+    const newWorkflowID = getNextWFID(options?.newWorkflowID);
     return await bindShardKeys([[workflowID, options?.shardKey]], async () => {
       const forkedID = await runInternalStep(async () => {
-        return await DBOS.#executor.forkWorkflow(workflowID, startStep, options);
+        return await DBOS.#executor.forkWorkflow(workflowID, startStep, { ...options, newWorkflowID });
       }, 'DBOS.forkWorkflow');
       // A fork lives under its original's shard key, however the caller supplied it.
       const forkKey = DBOS.#executor.systemDatabase.keyHint(workflowID);
