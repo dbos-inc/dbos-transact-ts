@@ -4,6 +4,7 @@ import {
   generateDBOSTestConfig,
   setUpDBOSTestSysDb,
   Event,
+  queueEntriesAreCleanedUp,
   recoverPendingWorkflows,
   reexecuteWorkflowById,
   testUnlessSharded,
@@ -2337,7 +2338,11 @@ describe('test-fork', () => {
     await expect(handle.getResult()).rejects.toThrow(DBOSAwaitedWorkflowCancelledError);
     // The cancelled run outlives getResult; resumed before it exits, it would run stepTwo too.
     await ResumeForkQueueWorkflow.runExited.wait();
-    await expect(DBOS.getWorkflowStatus(wfid)).resolves.toMatchObject({ status: StatusString.CANCELLED });
+    // Cancelling keeps the workflow's queue for a later resume
+    await expect(DBOS.getWorkflowStatus(wfid)).resolves.toMatchObject({
+      status: StatusString.CANCELLED,
+      queueName: 'test_resume_fork_queue',
+    });
     expect(ResumeForkQueueWorkflow.stepOneCount).toBe(1);
     expect(ResumeForkQueueWorkflow.stepTwoCount).toBe(0);
 
@@ -2366,6 +2371,111 @@ describe('test-fork', () => {
     await expect(forkedHandle.getResult()).resolves.toBe(expectedOutput);
     expect(ResumeForkQueueWorkflow.stepOneCount).toBe(1); // Step 1 replayed from checkpoint
     expect(ResumeForkQueueWorkflow.stepTwoCount).toBe(2); // Step 2 was re-executed
+  });
+
+  const delayedOnKeepQueue = { queuePartitionKey: 'p0', priority: 3, delaySeconds: 3600 };
+
+  class KeepQueue {
+    @DBOS.workflow()
+    static async echo(x: number): Promise<number> {
+      return Promise.resolve(x);
+    }
+
+    @DBOS.workflow()
+    static async parent(): Promise<string> {
+      const handle = await DBOS.startWorkflow(KeepQueue, {
+        queueName: 'keep_queue',
+        enqueueOptions: delayedOnKeepQueue,
+      }).echo(0);
+      return handle.workflowID;
+    }
+  }
+
+  /** Enqueue delayed workflows on the partitioned queue and cancel them before they run. */
+  async function cancelDelayed(count: number): Promise<string[]> {
+    const ids = Array.from({ length: count }, () => randomUUID());
+    for (const [i, workflowID] of ids.entries()) {
+      await DBOS.startWorkflow(KeepQueue, {
+        workflowID,
+        queueName: 'keep_queue',
+        enqueueOptions: delayedOnKeepQueue,
+      }).echo(i);
+    }
+    await DBOS.cancelWorkflows(ids);
+    return ids;
+  }
+
+  async function queueColumns(workflowID: string) {
+    const status = await DBOS.getWorkflowStatus(workflowID);
+    return [status?.queueName, status?.queuePartitionKey, status?.priority];
+  }
+
+  test('test-management-keeps-queue', async () => {
+    await DBOS.registerQueue('keep_queue', { partitionConcurrency: 2, onConflict: 'always_update' });
+    await DBOS.registerQueue('other_queue', { onConflict: 'always_update' });
+    const client = await DBOSClient.create({ systemDatabaseUrl: config.systemDatabaseUrl! });
+    try {
+      // Cancelling children keeps their queue, partition key, and priority
+      const parentID = randomUUID();
+      const childID = await DBOS.withNextWorkflowID(parentID, () => KeepQueue.parent());
+      await DBOS.cancelWorkflow(parentID, { cancelChildren: true });
+      await expect(DBOS.getWorkflowStatus(childID)).resolves.toMatchObject({ status: StatusString.CANCELLED });
+      expect(await queueColumns(childID)).toEqual(['keep_queue', 'p0', 3]);
+
+      // A plain resume puts it back exactly where it was
+      const handle = await DBOS.resumeWorkflow<number>(childID);
+      expect(await queueColumns(childID)).toEqual(['keep_queue', 'p0', 3]);
+      await expect(handle.getResult()).resolves.toBe(0);
+
+      // Each resume variant changes only the key; columns are checked before results so a regression fails, not hangs
+      const variants: ((ids: string[], key: string) => Promise<WorkflowHandle<number>[]>)[] = [
+        async (ids, key) => {
+          const handles: WorkflowHandle<number>[] = [];
+          for (const id of ids) handles.push(await client.resumeWorkflow<number>(id, { queuePartitionKey: key }));
+          return handles;
+        },
+        (ids, key) => client.resumeWorkflows<number>(ids, { queuePartitionKey: key }),
+        async (ids, key) => {
+          const handles: WorkflowHandle<number>[] = [];
+          for (const id of ids) handles.push(await DBOS.resumeWorkflow<number>(id, { queuePartitionKey: key }));
+          return handles;
+        },
+        (ids, key) => DBOS.resumeWorkflows<number>(ids, { queuePartitionKey: key }),
+      ];
+      for (const [n, resume] of variants.entries()) {
+        const ids = await cancelDelayed(2);
+        const handles = await resume(ids, `k${n}`);
+        for (const id of ids) {
+          expect(await queueColumns(id)).toEqual(['keep_queue', `k${n}`, 3]);
+        }
+        for (const [i, h] of handles.entries()) {
+          await expect(h.getResult()).resolves.toBe(i);
+        }
+      }
+
+      // A queue name changes only the queue; naming its own partitioned queue keeps the key
+      for (const queueName of ['keep_queue', 'other_queue']) {
+        const [workflowID] = await cancelDelayed(1);
+        const resumed = await DBOS.resumeWorkflow<number>(workflowID, { queueName });
+        expect(await queueColumns(workflowID)).toEqual([queueName, 'p0', 3]);
+        await expect(resumed.getResult()).resolves.toBe(0);
+      }
+
+      // Forks inherit queue, key, and priority; a key or a queue overrides only itself
+      const forkCases: [{ queueName?: string; queuePartitionKey?: string }, unknown[]][] = [
+        [{}, ['keep_queue', 'p0', 3]],
+        [{ queuePartitionKey: 'f' }, ['keep_queue', 'f', 3]],
+        [{ queueName: 'other_queue' }, ['other_queue', 'p0', 3]],
+      ];
+      for (const [options, expected] of forkCases) {
+        const forked = await DBOS.forkWorkflow<number>(childID, 0, options);
+        expect(await queueColumns(forked.workflowID)).toEqual(expected);
+        await expect(forked.getResult()).resolves.toBe(0);
+      }
+    } finally {
+      await client.destroy();
+    }
+    expect(await queueEntriesAreCleanedUp()).toBe(true);
   });
 
   let replacementChildMultiplier = 2;

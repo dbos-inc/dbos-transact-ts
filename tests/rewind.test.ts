@@ -739,12 +739,26 @@ describe('rewind', () => {
     expect(status.queue_name).toBe('rewind_partitioned');
     expect(status.queue_partition_key).toBe('repaired');
 
-    // Omitting the key clears it, omitting the queue falls back to the internal queue.
+    // Omitting the queue keeps the queue and partition key.
     await sysdb().rewindWorkflow(workflowID, 0);
     await expect(DBOS.retrieveWorkflow<number>(workflowID).getResult()).resolves.toBe(3);
     status = await statusRow(workflowID);
+    expect(status.queue_name).toBe('rewind_partitioned');
+    expect(status.queue_partition_key).toBe('repaired');
+
+    // A key alone moves the workflow to that partition of the same queue.
+    await sysdb().rewindWorkflow(workflowID, 0, { queuePartitionKey: 'moved' });
+    await expect(DBOS.retrieveWorkflow<number>(workflowID).getResult()).resolves.toBe(4);
+    status = await statusRow(workflowID);
+    expect(status.queue_name).toBe('rewind_partitioned');
+    expect(status.queue_partition_key).toBe('moved');
+
+    // Naming a queue without a key changes only the queue.
+    await sysdb().rewindWorkflow(workflowID, 0, { queueName: INTERNAL_QUEUE_NAME });
+    await expect(DBOS.retrieveWorkflow<number>(workflowID).getResult()).resolves.toBe(5);
+    status = await statusRow(workflowID);
     expect(status.queue_name).toBe(INTERNAL_QUEUE_NAME);
-    expect(status.queue_partition_key).toBeNull();
+    expect(status.queue_partition_key).toBe('moved');
   });
 
   test('restamps-the-application-version-and-refuses-the-enqueued-workflow', async () => {

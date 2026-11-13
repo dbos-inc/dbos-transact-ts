@@ -699,12 +699,21 @@ describe('queued-wf-tests-simple', () => {
       status: StatusString.ENQUEUED,
     });
 
-    await DBOS.resumeWorkflow(wfid);
+    try {
+      // Resuming without a queue leaves the workflow waiting on its own queue
+      await DBOS.resumeWorkflow(wfid);
+      await expect(regularHandle.getStatus()).resolves.toMatchObject({
+        status: StatusString.ENQUEUED,
+        queueName: TestResumeQueues.queue.name,
+      });
 
-    await expect(regularHandle.getResult()).resolves.toBeUndefined();
-
-    // Complete the blocked workflow. Verify the second regular workflow also completes.
-    TestResumeQueues.blockingEvent.set();
+      // Resuming onto the internal queue starts it immediately, bypassing its queue
+      await DBOS.resumeWorkflow(wfid, { queueName: INTERNAL_QUEUE_NAME });
+      await expect(regularHandle.getResult()).resolves.toBeUndefined();
+    } finally {
+      // Complete the blocked workflow. Verify the second regular workflow also completes.
+      TestResumeQueues.blockingEvent.set();
+    }
     await expect(blockedHandle.getResult()).resolves.toBeUndefined();
     await expect(regularHandleTwo.getResult()).resolves.toBeUndefined();
 
@@ -763,13 +772,30 @@ describe('queued-wf-tests-simple', () => {
       status: StatusString.ENQUEUED,
     });
 
-    await DBOS.resumeWorkflow(wfid);
-    console.log('RESUMED', wfid);
+    try {
+      // Resuming without a queue leaves the workflow waiting on its own queue
+      await DBOS.resumeWorkflow(wfid);
+      await expect(regularHandle.getStatus()).resolves.toMatchObject({
+        status: StatusString.ENQUEUED,
+        queueName: TestResumeQueuesPartitioned.queue.name,
+      });
 
-    await expect(regularHandle.getResult()).resolves.toBeUndefined();
+      // Resuming onto the internal queue starts it immediately, bypassing its queue
+      await DBOS.resumeWorkflow(wfid, { queueName: INTERNAL_QUEUE_NAME });
+      await expect(regularHandle.getResult()).resolves.toBeUndefined();
 
-    // Complete the blocked workflow. Verify the second regular workflow also completes.
-    TestResumeQueuesPartitioned.blockingEvent.set();
+      // A new partition key alone moves it out of the busy partition, still on its queue
+      await DBOS.resumeWorkflow(regularHandleTwo.workflowID, { queuePartitionKey: 'other' });
+      await expect(regularHandleTwo.getStatus()).resolves.toMatchObject({
+        queueName: TestResumeQueuesPartitioned.queue.name,
+        queuePartitionKey: 'other',
+      });
+      await expect(regularHandleTwo.getResult()).resolves.toBeUndefined();
+      await expect(blockedHandle.getStatus()).resolves.toMatchObject({ status: StatusString.PENDING });
+    } finally {
+      // Complete the blocked workflow. Verify the second regular workflow also completes.
+      TestResumeQueuesPartitioned.blockingEvent.set();
+    }
     await expect(blockedHandle.getResult()).resolves.toBeUndefined();
     await expect(regularHandleTwo.getResult()).resolves.toBeUndefined();
 

@@ -677,9 +677,9 @@ describe('dbos-tests', () => {
         const current = await read();
         expect(current.get(otherAppID)?.status).toBe(StatusString.PENDING);
         expect(current.get(unexpiredID)?.status).toBe(StatusString.PENDING);
-        // Cancelling takes a workflow off its queue.
-        expect(current.get(enqueuedID)?.queue_name).toBeNull();
-        expect(current.get(delayedID)?.queue_name).toBeNull();
+        // Cancelling keeps a workflow's queue for a later resume.
+        expect(current.get(enqueuedID)?.queue_name).toBe('unpolled-queue');
+        expect(current.get(delayedID)?.queue_name).toBe('unpolled-queue');
       } finally {
         sweep.mockRestore();
       }
