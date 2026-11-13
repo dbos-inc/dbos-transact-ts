@@ -668,7 +668,7 @@ export class DBOSClient {
 
   async resumeWorkflow<T = unknown>(
     workflowID: string,
-    options?: { queueName?: string; shardKey?: string },
+    options?: { queueName?: string; queuePartitionKey?: string; shardKey?: string },
   ): Promise<WorkflowHandle<Awaited<T>>> {
     const handles = await this.resumeWorkflows<T>([workflowID], options);
     return handles[0];
@@ -676,11 +676,11 @@ export class DBOSClient {
 
   async resumeWorkflows<T = unknown>(
     workflowIDs: string[],
-    options?: { queueName?: string; shardKey?: string },
+    options?: { queueName?: string; queuePartitionKey?: string; shardKey?: string },
   ): Promise<WorkflowHandle<Awaited<T>>[]> {
     await bindShardKeys(
       workflowIDs.map((wid) => [wid, options?.shardKey] as const),
-      () => this.systemDatabase.resumeWorkflows(workflowIDs, options?.queueName),
+      () => this.systemDatabase.resumeWorkflows(workflowIDs, options?.queueName, options?.queuePartitionKey),
     );
     return workflowIDs.map((wfid) => this.retrieveWorkflow<T>(wfid, { shardKey: options?.shardKey }));
   }

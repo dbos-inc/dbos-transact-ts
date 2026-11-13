@@ -1363,7 +1363,7 @@ export class DBOS {
    */
   static async resumeWorkflow<T>(
     workflowID: string,
-    options?: { queueName?: string; shardKey?: string },
+    options?: { queueName?: string; queuePartitionKey?: string; shardKey?: string },
   ): Promise<WorkflowHandle<Awaited<T>>> {
     return await bindShardKeys([[workflowID, options?.shardKey]], async () => {
       await this.resumeWorkflows<T>([workflowID], options);
@@ -1380,14 +1380,18 @@ export class DBOS {
    */
   static async resumeWorkflows<T>(
     workflowIDs: string[],
-    options?: { queueName?: string; shardKey?: string },
+    options?: { queueName?: string; queuePartitionKey?: string; shardKey?: string },
   ): Promise<WorkflowHandle<Awaited<T>>[]> {
     ensureDBOSIsLaunched('resumeWorkflows');
     return await bindShardKeys(
       workflowIDs.map((wid) => [wid, options?.shardKey] as const),
       async () => {
         await runInternalStep(async () => {
-          return DBOSExecutor.globalInstance!.systemDatabase.resumeWorkflows(workflowIDs, options?.queueName);
+          return DBOSExecutor.globalInstance!.systemDatabase.resumeWorkflows(
+            workflowIDs,
+            options?.queueName,
+            options?.queuePartitionKey,
+          );
         }, 'DBOS.resumeWorkflow');
         return workflowIDs.map((wfid) => new RetrievedHandle<Awaited<T>>(wfid, options?.shardKey));
       },

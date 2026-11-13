@@ -1817,7 +1817,7 @@ export class SystemDatabase {
     };
   }
 
-  /** Move claimed workflows that exhausted their attempts off the queue, leaving rows others have moved on alone. */
+  /** Dead-letter claimed workflows that exhausted their attempts, keeping their queue; rows others have moved on are left alone. */
   @dbRetry()
   async deadLetterWorkflows(workflowIDs: string[], minRecoveryAttempts: number): Promise<void> {
     if (workflowIDs.length === 0) return;
@@ -1828,7 +1828,6 @@ export class SystemDatabase {
            owner_xid = NULL,
            deduplication_id = NULL,
            started_at_epoch_ms = NULL,
-           queue_name = NULL,
            updated_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint,
            completed_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint
        WHERE ${this.wfIn(undefined, workflowIDs, params)} AND status = $2 AND recovery_attempts >= $3`,
@@ -2591,7 +2590,7 @@ export class SystemDatabase {
     const params: unknown[] = [StatusString.CANCELLED, StatusString.SUCCESS, StatusString.ERROR];
     await this.pool.query(
       `UPDATE "${this.schemaName}".workflow_status
-       SET status = $1, owner_xid = NULL, queue_name = NULL, deduplication_id = NULL, started_at_epoch_ms = NULL,
+       SET status = $1, owner_xid = NULL, deduplication_id = NULL, started_at_epoch_ms = NULL,
            suspend_key = NULL,
            updated_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint,
            completed_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint
@@ -2608,7 +2607,7 @@ export class SystemDatabase {
   }
 
   @dbRetry()
-  async resumeWorkflows(workflowIDs: string[], queueName?: string): Promise<void> {
+  async resumeWorkflows(workflowIDs: string[], queueName?: string, queuePartitionKey?: string): Promise<void> {
     const client = await this.connect();
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
@@ -2623,15 +2622,19 @@ export class SystemDatabase {
       if (missing.length > 0) {
         throw new DBOSNonExistentWorkflowError(`Workflow ${missing.join(', ')} does not exist`);
       }
+      // Only what is passed changes: the row keeps its queue (the internal one if it has none) and key.
       const updateParams: unknown[] = [
         StatusString.ENQUEUED,
-        queueName ?? INTERNAL_QUEUE_NAME,
+        queueName ?? null,
         StatusString.SUCCESS,
         StatusString.ERROR,
+        INTERNAL_QUEUE_NAME,
+        queuePartitionKey ?? null,
       ];
       await client.query(
         `UPDATE "${this.schemaName}".workflow_status
-         SET status = $1, owner_xid = NULL, queue_name = $2, recovery_attempts = 0,
+         SET status = $1, owner_xid = NULL, queue_name = COALESCE($2::text, queue_name, $5::text),
+             queue_partition_key = COALESCE($6::text, queue_partition_key), recovery_attempts = 0,
              workflow_deadline_epoch_ms = NULL, deduplication_id = NULL,
              started_at_epoch_ms = NULL, suspend_key = NULL,
              updated_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint,
@@ -2967,13 +2970,14 @@ export class SystemDatabase {
         outputParams,
       );
 
-      // Re-enqueue the workflow. Re-asserting the status we read keeps a workflow that
-      // moved on underneath us from being resurrected.
+      // Re-enqueue the workflow, keeping its queue and key unless given. Re-asserting the status
+      // we read keeps a workflow that moved on underneath us from being resurrected.
       const params: unknown[] = [
         StatusString.ENQUEUED,
-        options.queueName ?? INTERNAL_QUEUE_NAME,
+        options.queueName ?? null,
         options.queuePartitionKey ?? null,
         status,
+        INTERNAL_QUEUE_NAME,
       ];
       const setVersion =
         options.applicationVersion !== undefined
@@ -2981,7 +2985,8 @@ export class SystemDatabase {
           : '';
       const { rowCount } = await client.query(
         `UPDATE "${schema}".workflow_status
-         SET status = $1, owner_xid = NULL, queue_name = $2, queue_partition_key = $3, recovery_attempts = 0,
+         SET status = $1, owner_xid = NULL, queue_name = COALESCE($2::text, queue_name, $5::text),
+             queue_partition_key = COALESCE($3::text, queue_partition_key), recovery_attempts = 0,
              workflow_deadline_epoch_ms = NULL, deduplication_id = NULL, started_at_epoch_ms = NULL,
              suspend_key = NULL, completed_at = NULL, output = NULL, error = NULL,
              updated_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint${setVersion}
@@ -3047,7 +3052,8 @@ export class SystemDatabase {
         `SELECT ws.workflow_uuid, ws.name, ws.class_name, ws.config_name, ws.application_id,
                 ws.authenticated_user, ws.authenticated_roles, ws.assumed_role,
                 COALESCE(wi.inputs, ws.inputs) AS inputs, ws.serialization,
-                ws.application_version, ws.attributes, ws.application_name
+                ws.application_version, ws.attributes, ws.application_name,
+                ws.queue_name, ws.queue_partition_key, ws.priority
          FROM "${this.schemaName}".workflow_status ws
          LEFT JOIN "${this.schemaName}".workflow_input wi ON ${this.wfJoin('ws', 'wi')}
          WHERE ${this.wfIn('ws', originalWorkflowIDs, statusParams)}`,
@@ -3060,8 +3066,6 @@ export class SystemDatabase {
           throw new DBOSNonExistentWorkflowError(`Workflow ${wid} does not exist`);
         }
       }
-
-      const queueName = options.queueName ?? INTERNAL_QUEUE_NAME;
 
       // Bulk insert all forked workflow status rows.
       const insertCols = [
@@ -3082,6 +3086,7 @@ export class SystemDatabase {
         'serialization',
         'attributes',
         'application_name',
+        'priority',
       ];
       if (options.timeoutMS !== undefined) {
         insertCols.push('workflow_timeout_ms');
@@ -3109,7 +3114,8 @@ export class SystemDatabase {
             ws.name,
             ws.class_name ?? null,
             ws.config_name ?? null,
-            queueName,
+            // A fork inherits its original's queue, key, and priority, except what is passed.
+            options.queueName ?? ws.queue_name ?? INTERNAL_QUEUE_NAME,
             ws.authenticated_user,
             ws.assumed_role,
             ws.authenticated_roles,
@@ -3117,11 +3123,12 @@ export class SystemDatabase {
             ws.application_id,
             // Legacy column: the payload lives in workflow_input.
             null,
-            options.queuePartitionKey ?? null,
+            options.queuePartitionKey ?? ws.queue_partition_key ?? null,
             origID,
             ws.serialization,
             ws.attributes ? JSON.stringify(ws.attributes) : null,
             forkOwners.get(forkID) ?? null,
+            ws.priority ?? 0,
             ...(options.timeoutMS !== undefined ? [options.timeoutMS] : []),
           ];
         }),
@@ -4427,7 +4434,7 @@ export class SystemDatabase {
     // SKIP LOCKED leaves a row a dequeue or a peer's sweep holds for the next sweep.
     const { rows } = await this.pool.query<{ workflow_uuid: string }>(
       `UPDATE "${this.schemaName}".workflow_status
-       SET status = $1, owner_xid = NULL, queue_name = NULL, deduplication_id = NULL, started_at_epoch_ms = NULL,
+       SET status = $1, owner_xid = NULL, deduplication_id = NULL, started_at_epoch_ms = NULL,
            suspend_key = NULL,
            updated_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint,
            completed_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint

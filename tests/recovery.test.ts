@@ -207,6 +207,8 @@ describe('recovery-tests', () => {
     });
     status = await handle.getStatus();
     expect(status?.recoveryAttempts).toBe(LocalRecovery.maxRecoveryAttempts + 2);
+    // Dead-lettering keeps the workflow's queue.
+    expect(status?.queueName).toBe(queue.name);
   });
 
   test('dead-letter-spares-a-row-given-a-fresh-budget', async () => {
