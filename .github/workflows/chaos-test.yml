@@ -4,20 +4,22 @@ on:
     schedule:
         # Runs every hour on the hour
         - cron: '0 * * * *'
+        - cron: '0 5 9 * *'
     workflow_dispatch:
 
 jobs:
   integration:
-    runs-on: ubuntu-latest
+    runs-on: linux-xarm92
     timeout-minutes: 60
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v8
       with:
         fetch-depth: 0
-        fetch-tags: true
+        fetch-tags: false
 
     - name: Build and Install
       run: |
+        npm linux-xarm92
         npm ci
         npm run build
       working-directory: ./
