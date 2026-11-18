@@ -2787,10 +2787,15 @@ export class SystemDatabase {
 
   // Get the immediate (one-level) child workflow IDs for a set of workflows.
   protected async getDirectChildren(workflowIDs: string[]): Promise<string[]> {
+    return this.directChildrenTxn(this.pool, workflowIDs);
+  }
+
+  /** getDirectChildren on the caller's client, joining its transaction. */
+  protected async directChildrenTxn(client: ClientBase | Pool, workflowIDs: string[]): Promise<string[]> {
     if (workflowIDs.length === 0) {
       return [];
     }
-    const result = await this.pool.query<{ workflow_uuid: string }>(
+    const result = await client.query<{ workflow_uuid: string }>(
       `SELECT workflow_uuid
        FROM "${this.schemaName}".workflow_status
        WHERE parent_workflow_id = ANY($1)`,
@@ -2816,40 +2821,59 @@ export class SystemDatabase {
 
   /** Delete workflows and all associated data, and with deleteChildren every workflow they started, recursively. */
   async deleteWorkflows(workflowIDs: string[], deleteChildren: boolean = false): Promise<void> {
-    const allIds = [...workflowIDs];
-    if (deleteChildren) {
-      for (const wfid of workflowIDs) {
-        allIds.push(...(await this.getWorkflowChildren(wfid)));
-      }
+    if (!deleteChildren) {
+      await this.deleteWorkflowsInternal(workflowIDs);
+      return;
     }
-    await this.deleteWorkflowsInternal(allIds);
+    // Delete each level before reading its children, so a racing child start fails.
+    const deleted = await withDbRetry(async () => {
+      const client = await this.connect();
+      try {
+        return await this.inTransaction(client, async () => {
+          const visited = new Set<string>(workflowIDs);
+          let level = [...workflowIDs];
+          while (level.length > 0) {
+            await this.deleteWorkflowRows(client, level);
+            level = (await this.directChildrenTxn(client, level)).filter((id) => !visited.has(id));
+            for (const id of level) {
+              visited.add(id);
+            }
+          }
+          return [...visited];
+        });
+      } finally {
+        client.release();
+      }
+    });
+    for (const wfid of deleted) {
+      this.runningWorkflowMap.delete(wfid);
+    }
   }
 
   @dbRetry()
   protected async deleteWorkflowsInternal(allIds: string[]): Promise<void> {
     const client = await this.connect();
     try {
-      await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
-      // The payload tables carry no foreign key, so the status delete does not cascade
-      // into them; without this they survive as orphans.
-      for (const table of ['workflow_input', 'workflow_output', 'operation_outputs', 'workflow_status']) {
-        const params: unknown[] = [];
-        await client.query(
-          `DELETE FROM "${this.schemaName}".${table} WHERE ${this.wfIn(undefined, allIds, params)}`,
-          params,
-        );
-      }
-      await client.query('COMMIT');
-    } catch (e) {
-      // Swallowed: a rollback failure must not mask why we are rolling back.
-      await client.query('ROLLBACK').catch(() => undefined);
-      throw e;
+      await this.inTransaction(client, () => this.deleteWorkflowRows(client, allIds));
     } finally {
       client.release();
     }
 
     for (const wfid of allIds) {
       this.runningWorkflowMap.delete(wfid);
+    }
+  }
+
+  protected async deleteWorkflowRows(client: ClientBase, workflowIDs: string[]): Promise<void> {
+    // Status first: it waits out in-flight owned writes, so their payload goes too.
+    // The payload tables carry no foreign key, so the status delete does not cascade
+    // into them; without this they survive as orphans.
+    for (const table of ['workflow_status', 'workflow_input', 'workflow_output', 'operation_outputs']) {
+      const params: unknown[] = [];
+      await client.query(
+        `DELETE FROM "${this.schemaName}".${table} WHERE ${this.wfIn(undefined, workflowIDs, params)}`,
+        params,
+      );
     }
   }
 
