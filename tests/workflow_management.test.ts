@@ -2838,6 +2838,116 @@ describe('wf-cancel-tests', () => {
     await DBOS.deleteWorkflow(parentWfid2, false);
   });
 
+  class DeleteRaceTest {
+    static release = new Event();
+    static attempted = new Event();
+    static outcome: string[] = [];
+
+    @DBOS.workflow()
+    static async child(): Promise<void> {
+      return Promise.resolve();
+    }
+
+    @DBOS.workflow()
+    static async parent(childID: string, waitForRelease: boolean): Promise<void> {
+      if (waitForRelease) {
+        await DeleteRaceTest.release.wait();
+      }
+      try {
+        await DBOS.startWorkflow(DeleteRaceTest, { workflowID: childID }).child();
+        DeleteRaceTest.outcome.push('started');
+      } catch (e) {
+        DeleteRaceTest.outcome.push('failed');
+        throw e;
+      } finally {
+        DeleteRaceTest.attempted.set();
+      }
+    }
+  }
+
+  /** No table keeps a row of these workflows, nor a step that started one of them. */
+  async function expectNoRows(workflowIDs: string[]) {
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    for (const table of ['workflow_status', 'workflow_input', 'workflow_output', 'operation_outputs']) {
+      const { rows } = await sysdb.pool.query(
+        `SELECT workflow_uuid FROM "${sysdb.schemaName}".${table} WHERE workflow_uuid = ANY($1)`,
+        [workflowIDs],
+      );
+      expect({ table, rows }).toEqual({ table, rows: [] });
+    }
+    const { rows } = await sysdb.pool.query(
+      `SELECT workflow_uuid FROM "${sysdb.schemaName}".operation_outputs WHERE child_workflow_id = ANY($1)`,
+      [workflowIDs],
+    );
+    expect(rows).toEqual([]);
+  }
+
+  testUnlessSharded('test-delete-children-races-child-start', async () => {
+    DeleteRaceTest.release = new Event();
+    DeleteRaceTest.attempted = new Event();
+    DeleteRaceTest.outcome = [];
+    const parentID = randomUUID();
+    const childID = randomUUID();
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase as unknown as {
+      directChildrenTxn(client: unknown, ids: string[]): Promise<string[]>;
+    };
+    const original = sysdb.directChildrenTxn.bind(sysdb);
+    let released = false;
+    const spy = jest.spyOn(sysdb, 'directChildrenTxn').mockImplementation(async (client, ids) => {
+      const children = await original(client, ids);
+      if (ids.includes(parentID) && !released) {
+        released = true;
+        // Start the child now; listing the tree first would miss it.
+        DeleteRaceTest.release.set();
+        await Promise.race([DeleteRaceTest.attempted.wait(), sleepms(2000)]);
+      }
+      return children;
+    });
+    try {
+      await DBOS.startWorkflow(DeleteRaceTest, { workflowID: parentID }).parent(childID, true);
+      await DBOS.deleteWorkflow(parentID, true);
+      await DeleteRaceTest.attempted.wait();
+    } finally {
+      spy.mockRestore();
+    }
+    expect(DeleteRaceTest.outcome).toEqual(['failed']);
+    expect(await DBOS.getWorkflowStatus(parentID)).toBeNull();
+    expect(await DBOS.getWorkflowStatus(childID)).toBeNull();
+    await expectNoRows([parentID, childID]);
+  });
+
+  testUnlessSharded('test-delete-children-waits-for-child-start', async () => {
+    DeleteRaceTest.attempted = new Event();
+    DeleteRaceTest.outcome = [];
+    const parentID = randomUUID();
+    const childID = randomUUID();
+    const holding = new Event();
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase as unknown as {
+      initWorkflowStatusInternal(...args: unknown[]): Promise<unknown>;
+    };
+    const original = sysdb.initWorkflowStatusInternal.bind(sysdb);
+    const spy = jest.spyOn(sysdb, 'initWorkflowStatusInternal').mockImplementation(async (...args: unknown[]) => {
+      const result = await original(...args);
+      if ((args[1] as { workflowUUID: string }).workflowUUID === childID) {
+        // Hold the parent's row lock while the delete begins.
+        holding.set();
+        await sleepms(1000);
+      }
+      return result;
+    });
+    try {
+      await DBOS.startWorkflow(DeleteRaceTest, { workflowID: parentID }).parent(childID, false);
+      await holding.wait();
+      await DBOS.deleteWorkflow(parentID, true);
+      await DeleteRaceTest.attempted.wait();
+    } finally {
+      spy.mockRestore();
+    }
+    expect(await DBOS.getWorkflowStatus(parentID)).toBeNull();
+    expect(await DBOS.getWorkflowStatus(childID)).toBeNull();
+    await expectNoRows([parentID, childID]);
+  });
+
   // ==================== Bulk Cancel/Resume/Delete Tests ====================
 
   class BulkCancelTest {
