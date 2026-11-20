@@ -6,6 +6,7 @@ export {
   GetResultOptions,
   PollingOptions,
   WaitFirstOptions,
+  WorkflowHandleGetResultOptions,
   WaitAllOptions,
   SetWorkflowDelayOptions,
   ReadStreamOptions,
