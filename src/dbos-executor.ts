@@ -1349,6 +1349,10 @@ export class DBOSExecutor {
         // complete. Don't checkpoint it, so a resumed workflow re-executes it.
         throw e;
       }
+      if (e instanceof DBOSWorkflowSuspendedError && e.workflowID === workflowID) {
+        // The calling workflow parked inside the step (getResult or waitFirst with suspend); its replay runs the step again.
+        throw e;
+      }
       await this.systemDatabase.recordOperationError(workflowID, functionID, functionName, startTime, e, childWfId);
       throw e;
     }
