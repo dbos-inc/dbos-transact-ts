@@ -212,6 +212,7 @@ export function translateDbosConfig(options: Partial<DBOSConfig>): DBOSConfigInt
     sharding: options.sharding === true,
     suspendMode: options.suspendMode === true,
     externalStores: checkExternalStores(options.externalStores),
+    workflowArchive: options.workflowArchive ?? undefined,
   };
 }
 

@@ -1884,6 +1884,53 @@ describe('test-fork', () => {
     }
   }
 
+  // Copied steps take statement time like the fork's status row, so retention never sees them as older than the fork.
+  testUnlessSharded('test-fork-stamps-copied-steps-no-earlier-than-the-fork', async () => {
+    const wfid = randomUUID();
+    const handle = await DBOS.startWorkflow(ExampleWorkflow, { workflowID: wfid }).stepsWorkflow(10);
+    expect(await handle.getResult()).toBe(550);
+
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    const insertRows = sysdb.insertRows.bind(sysdb);
+    // Let the fork transaction's start fall behind the statement clock.
+    jest.spyOn(sysdb, 'insertRows').mockImplementation(async (client, table, columns, rows, suffix) => {
+      if (table === 'workflow_status') {
+        await client.query('SELECT pg_sleep(0.02)');
+      }
+      return await insertRows(client, table, columns, rows, suffix);
+    });
+    let forkedID: string;
+    try {
+      forkedID = (await DBOS.forkWorkflow(wfid, 3)).workflowID;
+    } finally {
+      jest.restoreAllMocks();
+    }
+    expect(await DBOS.retrieveWorkflow(forkedID).getResult()).toBe(550);
+
+    const dbClient = new Client({ connectionString: config.systemDatabaseUrl });
+    await dbClient.connect();
+    try {
+      const status = await dbClient.query<{ created_at: string }>(
+        'SELECT created_at FROM dbos.workflow_status WHERE workflow_uuid = $1',
+        [forkedID],
+      );
+      const createdAt = Number(status.rows[0].created_at);
+      const original = await dbClient.query(
+        'SELECT 1 FROM dbos.operation_outputs WHERE workflow_uuid = $1 AND function_id < 3',
+        [wfid],
+      );
+      const copied = await dbClient.query<{ retention_timestamp: string }>(
+        'SELECT retention_timestamp FROM dbos.operation_outputs WHERE workflow_uuid = $1 AND function_id < 3',
+        [forkedID],
+      );
+      expect(copied.rows.length).toBeGreaterThan(0);
+      expect(copied.rows.length).toBe(original.rows.length);
+      expect(Math.min(...copied.rows.map((r) => Number(r.retention_timestamp)))).toBeGreaterThanOrEqual(createdAt);
+    } finally {
+      await dbClient.end();
+    }
+  });
+
   test('test-fork-steps', async () => {
     const wfid = randomUUID();
     const handle = await DBOS.startWorkflow(ExampleWorkflow, { workflowID: wfid }).stepsWorkflow(10);

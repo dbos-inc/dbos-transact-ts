@@ -63,6 +63,7 @@ import {
 } from './error';
 import * as enterprise from './enterprise';
 import { checkExternalStores, type ExternalObjectRef, type ExternalStore } from './external_storage';
+import { ARCHIVE_SHARDED_REFUSED, importArchivedWorkflow, type WorkflowArchive } from './workflow_archive';
 import { ClientBase, Pool } from 'pg';
 import { randomUUID } from 'node:crypto';
 import {
@@ -152,6 +153,7 @@ export class DBOSClient {
   private readonly logger: GlobalLogger;
   private readonly systemDatabase: SystemDatabase;
   #externalStorage: enterprise.ExternalStorage | undefined = undefined;
+  #workflowArchive: WorkflowArchive | undefined = undefined;
 
   private constructor(
     systemDatabaseUrl: string,
@@ -198,6 +200,7 @@ export class DBOSClient {
    * @param systemDatabaseIdleTransactionTimeoutMs - An optional PostgreSQL `idle_in_transaction_session_timeout`, in milliseconds, for connections of the system database pool the client creates. Defaults to 60000. Set to 0 or less to leave the server's setting in place. Not applied to a custom `systemDatabasePool`.
    * @param sharding - Whether the system database is sharded (requires @dbos-inc/dbos-enterprise). Defaults to false.
    * @param externalStores - The object stores for `storeExternalObject` and `loadExternalObject`, matching the application's. If there are multiple, `storeExternalObject` must specify one with `storeID`. Requires Transact Enterprise.
+   * @param workflowArchive - The application's workflow archive, if it has one.
    * @returns A Promise that resolves with the DBOSClient instance.
    */
   static async create({
@@ -213,6 +216,7 @@ export class DBOSClient {
     systemDatabaseIdleTransactionTimeoutMs,
     sharding,
     externalStores,
+    workflowArchive,
   }: {
     systemDatabaseUrl: string;
     systemDatabasePool?: Pool;
@@ -226,8 +230,13 @@ export class DBOSClient {
     systemDatabaseIdleTransactionTimeoutMs?: number;
     sharding?: boolean;
     externalStores?: ExternalStore[];
+    workflowArchive?: WorkflowArchive;
   }): Promise<DBOSClient> {
     const stores = checkExternalStores(externalStores);
+    // Refused before connecting, as DBOS refuses it at launch.
+    if (sharding && workflowArchive !== undefined) {
+      throw new DBOSError(ARCHIVE_SHARDED_REFUSED);
+    }
     // Loaded before any connection exists, so a missing package leaves nothing to clean up.
     const ExternalStorage =
       stores.length > 0 ? enterprise.load(enterprise.EXTERNAL_STORAGE.description).ExternalStorage : undefined;
@@ -250,10 +259,16 @@ export class DBOSClient {
     try {
       // Unkeyed statements on a sharded schema would read and write across every tenant's rows.
       await client.systemDatabase.checkShardedSchema();
+      if (workflowArchive !== undefined && (await client.systemDatabase.isCockroach())) {
+        throw new DBOSError('Workflow archiving is not supported on CockroachDB');
+      }
     } catch (e) {
       await client.destroy();
       throw e;
     }
+    // Cancels through the client queue their workflows for the application's archiver.
+    client.systemDatabase.archiveCompletions = workflowArchive !== undefined;
+    client.#workflowArchive = workflowArchive;
     return client;
   }
 
@@ -730,6 +745,23 @@ export class DBOSClient {
     return await bindShardKeys([[workflowID, options?.shardKey]], () =>
       forkWorkflow(this.systemDatabase, workflowID, startStep, options),
     );
+  }
+
+  /**
+   * Copy one archived snapshot of a workflow back into the system database.
+   * @param workflowID - The workflow's ID. It must not already be in the system database.
+   * @param completedAt - The snapshot to import, as its `WorkflowStatus.completedAt` (Unix epoch ms). The imported workflow's completedAt is the import time, so retention keeps it for its usual period from now.
+   * @returns A handle to the imported workflow
+   * @throws DBOSWorkflowArchiveNotConfiguredError if this client has no `workflowArchive`
+   * @throws DBOSNonExistentWorkflowError if the archive has no such snapshot
+   * @throws DBOSWorkflowIDInUseError if the workflow ID is already in the system database
+   */
+  async importArchivedWorkflow<T = unknown>(
+    workflowID: string,
+    completedAt: number,
+  ): Promise<WorkflowHandle<Awaited<T>>> {
+    await importArchivedWorkflow(this.systemDatabase, this.#workflowArchive, workflowID, completedAt);
+    return this.retrieveWorkflow<T>(workflowID);
   }
 
   /**

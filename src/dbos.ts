@@ -113,7 +113,6 @@ import {
   migrateSystemDatabase,
   createSystemDatabase,
   grantDbosSchemaPermissions,
-  withDbRetry,
 } from './system_database';
 import { readStreamCore, readStreamOffsetCore } from './streams';
 import { PoolClient } from 'pg';
@@ -133,6 +132,7 @@ import { enqueueWorkflowWithOptions } from './enqueue_workflow';
 import type { EnqueueWorkflowOptions } from './enqueue_options';
 import assert from 'node:assert';
 import { bindShardKeys } from './shard_keys';
+import { importArchivedWorkflow } from './workflow_archive';
 
 type AnyConstructor = new (...args: unknown[]) => object;
 
@@ -472,7 +472,8 @@ export function runInternalStep<T>(
  * replay. Other callers fail fast.
  */
 function runRetriedInternalStep<T>(callback: () => Promise<T>, funcName: string): Promise<T> {
-  return runInternalStep(DBOS.isInWorkflow() ? () => withDbRetry(callback) : callback, funcName);
+  const retried = () => DBOSExecutor.globalInstance!.systemDatabase.withDbRetry(callback);
+  return runInternalStep(DBOS.isInWorkflow() ? retried : callback, funcName);
 }
 
 export async function getResultInternal<T>(
@@ -830,6 +831,11 @@ export class DBOS {
 
     await DBOSExecutor.globalInstance.initEventReceivers(this.#dbosConfig?.listenQueues || null);
 
+    if (executor.archiver) {
+      executor.logger.debug('Starting workflow archiver');
+      executor.archiver.start();
+    }
+
     if (executor.conductor) {
       executor.conductor.start();
     }
@@ -915,6 +921,11 @@ export class DBOS {
         }
         await executor.awaitRunningWorkflows(drainTimeoutMS);
         await executor.stopBackgroundJobs();
+        // Flushes what it has buffered while the system database is still connected.
+        if (executor.archiver) {
+          await executor.archiver.stop();
+          executor.archiver = undefined;
+        }
       }
 
       // Stop the conductor
@@ -1486,6 +1497,28 @@ export class DBOS {
       const forkKey = DBOS.#executor.systemDatabase.keyHint(workflowID);
       return new RetrievedHandle<Awaited<T>>(forkedID, forkKey);
     });
+  }
+
+  /**
+   * Copy one archived snapshot of a workflow back into the system database.
+   * @param workflowID - The workflow's ID. It must not already be in the system database.
+   * @param completedAt - The snapshot to import, as its `WorkflowStatus.completedAt` (Unix epoch ms). The imported workflow's completedAt is the import time, so retention keeps it for its usual period from now.
+   * @returns A handle to the imported workflow
+   * @throws DBOSWorkflowArchiveNotConfiguredError if no `workflowArchive` is configured
+   * @throws DBOSNonExistentWorkflowError if the archive has no such snapshot
+   * @throws DBOSWorkflowIDInUseError if the workflow ID is already in the system database
+   */
+  static async importArchivedWorkflow<T = unknown>(
+    workflowID: string,
+    completedAt: number,
+  ): Promise<WorkflowHandle<Awaited<T>>> {
+    ensureDBOSIsLaunched('importArchivedWorkflow');
+    await runInternalStep(async () => {
+      const executor = DBOS.#executor;
+      executor.logger.info(`Importing archived workflow: ${workflowID}`);
+      await importArchivedWorkflow(executor.systemDatabase, executor.workflowArchive, workflowID, completedAt);
+    }, 'DBOS.importArchivedWorkflow');
+    return new RetrievedHandle<Awaited<T>>(workflowID);
   }
 
   /**

@@ -1,6 +1,6 @@
 import { workflow_status } from '../schemas/system_db_schema';
 import { DBOS } from '../src';
-import { generateDBOSTestConfig, setUpDBOSTestSysDb, describeUnlessSharded } from './helpers';
+import { generateDBOSTestConfig, setUpDBOSTestSysDb, describeUnlessSharded, retryUntilSuccess } from './helpers';
 import { Client, PoolConfig } from 'pg';
 import { DBOSConfig } from '../src/dbos-executor';
 
@@ -202,6 +202,45 @@ describeUnlessSharded('PostgreSQL Client Functions', () => {
       expect(result).toBe('42-test-{"first":"John","last":"Doe","age":30}');
     } finally {
       await DBOS.shutdown();
+    }
+  });
+
+  // Inputs take statement time like their status row, so retention never sees inputs older than their workflow.
+  test('pg-enqueue-stamps-inputs-no-earlier-than-their-workflow', async () => {
+    const wfid = `pg-inputs-stamp-${Date.now()}`;
+    const dbClient = new Client(poolConfig);
+    try {
+      await dbClient.connect();
+      await dbClient.query('BEGIN');
+      const start = Number(
+        (await dbClient.query<{ ms: string }>('SELECT (EXTRACT(epoch FROM now()) * 1000)::bigint AS ms')).rows[0].ms,
+      );
+      // Let the statement clock pass the transaction's start.
+      await retryUntilSuccess(async () => {
+        const { rows } = await dbClient.query<{ ms: string }>(
+          'SELECT (EXTRACT(epoch FROM clock_timestamp()) * 1000)::bigint AS ms',
+        );
+        expect(Number(rows[0].ms)).toBeGreaterThan(start);
+      });
+      await dbClient.query(
+        `SELECT dbos.enqueue_workflow(workflow_name => 'retrieve_test', queue_name => 'unserved_queue', workflow_id => $1)`,
+        [wfid],
+      );
+      await dbClient.query('COMMIT');
+      const status = await dbClient.query<{ created_at: string }>(
+        'SELECT created_at FROM dbos.workflow_status WHERE workflow_uuid = $1',
+        [wfid],
+      );
+      const createdAt = Number(status.rows[0].created_at);
+      expect(createdAt).toBeGreaterThan(start);
+      const inputs = await dbClient.query<{ retention_timestamp: string }>(
+        'SELECT retention_timestamp FROM dbos.workflow_input WHERE workflow_uuid = $1',
+        [wfid],
+      );
+      expect(inputs.rows).toHaveLength(1);
+      expect(Number(inputs.rows[0].retention_timestamp)).toBeGreaterThanOrEqual(createdAt);
+    } finally {
+      await dbClient.end();
     }
   });
 

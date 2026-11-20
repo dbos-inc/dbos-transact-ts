@@ -344,6 +344,18 @@ export class DBOSExternalStoreError extends DBOSError {
   }
 }
 
+export const WorkflowArchiveNotConfigured = 43;
+/** Raised when reading from the workflow archive with none configured. */
+export class DBOSWorkflowArchiveNotConfiguredError extends DBOSError {
+  constructor() {
+    super(
+      'No workflow archive is configured: set workflowArchive in the DBOS configuration or DBOSClient',
+      WorkflowArchiveNotConfigured,
+    );
+    this.name = 'DBOSWorkflowArchiveNotConfiguredError';
+  }
+}
+
 /**
  * True if `e` is a stream-read timeout, including the portable-serialization
  * replay form, which carries only the original type name.

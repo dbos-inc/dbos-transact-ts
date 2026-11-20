@@ -140,6 +140,8 @@ describe('enterprise-launch', () => {
       ShardedSystemDatabase: class {},
       Suspend: class {},
       ExternalStorage: class {},
+      Archiver: class {},
+      importArchivedWorkflow: () => Promise.resolve(),
     }));
 
     await DBOS.launch({ conductorKey: 'test-key', conductorURL: 'ws://127.0.0.1:1' });
@@ -441,6 +443,9 @@ describe('entitlements', () => {
     expect(enterprise.enabledFeatures({ externalStores: [{}] })).toEqual([enterprise.EXTERNAL_STORAGE]);
     // An empty list configures no store, so it needs no entitlement.
     expect(enterprise.enabledFeatures({ externalStores: [] })).toEqual([]);
+    expect(enterprise.enabledFeatures({ workflowArchive: { archiveID: 'a' } })).toEqual([enterprise.WORKFLOW_ARCHIVE]);
+    expect(enterprise.enabledFeatures({ workflowArchive: undefined })).toEqual([]);
+    expect(enterprise.enabledFeatures({ workflowArchive: null })).toEqual([]);
     // Every registered feature has a distinct entitlement name.
     const names = enterprise.FEATURES.map((f) => f.entitlement);
     expect(new Set(names).size).toBe(names.length);

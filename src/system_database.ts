@@ -899,7 +899,7 @@ function isStatementTimeout(err: unknown): boolean {
 /** Run `operation` under the {@link dbRetry} policy, for code that cannot take the decorator. */
 export async function withDbRetry<T>(
   operation: () => Promise<T>,
-  options: { initialBackoff?: number; maxBackoff?: number } = {},
+  options: { initialBackoff?: number; maxBackoff?: number; isCockroach?: () => Promise<boolean> } = {},
 ): Promise<T> {
   // Read the defaults per call so the backoff stays tunable after the decorator is applied.
   const maxBackoff = options.maxBackoff ?? dbRetryConfig.maxBackoffSec;
@@ -910,13 +910,24 @@ export async function withDbRetry<T>(
     try {
       return await operation();
     } catch (e) {
-      if (retriablePostgresException(e)) {
+      const connectionRetriable = retriablePostgresException(e);
+      // CockroachDB rolls back a transaction that loses a serialization race and expects the client to rerun it.
+      const cockroachRetriable =
+        !connectionRetriable &&
+        isPgDatabaseError(e) &&
+        e.code === '40001' &&
+        options.isCockroach !== undefined &&
+        (await options.isCockroach().catch(() => false));
+      if (connectionRetriable || cockroachRetriable) {
         if (abortSignal?.aborted) throw e;
         retries++;
         // Calculate backoff with jitter
         const actualBackoff = backoff * (0.5 + Math.random());
+        const message = e instanceof Error ? e.message : String(e);
         DBOSExecutor.globalInstance?.logger.warn(
-          `Database connection failed: ${e instanceof Error ? e.message : String(e)}. ` +
+          (cockroachRetriable
+            ? `Transaction lost a serialization conflict: ${message}. `
+            : `Database connection failed: ${message}. `) +
             `Retrying in ${actualBackoff.toFixed(2)}s (attempt ${retries})`,
         );
         // Sleep with backoff
@@ -957,7 +968,9 @@ function dbRetry(
   ): TypedPropertyDescriptor<T> {
     const method = descriptor.value!;
     descriptor.value = async function (this: never, ...args: never): Promise<unknown> {
-      return withDbRetry(() => method.apply(this, args), options);
+      const sysdb = this as unknown as Partial<Pick<SystemDatabase, 'isCockroach'>>;
+      const isCockroach = typeof sysdb?.isCockroach === 'function' ? () => sysdb.isCockroach!() : undefined;
+      return withDbRetry(() => method.apply(this, args), { ...options, isCockroach });
     } as T;
     return descriptor;
   };
@@ -1058,6 +1071,8 @@ export class SystemDatabase {
   readonly notificationsMap: NotificationMap<void> = new NotificationMap();
   readonly workflowEventsMap: NotificationMap<void> = new NotificationMap();
   suspend?: enterprise.Suspend = undefined;
+  // Set when workflow archiving is configured: every terminal transition queues its row.
+  archiveCompletions: boolean = false;
   readonly streamsMap: NotificationMap<void> = new NotificationMap();
   customPool: boolean = false;
 
@@ -1232,6 +1247,14 @@ export class SystemDatabase {
     } finally {
       client.release();
     }
+  }
+
+  /**
+   * What a statement setting completed_at also sets, to queue the row for its application's archiver.
+   * Unclaimed rows have none, so retention collects them unmarked.
+   */
+  protected archiveSet(): string {
+    return this.archiveCompletions ? `, archive_pending = CASE WHEN application_name IS NOT NULL THEN TRUE END` : '';
   }
 
   // ==================== Application Ownership ====================
@@ -1439,7 +1462,7 @@ export class SystemDatabase {
     callback: (renew: BackgroundJobRenew | undefined) => Promise<T>,
   ): Promise<T> {
     // CockroachDB grants every advisory lock, so each process runs every job.
-    if (await this.#isCockroach()) {
+    if (await this.isCockroach()) {
       return await callback(() => Promise.resolve());
     }
     // Leading 8 bytes of SHA-256, big-endian signed, as for the retention lock.
@@ -1481,10 +1504,15 @@ export class SystemDatabase {
     }
   }
 
+  /** operation under the dbRetry policy, also rerun when it loses a CockroachDB serialization race, as decorated methods are. */
+  withDbRetry<T>(operation: () => Promise<T>): Promise<T> {
+    return withDbRetry(operation, { isCockroach: () => this.isCockroach() });
+  }
+
   #cockroach: Promise<boolean> | undefined = undefined;
 
   /** Whether this handle's database is CockroachDB, read on first use. */
-  #isCockroach(): Promise<boolean> {
+  isCockroach(): Promise<boolean> {
     this.#cockroach ??= (async () => {
       const client = await this.connect();
       try {
@@ -1829,7 +1857,7 @@ export class SystemDatabase {
            deduplication_id = NULL,
            started_at_epoch_ms = NULL,
            updated_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint,
-           completed_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint
+           completed_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint${this.archiveSet()}
        WHERE ${this.wfIn(undefined, workflowIDs, params)} AND status = $2 AND recovery_attempts >= $3`,
       params,
     );
@@ -2142,7 +2170,7 @@ export class SystemDatabase {
              deduplication_id = NULL,
              owner_xid = NULL,
              updated_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint,
-             completed_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint
+             completed_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint${this.archiveSet()}
          WHERE ${target} AND status = $2 ${owned}
          RETURNING 1
        ), stored AS (
@@ -2494,7 +2522,7 @@ export class SystemDatabase {
       }
     };
     try {
-      return await withDbRetry(attempt);
+      return await this.withDbRetry(attempt);
     } catch (e) {
       // Retries are done and the transaction rolled back, so record the callback's own failure separately.
       if (e === callbackError) {
@@ -2587,15 +2615,16 @@ export class SystemDatabase {
   }
 
   async #cancelWorkflows(workflowIDs: string[]): Promise<void> {
+    // Unless already complete or cancelled: a repeat cancel would restamp completion.
     const params: unknown[] = [StatusString.CANCELLED, StatusString.SUCCESS, StatusString.ERROR];
     await this.pool.query(
       `UPDATE "${this.schemaName}".workflow_status
        SET status = $1, owner_xid = NULL, deduplication_id = NULL, started_at_epoch_ms = NULL,
            suspend_key = NULL,
            updated_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint,
-           completed_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint
+           completed_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint${this.archiveSet()}
        WHERE ${this.wfIn(undefined, workflowIDs, params)}
-         AND status NOT IN ($2, $3)`,
+         AND status NOT IN ($1, $2, $3)`,
       params,
     );
   }
@@ -2638,7 +2667,7 @@ export class SystemDatabase {
              workflow_deadline_epoch_ms = NULL, deduplication_id = NULL,
              started_at_epoch_ms = NULL, suspend_key = NULL,
              updated_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint,
-             completed_at = NULL
+             completed_at = NULL, archive_pending = NULL
          WHERE ${this.wfIn(undefined, workflowIDs, updateParams)}
            AND status NOT IN ($3, $4)`,
         updateParams,
@@ -2826,7 +2855,7 @@ export class SystemDatabase {
       return;
     }
     // Delete each level before reading its children, so a racing child start fails.
-    const deleted = await withDbRetry(async () => {
+    const deleted = await this.withDbRetry(async () => {
       const client = await this.connect();
       try {
         return await this.inTransaction(client, async () => {
@@ -3012,7 +3041,7 @@ export class SystemDatabase {
          SET status = $1, owner_xid = NULL, queue_name = COALESCE($2::text, queue_name, $5::text),
              queue_partition_key = COALESCE($3::text, queue_partition_key), recovery_attempts = 0,
              workflow_deadline_epoch_ms = NULL, deduplication_id = NULL, started_at_epoch_ms = NULL,
-             suspend_key = NULL, completed_at = NULL, output = NULL, error = NULL,
+             suspend_key = NULL, completed_at = NULL, archive_pending = NULL, output = NULL, error = NULL,
              updated_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint${setVersion}
          WHERE ${this.wf(undefined, workflowID, params)} AND status = $4`,
         params,
@@ -3240,12 +3269,12 @@ export class SystemDatabase {
         }
         const ooKeys = keyed(ooParams);
 
-        // Copy operation outputs
+        // Copy operation outputs, stamped at statement time: never before the fork's created_at, which retention relies on.
         await client.query(
           `${mappingCTE}
            INSERT INTO "${this.schemaName}".operation_outputs
              (${ooKeys.names}workflow_uuid, function_id, output, error, serialization, function_name, child_workflow_id, started_at_epoch_ms, completed_at_epoch_ms, application_name, retention_timestamp${childKey !== undefined ? ', child_shard_key' : ''})
-           SELECT ${ooKeys.exprs}m.fork_id, oo.function_id, oo.output, oo.error, oo.serialization, oo.function_name, ${childWfExpr}, oo.started_at_epoch_ms, oo.completed_at_epoch_ms, m.owner, (EXTRACT(EPOCH FROM now()) * 1000)::bigint${childKey !== undefined ? `, ${childKey}` : ''}
+           SELECT ${ooKeys.exprs}m.fork_id, oo.function_id, oo.output, oo.error, oo.serialization, oo.function_name, ${childWfExpr}, oo.started_at_epoch_ms, oo.completed_at_epoch_ms, m.owner, (EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::bigint${childKey !== undefined ? `, ${childKey}` : ''}
            FROM mapping m
            JOIN "${this.schemaName}".operation_outputs oo
              ON ${this.scoped('oo', ooParams)} AND oo.workflow_uuid = m.orig_id AND oo.function_id < m.start_step`,
@@ -4461,7 +4490,7 @@ export class SystemDatabase {
        SET status = $1, owner_xid = NULL, deduplication_id = NULL, started_at_epoch_ms = NULL,
            suspend_key = NULL,
            updated_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint,
-           completed_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint
+           completed_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint${this.archiveSet()}
        WHERE workflow_uuid IN (
          SELECT workflow_uuid FROM "${this.schemaName}".workflow_status
          WHERE status IN ('${StatusString.ENQUEUED}', '${StatusString.PENDING}', '${StatusString.DELAYED}', '${StatusString.SUSPENDED}')
@@ -4593,7 +4622,7 @@ export class SystemDatabase {
       isLatestVersion = await this.isLatestVersion(appVersion);
     }
     // Row locks only collide when claimers see the same queue head, so serialize claims on the budget's scope; CockroachDB has no advisory locks before 26.3.
-    const useClaimLock = hasSharedBudget && (this.sharded || !(await this.#isCockroach()));
+    const useClaimLock = hasSharedBudget && (this.sharded || !(await this.isCockroach()));
 
     const client = await this.connect();
     try {
@@ -4829,7 +4858,7 @@ export class SystemDatabase {
       isLatestVersion = await this.isLatestVersion(appVersion);
     }
     // Sweeps whose heads differ lock disjoint rows, so a claim also takes its partition's lock; CockroachDB, without advisory locks before 26.3, relies on its SERIALIZABLE default.
-    const usePartitionLocks = this.sharded || !(await this.#isCockroach());
+    const usePartitionLocks = this.sharded || !(await this.isCockroach());
     const client = await this.connect();
     try {
       isLatestVersion ??= await this.isLatestVersion(appVersion, client);
@@ -6128,9 +6157,9 @@ export class SystemDatabase {
     }
 
     if (update.setCompletedAt) {
-      setClause += `, completed_at=${nowMsExpr}`;
+      setClause += `, completed_at=${nowMsExpr}${this.archiveSet()}`;
     } else if (update.clearCompletedAt) {
-      setClause += `, completed_at = NULL`;
+      setClause += `, completed_at = NULL, archive_pending = NULL`;
     }
 
     if (update.ownerXid !== undefined) {

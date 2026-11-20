@@ -40,6 +40,7 @@ export interface workflow_status {
   is_debounced?: boolean; // True if the deduplication ID is a debounce key cleared on the DELAYED->ENQUEUED transition.
   application_name?: string | null; // Owning application. NULL means unclaimed: any application may read and claim the row.
   suspend_key?: string | null; // Topic a SUSPENDED recv waits on; delay_until_epoch_ms holds its wake time.
+  archive_pending?: boolean | null; // TRUE from a terminal transition until the archiver has written it; else NULL.
 }
 
 export interface notifications {

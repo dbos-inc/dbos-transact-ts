@@ -1361,5 +1361,28 @@ $$ LANGUAGE plpgsql;`,
     ALTER COLUMN "updated_at" SET DEFAULT (EXTRACT(EPOCH FROM clock_timestamp()) * 1000.0)::bigint`,
       ],
     },
+    // Statement time, as inputs follow their status row: never stamped before its created_at.
+    {
+      name: '133_workflow_input_retention_clock_timestamp',
+      pg: [
+        `ALTER TABLE "${schemaName}"."workflow_input"
+    ALTER COLUMN "retention_timestamp" SET DEFAULT (EXTRACT(EPOCH FROM clock_timestamp()) * 1000.0)::bigint`,
+      ],
+    },
+    // Set with completed_at while workflow archiving is configured; cleared once archived.
+    {
+      name: '134_workflow_status_archive_pending',
+      pg: [
+        `ALTER TABLE "${schemaName}"."workflow_status" ADD COLUMN IF NOT EXISTS "archive_pending" BOOLEAN DEFAULT NULL`,
+      ],
+    },
+    // Empty unless archiving is configured; each application's archiver scans its own rows in completion order.
+    {
+      name: '135_workflow_status_archive_pending_index',
+      online: true,
+      pg: [
+        `CREATE INDEX ${isCockroach ? '' : 'CONCURRENTLY'} IF NOT EXISTS "idx_workflow_status_archive_pending" ON "${schemaName}"."workflow_status" ("application_name", "completed_at", "workflow_uuid") WHERE "archive_pending" IS TRUE`,
+      ],
+    },
   ];
 }

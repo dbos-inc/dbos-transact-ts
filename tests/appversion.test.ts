@@ -238,6 +238,8 @@ describe('test-app-version', () => {
       ShardedSystemDatabase: class {} as unknown as enterprise.ShardedSystemDatabaseFactory,
       Suspend: class {} as unknown as enterprise.SuspendFactory,
       ExternalStorage: class {} as unknown as enterprise.ExternalStorageFactory,
+      Archiver: class {} as unknown as enterprise.ArchiverFactory,
+      importArchivedWorkflow: () => Promise.resolve(),
     });
     try {
       // An empty DBOS__VMID is an unset one

@@ -31,6 +31,7 @@ import { type StepConfig, validateStepConfig } from './step';
 import * as enterprise from './enterprise';
 import type { ConductorConnection } from './enterprise';
 import type { ExternalStore } from './external_storage';
+import { checkArchiveSupported, type WorkflowArchive } from './workflow_archive';
 import { type AutoUpgradeLoop, autoUpgradableWorkflows, type EnrolledWorkflow } from './auto_upgrade';
 import { TelemetryCollector } from './telemetry/collector';
 import { getActiveSpan, runWithTrace, SpanStatusCode, Tracer } from './telemetry/traces';
@@ -196,6 +197,12 @@ export interface DBOSConfig {
    */
   externalStores?: ExternalStore[];
   /**
+   * Where workflows are archived once they reach a terminal status. Retention then only deletes
+   * workflows already archived. Not supported on a sharded system database or CockroachDB.
+   * Requires Transact Enterprise.
+   */
+  workflowArchive?: WorkflowArchive;
+  /**
    * Milliseconds the latest application version must have been the latest before auto-upgrade
    * re-enqueues PENDING workflows left on older versions.
    */
@@ -303,6 +310,7 @@ export type DBOSConfigInternal = {
   sharding: boolean;
   suspendMode: boolean;
   externalStores: ExternalStore[];
+  workflowArchive?: WorkflowArchive;
 };
 
 export interface InternalWorkflowParams extends WorkflowParams {
@@ -340,6 +348,9 @@ export class DBOSExecutor {
   readonly systemDatabase: SystemDatabase;
   // Set when external stores are configured
   readonly externalStorage: enterprise.ExternalStorage | undefined;
+  // Set when a workflow archive is configured; the archiver is built at init and started at launch.
+  readonly workflowArchive: WorkflowArchive | undefined;
+  archiver: enterprise.Archiver | undefined = undefined;
 
   static readonly defaultNotificationTimeoutSec = 60;
 
@@ -399,6 +410,12 @@ export class DBOSExecutor {
       });
     }
 
+    this.workflowArchive = config.workflowArchive;
+    if (this.workflowArchive !== undefined) {
+      // Before any workflow runs, so every terminal transition is queued for archiving.
+      this.systemDatabase.archiveCompletions = true;
+    }
+
     this.#scheduler = new DynamicSchedulerLoop(
       this.systemDatabase,
       this.serializer,
@@ -442,6 +459,12 @@ export class DBOSExecutor {
         message += String(err);
       }
       throw new DBOSInitializationError(message, err instanceof Error ? err : undefined);
+    }
+    if (this.workflowArchive !== undefined) {
+      // Before recovery, so a refused archive runs no workflow.
+      await checkArchiveSupported(this.systemDatabase);
+      const { Archiver } = enterprise.load(enterprise.WORKFLOW_ARCHIVE.description);
+      this.archiver = new Archiver(this, this.workflowArchive);
     }
     this.initialized = true;
 
