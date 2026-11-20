@@ -51,4 +51,37 @@ describe('cockroach-serialization-retry', () => {
     await expect(sysdb.getQueuePartitions('q')).rejects.toMatchObject({ code: '40001' });
     expect(calls).toBe(1);
   });
+
+  // A transaction that loses the race on its first statement, through a borrowed client.
+  function raceOnFirstDelete(): { begins: () => number } {
+    let begins = 0;
+    let failed = false;
+    const client = {
+      query: (sql: string) => {
+        if (sql.startsWith('BEGIN')) begins++;
+        if (sql.startsWith('DELETE') && !failed) {
+          failed = true;
+          return Promise.reject(serializationFailure());
+        }
+        return Promise.resolve({ rows: [] });
+      },
+      release: () => {},
+    };
+    jest.spyOn(sysdb, 'connect').mockResolvedValue(client as unknown as Awaited<ReturnType<SystemDatabase['connect']>>);
+    return { begins: () => begins };
+  }
+
+  test('a directly retried transaction reruns a lost race on CockroachDB', async () => {
+    jest.spyOn(sysdb, 'isCockroach').mockResolvedValue(true);
+    const race = raceOnFirstDelete();
+    await sysdb.deleteWorkflows(['wf'], true);
+    expect(race.begins()).toBe(2);
+  });
+
+  test('on Postgres a directly retried transaction leaves a 40001 to the caller', async () => {
+    jest.spyOn(sysdb, 'isCockroach').mockResolvedValue(false);
+    const race = raceOnFirstDelete();
+    await expect(sysdb.deleteWorkflows(['wf'], true)).rejects.toMatchObject({ code: '40001' });
+    expect(race.begins()).toBe(1);
+  });
 });

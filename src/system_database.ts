@@ -1504,6 +1504,11 @@ export class SystemDatabase {
     }
   }
 
+  /** operation under the dbRetry policy, also rerun when it loses a CockroachDB serialization race, as decorated methods are. */
+  withDbRetry<T>(operation: () => Promise<T>): Promise<T> {
+    return withDbRetry(operation, { isCockroach: () => this.isCockroach() });
+  }
+
   #cockroach: Promise<boolean> | undefined = undefined;
 
   /** Whether this handle's database is CockroachDB, read on first use. */
@@ -2517,7 +2522,7 @@ export class SystemDatabase {
       }
     };
     try {
-      return await withDbRetry(attempt);
+      return await this.withDbRetry(attempt);
     } catch (e) {
       // Retries are done and the transaction rolled back, so record the callback's own failure separately.
       if (e === callbackError) {
@@ -2850,7 +2855,7 @@ export class SystemDatabase {
       return;
     }
     // Delete each level before reading its children, so a racing child start fails.
-    const deleted = await withDbRetry(async () => {
+    const deleted = await this.withDbRetry(async () => {
       const client = await this.connect();
       try {
         return await this.inTransaction(client, async () => {

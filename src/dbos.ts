@@ -113,7 +113,6 @@ import {
   migrateSystemDatabase,
   createSystemDatabase,
   grantDbosSchemaPermissions,
-  withDbRetry,
 } from './system_database';
 import { readStreamCore, readStreamOffsetCore } from './streams';
 import { PoolClient } from 'pg';
@@ -473,7 +472,8 @@ export function runInternalStep<T>(
  * replay. Other callers fail fast.
  */
 function runRetriedInternalStep<T>(callback: () => Promise<T>, funcName: string): Promise<T> {
-  return runInternalStep(DBOS.isInWorkflow() ? () => withDbRetry(callback) : callback, funcName);
+  const retried = () => DBOSExecutor.globalInstance!.systemDatabase.withDbRetry(callback);
+  return runInternalStep(DBOS.isInWorkflow() ? retried : callback, funcName);
 }
 
 export async function getResultInternal<T>(
