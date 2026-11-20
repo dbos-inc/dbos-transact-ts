@@ -14,6 +14,7 @@ import type { SystemDatabase } from './system_database';
 import { GlobalLogger } from './telemetry/logs';
 import { globalParams } from './utils';
 import type { WorkflowSerializationFormat } from './workflow';
+import type { WorkflowArchive } from './workflow_archive';
 
 export const ENTERPRISE_PACKAGE = '@dbos-inc/dbos-enterprise';
 
@@ -125,6 +126,23 @@ export interface ExternalStorageOptions {
 
 export type ExternalStorageFactory = new (sysdb: SystemDatabase, options: ExternalStorageOptions) => ExternalStorage;
 
+/** Copies workflows the system database marks archive_pending into a workflow archive. */
+export interface Archiver {
+  start(): void;
+  /** Stop, flushing what it has buffered while the system database is still connected. */
+  stop(): Promise<void>;
+}
+
+export type ArchiverFactory = new (executor: DBOSExecutor, archive: WorkflowArchive) => Archiver;
+
+/** Copies one archived snapshot back into the system database, completed as of now. */
+export type ArchivedWorkflowImporter = (
+  sysdb: SystemDatabase,
+  archive: WorkflowArchive,
+  workflowID: string,
+  completedAt: number,
+) => Promise<void>;
+
 /** What the @dbos-inc/dbos-enterprise module must export. */
 export interface Enterprise {
   ConductorWebsocket: ConductorFactory;
@@ -132,6 +150,8 @@ export interface Enterprise {
   ShardedSystemDatabase: ShardedSystemDatabaseFactory;
   Suspend: SuspendFactory;
   ExternalStorage: ExternalStorageFactory;
+  Archiver: ArchiverFactory;
+  importArchivedWorkflow: ArchivedWorkflowImporter;
 }
 
 export const CONDUCTOR = 'Connecting to DBOS Conductor';
@@ -140,7 +160,7 @@ export const CONDUCTOR = 'Connecting to DBOS Conductor';
 export interface Feature {
   readonly entitlement: string;
   readonly description: string;
-  readonly configKey?: 'autoUpgrade' | 'sharding' | 'suspendMode' | 'externalStores';
+  readonly configKey?: 'autoUpgrade' | 'sharding' | 'suspendMode' | 'externalStores' | 'workflowArchive';
 }
 
 export const AUTO_UPGRADE: Feature = {
@@ -167,8 +187,14 @@ export const EXTERNAL_STORAGE: Feature = {
   configKey: 'externalStores',
 };
 
+export const WORKFLOW_ARCHIVE: Feature = {
+  entitlement: 'workflowArchive',
+  description: 'Archiving workflows',
+  configKey: 'workflowArchive',
+};
+
 // Every entitled feature; a new one is a Feature here, named by Conductor's camelCase key.
-export const FEATURES: readonly Feature[] = [AUTO_UPGRADE, SHARDING, SUSPEND, EXTERNAL_STORAGE];
+export const FEATURES: readonly Feature[] = [AUTO_UPGRADE, SHARDING, SUSPEND, EXTERNAL_STORAGE, WORKFLOW_ARCHIVE];
 
 /** The enterprise features a config turns on. */
 export function enabledFeatures(config: {
@@ -176,12 +202,15 @@ export function enabledFeatures(config: {
   sharding?: boolean;
   suspendMode?: boolean;
   externalStores?: readonly unknown[];
+  workflowArchive?: object | null;
 }): Feature[] {
   return FEATURES.filter((f) => {
     if (f.configKey === undefined) return false;
     const value = config[f.configKey];
     // An empty list configures no store, so it needs no entitlement.
-    return Array.isArray(value) ? value.length > 0 : value === true;
+    if (Array.isArray(value)) return value.length > 0;
+    // An object, such as a workflow archive, is on once given.
+    return typeof value === 'object' ? value !== null : value === true;
   });
 }
 
@@ -389,6 +418,8 @@ export function load(feature: string = CONDUCTOR): Enterprise {
     'ShardedSystemDatabase',
     'Suspend',
     'ExternalStorage',
+    'Archiver',
+    'importArchivedWorkflow',
   ] as const) {
     if (typeof loaded?.[name] !== 'function') {
       throw unavailable(feature, `it does not export ${name}`);

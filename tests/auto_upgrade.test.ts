@@ -101,6 +101,8 @@ describeUnlessSharded('auto-upgrade-launch', () => {
       ShardedSystemDatabase: class {},
       Suspend: class {},
       ExternalStorage: class {},
+      Archiver: class {},
+      importArchivedWorkflow: () => Promise.resolve(),
     }));
   });
 

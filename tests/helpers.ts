@@ -341,6 +341,7 @@ export const ALL_ENTITLED: Record<string, boolean> = {
   autoUpgrade: true,
   suspendWorkflows: true,
   externalStorage: true,
+  workflowArchive: true,
 };
 
 /**

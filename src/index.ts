@@ -20,6 +20,8 @@ export { DBOSClient, ClientStoreExternalObjectOptions } from './client';
 
 export type { ExternalObjectRef, ExternalStore } from './external_storage';
 
+export type { WorkflowArchive } from './workflow_archive';
+
 export { WorkflowSchedule, ScheduledWorkflowFn, ScheduleOptions } from './scheduler/scheduler';
 
 export { AlertHandler, DBOSLifecycleCallback, ExternalRegistration, MethodRegistrationBase } from './decorators';
