@@ -1242,7 +1242,7 @@ export class DBOS {
       timerFuncID = functionIDGetIncrement();
     }
     const suspended = typeof options === 'object' && options.suspend ? prepareResultSuspend('getResult') : undefined;
-    await suspended?.ready;
+    if (suspended !== undefined) await suspended.ready;
     const shardKey = typeof options === 'object' ? options.shardKey : undefined;
     return await bindShardKeys([[workflowID, shardKey]], () =>
       getResultInternal<T>(
@@ -1282,7 +1282,7 @@ export class DBOS {
     }
     const workflowIds = [...handleMap.keys()];
     const suspended = options?.suspend ? prepareResultSuspend('waitFirst') : undefined;
-    await suspended?.ready;
+    if (suspended !== undefined) await suspended.ready;
 
     const completedId = await bindShardKeys(
       handles.map((h) => [h.workflowID, h.shardKey] as const),

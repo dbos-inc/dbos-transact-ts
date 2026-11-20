@@ -328,7 +328,7 @@ export class InvokedHandle<R> implements InternalWFHandle<R> {
       typeof optionsOrFuncIdForGet === 'object' && optionsOrFuncIdForGet.suspend
         ? prepareResultSuspend('getResult')
         : undefined;
-    await suspended?.ready;
+    if (suspended !== undefined) await suspended.ready;
     return await bindShardKeys([[this.workflowID, this.shardKey]], () =>
       runInternalStep(
         async () => {
@@ -369,7 +369,7 @@ export class RetrievedHandle<R> implements InternalWFHandle<R> {
       typeof optionsOrFuncIdForGet === 'object' && optionsOrFuncIdForGet.suspend
         ? prepareResultSuspend('getResult')
         : undefined;
-    await suspended?.ready;
+    if (suspended !== undefined) await suspended.ready;
     return (await bindShardKeys([[this.workflowID, this.shardKey]], () =>
       getResultInternal<R>(
         this.workflowID,

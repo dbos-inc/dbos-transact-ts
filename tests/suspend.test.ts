@@ -38,6 +38,19 @@ const resultWaiter = DBOS.registerWorkflow(
   { name: 'suspendRefusedResultWaiter' },
 );
 
+// Each call races a step in one Promise.all: a call that reserves its step ID synchronously takes it first.
+const orderProbe = DBOS.registerWorkflow(
+  async (workflowID: string) => {
+    const probe = () => DBOS.runStep(async () => Promise.resolve(1), { name: 'suspendOrderProbe' });
+    await Promise.all([DBOS.getResult(workflowID), probe()]);
+    await Promise.all([DBOS.retrieveWorkflow(workflowID).getResult(), probe()]);
+    const started = await DBOS.startWorkflow(parked)();
+    await Promise.all([started.getResult(), probe()]);
+    await Promise.all([DBOS.waitFirst([DBOS.retrieveWorkflow(workflowID)]), probe()]);
+  },
+  { name: 'suspendOrderProbeWorkflow' },
+);
+
 let release = new Event();
 const blockedTarget = DBOS.registerWorkflow(
   async (fail: boolean) => {
@@ -134,30 +147,51 @@ describe('suspend-refused', () => {
     }
   });
 
+  test('without suspend, getResult and waitFirst reserve their step IDs before any await', async () => {
+    const target = randomUUID();
+    await (await DBOS.startWorkflow(parked, { workflowID: target })()).getResult();
+    const handle = await DBOS.startWorkflow(orderProbe, { workflowID: randomUUID() })(target);
+    await handle.getResult();
+    const steps = (await DBOS.listWorkflowSteps(handle.workflowID))!.map((s) => s.name);
+    expect(steps).toEqual([
+      'DBOS.getResult',
+      'suspendOrderProbe',
+      'DBOS.getResult',
+      'suspendOrderProbe',
+      'suspendParked',
+      'DBOS.getResult',
+      'suspendOrderProbe',
+      'DBOS.waitFirst',
+      'suspendOrderProbe',
+    ]);
+  });
+
   test('getResult and waitFirst with suspend are refused when sharded or on CockroachDB', async () => {
     const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
     const target = randomUUID();
     await (await DBOS.startWorkflow(parked, { workflowID: target })()).getResult();
+    // Pinned on the instance either way, so the test holds when the suite itself runs sharded.
+    const pinSharded = (sharded: boolean) =>
+      Object.defineProperty(sysdb, 'sharded', { get: () => sharded, configurable: true });
+    const previous = sysdb.suspend;
     sysdb.suspend = {} as enterprise.Suspend;
     try {
-      Object.defineProperty(sysdb, 'sharded', { get: () => true, configurable: true });
-      try {
-        const handle = await DBOS.startWorkflow(resultWaiter, { workflowID: randomUUID() })(target, 'id');
-        await expect(handle.getResult()).rejects.toThrow('getResult with suspend: true is not supported on a sharded');
-      } finally {
-        delete (sysdb as { sharded?: boolean }).sharded;
-      }
+      pinSharded(true);
+      const sharded = await DBOS.startWorkflow(resultWaiter, { workflowID: randomUUID() })(target, 'id');
+      await expect(sharded.getResult()).rejects.toThrow('getResult with suspend: true is not supported on a sharded');
+      pinSharded(false);
       const spy = jest.spyOn(sysdb, 'isCockroach').mockResolvedValue(true);
       try {
-        const handle = await DBOS.startWorkflow(resultWaiter, { workflowID: randomUUID() })(target, 'waitFirst');
-        await expect(handle.getResult()).rejects.toThrow(
+        const cockroach = await DBOS.startWorkflow(resultWaiter, { workflowID: randomUUID() })(target, 'waitFirst');
+        await expect(cockroach.getResult()).rejects.toThrow(
           'waitFirst with suspend: true is not supported on CockroachDB',
         );
       } finally {
         spy.mockRestore();
       }
     } finally {
-      sysdb.suspend = undefined;
+      delete (sysdb as { sharded?: boolean }).sharded;
+      sysdb.suspend = previous;
     }
   });
 
