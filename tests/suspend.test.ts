@@ -142,6 +142,9 @@ describe('suspend-refused', () => {
       await expect(client.retrieveWorkflow(target).getResult({ suspend: true })).rejects.toThrow(
         'A DBOSClient handle cannot suspend',
       );
+      await expect(client.waitFirst([client.retrieveWorkflow(target)], { suspend: true })).rejects.toThrow(
+        'A DBOSClient cannot suspend',
+      );
     } finally {
       await client.destroy();
     }

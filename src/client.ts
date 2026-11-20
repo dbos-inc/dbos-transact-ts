@@ -814,6 +814,7 @@ export class DBOSClient {
   }
 
   async waitFirst(handles: WorkflowHandle<unknown>[], options?: WaitFirstOptions): Promise<WorkflowHandle<unknown>> {
+    if (options?.suspend) throw new DBOSError('A DBOSClient cannot suspend');
     const pollingIntervalMs = resolvePollingIntervalMs(options);
     if (handles.length === 0) {
       throw new Error('handles must not be empty');
