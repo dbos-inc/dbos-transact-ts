@@ -899,7 +899,7 @@ function isStatementTimeout(err: unknown): boolean {
 /** Run `operation` under the {@link dbRetry} policy, for code that cannot take the decorator. */
 export async function withDbRetry<T>(
   operation: () => Promise<T>,
-  options: { initialBackoff?: number; maxBackoff?: number } = {},
+  options: { initialBackoff?: number; maxBackoff?: number; isCockroach?: () => Promise<boolean> } = {},
 ): Promise<T> {
   // Read the defaults per call so the backoff stays tunable after the decorator is applied.
   const maxBackoff = options.maxBackoff ?? dbRetryConfig.maxBackoffSec;
@@ -910,13 +910,24 @@ export async function withDbRetry<T>(
     try {
       return await operation();
     } catch (e) {
-      if (retriablePostgresException(e)) {
+      const connectionRetriable = retriablePostgresException(e);
+      // CockroachDB rolls back a transaction that loses a serialization race and expects the client to rerun it.
+      const cockroachRetriable =
+        !connectionRetriable &&
+        isPgDatabaseError(e) &&
+        e.code === '40001' &&
+        options.isCockroach !== undefined &&
+        (await options.isCockroach().catch(() => false));
+      if (connectionRetriable || cockroachRetriable) {
         if (abortSignal?.aborted) throw e;
         retries++;
         // Calculate backoff with jitter
         const actualBackoff = backoff * (0.5 + Math.random());
+        const message = e instanceof Error ? e.message : String(e);
         DBOSExecutor.globalInstance?.logger.warn(
-          `Database connection failed: ${e instanceof Error ? e.message : String(e)}. ` +
+          (cockroachRetriable
+            ? `Transaction lost a serialization conflict: ${message}. `
+            : `Database connection failed: ${message}. `) +
             `Retrying in ${actualBackoff.toFixed(2)}s (attempt ${retries})`,
         );
         // Sleep with backoff
@@ -957,7 +968,9 @@ function dbRetry(
   ): TypedPropertyDescriptor<T> {
     const method = descriptor.value!;
     descriptor.value = async function (this: never, ...args: never): Promise<unknown> {
-      return withDbRetry(() => method.apply(this, args), options);
+      const sysdb = this as unknown as Partial<Pick<SystemDatabase, 'isCockroach'>>;
+      const isCockroach = typeof sysdb?.isCockroach === 'function' ? () => sysdb.isCockroach!() : undefined;
+      return withDbRetry(() => method.apply(this, args), { ...options, isCockroach });
     } as T;
     return descriptor;
   };
