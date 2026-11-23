@@ -166,6 +166,36 @@ export function compareCodeUnits(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }
 
+/** The status of a workflow that can be rewound. Refuses one that is missing (status undefined) or still running. */
+export function rewindableStatus(workflowID: string, status: string | undefined): string {
+  if (status === undefined) {
+    throw new DBOSNonExistentWorkflowError(`Workflow ${workflowID} does not exist`);
+  }
+  if (isWorkflowActive(status)) {
+    throw new DBOSError(
+      `Cannot rewind ${workflowID} (${status}): only a workflow in a terminal state can be rewound, so cancel it first`,
+    );
+  }
+  return status;
+}
+
+/** Each workflow's start step for a batch rewind: once per workflow, its first listing winning, in ID order. */
+export function rewindTargets(workflowIDs: readonly string[], startSteps: readonly number[]): Map<string, number> {
+  if (workflowIDs.length !== startSteps.length) {
+    throw new DBOSError('workflowIDs and startSteps must have the same length');
+  }
+  const targets = new Map<string, number>();
+  workflowIDs.forEach((workflowID, i) => {
+    if (startSteps[i] < 0) {
+      throw new DBOSError(`startStep must be >= 0, got ${startSteps[i]}`);
+    }
+    if (!targets.has(workflowID)) {
+      targets.set(workflowID, startSteps[i]);
+    }
+  });
+  return new Map([...targets].sort(([a], [b]) => compareCodeUnits(a, b)));
+}
+
 /** Renews a held background job lock in place, so it is never free mid-hold; rejects if the lock was lost. */
 export type BackgroundJobRenew = () => Promise<void>;
 
@@ -3001,125 +3031,178 @@ export class SystemDatabase {
       throw new DBOSError(`startStep must be >= 0, got ${startStep}`);
     }
 
-    const schema = this.schemaName;
     const client = await this.connect();
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
-
       const statusParams: unknown[] = [];
-      const { rows: statusRows } = await client.query<{ status: string }>(
-        `SELECT status FROM "${schema}".workflow_status WHERE ${this.wf(undefined, workflowID, statusParams)}`,
+      const { rows } = await client.query<{ status: string }>(
+        `SELECT status FROM "${this.schemaName}".workflow_status WHERE ${this.wf(undefined, workflowID, statusParams)}`,
         statusParams,
       );
-      if (statusRows.length === 0) {
-        throw new DBOSNonExistentWorkflowError(`Workflow ${workflowID} does not exist`);
-      }
-      const status = statusRows[0].status;
-      if (isWorkflowActive(status)) {
-        throw new DBOSError(
-          `Cannot rewind ${workflowID} (${status}): only a workflow in a terminal state can be rewound, so cancel it first`,
-        );
-      }
-
-      // Roll workflow_events back to the last value published before the cut, using
-      // workflow_events_history as an undo log, then rewind that history too.
-      // `publishedPastCut` is the correlated EXISTS both halves key off.
-      const publishedPastCut = (key: string, params: unknown[]) => `EXISTS (
-        SELECT 1 FROM "${schema}".workflow_events_history discarded
-        WHERE ${this.wf('discarded', workflowID, params)} AND discarded.key = ${key} AND discarded.function_id >= $1
-      )`;
-
-      // First unpublish everything the discarded run touched.
-      const unpublishParams: unknown[] = [startStep];
-      await client.query(
-        `DELETE FROM "${schema}".workflow_events
-         WHERE ${this.wf(undefined, workflowID, unpublishParams)}
-           AND ${publishedPastCut('"' + schema + '".workflow_events.key', unpublishParams)}`,
-        unpublishParams,
-      );
-
-      // Then restore those keys, if any, to the value published below the cut.
-      const restoreParams: unknown[] = [startStep];
-      const keyColumns = this.wfColumns(workflowID, restoreParams);
-      await client.query(
-        `INSERT INTO "${schema}".workflow_events (${[...keyColumns.map(([c]) => c), 'workflow_uuid', 'key', 'value', 'serialization'].join(', ')})
-         SELECT ${[...keyColumns.map(([, e]) => e), 'surviving.workflow_uuid', 'surviving.key', 'surviving.value', 'surviving.serialization'].join(', ')}
-         FROM (
-           SELECT weh.workflow_uuid, weh.key, weh.value, weh.serialization,
-                  ROW_NUMBER() OVER (PARTITION BY weh.key ORDER BY weh.function_id DESC) AS rn
-           FROM "${schema}".workflow_events_history weh
-           WHERE ${this.wf('weh', workflowID, restoreParams)} AND weh.function_id < $1
-             AND ${publishedPastCut('weh.key', restoreParams)}
-         ) surviving
-         WHERE surviving.rn = 1`,
-        restoreParams,
-      );
-
-      // Clear the streams' close sentinels so the replay can append again.
-      const sentinelParams: unknown[] = [startStep, DBOS_STREAM_CLOSED_SENTINEL_SERIALIZED, DBOSPortableJSON.name()];
-      await client.query(
-        `DELETE FROM "${schema}".streams
-         WHERE ${this.wf(undefined, workflowID, sentinelParams)} AND function_id >= $1 AND value = $2 AND serialization = $3`,
-        sentinelParams,
-      );
-
-      // Discard the steps and the events history past the cut.
-      for (const table of ['operation_outputs', 'workflow_events_history']) {
-        const params: unknown[] = [startStep];
-        await client.query(
-          `DELETE FROM "${schema}".${table} WHERE ${this.wf(undefined, workflowID, params)} AND function_id >= $1`,
-          params,
-        );
-      }
-
-      // Delete messages consumed or received after the rewind point
-      const messageParams: unknown[] = [startStep];
-      await client.query(
-        `DELETE FROM "${schema}".notifications
-         WHERE ${this.wf(undefined, workflowID, messageParams, 'destination_uuid')}
-           AND (consumed_by_function_id >= $1 OR consumed = false)`,
-        messageParams,
-      );
-
-      const outputParams: unknown[] = [];
-      await client.query(
-        `DELETE FROM "${schema}".workflow_output WHERE ${this.wf(undefined, workflowID, outputParams)}`,
-        outputParams,
-      );
-
-      // Re-enqueue the workflow, keeping its queue and key unless given. Re-asserting the status
-      // we read keeps a workflow that moved on underneath us from being resurrected.
-      const params: unknown[] = [
-        StatusString.ENQUEUED,
-        options.queueName ?? null,
-        options.queuePartitionKey ?? null,
-        status,
-        INTERNAL_QUEUE_NAME,
-      ];
-      const setVersion =
-        options.applicationVersion !== undefined
-          ? `, application_version = $${params.push(options.applicationVersion)}`
-          : '';
-      const { rowCount } = await client.query(
-        `UPDATE "${schema}".workflow_status
-         SET status = $1, owner_xid = NULL, queue_name = COALESCE($2::text, queue_name, $5::text),
-             queue_partition_key = COALESCE($3::text, queue_partition_key), recovery_attempts = 0,
-             workflow_deadline_epoch_ms = NULL, deduplication_id = NULL, started_at_epoch_ms = NULL,
-             suspend_key = NULL, completed_at = NULL, archive_pending = NULL, output = NULL, error = NULL,
-             updated_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint${setVersion}
-         WHERE ${this.wf(undefined, workflowID, params)} AND status = $4`,
-        params,
-      );
-      if (rowCount !== 1) {
-        throw new DBOSError(`Workflow ${workflowID} changed status while being rewound; retry the rewind`);
-      }
-
+      const status = rewindableStatus(workflowID, rows[0]?.status);
+      await this.rewindWorkflowTxn(client, workflowID, startStep, status, options);
       await client.query('COMMIT');
     } catch (e) {
       await client.query('ROLLBACK').catch(() => undefined);
       throw e;
     } finally {
       client.release();
+    }
+  }
+
+  /** Rewind each workflow from its own start step, all or nothing in one transaction. */
+  async rewindWorkflows(
+    workflowIDs: string[],
+    startSteps: number[],
+    options: {
+      applicationVersion?: string;
+      queueName?: string;
+      queuePartitionKey?: string;
+    } = {},
+  ): Promise<void> {
+    const targets = rewindTargets(workflowIDs, startSteps);
+    if (targets.size === 0) {
+      return;
+    }
+    const client = await this.connect();
+    try {
+      await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
+      const statuses = await this.rewindableStatuses(client, [...targets.keys()]);
+      for (const [workflowID, startStep] of targets) {
+        await this.rewindWorkflowTxn(client, workflowID, startStep, statuses.get(workflowID)!, options);
+      }
+      await client.query('COMMIT');
+    } catch (e) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw e;
+    } finally {
+      client.release();
+    }
+  }
+
+  /** Refuse, naming the workflow, if any of them is missing or still running. */
+  async checkRewindable(workflowIDs: string[]): Promise<void> {
+    await this.rewindableStatuses(this.pool, workflowIDs);
+  }
+
+  /**
+   * Each workflow's status, refusing if any is missing or still running. Takes no locks:
+   * the guarded update in rewindWorkflowTxn catches a later change.
+   */
+  protected async rewindableStatuses(client: ClientBase | Pool, workflowIDs: string[]): Promise<Map<string, string>> {
+    const params: unknown[] = [];
+    const { rows } = await client.query<{ workflow_uuid: string; status: string }>(
+      `SELECT workflow_uuid, status FROM "${this.schemaName}".workflow_status WHERE ${this.wfIn(undefined, workflowIDs, params)}`,
+      params,
+    );
+    const found = new Map(rows.map((r) => [r.workflow_uuid, r.status]));
+    return new Map(workflowIDs.map((workflowID) => [workflowID, rewindableStatus(workflowID, found.get(workflowID))]));
+  }
+
+  /** A rewind's statements, for a workflow already checked to be in `status`. */
+  protected async rewindWorkflowTxn(
+    client: ClientBase,
+    workflowID: string,
+    startStep: number,
+    status: string,
+    options: {
+      applicationVersion?: string;
+      queueName?: string;
+      queuePartitionKey?: string;
+    },
+  ): Promise<void> {
+    const schema = this.schemaName;
+    // Roll workflow_events back to the last value published before the cut, using
+    // workflow_events_history as an undo log, then rewind that history too.
+    // `publishedPastCut` is the correlated EXISTS both halves key off.
+    const publishedPastCut = (key: string, params: unknown[]) => `EXISTS (
+      SELECT 1 FROM "${schema}".workflow_events_history discarded
+      WHERE ${this.wf('discarded', workflowID, params)} AND discarded.key = ${key} AND discarded.function_id >= $1
+    )`;
+
+    // First unpublish everything the discarded run touched.
+    const unpublishParams: unknown[] = [startStep];
+    await client.query(
+      `DELETE FROM "${schema}".workflow_events
+       WHERE ${this.wf(undefined, workflowID, unpublishParams)}
+         AND ${publishedPastCut('"' + schema + '".workflow_events.key', unpublishParams)}`,
+      unpublishParams,
+    );
+
+    // Then restore those keys, if any, to the value published below the cut.
+    const restoreParams: unknown[] = [startStep];
+    const keyColumns = this.wfColumns(workflowID, restoreParams);
+    await client.query(
+      `INSERT INTO "${schema}".workflow_events (${[...keyColumns.map(([c]) => c), 'workflow_uuid', 'key', 'value', 'serialization'].join(', ')})
+       SELECT ${[...keyColumns.map(([, e]) => e), 'surviving.workflow_uuid', 'surviving.key', 'surviving.value', 'surviving.serialization'].join(', ')}
+       FROM (
+         SELECT weh.workflow_uuid, weh.key, weh.value, weh.serialization,
+                ROW_NUMBER() OVER (PARTITION BY weh.key ORDER BY weh.function_id DESC) AS rn
+         FROM "${schema}".workflow_events_history weh
+         WHERE ${this.wf('weh', workflowID, restoreParams)} AND weh.function_id < $1
+           AND ${publishedPastCut('weh.key', restoreParams)}
+       ) surviving
+       WHERE surviving.rn = 1`,
+      restoreParams,
+    );
+
+    // Clear the streams' close sentinels so the replay can append again.
+    const sentinelParams: unknown[] = [startStep, DBOS_STREAM_CLOSED_SENTINEL_SERIALIZED, DBOSPortableJSON.name()];
+    await client.query(
+      `DELETE FROM "${schema}".streams
+       WHERE ${this.wf(undefined, workflowID, sentinelParams)} AND function_id >= $1 AND value = $2 AND serialization = $3`,
+      sentinelParams,
+    );
+
+    // Discard the steps and the events history past the cut.
+    for (const table of ['operation_outputs', 'workflow_events_history']) {
+      const params: unknown[] = [startStep];
+      await client.query(
+        `DELETE FROM "${schema}".${table} WHERE ${this.wf(undefined, workflowID, params)} AND function_id >= $1`,
+        params,
+      );
+    }
+
+    // Delete messages consumed or received after the rewind point
+    const messageParams: unknown[] = [startStep];
+    await client.query(
+      `DELETE FROM "${schema}".notifications
+       WHERE ${this.wf(undefined, workflowID, messageParams, 'destination_uuid')}
+         AND (consumed_by_function_id >= $1 OR consumed = false)`,
+      messageParams,
+    );
+
+    const outputParams: unknown[] = [];
+    await client.query(
+      `DELETE FROM "${schema}".workflow_output WHERE ${this.wf(undefined, workflowID, outputParams)}`,
+      outputParams,
+    );
+
+    // Re-enqueue the workflow, keeping its queue and key unless given. Re-asserting the status
+    // we read keeps a workflow that moved on underneath us from being resurrected.
+    const params: unknown[] = [
+      StatusString.ENQUEUED,
+      options.queueName ?? null,
+      options.queuePartitionKey ?? null,
+      status,
+      INTERNAL_QUEUE_NAME,
+    ];
+    const setVersion =
+      options.applicationVersion !== undefined
+        ? `, application_version = $${params.push(options.applicationVersion)}`
+        : '';
+    const { rowCount } = await client.query(
+      `UPDATE "${schema}".workflow_status
+       SET status = $1, owner_xid = NULL, queue_name = COALESCE($2::text, queue_name, $5::text),
+           queue_partition_key = COALESCE($3::text, queue_partition_key), recovery_attempts = 0,
+           workflow_deadline_epoch_ms = NULL, deduplication_id = NULL, started_at_epoch_ms = NULL,
+           suspend_key = NULL, completed_at = NULL, archive_pending = NULL, output = NULL, error = NULL,
+           updated_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint${setVersion}
+       WHERE ${this.wf(undefined, workflowID, params)} AND status = $4`,
+      params,
+    );
+    if (rowCount !== 1) {
+      throw new DBOSError(`Workflow ${workflowID} changed status while being rewound; retry the rewind`);
     }
   }
 

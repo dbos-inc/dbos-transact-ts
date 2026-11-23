@@ -7,6 +7,7 @@ import {
   retryUntilSuccess,
   recoverWorkflow,
   localTestDatabaseUrl,
+  testUnlessSharded,
 } from './helpers';
 import { Client, Pool, PoolClient } from 'pg';
 import { AsyncLocalStorage } from 'node:async_hooks';
@@ -390,6 +391,13 @@ const rewindParent = DBOS.registerWorkflow(
     return (await handle.getResult()) + run;
   },
   { name: 'rewind_parent' },
+);
+
+const counted = DBOS.registerStep((name: string) => Promise.resolve(runCount(name)), { name: 'counted' });
+
+const threeSteps = DBOS.registerWorkflow(
+  async (name: string) => [await counted(`${name}.a`), await counted(`${name}.b`), await counted(`${name}.c`)],
+  { name: 'three_steps' },
 );
 
 describe('rewind', () => {
@@ -1078,5 +1086,211 @@ describe('rewind', () => {
     await expect(handle.getResult()).resolves.toBe('done');
     expect(await secondDS.rows()).toEqual(['b']);
     expect(await secondDS.checkpoints(workflowID)).toEqual([]);
+  });
+
+  //////////////////////////////////////////
+  // Batch rewind
+  //////////////////////////////////////////
+
+  const executor = () => DBOSExecutor.globalInstance!;
+
+  async function runThreeSteps(name: string, workflowID = randomUUID()): Promise<string> {
+    await DBOS.withNextWorkflowID(workflowID, () => threeSteps(name));
+    return workflowID;
+  }
+
+  async function setStatus(workflowID: string, status: string) {
+    await systemDBClient.query(`UPDATE "${schema}".workflow_status SET status = $2 WHERE workflow_uuid = $1`, [
+      workflowID,
+      status,
+    ]);
+  }
+
+  testUnlessSharded('batch-reruns-each-workflow-from-its-own-start-step', async () => {
+    await DBOS.registerQueue('batch_partitioned', { partitionConcurrency: 1, onConflict: 'always_update' });
+    await DBOS.registerQueue('batch_plain', { onConflict: 'always_update' });
+
+    const partitioned = await DBOS.startWorkflow(threeSteps, {
+      queueName: 'batch_partitioned',
+      enqueueOptions: { queuePartitionKey: 'pk' },
+    })('p');
+    const plain = await DBOS.startWorkflow(threeSteps, { queueName: 'batch_plain' })('q');
+    await partitioned.getResult();
+    await plain.getResult();
+
+    await executor().rewindWorkflows([partitioned.workflowID, plain.workflowID], [1, 2]);
+
+    // Same IDs, and only the steps from each workflow's own Start Step ran again.
+    await expect(DBOS.retrieveWorkflow(partitioned.workflowID).getResult()).resolves.toEqual([1, 2, 2]);
+    await expect(DBOS.retrieveWorkflow(plain.workflowID).getResult()).resolves.toEqual([1, 1, 2]);
+    expect((await DBOS.listWorkflowSteps(partitioned.workflowID))!.map((s) => s.functionID)).toEqual([0, 1, 2]);
+
+    // With no queue given, each kept its own queue and partition key.
+    const partitionedStatus = (await DBOS.getWorkflowStatus(partitioned.workflowID))!;
+    expect(partitionedStatus.queueName).toBe('batch_partitioned');
+    expect(partitionedStatus.queuePartitionKey).toBe('pk');
+    const plainStatus = (await DBOS.getWorkflowStatus(plain.workflowID))!;
+    expect(plainStatus.queueName).toBe('batch_plain');
+    expect(plainStatus.queuePartitionKey).toBeUndefined();
+  });
+
+  testUnlessSharded.each([StatusString.PENDING, StatusString.ENQUEUED, StatusString.DELAYED, StatusString.SUSPENDED])(
+    'batch-refuses-an-unfinished-workflow-%s',
+    async (unfinished) => {
+      const finishedID = await runThreeSteps('finished');
+      const unfinishedID = await runThreeSteps('unfinished');
+      await setStatus(unfinishedID, unfinished);
+
+      await expect(executor().rewindWorkflows([finishedID, unfinishedID], [0, 0])).rejects.toThrow(
+        `Cannot rewind ${unfinishedID}`,
+      );
+      // The data sources' pre-check refused the batch above; the transaction's own read refuses it too.
+      await expect(sysdb().rewindWorkflows([finishedID, unfinishedID], [0, 0])).rejects.toThrow(
+        `Cannot rewind ${unfinishedID}`,
+      );
+
+      // Nothing changed, not even for the finished workflow.
+      expect((await DBOS.getWorkflowStatus(finishedID))!.status).toBe(StatusString.SUCCESS);
+      expect(await DBOS.listWorkflowSteps(finishedID)).toHaveLength(3);
+      expect(runs['finished.a']).toBe(1);
+      expect((await DBOS.getWorkflowStatus(unfinishedID))!.status).toBe(unfinished);
+      expect(await DBOS.listWorkflowSteps(unfinishedID)).toHaveLength(3);
+    },
+  );
+
+  testUnlessSharded('batch-refuses-a-missing-workflow', async () => {
+    const finishedID = await runThreeSteps('finished');
+    const missingID = randomUUID();
+
+    const refusal = executor().rewindWorkflows([finishedID, missingID], [1, 1]);
+    await expect(refusal).rejects.toThrow(DBOSNonExistentWorkflowError);
+    await expect(refusal).rejects.toThrow(missingID);
+    await expect(sysdb().rewindWorkflows([finishedID, missingID], [1, 1])).rejects.toThrow(missingID);
+
+    expect((await DBOS.getWorkflowStatus(finishedID))!.status).toBe(StatusString.SUCCESS);
+    expect(await DBOS.listWorkflowSteps(finishedID)).toHaveLength(3);
+    expect(runs['finished.b']).toBe(1);
+  });
+
+  /**
+   * Checkpoints are deleted outside the system database transaction, so a batch that
+   * will be refused must not delete any, even those of a workflow it reaches before
+   * the one that refuses it.
+   */
+  testUnlessSharded('batch-checks-every-workflow-before-dropping-checkpoints', async () => {
+    keepCompletionCheckpoints();
+    // The batch goes in ID order, so the finished workflow comes first.
+    const finishedID = `a-${randomUUID()}`;
+    const unfinishedID = `z-${randomUUID()}`;
+    await DBOS.withNextWorkflowID(finishedID, () => dsWorkflow());
+    await DBOS.withNextWorkflowID(unfinishedID, () => dsWorkflow());
+    await setStatus(unfinishedID, StatusString.PENDING);
+
+    await expect(executor().rewindWorkflows([finishedID, unfinishedID], [0, 0])).rejects.toThrow(
+      `Cannot rewind ${unfinishedID}`,
+    );
+    const missingID = `z-${randomUUID()}`;
+    await expect(executor().rewindWorkflows([finishedID, missingID], [0, 0])).rejects.toThrow(missingID);
+    for (const workflowID of [finishedID, unfinishedID]) {
+      expect(await firstDS.checkpoints(workflowID)).toEqual([0, 2]);
+      expect(await secondDS.checkpoints(workflowID)).toEqual([1, 3]);
+    }
+
+    // Once both are finished, the batch drops their checkpoints, so each transaction
+    // runs again rather than replaying its checkpoint.
+    await setStatus(unfinishedID, StatusString.ERROR);
+    await executor().rewindWorkflows([finishedID, unfinishedID], [0, 0]);
+    await DBOS.retrieveWorkflow(finishedID).getResult();
+    await DBOS.retrieveWorkflow(unfinishedID).getResult();
+    expect(await firstDS.rows()).toEqual(['a', 'a', 'a', 'a', 'c', 'c', 'c', 'c']);
+    expect(await secondDS.rows()).toEqual(['b', 'b', 'b', 'b', 'd', 'd', 'd', 'd']);
+  });
+
+  /**
+   * A workflow whose status changes after the batch read it refuses the batch, as it
+   * refuses a single rewind, and undoes the rewinds the batch already made.
+   */
+  testUnlessSharded('batch-is-one-transaction', async () => {
+    const firstID = await runThreeSteps('txn-first', `a-${randomUUID()}`);
+    const secondID = await runThreeSteps('txn-second', `z-${randomUUID()}`);
+
+    const db = sysdb() as unknown as {
+      rewindWorkflowTxn(client: Client, workflowID: string, ...rest: unknown[]): Promise<void>;
+    };
+    const rewindOne = db.rewindWorkflowTxn.bind(db);
+    jest.spyOn(db, 'rewindWorkflowTxn').mockImplementation(async (client, workflowID, ...rest) => {
+      if (workflowID === secondID) {
+        // As if the workflow were resumed between the read and its rewind.
+        await client.query(`UPDATE "${schema}".workflow_status SET status = $2 WHERE workflow_uuid = $1`, [
+          secondID,
+          StatusString.ENQUEUED,
+        ]);
+      }
+      await rewindOne(client, workflowID, ...rest);
+    });
+    await expect(executor().rewindWorkflows([firstID, secondID], [1, 1])).rejects.toThrow(
+      'changed status while being rewound',
+    );
+    jest.restoreAllMocks();
+
+    // The first workflow's rewind was rolled back with the rest.
+    for (const workflowID of [firstID, secondID]) {
+      expect((await DBOS.getWorkflowStatus(workflowID))!.status).toBe(StatusString.SUCCESS);
+      expect(await DBOS.listWorkflowSteps(workflowID)).toHaveLength(3);
+    }
+    await expect(DBOS.retrieveWorkflow(firstID).getResult()).resolves.toEqual([1, 1, 1]);
+    expect(runs['txn-first.b']).toBe(1);
+  });
+
+  testUnlessSharded('batch-keeps-or-overrides-version-and-queue', async () => {
+    await DBOS.registerQueue('batch_override', { partitionConcurrency: 1, onConflict: 'always_update' });
+    const elsewhereID = await runThreeSteps('elsewhere');
+    const hereID = await runThreeSteps('here');
+    const runningVersion = (await DBOS.getWorkflowStatus(hereID))!.applicationVersion;
+
+    // Stamp one workflow with a version nothing runs, so it stays ENQUEUED.
+    await DBOS.rewindWorkflow(elsewhereID, { startStep: 2, applicationVersion: 'not-this-deployment' });
+    await DBOS.cancelWorkflow(elsewhereID);
+
+    // Given no version, each keeps its own: only the other one runs again.
+    await executor().rewindWorkflows([elsewhereID, hereID], [2, 2]);
+    await expect(DBOS.retrieveWorkflow(hereID).getResult()).resolves.toEqual([1, 1, 2]);
+    const elsewhere = (await DBOS.getWorkflowStatus(elsewhereID))!;
+    expect(elsewhere.applicationVersion).toBe('not-this-deployment');
+    expect(elsewhere.status).toBe(StatusString.ENQUEUED);
+    await DBOS.cancelWorkflow(elsewhereID);
+
+    // A version and queue given apply to every workflow in the batch.
+    await executor().rewindWorkflows([elsewhereID, hereID], [2, 2], {
+      applicationVersion: runningVersion,
+      queueName: 'batch_override',
+      queuePartitionKey: 'repair',
+    });
+    await expect(DBOS.retrieveWorkflow(elsewhereID).getResult()).resolves.toEqual([1, 1, 2]);
+    await expect(DBOS.retrieveWorkflow(hereID).getResult()).resolves.toEqual([1, 1, 3]);
+    for (const workflowID of [elsewhereID, hereID]) {
+      const status = (await DBOS.getWorkflowStatus(workflowID))!;
+      expect(status.applicationVersion).toBe(runningVersion);
+      expect(status.queueName).toBe('batch_override');
+      expect(status.queuePartitionKey).toBe('repair');
+    }
+  });
+
+  testUnlessSharded('batch-validates-and-dedupes-its-inputs', async () => {
+    const workflowID = await runThreeSteps('inputs');
+
+    // An empty batch changes nothing.
+    await executor().rewindWorkflows([], []);
+
+    // A negative start step, or lists of different lengths, refuse the batch before
+    // anything changes.
+    await expect(executor().rewindWorkflows([workflowID], [-1])).rejects.toThrow(/must be >= 0/);
+    await expect(executor().rewindWorkflows([workflowID], [0, 1])).rejects.toThrow(/same length/);
+    expect((await DBOS.getWorkflowStatus(workflowID))!.status).toBe(StatusString.SUCCESS);
+    expect(runs['inputs.a']).toBe(1);
+
+    // A workflow listed twice is rewound once, from its first listing's step.
+    await executor().rewindWorkflows([workflowID, workflowID], [1, 2]);
+    await expect(DBOS.retrieveWorkflow(workflowID).getResult()).resolves.toEqual([1, 2, 2]);
   });
 });

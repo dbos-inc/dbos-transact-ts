@@ -93,6 +93,7 @@ import {
   listWorkflows,
   listWorkflowSteps,
   rewindWorkflow,
+  rewindWorkflows,
   toWorkflowStatus,
   backgroundJobsLoop,
   BackgroundLease,
@@ -1303,6 +1304,25 @@ export class DBOSExecutor {
     } = {},
   ): Promise<void> {
     return rewindWorkflow(this.systemDatabase, [...transactionalDataSources.values()], workflowID, startStep, options);
+  }
+
+  /** Rewind each workflow from its own start step, all or nothing. */
+  rewindWorkflows(
+    workflowIDs: string[],
+    startSteps: number[],
+    options: {
+      applicationVersion?: string;
+      queueName?: string;
+      queuePartitionKey?: string;
+    } = {},
+  ): Promise<void> {
+    return rewindWorkflows(
+      this.systemDatabase,
+      [...transactionalDataSources.values()],
+      workflowIDs,
+      startSteps,
+      options,
+    );
   }
 
   /**

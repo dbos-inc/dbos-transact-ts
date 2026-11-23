@@ -1,8 +1,8 @@
 import type { ShardKeyColumns, SystemDatabase, WorkflowStatusInternal } from './system_database';
+import { rewindableStatus, rewindTargets } from './system_database';
 import type { StepInfo, WorkflowStatus, GetWorkflowsInput, ListWorkflowStepsOptions } from './workflow';
-import { isWorkflowActive } from './workflow';
 import type { DataSourceTransactionHandler } from './datasource';
-import { DBOSError, DBOSNonExistentWorkflowError, DBOSWorkflowConflictError } from './error';
+import { DBOSError, DBOSWorkflowConflictError } from './error';
 import { DBOSSerializer, safeParse, safeParseError, safeParsePositionalArgs } from './serialization';
 import { randomUUID } from 'node:crypto';
 import type { GlobalLogger } from './telemetry/logs';
@@ -79,14 +79,7 @@ export async function forkWorkflow(
  */
 async function checkRewindable(sysdb: SystemDatabase, workflowID: string): Promise<void> {
   const status = await sysdb.getWorkflowStatus(workflowID);
-  if (status === null) {
-    throw new DBOSNonExistentWorkflowError(`Workflow ${workflowID} does not exist`);
-  }
-  if (isWorkflowActive(status.status)) {
-    throw new DBOSError(
-      `Cannot rewind ${workflowID} (${status.status}): only a workflow in a terminal state can be rewound, so cancel it first`,
-    );
-  }
+  rewindableStatus(workflowID, status?.status);
 }
 
 /**
@@ -123,6 +116,38 @@ export async function rewindWorkflow(
     await ds.deleteCheckpoints!(workflowID, startStep);
   }
   await sysdb.rewindWorkflow(workflowID, startStep, options);
+}
+
+/**
+ * `rewindWorkflow` for many workflows, all or nothing in the system database. Every
+ * workflow is checked before any data source checkpoint is deleted, because those
+ * deletes can't be rolled back.
+ */
+export async function rewindWorkflows(
+  sysdb: SystemDatabase,
+  dataSources: readonly DataSourceTransactionHandler[],
+  workflowIDs: string[],
+  startSteps: number[],
+  options: {
+    applicationVersion?: string;
+    queueName?: string;
+    queuePartitionKey?: string;
+  } = {},
+): Promise<void> {
+  const targets = rewindTargets(workflowIDs, startSteps);
+  if (targets.size === 0) {
+    return;
+  }
+  const withCheckpoints = keepingCheckpoints(dataSources);
+  if (withCheckpoints.length > 0) {
+    await sysdb.checkRewindable([...targets.keys()]);
+  }
+  for (const [workflowID, startStep] of targets) {
+    for (const ds of withCheckpoints) {
+      await ds.deleteCheckpoints!(workflowID, startStep);
+    }
+  }
+  await sysdb.rewindWorkflows([...targets.keys()], [...targets.values()], options);
 }
 
 /** The data sources that keep checkpoints of their own; the others do not implement `deleteCheckpoints`. */
