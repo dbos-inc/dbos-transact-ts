@@ -278,12 +278,37 @@ export interface GetResultOptions extends PollingOptions, ShardKeyOptions {
   timeoutSeconds?: number;
   /** Absolute deadline as a UNIX epoch timestamp in milliseconds; if the workflow does not complete before this time, `null` will be returned */
   deadlineEpochMS?: number;
+  /**
+   * If true (requires suspend mode, a Transact Enterprise feature), a getResult in a workflow that has to wait
+   * parks the workflow in the database and exits its execution instead of holding it in memory; the awaited
+   * workflow's completion or the timeout re-enqueues it, and the replayed getResult returns the result.
+   */
+  suspend?: boolean;
+}
+
+/**
+ * Options for workflow handle `getResult`.
+ */
+export interface WorkflowHandleGetResultOptions extends PollingOptions {
+  /**
+   * If true (requires suspend mode, a Transact Enterprise feature), a getResult in a workflow that has to wait
+   * parks the workflow in the database and exits its execution instead of holding it in memory; the awaited
+   * workflow's completion re-enqueues it, and the replayed getResult returns the result.
+   */
+  suspend?: boolean;
 }
 
 /**
  * Options for `DBOS.waitFirst`.
  */
-export type WaitFirstOptions = PollingOptions;
+export interface WaitFirstOptions extends PollingOptions {
+  /**
+   * If true (requires suspend mode, a Transact Enterprise feature), a waitFirst in a workflow that has to wait
+   * parks the workflow in the database and exits its execution instead of holding it in memory; the first
+   * awaited workflow to complete re-enqueues it, and the replayed waitFirst returns its handle.
+   */
+  suspend?: boolean;
+}
 
 /**
  * Options for `DBOS.waitAll`.
@@ -369,7 +394,7 @@ export function resolveTimeoutSeconds(
 }
 
 /** The suspend-mode operations, or a refusal naming `operation` when suspend mode is off. */
-function requireSuspendMode(operation: 'recv' | 'sleep'): enterprise.Suspend {
+function requireSuspendMode(operation: 'recv' | 'sleep' | 'getResult' | 'waitFirst'): enterprise.Suspend {
   const suspend = DBOSExecutor.globalInstance!.systemDatabase.suspend;
   if (suspend === undefined) {
     throw new DBOSError(
@@ -378,6 +403,54 @@ function requireSuspendMode(operation: 'recv' | 'sleep'): enterprise.Suspend {
     );
   }
   return suspend;
+}
+
+/**
+ * For `operation` with suspend: true, the suspend-mode operations and the step's function ID, reserved now, before
+ * any await, unless assigned; `ready` rejects on CockroachDB. Refused outside a workflow, in a step, without suspend
+ * mode, and on a sharded system database.
+ */
+export function prepareResultSuspend(
+  operation: 'getResult' | 'waitFirst',
+  assignedFuncID?: number,
+): { suspend: enterprise.Suspend; funcID: number; ready: Promise<void> } {
+  if (!DBOS.isWithinWorkflow()) {
+    throw new DBOSError(`${operation} with suspend: true must be called from within a workflow`);
+  }
+  if (!DBOS.isInWorkflow()) {
+    throw new DBOSInvalidWorkflowTransitionError(
+      `Invalid call to \`${operation}\` with suspend: true inside a \`step\` or \`transaction\``,
+    );
+  }
+  const suspend = requireSuspendMode(operation);
+  const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+  if (sysdb.sharded) {
+    throw new DBOSError(`${operation} with suspend: true is not supported on a sharded system database`);
+  }
+  const funcID = assignedFuncID ?? functionIDGetIncrement();
+  const ready = sysdb.isCockroach().then((cockroach) => {
+    if (cockroach) throw new DBOSError(`${operation} with suspend: true is not supported on CockroachDB`);
+  });
+  return { suspend, funcID, ready };
+}
+
+/** Park the calling workflow on awaitedIDs' results, until the durable deadline when timeoutSeconds is set; returns if it need not wait. */
+async function suspendOnResult(
+  suspend: enterprise.Suspend,
+  awaitedIDs: string[],
+  timeoutSeconds?: number,
+  timerFuncID?: number,
+): Promise<void> {
+  const callerID = DBOS.workflowID!;
+  const deadline =
+    timeoutSeconds !== undefined && timerFuncID !== undefined
+      ? await DBOSExecutor.globalInstance!.systemDatabase.durableSleepInternal(
+          callerID,
+          timerFuncID,
+          timeoutSeconds * 1000,
+        )
+      : undefined;
+  await suspend.resultSuspend(callerID, awaitedIDs, deadline);
 }
 
 export function resolvePollingIntervalMs(options?: number | PollingOptions): number | undefined {
@@ -482,9 +555,13 @@ export async function getResultInternal<T>(
   timerFuncID?: number,
   assignedFuncID?: number,
   pollingIntervalMs?: number,
+  suspend?: enterprise.Suspend,
 ): Promise<T | null> {
   return await runInternalStep(
-    () => awaitRecordedResult<T>(workflowID, timeoutSeconds, timerFuncID, pollingIntervalMs),
+    async () => {
+      if (suspend !== undefined) await suspendOnResult(suspend, [workflowID], timeoutSeconds, timerFuncID);
+      return await awaitRecordedResult<T>(workflowID, timeoutSeconds, timerFuncID, pollingIntervalMs);
+    },
     'DBOS.getResult',
     workflowID,
     assignedFuncID,
@@ -1164,9 +1241,18 @@ export class DBOS {
       // Reserve the function ID synchronously, before any await.
       timerFuncID = functionIDGetIncrement();
     }
+    const suspended = typeof options === 'object' && options.suspend ? prepareResultSuspend('getResult') : undefined;
+    if (suspended !== undefined) await suspended.ready;
     const shardKey = typeof options === 'object' ? options.shardKey : undefined;
     return await bindShardKeys([[workflowID, shardKey]], () =>
-      getResultInternal<T>(workflowID, timeoutSeconds, timerFuncID, undefined, pollingIntervalMs),
+      getResultInternal<T>(
+        workflowID,
+        timeoutSeconds,
+        timerFuncID,
+        suspended?.funcID,
+        pollingIntervalMs,
+        suspended?.suspend,
+      ),
     );
   }
 
@@ -1195,17 +1281,25 @@ export class DBOS {
       handleMap.set(handle.workflowID, handle);
     }
     const workflowIds = [...handleMap.keys()];
+    const suspended = options?.suspend ? prepareResultSuspend('waitFirst') : undefined;
+    if (suspended !== undefined) await suspended.ready;
 
     const completedId = await bindShardKeys(
       handles.map((h) => [h.workflowID, h.shardKey] as const),
       () =>
-        runInternalStep(async () => {
-          return await DBOSExecutor.globalInstance!.systemDatabase.awaitFirstWorkflowId(
-            workflowIds,
-            DBOS.workflowID,
-            pollingIntervalMs,
-          );
-        }, 'DBOS.waitFirst'),
+        runInternalStep(
+          async () => {
+            if (suspended !== undefined) await suspended.suspend.resultSuspend(DBOS.workflowID!, workflowIds);
+            return await DBOSExecutor.globalInstance!.systemDatabase.awaitFirstWorkflowId(
+              workflowIds,
+              DBOS.workflowID,
+              pollingIntervalMs,
+            );
+          },
+          'DBOS.waitFirst',
+          undefined,
+          suspended?.funcID,
+        ),
     );
 
     return handleMap.get(completedId)!;

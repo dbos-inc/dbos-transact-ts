@@ -41,6 +41,7 @@ export interface workflow_status {
   application_name?: string | null; // Owning application. NULL means unclaimed: any application may read and claim the row.
   suspend_key?: string | null; // Topic a SUSPENDED recv waits on; delay_until_epoch_ms holds its wake time.
   archive_pending?: boolean | null; // TRUE from a terminal transition until the archiver has written it; else NULL.
+  result_waiter_ids?: string[] | null; // Workflows SUSPENDED awaiting this one's result; woken when it completes.
 }
 
 export interface notifications {
