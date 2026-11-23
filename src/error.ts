@@ -265,7 +265,9 @@ export class DBOSStepNondeterminismError extends DBOSError {
 }
 
 export const WorkflowSuspended = 38;
-function suspendedOn(topic: string | undefined): string {
+function suspendedOn(topic: string | undefined, awaitedWorkflowIDs?: readonly string[]): string {
+  if (awaitedWorkflowIDs?.length === 1) return `awaiting the result of workflow ${awaitedWorkflowIDs[0]}`;
+  if (awaitedWorkflowIDs?.length) return `awaiting the first of ${awaitedWorkflowIDs.length} workflows`;
   if (topic === undefined) return 'sleeping';
   // A recv with no topic waits on the system database's null topic.
   return topic === '__null__topic__' ? 'waiting on a message with no topic' : `waiting on topic ${topic}`;
@@ -280,8 +282,9 @@ export class DBOSWorkflowSuspendedError extends DBOSError {
   constructor(
     readonly workflowID: string,
     readonly topic: string | undefined,
+    readonly awaitedWorkflowIDs?: readonly string[],
   ) {
-    super(`Workflow ${workflowID} suspended ${suspendedOn(topic)}`, WorkflowSuspended);
+    super(`Workflow ${workflowID} suspended ${suspendedOn(topic, awaitedWorkflowIDs)}`, WorkflowSuspended);
     this.name = 'DBOSWorkflowSuspendedError';
   }
 }

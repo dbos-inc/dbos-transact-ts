@@ -1,5 +1,5 @@
 import { DBOSExecutor } from './dbos-executor';
-import { Pool, PoolClient, Notification, Client, PoolConfig, ClientBase } from 'pg';
+import { Pool, PoolClient, Notification, Client, PoolConfig, ClientBase, QueryResultRow } from 'pg';
 import type { DatabaseError } from 'pg';
 import {
   DBOSWorkflowConflictError,
@@ -106,6 +106,14 @@ export const DBOS_FUNCNAME_CLOSESTREAM = 'DBOS.closeStream';
 export const DBOS_FUNCNAME_READSTREAM = 'DBOS.readStream';
 export const DBOS_FUNCNAME_READSTREAMOFFSET = 'DBOS.readStreamOffset';
 export const DEFAULT_POOL_SIZE = 10;
+
+/** The suspend_key of a workflow SUSPENDED awaiting workflowID's result. */
+export function resultSuspendKey(workflowID: string): string {
+  return `__dbos_result__:${workflowID}`;
+}
+
+/** The suspend_key of a workflow SUSPENDED in waitFirst on several workflows; any one's completion wakes it. */
+export const WAIT_FIRST_SUSPEND_KEY = '__dbos_wait_first__';
 
 export const DBOS_STREAM_CLOSED_SENTINEL = '__DBOS_STREAM_CLOSED__';
 // The sentinel as it is stored: portable JSON, the same bytes every language writes and reads.
@@ -1880,7 +1888,7 @@ export class SystemDatabase {
   async deadLetterWorkflows(workflowIDs: string[], minRecoveryAttempts: number): Promise<void> {
     if (workflowIDs.length === 0) return;
     const params: unknown[] = [StatusString.MAX_RECOVERY_ATTEMPTS_EXCEEDED, StatusString.PENDING, minRecoveryAttempts];
-    await this.pool.query(
+    await this.#completeWakingWaiters(
       `UPDATE "${this.schemaName}".workflow_status
        SET status = $1,
            owner_xid = NULL,
@@ -2184,6 +2192,7 @@ export class SystemDatabase {
     if (!(await this.outcomeInOneStatement())) {
       return await this.#recordWorkflowOutcomeInTransaction(workflowID, status, outcome, ownerXid);
     }
+    const wakes = await this.#wakesResultWaiters();
     // One autocommit round trip; the upsert reads the UPDATE's rows, so the output lands only with the status.
     const params: unknown[] = [status, StatusString.PENDING, outcome.output ?? null, outcome.error ?? null];
     const target = this.wf(undefined, workflowID, params);
@@ -2192,6 +2201,15 @@ export class SystemDatabase {
     const keyColumns = Object.keys(keys);
     const keyExprs = Object.values(keys).map((value) => `$${params.push(value)}::text`);
     const workflowParam = `$${params.push(workflowID)}::text`;
+    // The waiters come from RETURNING, which sees an append that committed while this waited on the row lock.
+    const woken = wakes
+      ? `, woken AS (
+         UPDATE "${this.schemaName}".workflow_status
+         SET ${this.#wakeSet(`$${params.push(resultSuspendKey(workflowID))}::text`)}
+         WHERE workflow_uuid = ANY(SELECT unnest(result_waiter_ids) FROM updated)
+         RETURNING 1
+       )`
+      : '';
     const { rows } = await this.pool.query<{ count: string }>(
       `WITH updated AS (
          UPDATE "${this.schemaName}".workflow_status
@@ -2202,7 +2220,7 @@ export class SystemDatabase {
              updated_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint,
              completed_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint${this.archiveSet()}
          WHERE ${target} AND status = $2 ${owned}
-         RETURNING 1
+         RETURNING ${wakes ? 'result_waiter_ids' : '1'}
        ), stored AS (
          INSERT INTO "${this.schemaName}".workflow_output (${[...keyColumns, 'workflow_uuid', 'output', 'error'].join(', ')})
          SELECT ${[...keyExprs, workflowParam, '$3::text', '$4::text'].join(', ')}
@@ -2211,7 +2229,7 @@ export class SystemDatabase {
          ON CONFLICT (${this.keyConflict('workflow_uuid')}) DO UPDATE SET output = EXCLUDED.output, error = EXCLUDED.error
          -- CockroachDB refuses a data-modifying CTE without RETURNING.
          RETURNING 1
-       )
+       )${woken}
        -- Selecting from the CTEs rather than inserting at the top level lets a router see the shard key.
        SELECT count(*) AS count FROM updated`,
       params,
@@ -2222,6 +2240,52 @@ export class SystemDatabase {
   /** Whether a workflow's outcome is written in one statement, rather than a transaction of two. */
   outcomeInOneStatement(): Promise<boolean> {
     return Promise.resolve(true);
+  }
+
+  /** Whether completions wake result waiters: getResult and waitFirst with suspend are refused when sharded or on CockroachDB. */
+  async #wakesResultWaiters(): Promise<boolean> {
+    return !this.sharded && !(await this.isCockroach());
+  }
+
+  /** SET making a workflow SUSPENDED under key (a resultSuspendKey) or in waitFirst due for the background pass. */
+  #wakeSet(key: string): string {
+    // Tested in SET, not WHERE: a park committed after the snapshot is re-read only for rows WHERE matched, and the planner can't scan idx_workflow_status_suspended.
+    return `delay_until_epoch_ms = CASE WHEN status = '${StatusString.SUSPENDED}'
+         AND (suspend_key = ${key} OR suspend_key = '${WAIT_FIRST_SUSPEND_KEY}') THEN 0 ELSE delay_until_epoch_ms END`;
+  }
+
+  /**
+   * Run a completing UPDATE, which has no RETURNING of its own, returning the `returning` columns. Where
+   * completions wake result waiters, it runs in a transaction that also wakes the waiters of the rows it completed.
+   */
+  async #completeWakingWaiters<T extends QueryResultRow>(
+    statement: string,
+    params: unknown[],
+    returning: string[] = [],
+  ): Promise<T[]> {
+    if (!(await this.#wakesResultWaiters())) {
+      const sql = returning.length ? `${statement} RETURNING ${returning.join(', ')}` : statement;
+      return (await this.pool.query<T>(sql, params)).rows;
+    }
+    const client = await this.connect();
+    try {
+      return await this.inTransaction(client, async () => {
+        const { rows } = await client.query<T & { workflow_uuid: string; result_waiter_ids: string[] | null }>(
+          `${statement} RETURNING ${[...new Set([...returning, 'workflow_uuid', 'result_waiter_ids'])].join(', ')}`,
+          params,
+        );
+        for (const row of rows) {
+          if (!row.result_waiter_ids?.length) continue;
+          await client.query(
+            `UPDATE "${this.schemaName}".workflow_status SET ${this.#wakeSet('$2::text')} WHERE workflow_uuid = ANY($1::text[])`,
+            [row.result_waiter_ids, resultSuspendKey(row.workflow_uuid)],
+          );
+        }
+        return rows;
+      });
+    } finally {
+      client.release();
+    }
   }
 
   /** The outcome write as a transaction of two statements, for a backend that cannot run it as one. */
@@ -2647,7 +2711,7 @@ export class SystemDatabase {
   async #cancelWorkflows(workflowIDs: string[]): Promise<void> {
     // Unless already complete or cancelled: a repeat cancel would restamp completion.
     const params: unknown[] = [StatusString.CANCELLED, StatusString.SUCCESS, StatusString.ERROR];
-    await this.pool.query(
+    await this.#completeWakingWaiters(
       `UPDATE "${this.schemaName}".workflow_status
        SET status = $1, owner_xid = NULL, deduplication_id = NULL, started_at_epoch_ms = NULL,
            suspend_key = NULL,
@@ -4568,7 +4632,7 @@ export class SystemDatabase {
     const scope = this.appNameFilter('application_name', this.appName, params);
     // Literal statuses let the planner match idx_workflow_status_deadline_v2 under any plan mode.
     // SKIP LOCKED leaves a row a dequeue or a peer's sweep holds for the next sweep.
-    const { rows } = await this.pool.query<{ workflow_uuid: string }>(
+    const rows = await this.#completeWakingWaiters<{ workflow_uuid: string }>(
       `UPDATE "${this.schemaName}".workflow_status
        SET status = $1, owner_xid = NULL, deduplication_id = NULL, started_at_epoch_ms = NULL,
            suspend_key = NULL,
@@ -4582,9 +4646,9 @@ export class SystemDatabase {
            AND ${scope}
          ORDER BY workflow_deadline_epoch_ms
          LIMIT $3
-         FOR UPDATE SKIP LOCKED)
-       RETURNING workflow_uuid`,
+         FOR UPDATE SKIP LOCKED)`,
       params,
+      ['workflow_uuid'],
     );
     return rows.map((r) => r.workflow_uuid);
   }

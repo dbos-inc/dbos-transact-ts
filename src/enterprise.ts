@@ -93,6 +93,11 @@ export interface Suspend {
    * or return the milliseconds to sleep in place when that end time is near or past.
    */
   sleepSuspend(workflowID: string, functionID: number, durationMS: number): Promise<number>;
+  /**
+   * Park the workflow until one of awaitedIDs completes or deadlineEpochMS passes, throwing
+   * DBOSWorkflowSuspendedError; or return when one is already complete or missing, or the deadline is near.
+   */
+  resultSuspend(workflowID: string, awaitedIDs: string[], deadlineEpochMS?: number): Promise<void>;
   /** Re-enqueue the SUSPENDED workflows whose wake time has come. */
   transitionSuspendedWorkflows(): Promise<void>;
 }

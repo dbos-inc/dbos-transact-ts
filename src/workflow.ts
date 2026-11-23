@@ -4,9 +4,10 @@ import {
   awaitRecordedResult,
   DBOS,
   getResultInternal,
+  prepareResultSuspend,
   resolvePollingIntervalMs,
   runInternalStep,
-  type PollingOptions,
+  type WorkflowHandleGetResultOptions,
 } from './dbos';
 import { DuplicationPolicy, InternalEnqueueOptions } from './system_database';
 import { DBOSError, DBOSWorkflowSuspendedError } from './error';
@@ -293,7 +294,7 @@ export interface WorkflowHandle<R> {
   /**
    * Await workflow completion and return its result.
    */
-  getResult(options?: PollingOptions): Promise<R>;
+  getResult(options?: WorkflowHandleGetResultOptions): Promise<R>;
   /**
    * Return the workflow's ID
    */
@@ -303,7 +304,7 @@ export interface WorkflowHandle<R> {
 }
 
 export interface InternalWFHandle<R> extends WorkflowHandle<R> {
-  getResult(optionsOrFuncIdForGet?: PollingOptions | number): Promise<R>;
+  getResult(optionsOrFuncIdForGet?: WorkflowHandleGetResultOptions | number): Promise<R>;
 }
 
 /**
@@ -320,12 +321,18 @@ export class InvokedHandle<R> implements InternalWFHandle<R> {
     return await DBOS.getWorkflowStatus(this.workflowID, { shardKey: this.shardKey });
   }
 
-  async getResult(optionsOrFuncIdForGet?: PollingOptions | number): Promise<R> {
+  async getResult(optionsOrFuncIdForGet?: WorkflowHandleGetResultOptions | number): Promise<R> {
     const funcIdForGet = typeof optionsOrFuncIdForGet === 'number' ? optionsOrFuncIdForGet : undefined;
     const pollingIntervalMs = resolvePollingIntervalMs(optionsOrFuncIdForGet);
+    const suspended =
+      typeof optionsOrFuncIdForGet === 'object' && optionsOrFuncIdForGet.suspend
+        ? prepareResultSuspend('getResult')
+        : undefined;
+    if (suspended !== undefined) await suspended.ready;
     return await bindShardKeys([[this.workflowID, this.shardKey]], () =>
       runInternalStep(
         async () => {
+          if (suspended !== undefined) await suspended.suspend.resultSuspend(DBOS.workflowID!, [this.workflowID]);
           try {
             return await this.workflowPromise;
           } catch (e) {
@@ -336,7 +343,7 @@ export class InvokedHandle<R> implements InternalWFHandle<R> {
         },
         'DBOS.getResult',
         this.workflowID,
-        funcIdForGet,
+        suspended?.funcID ?? funcIdForGet,
       ),
     );
   }
@@ -355,11 +362,23 @@ export class RetrievedHandle<R> implements InternalWFHandle<R> {
     return await DBOS.getWorkflowStatus(this.workflowID, { shardKey: this.shardKey });
   }
 
-  async getResult(optionsOrFuncIdForGet?: PollingOptions | number): Promise<R> {
+  async getResult(optionsOrFuncIdForGet?: WorkflowHandleGetResultOptions | number): Promise<R> {
     const funcIdForGet = typeof optionsOrFuncIdForGet === 'number' ? optionsOrFuncIdForGet : undefined;
     const pollingIntervalMs = resolvePollingIntervalMs(optionsOrFuncIdForGet);
+    const suspended =
+      typeof optionsOrFuncIdForGet === 'object' && optionsOrFuncIdForGet.suspend
+        ? prepareResultSuspend('getResult')
+        : undefined;
+    if (suspended !== undefined) await suspended.ready;
     return (await bindShardKeys([[this.workflowID, this.shardKey]], () =>
-      getResultInternal<R>(this.workflowID, undefined, undefined, funcIdForGet, pollingIntervalMs),
+      getResultInternal<R>(
+        this.workflowID,
+        undefined,
+        undefined,
+        suspended?.funcID ?? funcIdForGet,
+        pollingIntervalMs,
+        suspended?.suspend,
+      ),
     )) as Promise<R>;
   }
 }

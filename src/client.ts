@@ -25,7 +25,7 @@ import {
 import { buildEnqueueStatus, type EnqueueWorkflowOptions } from './enqueue_options';
 import {
   type GetEventOptions,
-  type PollingOptions,
+  type WorkflowHandleGetResultOptions,
   type WaitFirstOptions,
   type WaitAllOptions,
   type SetWorkflowDelayOptions,
@@ -131,7 +131,8 @@ export class ClientHandle<R> implements WorkflowHandle<R> {
     return status ? toWorkflowStatus(status, this.systemDatabase.serializer) : null;
   }
 
-  async getResult(options?: PollingOptions): Promise<R> {
+  async getResult(options?: WorkflowHandleGetResultOptions): Promise<R> {
+    if (options?.suspend) throw new DBOSError('A DBOSClient handle cannot suspend');
     const pollingIntervalMs = resolvePollingIntervalMs(options);
     const res = await bindShardKeys([[this.workflowID, this.shardKey]], () =>
       this.systemDatabase.awaitWorkflowResult(this.workflowID, undefined, undefined, undefined, pollingIntervalMs),
@@ -813,6 +814,7 @@ export class DBOSClient {
   }
 
   async waitFirst(handles: WorkflowHandle<unknown>[], options?: WaitFirstOptions): Promise<WorkflowHandle<unknown>> {
+    if (options?.suspend) throw new DBOSError('A DBOSClient cannot suspend');
     const pollingIntervalMs = resolvePollingIntervalMs(options);
     if (handles.length === 0) {
       throw new Error('handles must not be empty');

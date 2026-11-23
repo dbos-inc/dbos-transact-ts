@@ -1384,5 +1384,12 @@ $$ LANGUAGE plpgsql;`,
         `CREATE INDEX ${isCockroach ? '' : 'CONCURRENTLY'} IF NOT EXISTS "idx_workflow_status_archive_pending" ON "${schemaName}"."workflow_status" ("application_name", "completed_at", "workflow_uuid") WHERE "archive_pending" IS TRUE`,
       ],
     },
+    // Workflows SUSPENDED awaiting this one's result; woken when it completes.
+    {
+      name: '136_workflow_status_result_waiter_ids',
+      pg: [
+        `ALTER TABLE "${schemaName}"."workflow_status" ADD COLUMN IF NOT EXISTS "result_waiter_ids" TEXT[] DEFAULT NULL`,
+      ],
+    },
   ];
 }
