@@ -66,6 +66,7 @@ jobs:
         uses: actions/setup-node@v4.0.2
         with:
           node-version: ${{ matrix.node-version }}
+          cache: 'npm'
       # Jest starts the slowest test files first only when it has their times from an earlier run.
       - name: Restore test timings
         uses: actions/cache@v4
@@ -138,6 +139,7 @@ jobs:
         uses: actions/setup-node@v4.0.2
         with:
           node-version: ${{ matrix.node-version }}
+          cache: 'npm'
       - name: Test packages
         working-directory: ./
         run: |
@@ -157,6 +159,7 @@ jobs:
         uses: actions/setup-node@v4.0.2
         with:
           node-version: '20'
+          cache: 'npm'
       - name: Verify package publishing correctness
         run: |
           npm ci
@@ -239,6 +242,10 @@ jobs:
         uses: actions/setup-node@v4.0.2
         with:
           node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: |
+            dbos-transact-ts/package-lock.json
+            dbos-enterprise-ts/package-lock.json
 
       # Enterprise links this checkout into its node_modules and builds it, so only the dependencies are needed here.
       - name: Install core
