@@ -161,6 +161,10 @@ export const DEFAULT_IDLE_TRANSACTION_TIMEOUT_MS = 60_000;
 // How long a background job's lock may sit idle before Postgres ends its holder's session.
 export const BACKGROUND_JOB_LOCK_IDLE_TIMEOUT_MS = 5000;
 
+// An insertRows value written as the database's statement time, as the timestamp columns' defaults stamp it.
+const DB_NOW_MS = Symbol('DB_NOW_MS');
+const DB_NOW_MS_SQL = '(EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::bigint';
+
 /** Orders strings by code unit, which matches Postgres's "C" collation outside surrogate pairs. */
 export function compareCodeUnits(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
@@ -1385,7 +1389,10 @@ export class SystemDatabase {
     return columns.join(', ');
   }
 
-  /** Insert rows into `table` in one statement, returning the RETURNING rows; a sharded subclass inserts row by row. */
+  /**
+   * Insert rows into `table` in one statement, returning the RETURNING rows; a sharded subclass inserts row by row.
+   * A value equal to DB_NOW_MS is written as the database's statement time, not bound as a parameter.
+   */
   async insertRows<T extends object = object>(
     client: ClientBase | Pool,
     table: string,
@@ -1395,7 +1402,9 @@ export class SystemDatabase {
   ): Promise<T[]> {
     if (rows.length === 0) return [];
     const params: unknown[] = [];
-    const tuples = rows.map((row) => `(${row.map((value) => `$${params.push(value)}`).join(', ')})`);
+    const tuples = rows.map(
+      (row) => `(${row.map((value) => (value === DB_NOW_MS ? DB_NOW_MS_SQL : `$${params.push(value)}`)).join(', ')})`,
+    );
     const { rows: returned } = await client.query<T>(
       `INSERT INTO "${this.schemaName}".${table} (${columns.join(', ')}) VALUES ${tuples.join(', ')} ${suffix}`,
       params,
@@ -1923,9 +1932,9 @@ export class SystemDatabase {
 
   /**
    * Stamp created_at monotonic within each partition key so per-key order holds across batches.
-   * Unordered rows (no partition key) get wall-clock time and never touch the cursors.
+   * Unordered rows (no partition key) get undefined, for the insert to stamp from the database, and never touch the cursors.
    */
-  protected async assignBatchCreatedAt(statuses: WorkflowStatusInternal[]): Promise<number[]> {
+  protected async assignBatchCreatedAt(statuses: WorkflowStatusInternal[]): Promise<(number | undefined)[]> {
     const nowMS = Date.now();
     const batchKeys = new Set<string>();
     for (const status of statuses) {
@@ -1942,12 +1951,12 @@ export class SystemDatabase {
       // max() guards against a concurrent batch that already advanced this key.
       this.#batchCreatedAtCursors.set(key, Math.max(this.#batchCreatedAtCursors.get(key) ?? 0, seededMax + 1));
     }
-    const createdAts: number[] = [];
+    const createdAts: (number | undefined)[] = [];
     const nextForKey = new Map<string, number>();
     for (const status of statuses) {
       const key = status.queuePartitionKey;
       if (key === undefined) {
-        createdAts.push(nowMS);
+        createdAts.push(undefined);
         continue;
       }
       const value = nextForKey.get(key) ?? Math.max(nowMS, this.#batchCreatedAtCursors.get(key) ?? 0);
@@ -2048,16 +2057,19 @@ export class SystemDatabase {
     );
   }
 
-  /** Insert these ENQUEUED workflows' rows on `client` with `stamped` from assignBatchCreatedAt, skipping existing IDs. Returns the IDs inserted. */
+  /** Insert these ENQUEUED workflows' rows on `client` with `stamped` from assignBatchCreatedAt (undefined: the database's time), skipping existing IDs. Returns the IDs inserted. */
   protected async insertWorkflowBatch(
     client: ClientBase,
     batch: WorkflowStatusInternal[],
-    stamped: number[],
+    stamped: (number | undefined)[],
   ): Promise<Set<string>> {
+    if (stamped.length !== batch.length) {
+      throw new DBOSError(`insertWorkflowBatch got ${stamped.length} stamps for ${batch.length} workflows`);
+    }
     // Inserted in one global order, so batches overlapping across processes wait on each other instead of deadlocking.
     const order = batch.map((_, i) => i).sort((a, b) => compareCodeUnits(batch[a].workflowUUID, batch[b].workflowUUID));
     const statuses = order.map((i) => batch[i]);
-    const createdAts = order.map((i) => stamped[i]);
+    const createdAts = order.map((i) => stamped[i] ?? DB_NOW_MS);
     const inserted = new Set<string>();
     const columns = [
       'workflow_uuid',
