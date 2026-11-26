@@ -5,7 +5,7 @@ import { translateDbosConfig } from '../src/config';
 import { ensureSystemDatabase } from '../src/system_database';
 import { GlobalLogger } from '../src/telemetry/logs';
 import { deriveDatabaseUrl, dropPGDatabase, ensurePGDatabase, maskDatabaseUrl } from '../src/database_utils';
-import { Client } from 'pg';
+import { Client, Pool } from 'pg';
 import { randomUUID } from 'node:crypto';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -35,6 +35,17 @@ export async function ensureTestDatabase(databaseUrl: string) {
   } finally {
     await client.end().catch(() => {});
   }
+}
+
+/**
+ * End a pool a test created. `pool.end()` resolves before its connections finish closing, and the next
+ * setup's forced database drop terminates any still closing, which a pool with no 'error' listener
+ * raises as an unhandled error in whatever test runs then.
+ */
+export async function endTestPool(pool: Pool | undefined) {
+  if (!pool) return;
+  pool.on('error', () => {});
+  await pool.end();
 }
 
 /* Sharded test mode */

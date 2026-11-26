@@ -1,7 +1,7 @@
 import { Pool } from 'pg';
 import { DBOS, StatusString } from '../src/';
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
-import { generateDBOSTestConfig, setUpDBOSTestSysDb, retryUntilSuccess, Event } from './helpers';
+import { generateDBOSTestConfig, setUpDBOSTestSysDb, retryUntilSuccess, Event, endTestPool } from './helpers';
 import { sleepConfig, sleepms } from '../src/utils';
 import { DBOSError } from '../src/error';
 import type { ConductorConnection } from '../src/enterprise';
@@ -324,7 +324,7 @@ describe('shutdown-executor-identity', () => {
         await DBOS.shutdown();
       }
       DBOS.setConfig(config);
-      await pool.end();
+      await endTestPool(pool);
     }
   }, 20000);
 });

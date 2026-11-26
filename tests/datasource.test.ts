@@ -26,7 +26,7 @@ import {
   verifyDataSourcePG,
   checkpointWorkflowID,
 } from '../src/datasource';
-import { generateDBOSTestConfig, setUpDBOSTestSysDb, localTestDatabaseUrl, testUnlessSharded } from './helpers';
+import { generateDBOSTestConfig, setUpDBOSTestSysDb, localTestDatabaseUrl, testUnlessSharded, endTestPool } from './helpers';
 import { AsyncLocalStorage } from 'async_hooks';
 import { DBOSInitializationError, DBOSInvalidWorkflowTransitionError } from '../src/error';
 import { deriveDatabaseUrl, dropPGDatabase, ensurePGDatabase } from '../src/database_utils';
@@ -501,7 +501,7 @@ class ProbeTransactionHandler implements DataSourceTransactionHandler {
   async destroy(): Promise<void> {
     const pool = this.#poolField;
     this.#poolField = undefined;
-    await pool?.end();
+    await endTestPool(pool);
   }
 
   get pool(): Pool {
