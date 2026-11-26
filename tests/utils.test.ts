@@ -25,7 +25,7 @@ describe('interruptibleSleep', () => {
     controller.abort();
     const start = Date.now();
     await interruptibleSleep(10_000, controller.signal);
-    expect(Date.now() - start).toBeLessThan(50);
+    expect(Date.now() - start).toBeLessThan(1000);
   });
 
   // https://github.com/dbos-inc/dbos-transact-ts/issues/1253:

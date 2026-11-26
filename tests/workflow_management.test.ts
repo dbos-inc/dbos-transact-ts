@@ -1318,7 +1318,8 @@ describe('test-list-steps', () => {
       assert(s.startedAtEpochMs >= startTime);
       assert(s.completedAtEpochMs >= s.startedAtEpochMs);
       if (s.functionID < numStepTimingSteps) {
-        assert(s.completedAtEpochMs - s.startedAtEpochMs >= 100);
+        // Timers can fire a little early by the wall clock.
+        assert(s.completedAtEpochMs - s.startedAtEpochMs >= 90);
       }
     }
   });
