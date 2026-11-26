@@ -322,7 +322,7 @@ describe('queued-wf-tests-simple', () => {
 
       console.log('run side process');
       // We crash a workflow on purpose; this has queued some things up and awaited them...
-      const { stdout, stderr } = await execFileAsync('npx', ['ts-node', './tests/wfqtestprocess.ts'], {
+      const { stdout, stderr } = await execFileAsync('npx', ['ts-node', '--transpile-only', './tests/wfqtestprocess.ts'], {
         cwd: process.cwd(),
         env: {
           ...process.env,
@@ -1111,6 +1111,7 @@ class InterProcessWorkflow {
           'npx',
           [
             'ts-node',
+            '--transpile-only',
             './tests/wfqueueworker.ts',
             `${InterProcessWorkflow.localConcurrencyLimit}`,
             `${InterProcessWorkflow.globalConcurrencyLimit}`,

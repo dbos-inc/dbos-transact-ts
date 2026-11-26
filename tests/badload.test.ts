@@ -5,7 +5,7 @@ import { describeUnlessSharded } from './helpers';
 describeUnlessSharded('bad-code-loads', () => {
   test('loadCodeTwice', async () => {
     // Run the TypeScript test script under ts-node
-    const result = spawnSync('npx', ['ts-node', './tests/codereloader.ts'], {
+    const result = spawnSync('npx', ['ts-node', '--transpile-only', './tests/codereloader.ts'], {
       encoding: 'utf-8',
       cwd: process.cwd(),
       env: { ...process.env },
@@ -23,7 +23,7 @@ describeUnlessSharded('bad-code-loads', () => {
 
   test('loadCodeAfterLaunch', async () => {
     // Run the TypeScript test script under ts-node
-    const result = spawnSync('npx', ['ts-node', './tests/codelateloader.ts'], {
+    const result = spawnSync('npx', ['ts-node', '--transpile-only', './tests/codelateloader.ts'], {
       encoding: 'utf-8',
       cwd: process.cwd(),
       env: { ...process.env },

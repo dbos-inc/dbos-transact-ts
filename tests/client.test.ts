@@ -118,7 +118,7 @@ class ClientDLQTest {
 type EnqueueTest = typeof ClientTest.enqueueTest;
 
 function runClientSendWorker(workflowID: string, topic: string, appVersion: string) {
-  const _child = spawnSync('npx', ['ts-node', './tests/clientSendWorker.ts', workflowID, topic], {
+  const _child = spawnSync('npx', ['ts-node', '--transpile-only', './tests/clientSendWorker.ts', workflowID, topic], {
     cwd: process.cwd(),
     env: { ...process.env, DBOS__APPVERSION: appVersion },
   });

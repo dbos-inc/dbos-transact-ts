@@ -530,7 +530,7 @@ describe('recovery-tests', () => {
 });
 
 function spawnRecvWorker(args: string[], env: NodeJS.ProcessEnv) {
-  const child = spawn('npx', ['ts-node', './tests/recoveryRecvWorker.ts', ...args], {
+  const child = spawn('npx', ['ts-node', '--transpile-only', './tests/recoveryRecvWorker.ts', ...args], {
     cwd: process.cwd(),
     env,
     stdio: ['ignore', 'pipe', 'pipe'],
