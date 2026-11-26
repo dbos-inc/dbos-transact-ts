@@ -74,7 +74,7 @@
     "build": "tsc --project tsconfig.json && npm run --workspaces build",
     "lint": "eslint --ignore-pattern **/coverage/ .",
     "test": "npm run build && npm run test:packages && npm run test:unit",
-    "test:unit": "jest ./tests --coverage --collectCoverageFrom='src/**/*' --detectOpenHandles",
+    "test:unit": "jest ./tests",
     "test:packages": "npm run --workspaces test",
     "check:package": "npm run build && publint && attw --pack .",
     "test:publish": "node --test publish/peer_range.test.mjs",
