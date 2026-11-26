@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { DBOS } from '@dbos-inc/dbos-sdk';
 import { Client } from 'pg';
-import { dropDB, withTimeout } from './test-helpers';
+import { createTopics, dropDB, withTimeout } from './test-helpers';
 import { Kafka, KafkaMessage, logLevel, KafkaConfig, Producer } from 'kafkajs';
 import { KafkaReceiver } from '..';
 import { EventEmitter } from 'node:events';
@@ -116,29 +116,6 @@ async function validateKafka(config: KafkaConfig) {
   }
 }
 
-async function setupTopics(kafka: Kafka, topics: string[]) {
-  const admin = kafka.admin();
-  try {
-    await admin.connect();
-    // Delete and recreate topics to ensure a clean state
-    const existingTopics = await admin.listTopics();
-    const topicsToDelete = topics.filter((t) => existingTopics.includes(t));
-    await admin.deleteTopics({ topics: topicsToDelete, timeout: 5000 });
-
-    await new Promise((r) => setTimeout(r, 3000));
-    await admin.createTopics({
-      topics: topics.map((t) => ({
-        topic: t,
-        numPartitions: 1,
-        replicationFactor: 1,
-      })),
-      timeout: 5000,
-    });
-  } finally {
-    await admin.disconnect();
-  }
-}
-
 suite('kafkajs-receive', async () => {
   const kafkaAvailable = await validateKafka(kafkaConfig);
   let producer: Producer | undefined = undefined;
@@ -163,7 +140,14 @@ suite('kafkajs-receive', async () => {
       producer = kafka.producer();
 
       const topics = testCases.map((tc) => tc.topic);
-      await Promise.all([setupTopics(kafka, topics), producer.connect()]);
+      await Promise.all([
+        createTopics(
+          kafka,
+          topics.map((topic) => ({ topic, numPartitions: 1, replicationFactor: 1 })),
+          { recreate: true },
+        ),
+        producer.connect(),
+      ]);
 
       const client = new Client({ user: 'postgres', database: 'postgres' });
       try {

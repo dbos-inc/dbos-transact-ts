@@ -5,7 +5,7 @@ import { createRequire } from 'node:module';
 
 import { DBOS, Error as DBOSErrors } from '@dbos-inc/dbos-sdk';
 import { Client } from 'pg';
-import { dropDB, withTimeout } from './test-helpers';
+import { createTopics, dropDB, withTimeout } from './test-helpers';
 import { Kafka, KafkaConfig, KafkaMessage, logLevel, Producer } from 'kafkajs';
 import { KafkaReceiver } from '..';
 
@@ -94,16 +94,10 @@ suite('kafkajs-receive-failure-paths', async () => {
       if (!kafkaAvailable) return;
 
       const kafka = new Kafka(kafkaConfig);
-      const admin = kafka.admin();
-      await admin.connect();
-      await admin.createTopics({
-        topics: [
-          { topic: outageTopic, numPartitions: 1 },
-          { topic: poisonTopic, numPartitions: 1 },
-        ],
-        timeout: 10000,
-      });
-      await admin.disconnect();
+      await createTopics(kafka, [
+        { topic: outageTopic, numPartitions: 1 },
+        { topic: poisonTopic, numPartitions: 1 },
+      ]);
 
       producer = kafka.producer();
       await producer.connect();
