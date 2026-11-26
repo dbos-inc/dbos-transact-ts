@@ -66,13 +66,20 @@ jobs:
         uses: actions/setup-node@v4.0.2
         with:
           node-version: ${{ matrix.node-version }}
+      # Jest starts the slowest test files first only when it has their times from an earlier run.
+      - name: Restore test timings
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/jest-cache/perf-cache-*
+          key: jest-timings-${{ matrix.node-version }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: jest-timings-${{ matrix.node-version }}-
       - name: Compile and Test
         working-directory: ./
         run: |
           npm ci
           npm run build
           npm run lint
-          npm run test:unit
+          npm run test:unit -- --cacheDirectory "$RUNNER_TEMP/jest-cache"
         env:
           PGPASSWORD: dbos
           DB_PASSWORD: dbos
