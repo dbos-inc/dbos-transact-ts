@@ -17,4 +17,6 @@ module.exports = {
   collectCoverageFrom: ['src/**/*.ts', '!src/**/index.ts'],
   setupFiles: ['./jest.setup.ts'],
   testTimeout: 60000,
+  // Tests mostly wait rather than compute, so run one worker per core of a 4-core CI runner.
+  maxWorkers: 4,
 };

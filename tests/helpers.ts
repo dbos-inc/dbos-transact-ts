@@ -74,7 +74,9 @@ export function localTestDatabaseUrl(): string {
     process.env.DBOS_TEST_DB_URL ?? `postgresql://postgres:${dbPassword}@localhost:5432/dbostest?sslmode=disable`,
   );
   // DBOS_TEST_DB_URL names the test database; the system database is named after it.
-  url.pathname = `${url.pathname}_dbos_sys`;
+  // Jest runs test files in parallel, so each of its workers (and the processes their tests spawn) has its own.
+  const worker = process.env.JEST_WORKER_ID;
+  url.pathname = `${url.pathname}${worker ? `_w${worker}` : ''}_dbos_sys`;
   return url.toString();
 }
 

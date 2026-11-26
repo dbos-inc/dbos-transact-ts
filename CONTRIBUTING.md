@@ -59,7 +59,7 @@ npx jest tests/dbos.test.ts
 npm run test:unit
 ```
 
-The tests share one database, so run them one at a time; when passing several files to `jest` yourself, add `--runInBand`. To use a different server, set `DBOS_TEST_DB_URL` (for example `postgresql://postgres:dbos@localhost:5432/dbostest`); the tests put their system database in `<database name>_dbos_sys`. The CockroachDB tests run only when `DBOS_COCKROACHDB_URL` is set.
+Test files run in parallel, each `jest` worker in its own database. Run only one `jest` at a time against a server. To use a different server, set `DBOS_TEST_DB_URL` (for example `postgresql://postgres:dbos@localhost:5432/dbostest`); the tests put their system databases in `<database name>_w<worker>_dbos_sys`. The CockroachDB tests run only when `DBOS_COCKROACHDB_URL` is set.
 
 `npm run test:packages` runs the tests for each package in `packages/`. The Kafka receiver packages also need a broker on `localhost:9092` (or set `KAFKA_BROKER`):
 
