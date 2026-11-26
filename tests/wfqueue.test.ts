@@ -322,7 +322,7 @@ describe('queued-wf-tests-simple', () => {
 
       console.log('run side process');
       // We crash a workflow on purpose; this has queued some things up and awaited them...
-      const { stdout, stderr } = await execFileAsync('npx', ['ts-node', './tests/wfqtestprocess.ts'], {
+      const { stdout, stderr } = await execFileAsync('npx', ['ts-node', '--transpile-only', './tests/wfqtestprocess.ts'], {
         cwd: process.cwd(),
         env: {
           ...process.env,
@@ -536,14 +536,11 @@ describe('queued-wf-tests-simple', () => {
 
     const workflows = await DBOS.listQueuedWorkflows({ queueName: TestQueueRecovery.recoveryQueue.name });
     expect(workflows.length).toBe(3);
-    expect(workflows[0].workflowID).toBe(wfid1);
-    expect(workflows[0].executorId).toBe('local');
+    // Workflows created in the same millisecond list in any order.
+    expect(new Set(workflows.map((w) => w.workflowID))).toEqual(new Set([wfid1, wfid2, wfid3]));
+    expect(workflows.map((w) => w.executorId)).toEqual(['local', 'local', 'local']);
     expect((await wfh1.getStatus())?.status).toBe(StatusString.PENDING);
-    expect(workflows[1].workflowID).toBe(wfid2);
-    expect(workflows[1].executorId).toBe('local');
     expect((await wfh2.getStatus())?.status).toBe(StatusString.PENDING);
-    expect(workflows[2].workflowID).toBe(wfid3);
-    expect(workflows[2].executorId).toBe('local');
     expect((await wfh3.getStatus())?.status).toBe(StatusString.ENQUEUED);
 
     // Manually update the database to pretend wf3 is PENDING and comes from a different executor
@@ -1114,6 +1111,7 @@ class InterProcessWorkflow {
           'npx',
           [
             'ts-node',
+            '--transpile-only',
             './tests/wfqueueworker.ts',
             `${InterProcessWorkflow.localConcurrencyLimit}`,
             `${InterProcessWorkflow.globalConcurrencyLimit}`,

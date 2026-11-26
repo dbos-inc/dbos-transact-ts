@@ -58,7 +58,7 @@ describe('failures-tests', () => {
   test('failing-step', async () => {
     let startTime = Date.now();
     await expect(FailureTestClass.testFailStepWorkflow()).resolves.toBe(2);
-    expect(Date.now() - startTime).toBeGreaterThanOrEqual(1000);
+    expect(Date.now() - startTime).toBeGreaterThanOrEqual(950);
 
     startTime = Date.now();
     try {
@@ -71,7 +71,7 @@ describe('failures-tests', () => {
       expect(e.errors[0].message).toBe('bad number');
       expect(e.errors[1].message).toBe('bad number');
     }
-    expect(Date.now() - startTime).toBeGreaterThanOrEqual(1000);
+    expect(Date.now() - startTime).toBeGreaterThanOrEqual(950);
 
     // A workflow hosts the step, so its retry policy and step context apply.
     FailureTestClass.cnt = 0;

@@ -7,7 +7,7 @@ import { DBOSExecutor } from '../src/dbos-executor';
 import { DBOSWorkflowCancelledError, DBOSWorkflowConflictError } from '../src/error';
 import { runWithTopContext } from '../src/context';
 import { sleepms } from '../src/utils';
-import { generateDBOSTestConfig, setUpDBOSTestSysDb, describeUnlessSharded } from './helpers';
+import { generateDBOSTestConfig, setUpDBOSTestSysDb, describeUnlessSharded, endTestPool } from './helpers';
 
 import { randomUUID } from 'node:crypto';
 import { Client, Pool } from 'pg';
@@ -702,10 +702,8 @@ describeUnlessSharded('sysdb-notifications-lifecycle', () => {
       // out, and pool.end() waits on that if an assertion above threw before the shutdown.
       await DBOS.shutdown();
       DBOS.setConfig(config);
-      // The assertions above are done, so guard the teardown: end() closes connections DBOS opened on a
-      // pool this test deliberately left without an error handler.
-      pool.on('error', () => {});
-      await pool.end();
+      // The assertions above are done, so the teardown can guard the pool this test left without a handler.
+      await endTestPool(pool);
     }
   });
 
@@ -754,7 +752,7 @@ describeUnlessSharded('sysdb-notifications-lifecycle', () => {
       expect((await pool.query('SELECT 1')).rowCount).toBe(1);
     } finally {
       process.off('uncaughtException', onUncaught);
-      await pool.end();
+      await endTestPool(pool);
       await killer.end();
     }
   });

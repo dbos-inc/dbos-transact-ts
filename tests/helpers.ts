@@ -5,7 +5,7 @@ import { translateDbosConfig } from '../src/config';
 import { ensureSystemDatabase } from '../src/system_database';
 import { GlobalLogger } from '../src/telemetry/logs';
 import { deriveDatabaseUrl, dropPGDatabase, ensurePGDatabase, maskDatabaseUrl } from '../src/database_utils';
-import { Client } from 'pg';
+import { Client, Pool } from 'pg';
 import { randomUUID } from 'node:crypto';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -37,6 +37,17 @@ export async function ensureTestDatabase(databaseUrl: string) {
   }
 }
 
+/**
+ * End a pool a test created. `pool.end()` resolves before its connections finish closing, and the next
+ * setup's forced database drop terminates any still closing, which a pool with no 'error' listener
+ * raises as an unhandled error in whatever test runs then.
+ */
+export async function endTestPool(pool: Pool | undefined) {
+  if (!pool) return;
+  pool.on('error', () => {});
+  await pool.end();
+}
+
 /* Sharded test mode */
 
 /** Whether the system database is a sharded one behind a router (requires @dbos-inc/dbos-enterprise). */
@@ -63,7 +74,9 @@ export function localTestDatabaseUrl(): string {
     process.env.DBOS_TEST_DB_URL ?? `postgresql://postgres:${dbPassword}@localhost:5432/dbostest?sslmode=disable`,
   );
   // DBOS_TEST_DB_URL names the test database; the system database is named after it.
-  url.pathname = `${url.pathname}_dbos_sys`;
+  // Jest runs test files in parallel, so each of its workers (and the processes their tests spawn) has its own.
+  const worker = process.env.JEST_WORKER_ID;
+  url.pathname = `${url.pathname}${worker ? `_w${worker}` : ''}_dbos_sys`;
   return url.toString();
 }
 
@@ -89,6 +102,8 @@ export function generateDBOSTestConfig(): DBOSConfig {
   return {
     name: 'dbostest',
     systemDatabaseUrl: url,
+    // Dynamic schedules are polled every 30s by default.
+    schedulerPollingIntervalMs: 100,
     ...(new URL(url).port === '26257' ? { useListenNotify: false } : {}),
   };
 }

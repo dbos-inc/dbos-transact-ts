@@ -9,6 +9,7 @@ import {
   testUnlessSharded,
   expectError,
   usingSharding,
+  endTestPool,
 } from './helpers';
 import { randomUUID } from 'node:crypto';
 import { StatusString } from '../src/workflow';
@@ -1220,7 +1221,7 @@ describeUnlessSharded('custom-pool-test', () => {
     await DBOS.shutdown();
     // A pool DBOS was given is the caller's to close, even after a failed launch
     assert(!pool.ending && !pool.ended);
-    await pool.end();
+    await endTestPool(pool);
     // Create the system database, launch should succeed with a custom pool but fake URL
     await ensurePGDatabase(baseConfig.systemDatabaseUrl!, { info: () => {}, warn: () => {} });
     pool = new Pool({ connectionString: systemDatabaseURL });
@@ -1259,7 +1260,7 @@ describeUnlessSharded('custom-pool-test', () => {
       // not hand it to the next describe, whose DROP DATABASE ... WITH (FORCE) would kill its connections.
       await DBOS.shutdown();
       pool.on('error', () => {});
-      await pool.end();
+      await endTestPool(pool);
     }
   });
 });
@@ -1291,7 +1292,7 @@ describe('custom-pool-lifecycle', () => {
       // The caller's pool is still theirs to use.
       await pool.query('SELECT 1');
     } finally {
-      await pool.end();
+      await endTestPool(pool);
     }
   });
 
@@ -1325,7 +1326,7 @@ describe('custom-pool-lifecycle', () => {
         connection.release();
       }
     } finally {
-      await pool.end();
+      await endTestPool(pool);
     }
   });
 
@@ -1386,7 +1387,7 @@ describe('custom-pool-lifecycle', () => {
 
       expect((await pool.query('SELECT 1')).rowCount).toBe(1);
     } finally {
-      await pool.end();
+      await endTestPool(pool);
     }
   });
 });
@@ -1922,7 +1923,7 @@ describe('custom-pool-getstatus', () => {
       }
     } finally {
       await DBOS.shutdown();
-      await pool.end();
+      await endTestPool(pool);
     }
   }, 30000);
 });

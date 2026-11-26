@@ -74,7 +74,7 @@
     "build": "tsc --project tsconfig.json && npm run --workspaces build",
     "lint": "eslint --ignore-pattern **/coverage/ .",
     "test": "npm run build && npm run test:packages && npm run test:unit",
-    "test:unit": "jest ./tests --coverage --collectCoverageFrom='src/**/*' --detectOpenHandles",
+    "test:unit": "jest ./tests",
     "test:packages": "npm run --workspaces test",
     "check:package": "npm run build && publint && attw --pack .",
     "test:publish": "node --test publish/peer_range.test.mjs",
@@ -100,6 +100,7 @@
     "prettier": "^3.4.2",
     "publint": "^0.3.21",
     "ts-jest": "^29.4.15",
+    "ts-node": "^10.9.2",
     "typescript": "^5.4.5",
     "typescript-eslint": "^8.26.1",
     "zod": "^4.3.6"

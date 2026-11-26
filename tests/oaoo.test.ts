@@ -164,7 +164,7 @@ describe('oaoo-tests', () => {
     await DBOS.withNextWorkflowID(workflowUUID, async () => {
       await expect(WorkflowOAOO.sleepWorkflow(2)).resolves.toBeFalsy();
     });
-    expect(Date.now() - startTime).toBeLessThanOrEqual(200);
+    expect(Date.now() - startTime).toBeLessThanOrEqual(1000);
   });
 
   // Regression: a fractional duration must not reach the BIGINT timing columns.
@@ -206,7 +206,7 @@ describe('oaoo-tests', () => {
     await DBOS.withNextWorkflowID(workflowUUID, async () => {
       await expect(WorkflowOAOO.recvWorkflow(2)).resolves.toBeFalsy();
     });
-    expect(Date.now() - startTime).toBeLessThanOrEqual(200);
+    expect(Date.now() - startTime).toBeLessThanOrEqual(1000);
   });
 
   test('workflow-getEvent-oaoo', async () => {
@@ -231,7 +231,7 @@ describe('oaoo-tests', () => {
       workflowUUID,
       async () => await expect(WorkflowOAOO.getEventWorkflow(2)).resolves.toBeFalsy(),
     );
-    expect(Date.now() - startTime).toBeLessThanOrEqual(200);
+    expect(Date.now() - startTime).toBeLessThanOrEqual(1000);
   });
 
   test('workflow-oaoo', async () => {

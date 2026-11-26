@@ -530,7 +530,7 @@ describe('recovery-tests', () => {
 });
 
 function spawnRecvWorker(args: string[], env: NodeJS.ProcessEnv) {
-  const child = spawn('npx', ['ts-node', './tests/recoveryRecvWorker.ts', ...args], {
+  const child = spawn('npx', ['ts-node', '--transpile-only', './tests/recoveryRecvWorker.ts', ...args], {
     cwd: process.cwd(),
     env,
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -538,6 +538,7 @@ function spawnRecvWorker(args: string[], env: NodeJS.ProcessEnv) {
 
   let stdout = '';
   let stderr = '';
+  let exitCode: number | null | undefined;
 
   child.stdout.on('data', (chunk: Buffer) => {
     stdout += chunk.toString();
@@ -546,27 +547,36 @@ function spawnRecvWorker(args: string[], env: NodeJS.ProcessEnv) {
     stderr += chunk.toString();
   });
 
-  const waitFor = (needle: string, timeoutMs: number = 10000) =>
-    new Promise<void>((resolve, reject) => {
-      const start = Date.now();
-      const timer = setInterval(() => {
-        if (stdout.includes(needle) || stderr.includes(needle)) {
-          clearInterval(timer);
-          resolve();
-          return;
-        }
-        if (Date.now() - start > timeoutMs) {
-          clearInterval(timer);
-          reject(new Error(`Timed out waiting for "${needle}". stdout=${stdout} stderr=${stderr}`));
-        }
-      }, 25);
-    });
-
   const done = new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve) => {
     child.on('close', (code) => {
+      exitCode = code;
       resolve({ code, stdout, stderr });
     });
   });
+
+  // Resolves once the worker prints `needle`, and fails if it exits first; the test's timeout bounds a hang.
+  const waitFor = (needle: string) =>
+    new Promise<void>((resolve, reject) => {
+      const check = () => {
+        if (stdout.includes(needle) || stderr.includes(needle)) {
+          cleanup();
+          resolve();
+        } else if (exitCode !== undefined) {
+          cleanup();
+          reject(new Error(`Worker exited (${exitCode}) before printing "${needle}". stdout=${stdout} stderr=${stderr}`));
+        }
+      };
+      const cleanup = () => {
+        child.stdout.off('data', check);
+        child.stderr.off('data', check);
+        child.off('close', check);
+      };
+      // Registered after the accumulating listeners, so each check sees the chunk that fired it.
+      child.stdout.on('data', check);
+      child.stderr.on('data', check);
+      child.on('close', check);
+      check();
+    });
 
   return { waitFor, done };
 }

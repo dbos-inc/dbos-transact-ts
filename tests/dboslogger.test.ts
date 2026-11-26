@@ -5,7 +5,7 @@ import { describeUnlessSharded } from './helpers';
 describeUnlessSharded('dbos-logger', () => {
   test('logFromWf', async () => {
     // Run the TypeScript test script under ts-node
-    const result = spawnSync('npx', ['ts-node', './tests/logtodboslogger.ts'], {
+    const result = spawnSync('npx', ['ts-node', '--transpile-only', './tests/logtodboslogger.ts'], {
       encoding: 'utf-8',
       cwd: process.cwd(),
       env: { ...process.env },

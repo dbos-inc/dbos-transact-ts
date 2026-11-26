@@ -7,10 +7,6 @@ describe('DBOS Bundler Tests', () => {
   const bundlerTestDir = path.join(__dirname, 'bundler-test');
   const bundleFile = path.join(bundlerTestDir, 'dist', 'bundle.js');
 
-  beforeAll(() => {
-    execSync('npm run build', { cwd: path.join(__dirname, '..'), stdio: 'inherit' });
-  }, 120000);
-
   test('test app with bundler', async () => {
     const dbPassword = process.env.PGPASSWORD || 'dbos';
     const sysDbName = 'bundler_test_dbos_sys';

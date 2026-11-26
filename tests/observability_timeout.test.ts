@@ -8,7 +8,7 @@ import { DBOSJSON, DBOSSerializer } from '../src/serialization';
 import { createSystemDatabase, retriablePostgresException, SystemDatabase } from '../src/system_database';
 import { GlobalLogger } from '../src/telemetry/logs';
 import { getClientConfig, sleepms } from '../src/utils';
-import { Event, generateDBOSTestConfig, setUpDBOSTestSysDb, usingSharding } from './helpers';
+import { Event, endTestPool, generateDBOSTestConfig, setUpDBOSTestSysDb, usingSharding } from './helpers';
 
 describe('observability-query-timeout', () => {
   let config: DBOSConfig;
@@ -477,7 +477,7 @@ describe('system-database-idle-transaction-timeout', () => {
       expect(await sessionTimeoutMs(sysdb)).not.toBe('12345');
     } finally {
       await sysdb.destroy();
-      await pool.end();
+      await endTestPool(pool);
     }
   });
 

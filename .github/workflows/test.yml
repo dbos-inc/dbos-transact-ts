@@ -63,16 +63,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4.1.1
       - name: Use Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v4.0.2
+        uses: actions/setup-node@v4.4.0
         with:
           node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+      # Jest starts the slowest test files first only when it has their times from an earlier run.
+      - name: Restore test timings
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/jest-cache/perf-cache-*
+          key: jest-timings-${{ matrix.node-version }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: jest-timings-${{ matrix.node-version }}-
       - name: Compile and Test
         working-directory: ./
         run: |
           npm ci
           npm run build
           npm run lint
-          npm run test:unit
+          npm run test:unit -- --cacheDirectory "$RUNNER_TEMP/jest-cache"
         env:
           PGPASSWORD: dbos
           DB_PASSWORD: dbos
@@ -104,6 +112,21 @@ jobs:
         image: apache/kafka
         ports:
           - 9092:9092
+        # Any KAFKA_* variable replaces the image's default config, so this lists the single-node
+        # setup in full. The tests start many consumer groups, and with no rebalance delay a
+        # group's first consumer joins at once rather than after 3s.
+        env:
+          KAFKA_NODE_ID: 1
+          KAFKA_PROCESS_ROLES: broker,controller
+          KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+          KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+          KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+          KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+          KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+          KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+          KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+          KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+          KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
         options: >-
           --health-cmd "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092"
           --health-interval 10s
@@ -113,9 +136,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4.1.1
       - name: Use Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v4.0.2
+        uses: actions/setup-node@v4.4.0
         with:
           node-version: ${{ matrix.node-version }}
+          cache: 'npm'
       - name: Test packages
         working-directory: ./
         run: |
@@ -132,9 +156,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4.1.1
       - name: Use Node.js
-        uses: actions/setup-node@v4.0.2
+        uses: actions/setup-node@v4.4.0
         with:
           node-version: '20'
+          cache: 'npm'
       - name: Verify package publishing correctness
         run: |
           npm ci
@@ -214,9 +239,13 @@ jobs:
           path: dbos-enterprise-ts
 
       - name: Use Node.js
-        uses: actions/setup-node@v4.0.2
+        uses: actions/setup-node@v4.4.0
         with:
           node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: |
+            dbos-transact-ts/package-lock.json
+            dbos-enterprise-ts/package-lock.json
 
       # Enterprise links this checkout into its node_modules and builds it, so only the dependencies are needed here.
       - name: Install core

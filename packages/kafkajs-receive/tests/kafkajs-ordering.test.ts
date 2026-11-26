@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { DBOS } from '@dbos-inc/dbos-sdk';
 import { Client } from 'pg';
-import { dropDB, withTimeout } from './test-helpers';
+import { createTopics, dropDB, withTimeout } from './test-helpers';
 import { Kafka, KafkaConfig, KafkaMessage, logLevel, Producer } from 'kafkajs';
 import { KafkaReceiver } from '..';
 
@@ -145,17 +145,11 @@ suite('kafkajs-receive-ordering', async () => {
       if (!kafkaAvailable) return;
 
       const kafka = new Kafka(kafkaConfig);
-      const admin = kafka.admin();
-      await admin.connect();
-      await admin.createTopics({
-        topics: [
-          { topic: partitionTopic, numPartitions: NUM_PARTITIONS },
-          { topic: topicOrderTopic, numPartitions: 3 },
-          { topic: customQueueTopic, numPartitions: 1 },
-        ],
-        timeout: 10000,
-      });
-      await admin.disconnect();
+      await createTopics(kafka, [
+        { topic: partitionTopic, numPartitions: NUM_PARTITIONS },
+        { topic: topicOrderTopic, numPartitions: 3 },
+        { topic: customQueueTopic, numPartitions: 1 },
+      ]);
 
       producer = kafka.producer();
       await producer.connect();

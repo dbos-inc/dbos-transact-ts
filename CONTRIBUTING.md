@@ -59,12 +59,24 @@ npx jest tests/dbos.test.ts
 npm run test:unit
 ```
 
-The tests share one database, so run them one at a time; when passing several files to `jest` yourself, add `--runInBand`. To use a different server, set `DBOS_TEST_DB_URL` (for example `postgresql://postgres:dbos@localhost:5432/dbostest`); the tests put their system database in `<database name>_dbos_sys`. The CockroachDB tests run only when `DBOS_COCKROACHDB_URL` is set.
+Test files run in parallel, each `jest` worker in its own database. Run only one `jest` at a time against a server. To use a different server, set `DBOS_TEST_DB_URL` (for example `postgresql://postgres:dbos@localhost:5432/dbostest`); the tests put their system databases in `<database name>_w<worker>_dbos_sys`. The CockroachDB tests run only when `DBOS_COCKROACHDB_URL` is set.
 
-`npm run test:packages` runs the tests for each package in `packages/`. The Kafka receiver packages also need a broker on `localhost:9092` (or set `KAFKA_BROKER`):
+`npm run test:packages` runs the tests for each package in `packages/`. The Kafka receiver packages also need a broker on `localhost:9092` (or set `KAFKA_BROKER`). This one matches CI, which turns off the broker's 3s delay before a new consumer group's first rebalance:
 
 ```shell
-docker run -d --name dbos-kafka -p 9092:9092 apache/kafka
+docker run -d --name dbos-kafka -p 9092:9092 \
+  -e KAFKA_NODE_ID=1 \
+  -e KAFKA_PROCESS_ROLES=broker,controller \
+  -e KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093 \
+  -e KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://localhost:9092 \
+  -e KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER \
+  -e KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT \
+  -e KAFKA_CONTROLLER_QUORUM_VOTERS=1@localhost:9093 \
+  -e KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1 \
+  -e KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1 \
+  -e KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=1 \
+  -e KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS=0 \
+  apache/kafka
 ```
 
 ## Requesting features

@@ -8,6 +8,7 @@ import {
   recoverWorkflow,
   localTestDatabaseUrl,
   testUnlessSharded,
+  endTestPool,
 } from './helpers';
 import { Client, Pool, PoolClient } from 'pg';
 import { AsyncLocalStorage } from 'node:async_hooks';
@@ -186,7 +187,7 @@ class CheckpointDataSource implements DataSourceTransactionHandler {
   async destroy(): Promise<void> {
     const pool = this.#poolField;
     this.#poolField = undefined;
-    await pool?.end();
+    await endTestPool(pool);
   }
 
   get pool(): Pool {
