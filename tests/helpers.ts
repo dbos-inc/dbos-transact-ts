@@ -102,6 +102,8 @@ export function generateDBOSTestConfig(): DBOSConfig {
   return {
     name: 'dbostest',
     systemDatabaseUrl: url,
+    // Dynamic schedules are polled every 30s by default.
+    schedulerPollingIntervalMs: 100,
     ...(new URL(url).port === '26257' ? { useListenNotify: false } : {}),
   };
 }

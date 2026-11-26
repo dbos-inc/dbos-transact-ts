@@ -732,7 +732,7 @@ describe('dbos-streaming-tests', () => {
 
   // Tests LISTEN/NOTIFY wakeups, which a sharded system database replaces with polling.
   testUnlessSharded('stream-trigger-dropped-notifier-delivers', async () => {
-    // The per-row NOTIFY trigger is dropped; assert it's gone and that the coalescing notifier still wakes a blocked reader well under the 1s poll.
+    // The per-row NOTIFY trigger is dropped; assert it's gone and that the coalescing notifier still wakes a blocked reader.
     const streamKey = 'notifier_stream';
     const numValues = 3;
 
@@ -758,6 +758,8 @@ describe('dbos-streaming-tests', () => {
       [sysdb.schemaName],
     );
     expect(trigger.rows.length).toBe(0);
+    // Leave the notifier as the only way a value arrives in time.
+    sysdb.dbPollingIntervalStreamMs = 30000;
 
     const wfid = randomUUID();
     const handle = await DBOS.withNextWorkflowID(wfid, async () => {
@@ -772,8 +774,8 @@ describe('dbos-streaming-tests', () => {
     }
     await handle.getResult();
     expect(count).toBe(numValues);
-    // Delivery via the notifier (~10ms coalesce) is far faster than the 1s polling fallback.
-    expect(maxLatency).toBeLessThan(500);
+    // Delivery via the notifier (~10ms coalesce) is far faster than the 30s polling fallback, even on a loaded runner.
+    expect(maxLatency).toBeLessThan(5000);
   });
 
   test('read-stream-is-one-round-trip-per-value', async () => {
