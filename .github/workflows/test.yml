@@ -63,7 +63,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4.1.1
       - name: Use Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v4.0.2
+        uses: actions/setup-node@v4.4.0
         with:
           node-version: ${{ matrix.node-version }}
           cache: 'npm'
@@ -136,7 +136,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4.1.1
       - name: Use Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v4.0.2
+        uses: actions/setup-node@v4.4.0
         with:
           node-version: ${{ matrix.node-version }}
           cache: 'npm'
@@ -156,7 +156,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4.1.1
       - name: Use Node.js
-        uses: actions/setup-node@v4.0.2
+        uses: actions/setup-node@v4.4.0
         with:
           node-version: '20'
           cache: 'npm'
@@ -239,7 +239,7 @@ jobs:
           path: dbos-enterprise-ts
 
       - name: Use Node.js
-        uses: actions/setup-node@v4.0.2
+        uses: actions/setup-node@v4.4.0
         with:
           node-version: '20'
           cache: 'npm'
