@@ -4655,4 +4655,47 @@ describe('partition-queue-limits', () => {
       await DBOS.cancelWorkflow(id);
     }
   }, 30000);
+
+  test('partitioned queue sweep frees workerConcurrency slots as dispatched workflows finish', async () => {
+    const queueName = `partition_sweep_release_${randomUUID()}`;
+    const partitions = ['a', 'b', 'c'];
+    const handles: WorkflowHandle<string>[] = [];
+    for (const partition of partitions) {
+      handles.push(
+        await DBOS.startWorkflow(limiterWorkflow, {
+          queueName,
+          enqueueOptions: { queuePartitionKey: partition },
+        })(partition),
+      );
+    }
+
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    // Wait between partition dispatches until the just-started workflow finishes and leaves runningWorkflowMap.
+    setDebugTrigger(DEBUG_TRIGGER_BETWEEN_PARTITION_DISPATCHES, {
+      asyncCallback: async () => {
+        await retryUntilSuccess(() => {
+          expect(sysdb.countRunningWorkflowsForQueue(queueName)).toBe(0);
+        });
+      },
+    });
+
+    try {
+      await DBOS.registerQueue(queueName, {
+        partitionConcurrency: 2,
+        workerConcurrency: 2,
+        minPollingIntervalMs: 60000,
+        onConflict: 'always_update',
+      });
+
+      // All three partitions must finish from the single initial poll without waiting 60s for the next poll.
+      await retryUntilSuccess(async () => {
+        const statuses = await Promise.all(handles.map((h) => h.getStatus()));
+        expect(statuses.every((s) => s?.status === StatusString.SUCCESS)).toBe(true);
+      }, 10000);
+    } finally {
+      clearDebugTriggers();
+    }
+
+    expect(await queueEntriesAreCleanedUp()).toBe(true);
+  }, 30000);
 });

@@ -821,22 +821,23 @@ class WFQueueRunner {
     // Whether any scope hit contention during this poll; backed off once, however many scopes did.
     let contentionDetected = false;
     // Helper function that starts dequeued workflows
+    let pendingDispatch = 0;
     const dispatch = async (wfids: string[], ownerXid: string) => {
-      if (wfids.length > 0) {
-        await debugTriggerPoint(DEBUG_TRIGGER_WORKFLOW_QUEUE_START);
+      pendingDispatch += wfids.length;
+      try {
+        if (wfids.length > 0) {
+          await debugTriggerPoint(DEBUG_TRIGGER_WORKFLOW_QUEUE_START);
+        }
+        await exec.dispatchDequeuedWorkflows(wfids, ownerXid);
+      } finally {
+        pendingDispatch -= wfids.length;
       }
-      await exec.dispatchDequeuedWorkflows(wfids, ownerXid);
     };
     const sysdb = exec.systemDatabase;
     const isContentionError = (e: unknown) => sysdb.isLockConflict(e) || sysdb.isSerializationConflict(e);
 
-    // Running workflows, snapshotted at first use, plus this poll's claims, which dispatch registers asynchronously.
-    let running: number | undefined = undefined;
-    let polled = 0;
-    const workerLoad = () => {
-      running ??= sysdb.countRunningWorkflowsForQueue(queue.name);
-      return running + polled;
-    };
+    // Live running count on this worker plus claims whose dispatch has not yet finished registering them.
+    const workerLoad = () => sysdb.countRunningWorkflowsForQueue(queue.name) + pendingDispatch;
 
     // Dequeue workflows for this queue, either in one batched sweep across partitions or one partition at a time.
     const dequeue = async (isLatestVersion: boolean | undefined) => {
@@ -853,7 +854,6 @@ class WFQueueRunner {
             ownerXid,
             isLatestVersion,
           );
-          polled += wfids.length;
           await dispatch(wfids, ownerXid);
         } else if (
           queue.partitionConcurrency === 1 &&
@@ -873,7 +873,6 @@ class WFQueueRunner {
               ownerXid,
               isLatestVersion,
             );
-            polled += wfids.length;
             await dispatch(wfids, ownerXid);
           }
         } else {
@@ -899,7 +898,6 @@ class WFQueueRunner {
               if (isContentionError(e)) continue;
               throw e;
             }
-            polled += partitionWfids.length;
             await dispatch(partitionWfids, ownerXid);
             await debugTriggerPoint(DEBUG_TRIGGER_BETWEEN_PARTITION_DISPATCHES);
           }
